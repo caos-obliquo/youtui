@@ -509,28 +509,6 @@
                                     }
                                   },
                                   {
-                                    "menuNavigationItemRenderer": {
-                                      "text": {
-                                        "runs": [
-                                          {
-                                            "text": "Share"
-                                          }
-                                        ]
-                                      },
-                                      "icon": {
-                                        "iconType": "SHARE"
-                                      },
-                                      "navigationEndpoint": {
-                                        "clickTrackingParams": "CNEaEJH7BRgIIhMIpcX63IiGhwMV7ZdWAR14rgKy",
-                                        "shareEntityEndpoint": {
-                                          "serializedShareEntity": "Cgs5MzdVNVgxZWpMdw%3D%3D",
-                                          "sharePanelType": "SHARE_PANEL_TYPE_UNIFIED_SHARE_PANEL"
-                                        }
-                                      },
-                                      "trackingParams": "CNEaEJH7BRgIIhMIpcX63IiGhwMV7ZdWAR14rgKy"
-                                    }
-                                  },
-                                  {
                                     "menuServiceItemRenderer": {
                                       "text": {
                                         "runs": [
@@ -574,6 +552,28 @@
                                         }
                                       },
                                       "trackingParams": "CM4aEKc7IhMIpcX63IiGhwMV7ZdWAR14rgKy"
+                                    }
+                                  },
+                                  {
+                                    "menuNavigationItemRenderer": {
+                                      "text": {
+                                        "runs": [
+                                          {
+                                            "text": "Share"
+                                          }
+                                        ]
+                                      },
+                                      "icon": {
+                                        "iconType": "SHARE"
+                                      },
+                                      "navigationEndpoint": {
+                                        "clickTrackingParams": "CNEaEJH7BRgIIhMIpcX63IiGhwMV7ZdWAR14rgKy",
+                                        "shareEntityEndpoint": {
+                                          "serializedShareEntity": "Cgs5MzdVNVgxZWpMdw%3D%3D",
+                                          "sharePanelType": "SHARE_PANEL_TYPE_UNIFIED_SHARE_PANEL"
+                                        }
+                                      },
+                                      "trackingParams": "CNEaEJH7BRgIIhMIpcX63IiGhwMV7ZdWAR14rgKy"
                                     }
                                   }
                                 ],
