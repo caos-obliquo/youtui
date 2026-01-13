@@ -10,7 +10,7 @@ use crate::drawutils::{
 use crate::widgets::{ScrollingList, ScrollingTable, ScrollingTableState};
 use ratatui::Frame;
 use ratatui::prelude::{Margin, Rect};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::Style;
 use ratatui::symbols::{block, line};
 use ratatui::text::Line;
 use ratatui::widgets::{
@@ -32,7 +32,10 @@ pub fn move_render_stateful_widget<W: StatefulWidget>(
     widget: W,
     area: Rect,
     state: W::State,
-) -> W::State {
+) -> W::State
+where
+    W::State: Sized,
+{
     let mut state = state;
     f.render_stateful_widget(widget, area, &mut state);
     state
