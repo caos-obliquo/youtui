@@ -29,8 +29,8 @@ use crate::config::Config;
 use crate::config::keymap::Keymap;
 use crate::widgets::ScrollingTableState;
 use async_callback_manager::{AsyncTask, Constraint, TryBackendTaskExt};
-use rand::rng;
-use rand::seq::SliceRandom;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,7 @@ use std::fmt::Debug;
 use std::iter;
 use std::option::Option;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tracing::{error, info, warn};
 use ytmapi_rs::common::Thumbnail;
 
@@ -54,7 +54,19 @@ const SONGS_BEHIND_TO_SAVE: usize = 1;
 const GAPLESS_PLAYBACK_THRESHOLD: Duration = Duration::from_secs(1);
 pub const DEFAULT_UI_VOLUME: Percentage = Percentage(50);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum QueueState {
+    NotQueued,
+    Queued(ListSongID),
+}
+
+// Add this struct for download management
+#[derive(Debug, Clone)]
+pub struct DownloadTask {
+    _cancel_token: Arc<tokio_util::sync::CancellationToken>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Playlist {
     pub list: BrowserSongsList,
     pub cur_played_dur: Option<Duration>,
@@ -65,6 +77,9 @@ pub struct Playlist {
     pub widget_state: ScrollingTableState,
     pub shuffle_enabled: bool,
     shuffle_indices: Vec<usize>,
+    shuffle_seed: u64,
+    // Active downloads for cancellation - use Vec instead of HashMap to avoid Hash requirement
+    active_downloads: Arc<std::sync::Mutex<Vec<(ListSongID, DownloadTask)>>>,
 }
 impl_youtui_component!(Playlist);
 
@@ -92,12 +107,6 @@ impl Action for PlaylistAction {
         }
         .into()
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum QueueState {
-    NotQueued,
-    Queued(ListSongID),
 }
 
 impl ActionHandler<PlaylistAction> for Playlist {
@@ -203,11 +212,14 @@ impl TableView for Playlist {
 
         (0..list_len).map(move |visual_i| {
             let actual_i = self.visual_to_actual_index(visual_i);
+
+            // SAFETY: visual_index should always map to valid actual_index
+            // Use nth() which will not panic if the index is out of bounds
             let ls = self
                 .list
                 .get_list_iter()
                 .nth(actual_i)
-                .expect("Visual index should map to valid actual index");
+                .expect("BUG: Visual index mapping failed");
 
             let first_field = if Some(visual_i) == cur_playing_visual {
                 match self.play_status {
@@ -260,7 +272,7 @@ impl HasTitle for Playlist {
         };
         format!(
             "Local playlist - {} songs{}",
-            self.list.get_list_iter().len(),
+            self.list.get_list_iter().count(),
             shuffle_indicator
         )
         .into()
@@ -294,6 +306,11 @@ impl Playlist {
             widget_state: Default::default(),
             shuffle_enabled: false,
             shuffle_indices: Vec::new(),
+            shuffle_seed: SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            active_downloads: Arc::new(std::sync::Mutex::new(Vec::new())),
         };
         (playlist, task)
     }
@@ -315,10 +332,14 @@ impl Playlist {
     pub fn play_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
         // Drop previous songs
         self.drop_unscoped_from_id(id);
+        self.cancel_out_of_scope_downloads();
+
         // Queue next downloads
         let mut effect = self.download_upcoming_from_id(id);
+
         // Reset duration
         self.cur_played_dur = None;
+
         if let Some(song_index) = self.get_index_from_id(id) {
             if let DownloadStatus::Downloaded(pointer) = &self
                 .get_song_from_idx(song_index)
@@ -359,10 +380,14 @@ impl Playlist {
     pub fn autoplay_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
         // Drop previous songs
         self.drop_unscoped_from_id(id);
+        self.cancel_out_of_scope_downloads();
+
         // Queue next downloads
         let mut effect = self.download_upcoming_from_id(id);
+
         // Reset duration
         self.cur_played_dur = None;
+
         if let Some(song_index) = self.get_index_from_id(id) {
             if let DownloadStatus::Downloaded(pointer) = &self
                 .get_song_from_idx(song_index)
@@ -399,11 +424,16 @@ impl Playlist {
     /// Stop playing and clear playlist.
     pub fn reset(&mut self) -> ComponentEffect<Self> {
         let mut effect = AsyncTask::new_no_op();
+
         // Stop playback, if playing.
         if let Some(cur_id) = self.get_cur_playing_id() {
             // TODO: Consider how race condition is supposed to be handled with this.
             effect = self.stop_song_id(cur_id);
         }
+
+        // Cancel all downloads
+        self.cancel_all_downloads();
+
         self.clear();
         effect
         // XXX: Also need to kill pending download tasks
@@ -429,7 +459,7 @@ impl Playlist {
             | PlayState::Buffering(id)
             | PlayState::Error(id) => {
                 let prev_song_id = self.get_prev_song_id(*id);
-                info!("Next song id {:?}", prev_song_id);
+                info!("Previous song id {:?}", prev_song_id);
                 match prev_song_id {
                     Some(id) => {
                         return self.play_song_id(id);
@@ -458,11 +488,13 @@ impl Playlist {
         let Some(song_index) = self.get_index_from_id(id) else {
             return AsyncTask::new_no_op();
         };
+
         let song = self
             .list
             .get_list_iter_mut()
             .nth(song_index)
             .expect("We got the index from the id, so song must exist");
+
         // Won't download if already downloaded, or downloading.
         match song.download_status {
             DownloadStatus::Downloading(_)
@@ -470,12 +502,26 @@ impl Playlist {
             | DownloadStatus::Queued => return AsyncTask::new_no_op(),
             _ => (),
         };
+
         // TODO: Consider how to handle race conditions.
+        let cancel_token = Arc::new(tokio_util::sync::CancellationToken::new());
+
         let effect = AsyncTask::new_stream(
             DownloadSong(song.video_id.clone(), id),
             HandleSongDownloadProgressUpdate,
             None,
         );
+
+        // Store the task for cancellation - use Vec instead of HashMap
+        let mut downloads = self.active_downloads.lock().unwrap();
+        downloads.retain(|(song_id, _)| *song_id != id); // Remove existing if any
+        downloads.push((
+            id,
+            DownloadTask {
+                _cancel_token: cancel_token,
+            },
+        ));
+
         song.download_status = DownloadStatus::Queued;
         effect
     }
@@ -515,7 +561,7 @@ impl Playlist {
                 Some((thumbnail_id, thumb_url))
             })
             .collect::<HashMap<SongThumbnailID, String>>();
-        let effect = albums
+        let mut effect: ComponentEffect<Self> = albums
             .into_iter()
             .map(|(thumbnail_id, thumbnail_url)| {
                 AsyncTask::new_future_try(
@@ -528,13 +574,33 @@ impl Playlist {
                     None,
                 )
             })
-            .collect::<ComponentEffect<Self>>();
+            .collect();
 
+        // Store current playing position before modifying list
+        let current_visual_pos = self
+            .get_cur_playing_index()
+            .and_then(|idx| self.actual_to_visual_index(idx));
+
+        // Get the ID of the first song BEFORE we modify the list
         let first_id = self.list.push_song_list(song_list);
 
-        // Regenerate shuffle indices after adding songs
+        // When shuffle is enabled, regenerate shuffle indices completely
         if self.shuffle_enabled {
+            // Regenerate with new songs included
             self.generate_shuffle_indices();
+
+            // Restore cursor to the same song (or as close as possible)
+            if let Some(visual_pos) = current_visual_pos {
+                // Ensure cursor is within bounds
+                self.cur_selected =
+                    visual_pos.min(self.list.get_list_iter().count().saturating_sub(1));
+            }
+
+            // Re-trigger downloads for new order if playing
+            if let Some(current_id) = self.get_cur_playing_id() {
+                self.drop_unscoped_from_id(current_id);
+                effect = effect.push(self.download_upcoming_from_id(current_id));
+            }
         }
 
         (first_id, effect)
@@ -606,15 +672,17 @@ impl Playlist {
         let Some(song_index) = self.get_index_from_id(id) else {
             return AsyncTask::new_no_op();
         };
+
         let mut song_ids_list = Vec::new();
         song_ids_list.push(id);
+
         if self.shuffle_enabled {
             let Some(visual_index) = self.actual_to_visual_index(song_index) else {
                 return AsyncTask::new_no_op();
             };
 
             for offset in 1..SONGS_AHEAD_TO_BUFFER {
-                let next_visual = visual_index + offset;
+                let next_visual = visual_index.saturating_add(offset);
                 if next_visual < self.shuffle_indices.len() {
                     let next_actual = self.shuffle_indices[next_visual];
                     if let Some(next_id) = self.get_id_from_index(next_actual) {
@@ -629,6 +697,7 @@ impl Playlist {
                 }
             }
         }
+
         // TODO: Don't love the way metadata and constraints are handled with this task
         // type that is collected, find a better way.
         song_ids_list
@@ -642,21 +711,21 @@ impl Playlist {
         let Some(song_index) = self.get_index_from_id(id) else {
             return;
         };
-        let forward_limit = song_index + SONGS_AHEAD_TO_BUFFER;
+
+        let forward_limit = song_index.saturating_add(SONGS_AHEAD_TO_BUFFER);
         let backwards_limit = song_index.saturating_sub(SONGS_BEHIND_TO_SAVE);
-        for song in self.list.get_list_iter_mut().take(backwards_limit) {
-            // TODO: Also cancel in progress downloads
-            // TODO: Write a change download status function that will warn if song is not
-            // dropped from memory.
-            song.download_status = DownloadStatus::None
-        }
-        for song in self.list.get_list_iter_mut().skip(forward_limit) {
-            // TODO: Also cancel in progress downloads
-            // TODO: Write a change download status function that will warn if song is not
-            // dropped from memory.
-            song.download_status = DownloadStatus::None
+
+        // Mark downloads as None
+        for (idx, song) in self.list.get_list_iter_mut().enumerate() {
+            if idx < backwards_limit || idx >= forward_limit {
+                // TODO: Also cancel in progress downloads
+                // TODO: Write a change download status function that will warn if song is not
+                // dropped from memory.
+                song.download_status = DownloadStatus::None;
+            }
         }
     }
+    /// Helper methods
     pub fn get_cur_playing_id(&self) -> Option<ListSongID> {
         match self.play_status {
             PlayState::Error(id)
@@ -695,6 +764,7 @@ impl Playlist {
             .and_then(|id| self.get_index_from_id(id))
     }
 }
+
 // Event handlers
 impl Playlist {
     // Placeholder for future use
@@ -702,6 +772,7 @@ impl Playlist {
         // XXX: Consider downloading upcoming songs here.
         // self.download_upcoming_songs().await;
     }
+
     /// Handle seek command (from global keypress).
     pub fn handle_seek(
         &mut self,
@@ -718,6 +789,7 @@ impl Playlist {
             None,
         )
     }
+
     pub fn handle_seek_to(&mut self, position: Duration) -> ComponentEffect<Self> {
         let id = match self.play_status {
             PlayState::Playing(id) => {
@@ -733,6 +805,7 @@ impl Playlist {
         // Consider if we also want to update current duration.
         AsyncTask::new_future_option(SeekTo { position, id }, HandleSetSongPlayProgress, None)
     }
+
     /// Handle next command (from global keypress), if currently playing.
     pub fn handle_next(&mut self) -> ComponentEffect<Self> {
         match self.play_status {
@@ -746,53 +819,12 @@ impl Playlist {
             | PlayState::Error(id) => self.play_next_or_stop(id),
         }
     }
+
     /// Handle previous command (from global keypress).
     pub fn handle_previous(&mut self) -> ComponentEffect<Self> {
         self.play_prev()
     }
-    /// Play the song under the cursor (from local keypress)
-    pub fn play_selected(&mut self) -> ComponentEffect<Self> {
-        let actual_index = self.visual_to_actual_index(self.cur_selected);
-        let Some(id) = self.get_id_from_index(actual_index) else {
-            return AsyncTask::new_no_op();
-        };
-        self.play_song_id(id)
-    }
-    /// Delete the song under the cursor (from local keypress). If it was
-    /// playing, stop it and set PlayState to NotPlaying.
-    pub fn delete_selected(&mut self) -> ComponentEffect<Self> {
-        let mut return_task = AsyncTask::new_no_op();
-        let actual_index = self.visual_to_actual_index(self.cur_selected);
 
-        if let Some(cur_playing_id) = self.get_cur_playing_id() {
-            if Some(actual_index) == self.get_cur_playing_index() {
-                self.play_status = PlayState::NotPlaying;
-                return_task = self.stop_song_id(cur_playing_id);
-            }
-        }
-
-        self.list.remove_song_index(actual_index);
-
-        // Regenerate shuffle indices after deletion
-        if self.shuffle_enabled {
-            self.generate_shuffle_indices();
-        }
-
-        // Adjust cursor position
-        if self.cur_selected >= self.list.get_list_iter().count() && self.cur_selected > 0 {
-            self.cur_selected -= 1;
-        }
-
-        return_task
-    }
-    /// Delete all songs.
-    pub fn delete_all(&mut self) -> ComponentEffect<Self> {
-        self.reset()
-    }
-    /// Change to Browser window.
-    pub fn view_browser(&mut self) -> AppCallback {
-        AppCallback::ChangeContext(WindowContext::Browser)
-    }
     /// Handle global pause/play action. Toggle state (visual), toggle playback
     /// (server).
     pub fn pauseplay(&mut self) -> ComponentEffect<Self> {
@@ -815,6 +847,7 @@ impl Playlist {
             )),
         )
     }
+
     /// Handle global play action. Change state (visual), change playback
     /// (server).
     pub fn resume(&mut self) -> ComponentEffect<Self> {
@@ -833,6 +866,7 @@ impl Playlist {
             )),
         )
     }
+
     /// Handle global pause action. Change state (visual), change playback
     /// (server).
     pub fn pause(&mut self) -> ComponentEffect<Self> {
@@ -851,6 +885,7 @@ impl Playlist {
             )),
         )
     }
+
     /// Handle global stop action. Change state (visual), change playback
     /// (server).
     pub fn stop(&mut self) -> ComponentEffect<Self> {
@@ -863,7 +898,80 @@ impl Playlist {
             )),
         )
     }
+
+    /// Play the song under the cursor (from local keypress)
+    pub fn play_selected(&mut self) -> ComponentEffect<Self> {
+        let actual_index = self.visual_to_actual_index(self.cur_selected);
+        let Some(id) = self.get_id_from_index(actual_index) else {
+            return AsyncTask::new_no_op();
+        };
+        self.play_song_id(id)
+    }
+
+    /// Delete the song under the cursor (from local keypress). If it was
+    /// playing, stop it and set PlayState to NotPlaying.
+    pub fn delete_selected(&mut self) -> ComponentEffect<Self> {
+        let mut return_task = AsyncTask::new_no_op();
+        let actual_index = self.visual_to_actual_index(self.cur_selected);
+
+        // Bounds check - verify actual_index is valid
+        let list_len = self.list.get_list_iter().count();
+        if actual_index >= list_len {
+            error!(
+                "Attempted to delete invalid index {} (list len {})",
+                actual_index, list_len
+            );
+            return return_task;
+        }
+
+        // Check if deleting currently playing song
+        if let Some(cur_playing_id) = self.get_cur_playing_id() {
+            if Some(actual_index) == self.get_cur_playing_index() {
+                self.play_status = PlayState::NotPlaying;
+                return_task = self.stop_song_id(cur_playing_id);
+            }
+        }
+
+        if self.shuffle_enabled {
+            // Find and remove the deleted song's position in shuffle order
+            if let Some(pos_in_shuffle) =
+                self.shuffle_indices.iter().position(|&i| i == actual_index)
+            {
+                self.shuffle_indices.remove(pos_in_shuffle);
+            }
+
+            // Decrement all indices that were after the deleted position
+            // (since list elements shift left after deletion)
+            for idx in &mut self.shuffle_indices {
+                if *idx > actual_index {
+                    *idx -= 1;
+                }
+            }
+        }
+
+        // Now delete from actual list
+        self.list.remove_song_index(actual_index);
+
+        // Adjust cursor position
+        let new_len = self.list.get_list_iter().count();
+        if self.cur_selected >= new_len && self.cur_selected > 0 {
+            self.cur_selected -= 1;
+        }
+
+        return_task
+    }
+
+    /// Delete all songs.
+    pub fn delete_all(&mut self) -> ComponentEffect<Self> {
+        self.reset()
+    }
+
+    /// Change to Browser window.
+    pub fn view_browser(&mut self) -> AppCallback {
+        AppCallback::ChangeContext(WindowContext::Browser)
+    }
 }
+
 // Server handlers
 impl Playlist {
     // Toggle shuffle on/off. Regenerates shuffle order when enabled.
@@ -871,27 +979,72 @@ impl Playlist {
         self.shuffle_enabled = !self.shuffle_enabled;
 
         if self.shuffle_enabled {
+            // Generate NEW seed for fresh shuffle order each time
+            self.shuffle_seed = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
             self.generate_shuffle_indices();
+
+            // Move cursor to currently playing song
+            if self.get_cur_playing_id().is_some() {
+                self.cur_selected = 0;
+            }
         } else {
             self.shuffle_indices.clear();
+            // Move cursor back to actual position of playing song
+            if let Some(playing_idx) = self.get_cur_playing_index() {
+                self.cur_selected =
+                    playing_idx.min(self.list.get_list_iter().count().saturating_sub(1));
+            }
         }
 
-        AsyncTask::new_no_op()
+        // Re-trigger downloads for new order and cancel old ones
+        self.regenerate_downloads_for_current()
     }
 
     // Generate new shuffled indices for the current playlist
     fn generate_shuffle_indices(&mut self) {
         let len = self.list.get_list_iter().count();
+        if len == 0 {
+            self.shuffle_indices.clear();
+            return;
+        }
+
         let mut indices: Vec<usize> = (0..len).collect();
-        indices.shuffle(&mut rng());
+
+        // Use Fisher-Yates shuffle with seeded RNG
+        let mut rng = StdRng::seed_from_u64(self.shuffle_seed);
+        for i in (1..len).rev() {
+            let j = rng.random_range(0..=i);
+            indices.swap(i, j);
+        }
+
+        // If there's a currently playing song, ensure it's first in shuffle order
+        if let Some(current_index) = self.get_cur_playing_index() {
+            // Find where current_index ended up and swap it to front
+            if let Some(pos) = indices.iter().position(|&i| i == current_index) {
+                indices.swap(0, pos);
+            }
+        }
+
         self.shuffle_indices = indices;
     }
 
     fn visual_to_actual_index(&self, visual_index: usize) -> usize {
-        if self.shuffle_enabled && visual_index < self.shuffle_indices.len() {
+        let list_len = self.list.get_list_iter().count();
+
+        if self.shuffle_enabled
+            && visual_index < self.shuffle_indices.len()
+            && visual_index < list_len
+        {
             self.shuffle_indices[visual_index]
-        } else {
+        } else if visual_index < list_len {
             visual_index
+        } else {
+            // Handle out-of-bounds gracefully
+            visual_index.min(list_len.saturating_sub(1))
         }
     }
 
@@ -908,7 +1061,7 @@ impl Playlist {
 
         if self.shuffle_enabled {
             let current_visual_index = self.actual_to_visual_index(current_actual_index)?;
-            let next_visual_index = current_visual_index + 1;
+            let next_visual_index = current_visual_index.saturating_add(1);
             if next_visual_index < self.shuffle_indices.len() {
                 let next_actual_index = self.shuffle_indices[next_visual_index];
                 self.get_id_from_index(next_actual_index)
@@ -916,7 +1069,7 @@ impl Playlist {
                 None
             }
         } else {
-            self.get_id_from_index(current_actual_index + 1)
+            self.get_id_from_index(current_actual_index.saturating_add(1))
         }
     }
 
@@ -927,7 +1080,7 @@ impl Playlist {
             let current_visual_index = self.actual_to_visual_index(current_actual_index)?;
 
             if current_visual_index > 0 {
-                let prev_visual_index = current_visual_index - 1;
+                let prev_visual_index = current_visual_index.saturating_sub(1);
                 let prev_actual_index = self.shuffle_indices[prev_visual_index];
                 self.get_id_from_index(prev_actual_index)
             } else {
@@ -938,6 +1091,56 @@ impl Playlist {
                 .checked_sub(1)
                 .and_then(|i| self.get_id_from_index(i))
         }
+    }
+
+    /// Cancel all active downloads
+    fn cancel_all_downloads(&self) {
+        let mut downloads = self.active_downloads.lock().unwrap();
+        downloads.clear();
+    }
+    /// Cancel downloads that are out of the new buffer scope
+    fn cancel_out_of_scope_downloads(&self) {
+        let current_scope = self.get_current_download_scope();
+        let mut downloads = self.active_downloads.lock().unwrap();
+
+        downloads.retain(|(song_id, _task)| {
+            current_scope
+                .iter()
+                .any(|(scope_id, _)| *scope_id == *song_id)
+        });
+    }
+    /// Helper to regenerate downloads for current playing song
+    fn regenerate_downloads_for_current(&mut self) -> ComponentEffect<Self> {
+        if let Some(current_id) = self.get_cur_playing_id() {
+            self.drop_unscoped_from_id(current_id);
+            self.cancel_out_of_scope_downloads();
+            self.download_upcoming_from_id(current_id)
+        } else {
+            AsyncTask::new_no_op()
+        }
+    }
+    /// Get the set of IDs that should be downloading based on current playing song
+    fn get_current_download_scope(&self) -> Vec<(ListSongID, DownloadTask)> {
+        let mut scope = Vec::new();
+
+        if let Some(current_id) = self.get_cur_playing_id() {
+            if let Some(song_index) = self.get_index_from_id(current_id) {
+                let forward_limit = song_index.saturating_add(SONGS_AHEAD_TO_BUFFER);
+                let backwards_limit = song_index.saturating_sub(SONGS_BEHIND_TO_SAVE);
+
+                let downloads = self.active_downloads.lock().unwrap();
+                for (idx, song) in self.list.get_list_iter().enumerate() {
+                    if idx >= backwards_limit && idx < forward_limit {
+                        // Find if this song has an active download
+                        if let Some(task) = downloads.iter().find(|(id, _)| *id == song.id) {
+                            scope.push(task.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        scope
     }
 
     /// Handle song progress update from server.
@@ -958,7 +1161,11 @@ impl Playlist {
         } else {
             return AsyncTask::new_no_op();
         }
+
         tracing::info!("Task valid - updating song download status");
+
+        let mut effect = AsyncTask::new_no_op();
+
         match update {
             DownloadProgressUpdateType::Started => {
                 if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
@@ -966,17 +1173,25 @@ impl Playlist {
                 }
             }
             DownloadProgressUpdateType::Completed(song_buf) => {
-                if let Some(new_id) = self.get_mut_song_from_id(id).map(|s| {
+                if let Some(s) = self.get_mut_song_from_id(id) {
                     s.download_status = DownloadStatus::Downloaded(Arc::new(song_buf));
-                    s.id
-                }) {
-                    return self.handle_song_downloaded(new_id);
-                };
+                }
+                // Remove from active downloads
+                self.active_downloads
+                    .lock()
+                    .unwrap()
+                    .retain(|(song_id, _)| *song_id != id);
+                effect = self.handle_song_downloaded(id);
             }
             DownloadProgressUpdateType::Error => {
                 if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
                     song.download_status = DownloadStatus::Failed;
                 }
+                // Remove from active downloads on error
+                self.active_downloads
+                    .lock()
+                    .unwrap()
+                    .retain(|(song_id, _)| *song_id != id);
             }
             DownloadProgressUpdateType::Retrying { times_retried } => {
                 if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
@@ -989,7 +1204,8 @@ impl Playlist {
                 }
             }
         }
-        AsyncTask::new_no_op()
+
+        effect
     }
     /// Handle volume message from server
     pub fn handle_volume_update(&mut self, response: VolumeUpdate) {
@@ -1056,32 +1272,34 @@ impl Playlist {
                 .as_ref()
                 .zip(cur_dur)
                 .map(|(d1, d2)| d2.saturating_sub(*d1))
-        } && duration_dif
-            .saturating_sub(GAPLESS_PLAYBACK_THRESHOLD)
-            .is_zero()
-            && !matches!(self.queue_status, QueueState::Queued(_))
-            && let Some(next_song) = self.get_next_song()
-            && let DownloadStatus::Downloaded(song) = &next_song.download_status
-        {
-            // This task has the metadata of both DecodeSong and QueueSong and returns
-            // Result<QueueUpdate>.
-            let task = DecodeSong(song.clone()).map_stream(QueueDecodedSong(id));
-            info!("Queuing up song!");
-            let effect = AsyncTask::new_stream_try(
-                task,
-                HandleQueueUpdateOk,
-                HandlePlayUpdateError(id),
-                None,
-            );
-            self.queue_status = QueueState::Queued(next_song.id);
-            return effect;
+        } {
+            if duration_dif
+                .saturating_sub(GAPLESS_PLAYBACK_THRESHOLD)
+                .is_zero()
+                && !matches!(self.queue_status, QueueState::Queued(_))
+                && let Some(next_song) = self.get_next_song()
+                && let DownloadStatus::Downloaded(song) = &next_song.download_status
+            {
+                // This task has the metadata of both DecodeSong and QueueSong and returns
+                // Result<QueueUpdate>.
+                let task = DecodeSong(song.clone()).map_stream(QueueDecodedSong(id));
+                info!("Queuing up song!");
+                let effect = AsyncTask::new_stream_try(
+                    task,
+                    HandleQueueUpdateOk,
+                    HandlePlayUpdateError(id),
+                    None,
+                );
+                self.queue_status = QueueState::Queued(next_song.id);
+                return effect;
+            }
         }
 
         AsyncTask::new_no_op()
     }
     /// Handle done playing message from server
     pub fn handle_done_playing(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        if QueueState::Queued(id) == self.queue_status {
+        if self.queue_status == QueueState::Queued(id) {
             self.queue_status = QueueState::NotQueued;
             return AsyncTask::new_no_op();
         }
@@ -1102,12 +1320,9 @@ impl Playlist {
     /// If this occurs, we can clear the queued track since we know that it's
     /// playing.
     pub fn handle_autoplay_queued(&mut self, id: ListSongID) {
-        match self.queue_status {
-            QueueState::NotQueued => (),
-            QueueState::Queued(q_id) => {
-                if id == q_id {
-                    self.queue_status = QueueState::NotQueued
-                }
+        if let QueueState::Queued(q_id) = self.queue_status {
+            if id == q_id {
+                self.queue_status = QueueState::NotQueued
             }
         }
     }
