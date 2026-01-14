@@ -3,6 +3,8 @@ use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::Widget;
 use std::borrow::Cow;
+use tracing::{debug, warn}; // Use proper logging
+
 /// Ratatui widgets used in application
 pub struct TabGrid<'a> {
     titles: Vec<Cow<'a, str>>,
@@ -11,11 +13,13 @@ pub struct TabGrid<'a> {
     highlight_style: Option<Style>,
     style: Style,
 }
+
 #[derive(PartialEq)]
 enum TabGridConstraint {
     MaxRows(u16),
     MaxCols(u16),
 }
+
 impl<'a> TabGrid<'a> {
     pub fn new_with_max_cols(
         titles: impl IntoIterator<Item = impl Into<Cow<'a, str>>>,
@@ -29,6 +33,7 @@ impl<'a> TabGrid<'a> {
             style: Default::default(),
         }
     }
+
     pub fn new_with_max_rows(
         titles: impl IntoIterator<Item = impl Into<Cow<'a, str>>>,
         rows: u16,
@@ -41,6 +46,7 @@ impl<'a> TabGrid<'a> {
             style: Default::default(),
         }
     }
+
     /// zero indexed
     pub fn select(self, selected: usize) -> Self {
         Self {
@@ -48,29 +54,25 @@ impl<'a> TabGrid<'a> {
             ..self
         }
     }
-    #[allow(unused)]
-    // This is a library type module and its expected all methods on TabGrid
-    // will be eventually used.
+
     pub fn deselect(self) -> Self {
         Self {
             selected: None,
             ..self
         }
     }
-    /// Sets the style for the highlighted tab - overwriting the base style.
+
     pub fn highlight_style(self, highlight_style: Style) -> Self {
         Self {
             highlight_style: Some(highlight_style),
             ..self
         }
     }
-    /// Sets the style for all tabs.
-    #[allow(unused)]
-    // This is a library type module and its expected all methods on TabGrid
-    // will be eventually used.
+
     pub fn style(self, style: Style) -> Self {
         Self { style, ..self }
     }
+
     /// Returns 0 if there are 0 cols or 0 titles.
     pub fn required_width(&self) -> usize {
         match self.constraint {
@@ -91,6 +93,7 @@ impl<'a> TabGrid<'a> {
             }
         }
     }
+
     /// Returns 0 if there are 0 cols (instead of panicing)
     pub fn required_height(&self) -> usize {
         match self.constraint {
@@ -103,7 +106,7 @@ impl<'a> TabGrid<'a> {
             TabGridConstraint::MaxRows(rows) => self.titles.len().min(rows as usize),
         }
     }
-    /// Returns 0 if there are 0 titles.
+
     fn longest_title(&self) -> usize {
         self.titles
             .iter()
@@ -112,17 +115,29 @@ impl<'a> TabGrid<'a> {
             .unwrap_or_default()
     }
 }
+
 impl<'a> Widget for TabGrid<'a> {
     fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
     {
-        // Do nothing if constraint is 0 cols/rows.
+        // Validate constraints
         if self.constraint == TabGridConstraint::MaxCols(0)
             || self.constraint == TabGridConstraint::MaxRows(0)
         {
+            debug!("TabGrid: Zero constraint, skipping render");
             return;
         }
+
+        // Check for invalid area
+        if area.width < 2 || area.height < 1 {
+            warn!(
+                "TabGrid: Area too small ({}x{}), skipping render",
+                area.width, area.height
+            );
+            return;
+        }
+
         let longest_title = self.longest_title();
         let rows = self.required_height();
         let Self {
@@ -132,6 +147,18 @@ impl<'a> Widget for TabGrid<'a> {
             highlight_style,
             style,
         } = self;
+
+        // Debug logging ONLY in extreme cases (too many titles for area)
+        let max_fit = (area.width as usize / (longest_title + 1)) * area.height as usize;
+        if titles.len() > max_fit {
+            debug!(
+                "TabGrid: Too many tabs ({}) for area ({}x{})",
+                titles.len(),
+                area.width,
+                area.height
+            );
+        }
+
         match constraint {
             TabGridConstraint::MaxCols(_) => {
                 for (idx, title) in titles.into_iter().enumerate() {
@@ -145,17 +172,25 @@ impl<'a> Widget for TabGrid<'a> {
                         Line::from(title).style(style)
                     }
                     .centered();
+
+                    // Safe math with overflow protection
+                    let x = area
+                        .x
+                        .saturating_add((col * (longest_title + 1)).try_into().unwrap_or(u16::MAX));
+                    let y = area.y.saturating_add(row.try_into().unwrap_or(u16::MAX));
+
                     let render_area = Rect {
-                        x: (area.x as usize + col * (longest_title + 1))
-                            .try_into()
-                            .unwrap_or(u16::MAX),
-                        y: (area.y as usize + row).try_into().unwrap_or(u16::MAX),
-                        width: longest_title.try_into().unwrap_or(u16::MAX),
+                        x: x.min(area.x + area.width),
+                        y: y.min(area.y + area.height),
+                        width: longest_title.try_into().unwrap_or(u16::MAX).min(area.width),
                         height: 1,
                     }
-                    // Don't render outside provided area
                     .intersection(area);
-                    tab.render(render_area, buf);
+
+                    // Only render if we have valid space
+                    if render_area.width > 0 && render_area.height > 0 {
+                        tab.render(render_area, buf);
+                    }
                 }
             }
             TabGridConstraint::MaxRows(_) => {
@@ -170,18 +205,25 @@ impl<'a> Widget for TabGrid<'a> {
                         Line::from(title).style(style)
                     }
                     .centered();
+
+                    // Safe math with overflow protection
+                    let x = area
+                        .x
+                        .saturating_add((col * (longest_title + 1)).try_into().unwrap_or(u16::MAX));
+                    let y = area.y.saturating_add(row.try_into().unwrap_or(u16::MAX));
+
                     let render_area = Rect {
-                        x: (area.x as usize + col * (longest_title + 1))
-                            .try_into()
-                            .unwrap_or(u16::MAX),
-                        y: (area.y as usize + row).try_into().unwrap_or(u16::MAX),
-                        width: longest_title.try_into().unwrap_or(u16::MAX),
+                        x: x.min(area.x + area.width),
+                        y: y.min(area.y + area.height),
+                        width: longest_title.try_into().unwrap_or(u16::MAX).min(area.width),
                         height: 1,
                     }
-                    // Don't render outside provided area
                     .intersection(area);
-                    dbg!(render_area);
-                    tab.render(render_area, buf);
+
+                    // Only render if we have valid space
+                    if render_area.width > 0 && render_area.height > 0 {
+                        tab.render(render_area, buf);
+                    }
                 }
             }
         }
@@ -190,10 +232,8 @@ impl<'a> Widget for TabGrid<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::widgets::TabGrid;
-    use pretty_assertions::assert_eq;
-    use ratatui::layout::Rect;
-    use ratatui::widgets::Widget;
+    use super::*;
+    use ratatui::buffer::Buffer;
 
     #[test]
     fn test_basic_tab_grid() {
@@ -201,7 +241,7 @@ mod tests {
         assert_eq!(grid.required_width(), 9);
         assert_eq!(grid.required_height(), 2);
         let area = Rect::new(0, 0, 9, 2);
-        let mut buf = ratatui::buffer::Buffer::empty(area);
+        let mut buf = Buffer::empty(area);
         grid.render(area, &mut buf);
         assert_eq!(buf.area, area);
         let rendered_cells_as_string = buf
