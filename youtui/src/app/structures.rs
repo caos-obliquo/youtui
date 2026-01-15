@@ -52,7 +52,7 @@ pub struct BrowserSongsList {
 }
 
 // As this is a simple wrapper type we implement Copy for ease of handling
-#[derive(Clone, PartialEq, Copy, Debug, PartialOrd)]
+#[derive(Clone, PartialEq, Copy, Debug, PartialOrd, Hash, Eq)]
 pub struct ListSongID(#[cfg(test)] pub usize, #[cfg(not(test))] usize);
 
 // As this is a simple wrapper type we implement Copy for ease of handling

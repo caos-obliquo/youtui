@@ -29,7 +29,7 @@ use crate::config::Config;
 use crate::config::keymap::Keymap;
 use crate::widgets::ScrollingTableState;
 use async_callback_manager::{AsyncTask, Constraint, TryBackendTaskExt};
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyCode;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use ratatui::Frame;
@@ -37,9 +37,7 @@ use ratatui::layout::Rect;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::iter;
-use std::option::Option;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tracing::{error, info, warn};
@@ -54,7 +52,7 @@ const SONGS_BEHIND_TO_SAVE: usize = 1;
 const GAPLESS_PLAYBACK_THRESHOLD: Duration = Duration::from_secs(1);
 pub const DEFAULT_UI_VOLUME: Percentage = Percentage(50);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum QueueState {
     NotQueued,
     Queued(ListSongID),
@@ -264,6 +262,7 @@ impl TableView for Playlist {
     }
 
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
+        // FIX: Use search indices directly when search is active (ignore shuffle)
         let list_len = if !self.search_text.is_empty() {
             self.search_indices.len()
         } else {
@@ -504,25 +503,31 @@ impl Playlist {
         match cur {
             PlayState::NotPlaying | PlayState::Stopped => {
                 warn!("Asked to play prev, but not currently playing");
+                AsyncTask::new_no_op()
             }
             PlayState::Paused(id)
             | PlayState::Playing(id)
             | PlayState::Buffering(id)
             | PlayState::Error(id) => {
                 if let Some(prev_song_id) = self.get_prev_song_id(*id) {
-                    return self.play_song_id(prev_song_id);
+                    self.play_song_id(prev_song_id)
+                } else {
+                    AsyncTask::new_no_op()
                 }
             }
         }
-        AsyncTask::new_no_op()
     }
 
     pub fn handle_song_downloaded(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        if let PlayState::Buffering(target_id) = self.play_status
-            && target_id == id
-        {
-            info!("Received downloaded song {id:?}, now trying to play it.");
-            return self.play_song_id(id);
+        if let PlayState::Buffering(target_id) = self.play_status {
+            if target_id == id {
+                info!("Received downloaded song {id:?}, now trying to play it.");
+                return if matches!(self.queue_status, QueueState::Queued(_)) {
+                    self.autoplay_song_id(id)
+                } else {
+                    self.play_song_id(id)
+                };
+            }
         }
         AsyncTask::new_no_op()
     }
@@ -597,7 +602,7 @@ impl Playlist {
             })
             .collect::<HashMap<SongThumbnailID, String>>();
 
-        let mut effect: ComponentEffect<Self> = albums
+        let effect: ComponentEffect<Self> = albums
             .into_iter()
             .map(|(thumbnail_id, thumbnail_url)| {
                 AsyncTask::new_future_try(
@@ -612,23 +617,22 @@ impl Playlist {
             })
             .collect();
 
-        let current_visual_pos = self
-            .get_cur_playing_index()
-            .and_then(|idx| self.actual_to_visual_index(idx));
-
+        let was_playing = self.get_cur_playing_id();
         let first_id = self.list.push_song_list(song_list);
 
         if self.shuffle_enabled {
             self.generate_shuffle_indices();
 
-            if let Some(visual_pos) = current_visual_pos {
-                self.cur_selected =
-                    visual_pos.min(self.list.get_list_iter().count().saturating_sub(1));
-            }
-
-            if let Some(current_id) = self.get_cur_playing_id() {
-                self.drop_unscoped_from_id(current_id);
-                effect = effect.push(self.download_upcoming_from_id(current_id));
+            if let (Some(_current_id), Some(playing_idx)) =
+                (was_playing, self.get_cur_playing_index())
+            {
+                if let Some(shuffled_pos) =
+                    self.shuffle_indices.iter().position(|&i| i == playing_idx)
+                {
+                    self.cur_selected = shuffled_pos;
+                }
+            } else {
+                self.cur_selected = 0.min(self.get_max_visual_index());
             }
         }
 
@@ -705,19 +709,19 @@ impl Playlist {
                 return AsyncTask::new_no_op();
             };
 
-            for offset in 1..SONGS_AHEAD_TO_BUFFER {
-                let next_visual = visual_index.saturating_add(offset);
-                if next_visual < self.shuffle_indices.len() {
-                    let next_actual = self.shuffle_indices[next_visual];
+            for offset in 1..=SONGS_AHEAD_TO_BUFFER {
+                let next_pos = visual_index.saturating_add(offset);
+                if next_pos < self.shuffle_indices.len() {
+                    let next_actual = self.shuffle_indices[next_pos];
                     if let Some(next_id) = self.get_id_from_index(next_actual) {
                         song_ids_list.push(next_id);
                     }
                 }
             }
         } else {
-            for i in 1..SONGS_AHEAD_TO_BUFFER {
-                if let Some(next_id) = self.get_song_from_idx(song_index + i).map(|s| s.id) {
-                    song_ids_list.push(next_id);
+            for offset in 1..=SONGS_AHEAD_TO_BUFFER {
+                if let Some(next_song) = self.get_song_from_idx(song_index.saturating_add(offset)) {
+                    song_ids_list.push(next_song.id);
                 }
             }
         }
@@ -810,14 +814,7 @@ impl Playlist {
 
     pub fn handle_seek_to(&mut self, position: Duration) -> ComponentEffect<Self> {
         let id = match self.play_status {
-            PlayState::Playing(id) => {
-                self.play_status = PlayState::Paused(id);
-                id
-            }
-            PlayState::Paused(id) => {
-                self.play_status = PlayState::Playing(id);
-                id
-            }
+            PlayState::Playing(id) | PlayState::Paused(id) => id,
             _ => return AsyncTask::new_no_op(),
         };
 
@@ -911,6 +908,10 @@ impl Playlist {
     }
 
     pub fn play_selected(&mut self) -> ComponentEffect<Self> {
+        if self.list.get_list_iter().count() == 0 {
+            return AsyncTask::new_no_op();
+        }
+
         let actual_index = self.visual_to_actual_index(self.cur_selected);
         let Some(id) = self.get_id_from_index(actual_index) else {
             return AsyncTask::new_no_op();
@@ -919,17 +920,19 @@ impl Playlist {
     }
 
     pub fn delete_selected(&mut self) -> ComponentEffect<Self> {
-        let mut return_task = AsyncTask::new_no_op();
-        let actual_index = self.visual_to_actual_index(self.cur_selected);
+        // FIX: Don't delete if search is active but has no results
+        if !self.search_text.is_empty() && self.search_indices.is_empty() {
+            return AsyncTask::new_no_op();
+        }
 
-        let list_len = self.list.get_list_iter().count();
-        if actual_index >= list_len {
-            error!(
-                "Attempted to delete invalid index {} (list len {})",
-                actual_index, list_len
-            );
+        let mut return_task = AsyncTask::new_no_op();
+
+        if self.list.get_list_iter().count() == 0 {
             return return_task;
         }
+
+        let visual_index_before = self.cur_selected;
+        let actual_index = self.visual_to_actual_index(visual_index_before);
 
         if let Some(cur_playing_id) = self.get_cur_playing_id() {
             if Some(actual_index) == self.get_cur_playing_index() {
@@ -938,11 +941,26 @@ impl Playlist {
             }
         }
 
+        // Delete from main list first
+        self.list.remove_song_index(actual_index);
+
+        // Rebuild search to ensure accuracy
+        if !self.search_text.is_empty() {
+            self.update_search_indices();
+            self.cur_selected = if self.search_indices.is_empty() {
+                0
+            } else {
+                visual_index_before.min(self.search_indices.len() - 1)
+            };
+        } else {
+            let new_max = self.list.get_list_iter().count().saturating_sub(1);
+            self.cur_selected = self.cur_selected.min(new_max);
+        }
+
+        // Adjust shuffle indices
         if self.shuffle_enabled {
-            if let Some(pos_in_shuffle) =
-                self.shuffle_indices.iter().position(|&i| i == actual_index)
-            {
-                self.shuffle_indices.remove(pos_in_shuffle);
+            if let Some(pos) = self.shuffle_indices.iter().position(|&i| i == actual_index) {
+                self.shuffle_indices.remove(pos);
             }
             for idx in &mut self.shuffle_indices {
                 if *idx > actual_index {
@@ -951,25 +969,7 @@ impl Playlist {
             }
         }
 
-        if self.search_enabled {
-            if let Some(pos_in_search) = self.search_indices.iter().position(|&i| i == actual_index)
-            {
-                self.search_indices.remove(pos_in_search);
-            }
-            for idx in &mut self.search_indices {
-                if *idx > actual_index {
-                    *idx = idx.saturating_sub(1);
-                }
-            }
-            self.update_search_indices();
-        }
-
-        self.list.remove_song_index(actual_index);
-
-        let new_max = self.get_max_visual_index();
-        if self.cur_selected > new_max {
-            self.cur_selected = new_max;
-        }
+        return_task = return_task.push(self.regenerate_downloads_for_current());
 
         return_task
     }
@@ -993,15 +993,23 @@ impl Playlist {
 
             self.generate_shuffle_indices();
 
-            if self.get_cur_playing_id().is_some() {
-                self.cur_selected = 0;
+            if let (Some(_current_id), Some(playing_idx)) =
+                (self.get_cur_playing_id(), self.get_cur_playing_index())
+            {
+                if let Some(shuffled_pos) =
+                    self.shuffle_indices.iter().position(|&i| i == playing_idx)
+                {
+                    self.cur_selected = shuffled_pos;
+                }
+            } else {
+                self.cur_selected = 0.min(self.get_max_visual_index());
             }
         } else {
-            self.shuffle_indices.clear();
             if let Some(playing_idx) = self.get_cur_playing_index() {
                 self.cur_selected =
                     playing_idx.min(self.list.get_list_iter().count().saturating_sub(1));
             }
+            self.shuffle_indices.clear();
         }
 
         self.regenerate_downloads_for_current()
@@ -1018,7 +1026,7 @@ impl Playlist {
 
         let mut rng = StdRng::seed_from_u64(self.shuffle_seed);
         for i in (1..len).rev() {
-            let j = rng.random_range(0..=i);
+            let j = rng.gen_range(0..=i);
             indices.swap(i, j);
         }
 
@@ -1098,38 +1106,39 @@ impl Playlist {
             .collect();
     }
 
+    // FIX: When search is active, ignore shuffle and use search_indices directly
     fn visual_to_actual_index(&self, visual_index: usize) -> usize {
         let list_len = self.list.get_list_iter().count();
         if list_len == 0 {
             return 0;
         }
 
-        let base_index = if !self.search_text.is_empty() && !self.search_indices.is_empty() {
-            self.search_indices
-                .get(visual_index)
-                .copied()
-                .unwrap_or_else(|| {
-                    if self.search_indices.is_empty() {
-                        0
-                    } else {
-                        self.search_indices[self.search_indices.len() - 1]
-                    }
-                })
-        } else {
-            visual_index.min(list_len - 1)
-        };
+        // Search mode: use original list order, ignore shuffle
+        if !self.search_text.is_empty() {
+            if self.search_indices.is_empty() {
+                return 0;
+            }
+            let clamped = visual_index.min(self.search_indices.len() - 1);
+            return self.search_indices[clamped];
+        }
 
-        if self.shuffle_enabled
-            && base_index < self.shuffle_indices.len()
-            && !self.shuffle_indices.is_empty()
-        {
-            self.shuffle_indices[base_index]
+        // No search: apply shuffle if enabled
+        let base_index = visual_index.min(list_len - 1);
+        if self.shuffle_enabled && !self.shuffle_indices.is_empty() {
+            self.shuffle_indices[base_index.min(self.shuffle_indices.len() - 1)]
         } else {
             base_index.min(list_len - 1)
         }
     }
 
+    // FIX: When search is active, ignore shuffle
     fn actual_to_visual_index(&self, actual_index: usize) -> Option<usize> {
+        // Search mode: find position in search results directly
+        if !self.search_text.is_empty() {
+            return self.search_indices.iter().position(|&i| i == actual_index);
+        }
+
+        // No search: apply shuffle mapping
         let shuffled_pos = if self.shuffle_enabled && !self.shuffle_indices.is_empty() {
             self.shuffle_indices
                 .iter()
@@ -1138,109 +1147,51 @@ impl Playlist {
             actual_index
         };
 
-        if !self.search_text.is_empty() && !self.search_indices.is_empty() {
-            self.search_indices.iter().position(|&i| i == shuffled_pos)
-        } else {
-            Some(shuffled_pos)
-        }
+        Some(shuffled_pos)
     }
 
-    fn get_next_song_id(&self, current_id: ListSongID) -> Option<ListSongID> {
-        let current_actual_index = self.get_index_from_id(current_id)?;
+    fn get_next_song_id(&self, _current_id: ListSongID) -> Option<ListSongID> {
+        let current_visual = self
+            .get_cur_playing_index()
+            .and_then(|idx| self.actual_to_visual_index(idx))?;
 
-        let current_shuffled_pos = if self.shuffle_enabled && !self.shuffle_indices.is_empty() {
-            self.shuffle_indices
-                .iter()
-                .position(|&i| i == current_actual_index)?
-        } else {
-            current_actual_index
-        };
-
-        let current_visual_pos = if !self.search_text.is_empty() && !self.search_indices.is_empty()
-        {
-            self.search_indices
-                .iter()
-                .position(|&i| i == current_shuffled_pos)?
-        } else {
-            current_shuffled_pos
-        };
-
-        let next_visual_pos = current_visual_pos.saturating_add(1);
-
-        let next_shuffled_pos = if !self.search_text.is_empty() && !self.search_indices.is_empty() {
-            self.search_indices.get(next_visual_pos).copied()?
-        } else {
-            next_visual_pos
-        };
-
-        let next_actual_index = if self.shuffle_enabled && !self.shuffle_indices.is_empty() {
-            self.shuffle_indices.get(next_shuffled_pos).copied()?
-        } else {
-            next_shuffled_pos
-        };
-
-        self.get_id_from_index(next_actual_index)
-    }
-
-    fn get_prev_song_id(&self, current_id: ListSongID) -> Option<ListSongID> {
-        let current_actual_index = self.get_index_from_id(current_id)?;
-
-        let current_shuffled_pos = if self.shuffle_enabled && !self.shuffle_indices.is_empty() {
-            self.shuffle_indices
-                .iter()
-                .position(|&i| i == current_actual_index)?
-        } else {
-            current_actual_index
-        };
-
-        let current_visual_pos = if !self.search_text.is_empty() && !self.search_indices.is_empty()
-        {
-            self.search_indices
-                .iter()
-                .position(|&i| i == current_shuffled_pos)?
-        } else {
-            current_shuffled_pos
-        };
-
-        if current_visual_pos == 0 {
+        if current_visual >= self.get_max_visual_index() {
             return None;
         }
 
-        let prev_visual_pos = current_visual_pos.saturating_sub(1);
-
-        let prev_shuffled_pos = if !self.search_text.is_empty() && !self.search_indices.is_empty() {
-            self.search_indices.get(prev_visual_pos).copied()?
-        } else {
-            prev_visual_pos
-        };
-
-        let prev_actual_index = if self.shuffle_enabled && !self.shuffle_indices.is_empty() {
-            self.shuffle_indices.get(prev_shuffled_pos).copied()?
-        } else {
-            prev_shuffled_pos
-        };
-
-        self.get_id_from_index(prev_actual_index)
+        let next_visual = current_visual.saturating_add(1);
+        let next_actual = self.visual_to_actual_index(next_visual);
+        self.get_id_from_index(next_actual)
     }
 
+    fn get_prev_song_id(&self, _current_id: ListSongID) -> Option<ListSongID> {
+        let current_visual = self
+            .get_cur_playing_index()
+            .and_then(|idx| self.actual_to_visual_index(idx))?;
+
+        if current_visual == 0 {
+            return None;
+        }
+
+        let prev_visual = current_visual.saturating_sub(1);
+        let prev_actual = self.visual_to_actual_index(prev_visual);
+        self.get_id_from_index(prev_actual)
+    }
+
+    // FIX: When search is active, ignore shuffle
     fn get_max_visual_index(&self) -> usize {
-        let base_count = self.list.get_list_iter().count();
-
-        if base_count == 0 {
-            return 0;
-        }
-
-        if !self.search_text.is_empty() {
-            if self.search_indices.is_empty() {
-                0
-            } else {
-                self.search_indices.len() - 1
-            }
-        } else if self.shuffle_enabled && !self.shuffle_indices.is_empty() {
-            self.shuffle_indices.len() - 1
+        let count = if !self.search_text.is_empty() {
+            // Search mode: count of matching results
+            self.search_indices.len()
+        } else if self.shuffle_enabled {
+            // Shuffle mode: count of shuffled items
+            self.shuffle_indices.len()
         } else {
-            base_count - 1
-        }
+            // Normal mode: full list count
+            self.list.get_list_iter().count()
+        };
+
+        count.saturating_sub(1)
     }
 
     fn cancel_all_downloads(&self) {
@@ -1270,7 +1221,7 @@ impl Playlist {
     }
 
     fn get_current_download_scope(&self) -> Vec<(ListSongID, DownloadTask)> {
-        let mut scope = Vec::new();
+        let mut scope: Vec<(ListSongID, DownloadTask)> = Vec::new();
 
         if let Some(current_id) = self.get_cur_playing_id() {
             if let Some(song_index) = self.get_index_from_id(current_id) {
