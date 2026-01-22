@@ -710,18 +710,18 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key(AppAction::SeekBack),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(1)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('1')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::ToggleHelp,
                 KeyActionVisibility::Global,
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(10)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('q')),
             KeyActionTree::new_key_with_visibility(AppAction::Quit, KeyActionVisibility::Global),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(12)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::ViewLogs,
                 KeyActionVisibility::Global,
@@ -743,7 +743,7 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
 fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(5)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('5')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(ViewBrowser),
                 KeyActionVisibility::Global,
@@ -774,14 +774,14 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
 fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(5)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('5')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Browser(BrowserAction::ViewPlaylist),
                 KeyActionVisibility::Global,
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(2)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('2')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Browser(BrowserAction::Search),
                 KeyActionVisibility::Global,
@@ -792,7 +792,7 @@ fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key(AppAction::Browser(BrowserAction::Left)),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(6)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('6')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Browser(BrowserAction::ChangeSearchType),
                 KeyActionVisibility::Global,
@@ -839,14 +839,14 @@ fn default_browser_search_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActio
 fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(3)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('3')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserArtistSongs(BrowserArtistSongsAction::Filter),
                 KeyActionVisibility::Global,
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(4)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('4')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserArtistSongs(BrowserArtistSongsAction::Sort),
                 KeyActionVisibility::Global,
@@ -901,14 +901,14 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
 fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(3)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('3')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserPlaylistSongs(BrowserPlaylistSongsAction::Filter),
                 KeyActionVisibility::Global,
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(4)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('4')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserPlaylistSongs(BrowserPlaylistSongsAction::Sort),
                 KeyActionVisibility::Global,
@@ -951,14 +951,14 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
 fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(3)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('3')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserSongs(BrowserSongsAction::Filter),
                 KeyActionVisibility::Global,
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(4)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('4')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserSongs(BrowserSongsAction::Sort),
                 KeyActionVisibility::Global,
@@ -1008,7 +1008,7 @@ fn default_help_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(1)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('1')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Help(HelpAction::Close),
                 KeyActionVisibility::Global,
@@ -1033,7 +1033,7 @@ fn default_sort_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new(crossterm::event::KeyCode::F(4), KeyModifiers::ALT),
+            Keybind::new(crossterm::event::KeyCode::Char('4'), KeyModifiers::ALT),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Sort(SortAction::ClearSort),
                 KeyActionVisibility::Global,
@@ -1047,7 +1047,7 @@ fn default_sort_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(4)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('4')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Sort(SortAction::Close),
                 KeyActionVisibility::Global,
@@ -1065,7 +1065,7 @@ fn default_filter_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(3)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('3')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Filter(FilterAction::Close),
                 KeyActionVisibility::Global,
@@ -1079,7 +1079,7 @@ fn default_filter_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new(crossterm::event::KeyCode::F(3), KeyModifiers::ALT),
+            Keybind::new(crossterm::event::KeyCode::Char('3'), KeyModifiers::ALT),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Filter(FilterAction::ClearFilter),
                 KeyActionVisibility::Global,
@@ -1122,7 +1122,7 @@ fn default_text_entry_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> 
 fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(5)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('5')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Log(LoggerAction::ViewBrowser),
                 KeyActionVisibility::Global,
