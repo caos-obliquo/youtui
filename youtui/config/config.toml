@@ -1,51 +1,75 @@
-# Example config.toml file for youtui containing the application defaults.
+# Vim-style config.toml for youtui
+# Based on ncspot keybindings where possible through config alone
+
 auth_type = "Browser"
 downloader_type = "Native"
 yt_dlp_command = "yt-dlp"
 
-# Global keybinds
+# Global keybinds - vim style navigation and controls
 [keybinds.global]
+# Volume controls
 "+" = "vol_up"
 "-" = "vol_down"
+"]" = "vol_up"      # ncspot: increase 5%
+"[" = "vol_down"    # ncspot: decrease 5%
+
+# Playback controls
 ">" = "next_song"
 "<" = "prev_song"
-"]" = "seek_forward"
-"[" = "seek_back"
-F1 = {action = "toggle_help", visibility = "global"}
-F10 = {action = "quit", visibility = "global"}
-F12 = {action = "view_logs", visibility = "global"}
+"." = "seek_forward"
+"," = "seek_back"
 space = {action = "play_pause", visibility = "global"}
+
+# UI navigation
+"1" = {action = "toggle_help", visibility = "global"}
+"2" = {action = "browser.search", visibility = "global"}
+"5" = {action = "browser.view_playlist", visibility = "global"}
+q = {action = "quit", visibility = "global"}
+l = {action = "view_logs", visibility = "global"}
 C-c = "quit"
 
-# Global keybind mode names
+# Mode names
 [mode_names.global]
 
+# Playlist keybinds
 [keybinds.playlist]
-F5 = {action = "playlist.view_browser", visibility = "global"}
+"5" = {action = "playlist.view_browser", visibility = "global"}
 enter.enter = "playlist.play_selected"
 enter.d = "playlist.delete_selected"
 enter.D = "playlist.delete_all"
+space.enter = "playlist.play_selected"  # Alternative
+space.d = "playlist.delete_selected"
+space.D = "playlist.delete_all"
 
 [mode_names.playlist]
 enter = "Playlist Action"
+space = "Playlist Action"
 
+# Browser keybinds - vim navigation
 [keybinds.browser]
-F5 = {action = "browser.view_playlist", visibility = "global"}
-F2 = {action = "browser.search", visibility = "global"}
-left = "browser.left"
-right = "browser.right"
-F6 = {action = "browser.change_search_type", visibility = "global"}
+"5" = {action = "browser.view_playlist", visibility = "global"}
+"2" = {action = "browser.search", visibility = "global"}
+"6" = {action = "browser.change_search_type", visibility = "global"}
+# Vim motions for left/right
+left = "no_op"
+right = "no_op"
+h = "browser.left"
+l = "browser.right"
 
 [keybinds.browser_artists]
 enter = "browser_artists.display_selected_artist_albums"
 
+# Browser search - vim navigation
 [keybinds.browser_search]
-down = "browser_search.next_search_suggestion"
-up = "browser_search.prev_search_suggestion"
+down = "no_op"
+up = "no_op"
+j = "browser_search.next_search_suggestion"
+k = "browser_search.prev_search_suggestion"
 
+# Artist songs - vim style
 [keybinds.browser_artist_songs]
-F3 = {action = "browser_artist_songs.filter", visibility = "global"}
-F4 = {action = "browser_artist_songs.sort", visibility = "global"}
+"3" = {action = "browser_artist_songs.filter", visibility = "global"}
+"4" = {action = "browser_artist_songs.sort", visibility = "global"}
 enter.enter = "browser_artist_songs.play_song"
 enter.p = "browser_artist_songs.play_songs"
 enter.a = "browser_artist_songs.play_album"
@@ -59,9 +83,10 @@ enter = "Play"
 [keybinds.browser_playlists]
 enter = "browser_playlists.display_selected_playlist"
 
+# Playlist songs - vim style
 [keybinds.browser_playlist_songs]
-F3 = {action = "browser_playlist_songs.filter", visibility = "global"}
-F4 = {action = "browser_playlist_songs.sort", visibility = "global"}
+"3" = {action = "browser_playlist_songs.filter", visibility = "global"}
+"4" = {action = "browser_playlist_songs.sort", visibility = "global"}
 enter.enter = "browser_playlist_songs.play_song"
 enter.p = "browser_playlist_songs.play_songs"
 enter.space = "browser_playlist_songs.add_song_to_playlist"
@@ -70,9 +95,10 @@ enter.P = "browser_playlist_songs.add_songs_to_playlist"
 [mode_names.browser_playlist_songs]
 enter = "Play"
 
+# Songs browser - vim style
 [keybinds.browser_songs]
-F3 = {action = "browser_songs.filter", visibility = "global"}
-F4 = {action = "browser_songs.sort", visibility = "global"}
+"3" = {action = "browser_songs.filter", visibility = "global"}
+"4" = {action = "browser_songs.sort", visibility = "global"}
 enter.enter = "browser_songs.play_song"
 enter.p = "browser_songs.play_songs"
 enter.space = "browser_songs.add_song_to_playlist"
@@ -81,46 +107,67 @@ enter.P = "browser_songs.add_songs_to_playlist"
 [mode_names.browser_songs]
 enter = "Play"
 
+# Help screen
 [keybinds.help]
-F1 = {action = "help.close", visibility = "global"}
+"1" = {action = "help.close", visibility = "global"}
 esc = {action = "help.close", visibility = "hidden"}
+q = {action = "help.close", visibility = "hidden"}
 
+# Filter - vim style
 [keybinds.filter]
 esc = {action = "filter.close", visibility = "hidden"}
-F3 = {action = "filter.close", visibility = "global"}
+"3" = {action = "filter.close", visibility = "global"}
 Enter = {action = "filter.apply", visibility = "global"}
-A-F3 = {action = "filter.clear_filter", visibility = "global"}
+A-"3" = {action = "filter.clear_filter", visibility = "global"}
 
+# Sort - vim style
 [keybinds.sort]
 enter = {action = "sort.sort_selected_asc", visibility = "global"}
 A-enter = {action = "sort.sort_selected_desc", visibility = "global"}
-A-F4 = {action = "sort.clear_sort", visibility = "global"}
+A-"4" = {action = "sort.clear_sort", visibility = "global"}
 esc = {action = "sort.close", visibility = "hidden"}
-F4 = {action = "sort.close", visibility = "global"}
+"4" = {action = "sort.close", visibility = "global"}
 
+# Log viewer
 [keybinds.log]
-F5 = {action = "log.view_browser", visibility = "global"}
+"5" = {action = "log.view_browser", visibility = "global"}
 S-left = "log.reduce_captured"
 S-right = "log.increase_captured"
 left = "log.reduce_shown"
 right = "log.increase_shown"
-up = "log.up"
-down = "log.down"
+# Vim navigation
+up = "no_op"
+down = "no_op"
+k = "log.up"
+j = "log.down"
+C-u = "log.page_up"
+C-d = "log.page_down"
 pageup = "log.page_up"
 pagedown = "log.page_down"
+# Other log controls
 t = "log.toggle_hide_filtered"
 esc = "log.exit_page_mode"
 f = "log.toggle_target_focus"
 h = "log.toggle_target_selector"
 
+# Text entry (search, etc)
 [keybinds.text_entry]
 enter = {action = "text_entry.submit", visibility = "hidden"}
 left = {action = "text_entry.left", visibility = "hidden"}
 right = {action = "text_entry.right", visibility = "hidden"}
 backspace = {action = "text_entry.backspace", visibility = "hidden"}
 
+# List navigation - full vim motions
 [keybinds.list]
-up = {action = "list.up", visibility = "hidden"}
-down = {action = "list.down", visibility = "hidden"}
-pageup = "list.page_up"  
-pagedown = "list.page_down"  
+# Disable default arrow keys
+up = "no_op"
+down = "no_op"
+pageup = "no_op"
+pagedown = "no_op"
+# Vim motions
+k = {action = "list.up", visibility = "hidden"}
+j = {action = "list.down", visibility = "hidden"}
+C-b = "list.page_up"    # Page up (vim style)
+C-f = "list.page_down"  # Page down (vim style)
+C-u = "list.page_up"    # Alternative page up
+C-d = "list.page_down"  # Alternative page down

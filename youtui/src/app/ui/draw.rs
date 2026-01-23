@@ -23,7 +23,7 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             Constraint::Length(5),
         ])
         .areas(f.area());
-    //     //     header::draw_header(f, w, header_chunk);
+    header::draw_header(f, w, header_chunk);
     let context_selected = !w.help.shown && !w.key_pending();
     match w.context {
         WindowContext::Browser => {

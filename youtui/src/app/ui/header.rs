@@ -24,14 +24,34 @@ pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
 
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     let keybinds = get_global_keybinds_as_readable_iter(w.get_active_keybinds(&w.config));
-
-    let help_string = Line::from_iter(keybinds.flat_map(
+    
+    // Filter to show ONLY vim motion keybindings
+    let help_string = Line::from_iter(keybinds.filter_map(
         |DisplayableKeyAction {
              keybinds,
              description,
              ..
          }| {
-            vec![
+            // Only show vim-style navigation keys
+            let is_vim_key = keybinds == "j" || 
+                            keybinds == "k" || 
+                            keybinds.starts_with("C-") || // Ctrl combinations (C-h, C-l, C-d, C-u, C-f, C-b)
+                            keybinds == "?" ||  // Help
+                            keybinds == "0" ||  // Logs
+                            keybinds == "1" ||  // Playlist
+                            keybinds == "2" ||  // Search
+                            keybinds == "3" ||  // Filter
+                            keybinds == "4" ||  // Sort
+                            keybinds == "5" ||  // Switch view
+                            keybinds == "6" ||  // Change search type
+                            keybinds == "q" ||  // Quit
+                            keybinds == "space"; // Play/pause
+            
+            if !is_vim_key {
+                return None;
+            }
+            
+            Some(vec![
                 Span::styled(
                     keybinds,
                     Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
@@ -39,22 +59,20 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
                 Span::raw(" "),
                 Span::raw(description),
                 Span::raw(" "),
-            ]
+            ])
         },
-    ));
-    let commands_block = Block::default().borders(Borders::ALL).title("Commands");
+    ).flatten());
+    
+    let commands_block = Block::default().borders(Borders::ALL).title("Vim Commands");
     let commands_widget = Paragraph::new(help_string).wrap(Wrap { trim: true });
+    
     // Only render the tab menu if Browser is selected.
-    // Ideally, this would be less hardcoded - ie, YoutuiWindow could implement a
-    // trait like OptDelegateHasTabs that allows you to get an Option<&dyn
-    // HasTabs> depending on which context pane is selected.
-    // However, HasTabs is not currently dyn compatible so I have stuck with this
-    // approach for now.
     if !matches!(w.context, WindowContext::Browser) {
         f.render_widget(commands_widget, commands_block.inner(chunk));
         f.render_widget(commands_block, chunk);
         return;
     }
+    
     let title = w.browser.tabs_block_title();
     let items = w.browser.tab_items();
     let selected_item = w.browser.selected_tab_idx();
@@ -62,12 +80,14 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     let tabs_widget = crate::widgets::TabGrid::new_with_max_rows(items, TAB_ROWS)
         .select(selected_item)
         .highlight_style(Style::new().fg(BUTTON_FG_COLOUR).bg(BUTTON_BG_COLOUR));
+    
     let [commands_chunk, tabs_chunk] = Layout::horizontal([
         Constraint::Min(0),
         // Add two to accommodate block
         Constraint::Max(tabs_widget.required_width().try_into().unwrap_or(u16::MAX) + 2),
     ])
     .areas(chunk);
+    
     f.render_widget(commands_widget, commands_block.inner(commands_chunk));
     f.render_widget(commands_block, commands_chunk);
     f.render_widget(tabs_widget, tabs_block.inner(tabs_chunk));
