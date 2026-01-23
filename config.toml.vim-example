@@ -1,0 +1,180 @@
+# Vim-style config.toml for youtui
+# Based on ncspot keybindings where possible through config alone
+# Minimal UI - header hidden, use '?' to view keybindings
+
+auth_type = "Browser"
+downloader_type = "Native"
+yt_dlp_command = "yt-dlp"
+
+# Global keybinds - vim style navigation and controls
+[keybinds.global]
+# Volume controls
+"+" = "vol_up"
+"-" = "vol_down"
+"]" = "vol_up"      # ncspot: increase 5%
+"[" = "vol_down"    # ncspot: decrease 5%
+
+# Playback controls
+">" = "next_song"
+"<" = "prev_song"
+"." = "seek_forward"
+"," = "seek_back"
+space = {action = "play_pause", visibility = "global"}
+
+# UI navigation
+"?" = {action = "toggle_help", visibility = "global"}
+"0" = {action = "view_logs", visibility = "global"}
+"1" = {action = "playlist.view_browser", visibility = "global"}
+"2" = {action = "browser.search", visibility = "global"}
+"5" = {action = "browser.view_playlist", visibility = "global"}
+q = {action = "quit", visibility = "global"}
+l = "no_op"  # Disable l to prevent accidental log opening
+C-c = "quit"
+
+# Mode names
+[mode_names.global]
+
+# Playlist keybinds
+[keybinds.playlist]
+"5" = {action = "playlist.view_browser", visibility = "global"}
+enter.enter = "playlist.play_selected"
+enter.d = "playlist.delete_selected"
+enter.D = "playlist.delete_all"
+space.enter = "playlist.play_selected"  # Alternative
+space.d = "playlist.delete_selected"
+space.D = "playlist.delete_all"
+
+[mode_names.playlist]
+enter = "Playlist Action"
+space = "Playlist Action"
+
+# Browser keybinds - vim navigation
+[keybinds.browser]
+"5" = {action = "browser.view_playlist", visibility = "global"}
+"2" = {action = "browser.search", visibility = "global"}
+"6" = {action = "browser.change_search_type", visibility = "global"}
+# Vim motions for left/right between panels
+left = "no_op"
+right = "no_op"
+C-h = {action = "browser.left", visibility = "global"}
+C-l = {action = "browser.right", visibility = "global"}
+
+[keybinds.browser_artists]
+enter = "browser_artists.display_selected_artist_albums"
+j = {action = "list.down", visibility = "global"}
+k = {action = "list.up", visibility = "global"}
+
+# Browser search - vim navigation
+[keybinds.browser_search]
+down = "no_op"
+up = "no_op"
+j = {action = "browser_search.next_search_suggestion", visibility = "global"}
+k = {action = "browser_search.prev_search_suggestion", visibility = "global"}
+
+# Artist songs - vim style
+[keybinds.browser_artist_songs]
+"3" = {action = "browser_artist_songs.filter", visibility = "global"}
+"4" = {action = "browser_artist_songs.sort", visibility = "global"}
+enter.enter = "browser_artist_songs.play_song"
+enter.p = "browser_artist_songs.play_songs"
+enter.a = "browser_artist_songs.play_album"
+enter.space = "browser_artist_songs.add_song_to_playlist"
+enter.P = "browser_artist_songs.add_songs_to_playlist"
+enter.A = "browser_artist_songs.add_album_to_playlist"
+
+[mode_names.browser_artist_songs]
+enter = "Play"
+
+[keybinds.browser_playlists]
+enter = "browser_playlists.display_selected_playlist"
+j = {action = "list.down", visibility = "global"}
+k = {action = "list.up", visibility = "global"}
+
+# Playlist songs - vim style
+[keybinds.browser_playlist_songs]
+"3" = {action = "browser_playlist_songs.filter", visibility = "global"}
+"4" = {action = "browser_playlist_songs.sort", visibility = "global"}
+enter.enter = "browser_playlist_songs.play_song"
+enter.p = "browser_playlist_songs.play_songs"
+enter.space = "browser_playlist_songs.add_song_to_playlist"
+enter.P = "browser_playlist_songs.add_songs_to_playlist"
+
+[mode_names.browser_playlist_songs]
+enter = "Play"
+
+# Songs browser - vim style
+[keybinds.browser_songs]
+"3" = {action = "browser_songs.filter", visibility = "global"}
+"4" = {action = "browser_songs.sort", visibility = "global"}
+enter.enter = "browser_songs.play_song"
+enter.p = "browser_songs.play_songs"
+enter.space = "browser_songs.add_song_to_playlist"
+enter.P = "browser_songs.add_songs_to_playlist"
+
+[mode_names.browser_songs]
+enter = "Play"
+
+# Help screen
+[keybinds.help]
+"?" = {action = "help.close", visibility = "global"}
+esc = {action = "help.close", visibility = "hidden"}
+q = {action = "help.close", visibility = "hidden"}
+
+# Filter - vim style
+[keybinds.filter]
+esc = {action = "filter.close", visibility = "hidden"}
+"3" = {action = "filter.close", visibility = "global"}
+Enter = {action = "filter.apply", visibility = "global"}
+A-3 = {action = "filter.clear_filter", visibility = "global"}
+
+# Sort - vim style
+[keybinds.sort]
+enter = {action = "sort.sort_selected_asc", visibility = "global"}
+A-enter = {action = "sort.sort_selected_desc", visibility = "global"}
+A-4 = {action = "sort.clear_sort", visibility = "global"}
+esc = {action = "sort.close", visibility = "hidden"}
+"4" = {action = "sort.close", visibility = "global"}
+
+# Log viewer
+[keybinds.log]
+"5" = {action = "log.view_browser", visibility = "global"}
+S-left = "log.reduce_captured"
+S-right = "log.increase_captured"
+left = "log.reduce_shown"
+right = "log.increase_shown"
+# Vim navigation
+up = "no_op"
+down = "no_op"
+k = {action = "log.up", visibility = "global"}
+j = {action = "log.down", visibility = "global"}
+C-u = {action = "log.page_up", visibility = "global"}
+C-d = {action = "log.page_down", visibility = "global"}
+pageup = "log.page_up"
+pagedown = "log.page_down"
+# Other log controls
+t = "log.toggle_hide_filtered"
+esc = "log.exit_page_mode"
+f = "log.toggle_target_focus"
+h = "log.toggle_target_selector"
+
+# Text entry (search, etc)
+[keybinds.text_entry]
+enter = {action = "text_entry.submit", visibility = "hidden"}
+left = {action = "text_entry.left", visibility = "hidden"}
+right = {action = "text_entry.right", visibility = "hidden"}
+backspace = {action = "text_entry.backspace", visibility = "hidden"}
+
+# List navigation - full vim motions
+[keybinds.list]
+# Disable default arrow keys
+up = "no_op"
+down = "no_op"
+pageup = "no_op"
+pagedown = "no_op"
+# Vim motions
+k = {action = "list.up", visibility = "global"}
+j = {action = "list.down", visibility = "global"}
+C-b = {action = "list.page_up", visibility = "global"}
+C-f = {action = "list.page_down", visibility = "global"}
+C-u = {action = "list.page_up", visibility = "global"}
+C-d = {action = "list.page_down", visibility = "global"}
