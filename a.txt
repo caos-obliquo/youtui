@@ -1,3 +1,4 @@
+caos@dwl-btw ~/builds/youtui$ cat youtui/src/app/ui/playlist.rs
 use super::action::AppAction;
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
@@ -1050,3 +1051,5 @@ impl Playlist {
         self.play_status = PlayState::Stopped
     }
 }
+caos@dwl-btw ~/builds/youtui$
+
