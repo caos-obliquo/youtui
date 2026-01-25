@@ -43,7 +43,7 @@ tokio-stream = { version = "0.1.18", features = ["fs"] }
 async_cell = "0.2.3"
 bytes = "1.11.0"
 anyhow = "1.0.100"
-chrono = { version = "0.4.42", features = ["serde"] }
+chrono = "0.4"
 souvlaki = { version = "0.8.3", default-features = false, features = [
   "use_zbus",
 ] }

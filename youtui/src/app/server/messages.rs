@@ -1,4 +1,5 @@
 use super::ArcServer;
+use ytmapi_rs::query::playlist::PrivacyStatus;
 use super::api::GetArtistSongsProgressUpdate;
 use super::player::{DecodedInMemSong, Player};
 use super::song_downloader::{DownloadProgressUpdate, InMemSong};
@@ -36,6 +37,12 @@ pub struct GetSearchSuggestions(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchArtists(pub String);
 #[derive(Debug, PartialEq)]
+pub struct CreatePlaylistWithVideos {
+    pub title: String,
+    pub description: Option<String>,
+    pub video_ids: Vec<VideoID<'static>>,
+}
+#[derive(Debug, PartialEq)]
 pub struct SearchSongs(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchPlaylists(pub String);
@@ -45,6 +52,17 @@ pub struct GetArtistSongs(pub ArtistChannelID<'static>);
 pub struct GetPlaylistSongs {
     pub playlist_id: PlaylistID<'static>,
     pub max_songs: usize,
+}
+#[derive(Debug, PartialEq)]
+pub struct CreatePlaylist {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AddSongsToPlaylist {
+    pub playlist_id: PlaylistID<'static>,
+    pub video_ids: Vec<VideoID<'static>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -336,7 +354,23 @@ impl BackendTask<ArcServer> for Pause {
         vec![TaskMetadata::PlayPause]
     }
 }
-
+impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
+    type Output = Result<PlaylistID<'static>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            backend.api.create_playlist_with_videos(
+                self.title,
+                self.description,
+                self.video_ids,
+            ).await
+        }
+    }
+}
 impl BackendStreamingTask<ArcServer> for PlaySong {
     type Output = PlayUpdate<ListSongID>;
     type MetadataType = TaskMetadata;
@@ -392,6 +426,38 @@ impl BackendTask<ArcServer> for GetSongThumbnail {
                 .song_thumbnail_downloader
                 .download_song_thumbnail(self.thumbnail_id, self.thumbnail_url)
                 .await
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for CreatePlaylist {
+    type Output = Result<PlaylistID<'static>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            backend.api.create_playlist(
+                self.name,
+                self.description,
+                PrivacyStatus::Private,
+            ).await
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for AddSongsToPlaylist {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            backend.api.add_playlist_items(self.playlist_id, self.video_ids).await
         }
     }
 }

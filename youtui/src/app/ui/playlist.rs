@@ -2,6 +2,8 @@ use super::action::AppAction;
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
+use crate::app::server::CreatePlaylistWithVideos;
+use ytmapi_rs::common::VideoID;
 use crate::app::server::song_downloader::DownloadProgressUpdateType;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::server::{
@@ -17,7 +19,7 @@ use crate::app::ui::playlist::effect_handlers::{
     HandleAllStopped, HandleAutoplayUpdateOk, HandleGetSongThumbnailError,
     HandleGetSongThumbnailOk, HandlePausePlayResponse, HandlePausedResponse, HandlePlayUpdateError,
     HandlePlayUpdateOk, HandleQueueUpdateOk, HandleResumeResponse, HandleSetSongPlayProgress,
-    HandleSongDownloadProgressUpdate, HandleStopped, HandleVolumeUpdate,
+    HandleSongDownloadProgressUpdate, HandleStopped, HandleVolumeUpdate, HandleSaveQueueOk, HandleSaveQueueError,
 };
 use crate::app::ui::{AppCallback, WindowContext};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
@@ -112,7 +114,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
             PlaylistAction::DeleteSelected => (self.delete_selected(), None),
             PlaylistAction::DeleteAll => (self.delete_all(), None),
             PlaylistAction::CreatePlaylist => (AsyncTask::new_no_op(), None),
-            PlaylistAction::SaveQueueToPlaylist => (AsyncTask::new_no_op(), None),
+            PlaylistAction::SaveQueueToPlaylist => (self.save_queue_to_playlist(), None),
             PlaylistAction::AddSelectedToPlaylist => (AsyncTask::new_no_op(), None),
             PlaylistAction::RenamePlaylist => (AsyncTask::new_no_op(), None),
             PlaylistAction::DeletePlaylist => (AsyncTask::new_no_op(), None),
@@ -726,6 +728,32 @@ impl Playlist {
         };
         self.play_song_id(id)
     }
+    /// Save current queue to a new YouTube Music playlist
+    pub fn save_queue_to_playlist(&mut self) -> ComponentEffect<Self> {
+    if self.list.get_list_iter().len() == 0 {
+        warn!("Queue is empty, nothing to save");
+        return AsyncTask::new_no_op();
+    }
+
+    let playlist_name = format!("Youtui Queue - {}", 
+        chrono::Local::now().format("%Y-%m-%d %H:%M"));
+    
+let video_ids: Vec<VideoID<'static>> = self.list.get_list_iter()
+        .map(|song| song.video_id.clone())
+        .collect();
+
+    AsyncTask::new_future_try(
+        CreatePlaylistWithVideos {
+            title: playlist_name,
+            description: Some("Created from Youtui queue".to_string()),
+            video_ids,
+        },
+        HandleSaveQueueOk,
+        HandleSaveQueueError,
+        None,
+        )
+    }
+
     /// Delete the song under the cursor (from local keypress). If it was
     /// playing, stop it and set PlayState to NotPlaying.
     pub fn delete_selected(&mut self) -> ComponentEffect<Self> {

@@ -41,6 +41,10 @@ pub struct HandleQueueUpdateOk;
 pub struct HandlePlayUpdateError(pub ListSongID);
 #[derive(Debug, PartialEq, Clone)]
 pub struct HandleSongDownloadProgressUpdate;
+#[derive(Debug, PartialEq)]
+pub struct HandleSaveQueueOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleSaveQueueError;
 
 #[derive(Debug, PartialEq)]
 enum PlaylistEffect {
@@ -61,6 +65,8 @@ enum PlaylistEffect {
     },
     SetSongThumbnailError(SongThumbnailID<'static>),
     AddSongThumbnail(SongThumbnail),
+    SaveQueueSuccess,
+    SaveQueueError,
 }
 impl_youtui_task_handler!(HandleStopped, Stopped<ListSongID>, Playlist, |_, input| {
     PlaylistEffect::StopSongID(input)
@@ -182,7 +188,28 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for PlaylistEffect {
             }
             PlaylistEffect::SetSongThumbnailError(msg) => target.list.set_song_thumbnail_error(msg),
             PlaylistEffect::AddSongThumbnail(msg) => target.list.add_song_thumbnail(msg),
+            PlaylistEffect::SaveQueueSuccess => (),
+            PlaylistEffect::SaveQueueError => (),
         }
         AsyncTask::new_no_op()
     }
 }
+
+impl_youtui_task_handler!(
+    HandleSaveQueueOk,
+    ytmapi_rs::common::PlaylistID<'static>,
+    Playlist,
+    |_, input| {
+        tracing::info!("Playlist created successfully: {:?}", input);
+        PlaylistEffect::SaveQueueSuccess
+    }
+);
+impl_youtui_task_handler!(
+    HandleSaveQueueError,
+    anyhow::Error,
+    Playlist,
+    |_, error| {
+        tracing::error!("Failed to save queue to playlist: {}", error);
+        PlaylistEffect::SaveQueueError
+    }
+);

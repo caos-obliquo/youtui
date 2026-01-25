@@ -1,1055 +1,944 @@
-caos@dwl-btw ~/builds/youtui$ cat youtui/src/app/ui/playlist.rs
-use super::action::AppAction;
-use crate::app::component::actionhandler::{
-    Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
-};
-use crate::app::server::song_downloader::DownloadProgressUpdateType;
-use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
-use crate::app::server::{
-    AutoplayDecodedSong, DecodeSong, DownloadSong, GetSongThumbnail, IncreaseVolume, Pause,
-    PausePlay, PlayDecodedSong, QueueDecodedSong, Resume, Seek, SeekTo, Stop, StopAll,
-    TaskMetadata,
-};
-use crate::app::structures::{
-    AlbumArtState, BrowserSongsList, DownloadStatus, ListSong, ListSongDisplayableField,
-    ListSongID, Percentage, PlayState, SongListComponent,
-};
-use crate::app::ui::playlist::effect_handlers::{
-    HandleAllStopped, HandleAutoplayUpdateOk, HandleGetSongThumbnailError,
-    HandleGetSongThumbnailOk, HandlePausePlayResponse, HandlePausedResponse, HandlePlayUpdateError,
-    HandlePlayUpdateOk, HandleQueueUpdateOk, HandleResumeResponse, HandleSetSongPlayProgress,
-    HandleSongDownloadProgressUpdate, HandleStopped, HandleVolumeUpdate,
-};
-use crate::app::ui::{AppCallback, WindowContext};
-use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
-use crate::app::view::{BasicConstraint, DrawableMut, HasTitle, Loadable, TableView};
-use crate::async_rodio_sink::{
-    AllStopped, AutoplayUpdate, PlayUpdate, QueueUpdate, SeekDirection, Stopped, VolumeUpdate,
-};
-use crate::config::Config;
-use crate::config::keymap::Keymap;
-use crate::widgets::ScrollingTableState;
-use async_callback_manager::{AsyncTask, Constraint, TryBackendTaskExt};
-use ratatui::Frame;
-use ratatui::layout::Rect;
-use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::iter;
-use std::option::Option;
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::{error, info, warn};
-use ytmapi_rs::common::Thumbnail;
+caos@dwl-btw ~/builds/youtui$ cargo build --release && cargo run --release
+warning: use of deprecated unit variant `common::LibraryStatusIcon::LibrarySaved`: Future deprecation see https://github.com/nick42d/youtui/issues/271
+   --> ytmapi-rs/src/common.rs:119:32
+    |
+119 |             LibraryStatusIcon::LibrarySaved => {
+    |                                ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
 
-mod effect_handlers;
-#[cfg(test)]
-mod tests;
+warning: use of deprecated unit variant `common::LibraryStatusIcon::LibraryAdd`: Future deprecation see https://github.com/nick42d/youtui/issues/271
+   --> ytmapi-rs/src/common.rs:123:32
+    |
+123 |             LibraryStatusIcon::LibraryAdd => {
+    |                                ^^^^^^^^^^
 
-const SONGS_AHEAD_TO_BUFFER: usize = 3;
-const SONGS_BEHIND_TO_SAVE: usize = 1;
-// How soon to trigger gapless playback
-const GAPLESS_PLAYBACK_THRESHOLD: Duration = Duration::from_secs(1);
-pub const DEFAULT_UI_VOLUME: Percentage = Percentage(50);
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+ --> ytmapi-rs/src/parse/podcasts.rs:2:55
+  |
+2 |     ParseFrom, RUN_TEXT, SECONDARY_SECTION_LIST_ITEM, STRAPLINE_RUNS, TAB_CONTENT,
+  |                                                       ^^^^^^^^^^^^^^
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Playlist {
-    pub list: BrowserSongsList,
-    pub cur_played_dur: Option<Duration>,
-    pub play_status: PlayState,
-    pub queue_status: QueueState,
-    pub volume: Percentage,
-    cur_selected: usize,
-    pub widget_state: ScrollingTableState,
-}
-impl_youtui_component!(Playlist);
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+   --> ytmapi-rs/src/parse/podcasts.rs:277:74
+    |
+277 |         let mut strapline = responsive_header.navigate_pointer(concatcp!(STRAPLINE_RUNS, "/0"))?;
+    |                                                                          ^^^^^^^^^^^^^^
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlaylistAction {
-    ViewBrowser,
-    PlaySelected,
-    DeleteSelected,
-    DeleteAll,
-    CreatePlaylist,
-    SaveQueueToPlaylist,
-    AddSelectedToPlaylist,
-    RenamePlaylist,
-    DeletePlaylist,
-}
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+   --> ytmapi-rs/src/parse/podcasts.rs:237:29
+    |
+237 |             .borrow_pointer(STRAPLINE_RUNS)?
+    |                             ^^^^^^^^^^^^^^
 
-impl Action for PlaylistAction {
-    fn context(&self) -> std::borrow::Cow<'_, str> {
-        "Playlist".into()
-    }
-    fn describe(&self) -> std::borrow::Cow<'_, str> {
-        match self {
-            PlaylistAction::ViewBrowser => "View Browser",
-            PlaylistAction::PlaySelected => "Play Selected",
-            PlaylistAction::DeleteSelected => "Delete Selected",
-            PlaylistAction::DeleteAll => "Delete All",
-            PlaylistAction::CreatePlaylist => "Create New Playlist",
-            PlaylistAction::SaveQueueToPlaylist => "Save Queue to Playlist",
-            PlaylistAction::AddSelectedToPlaylist => "Add to Playlist",
-            PlaylistAction::RenamePlaylist => "Rename Playlist",
-            PlaylistAction::DeletePlaylist => "Delete Playlist",
-        }
-        .into()
-    }
-}
+warning: use of deprecated field `parse::artist::AlbumResult::album_type`: Future deprecation see https://github.com/nick42d/youtui/issues/211
+   --> ytmapi-rs/src/parse/artist.rs:361:9
+    |
+361 |         album_type,
+    |         ^^^^^^^^^^
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum QueueState {
-    NotQueued,
-    Queued(ListSongID),
-}
+warning: `ytmapi-rs` (lib) generated 6 warnings
+warning: variant `Column` is never constructed
+  --> youtui/src/app/view.rs:28:5
+   |
+26 | pub enum TableFilterCommand {
+   |          ------------------ variant in this enum
+27 |     All(Filter),
+28 |     Column { filter: Filter, column: usize },
+   |     ^^^^^^
+   |
+   = note: `TableFilterCommand` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
-impl ActionHandler<PlaylistAction> for Playlist {
-    fn apply_action(&mut self, action: PlaylistAction) -> impl Into<YoutuiEffect<Playlist>> {
-        match action {
-            PlaylistAction::ViewBrowser => (AsyncTask::new_no_op(), Some(self.view_browser())),
-            PlaylistAction::PlaySelected => (self.play_selected(), None),
-            PlaylistAction::DeleteSelected => (self.delete_selected(), None),
-            PlaylistAction::DeleteAll => (self.delete_all(), None),
-            PlaylistAction::CreatePlaylist => (AsyncTask::new_no_op(), None),
-            PlaylistAction::SaveQueueToPlaylist => (AsyncTask::new_no_op(), None),
-            PlaylistAction::AddSelectedToPlaylist => (AsyncTask::new_no_op(), None),
-            PlaylistAction::RenamePlaylist => (AsyncTask::new_no_op(), None),
-            PlaylistAction::DeletePlaylist => (AsyncTask::new_no_op(), None),
-        }
-    }
-}
+warning: variants `NotContains` and `Equal` are never constructed
+  --> youtui/src/app/view.rs:33:5
+   |
+31 | pub enum Filter {
+   |          ------ variants in this enum
+32 |     Contains(FilterString),
+33 |     NotContains(FilterString),
+   |     ^^^^^^^^^^^
+34 |     Equal(FilterString),
+   |     ^^^^^
+   |
+   = note: `Filter` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
 
-impl KeyRouter<AppAction> for Playlist {
-    fn get_all_keybinds<'a>(
-        &self,
-        config: &'a Config,
-    ) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
-        self.get_active_keybinds(config)
-    }
-    fn get_active_keybinds<'a>(
-        &self,
-        config: &'a Config,
-    ) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
-        std::iter::once(&config.keybinds.playlist)
-    }
-}
+warning: variant `CaseSensitive` is never constructed
+  --> youtui/src/app/view.rs:38:5
+   |
+37 | pub enum FilterString {
+   |          ------------ variant in this enum
+38 |     CaseSensitive(String),
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `FilterString` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
 
-impl TextHandler for Playlist {
-    fn is_text_handling(&self) -> bool {
-        false
-    }
-    fn get_text(&self) -> std::option::Option<&str> {
-        None
-    }
-    fn replace_text(&mut self, _text: impl Into<String>) {}
-    fn clear_text(&mut self) -> bool {
-        false
-    }
-    fn handle_text_event_impl(
-        &mut self,
-        _event: &crossterm::event::Event,
-    ) -> Option<ComponentEffect<Self>> {
-        None
-    }
-}
+warning: method `push_filter_command` is never used
+   --> youtui/src/app/view.rs:167:8
+    |
+160 | pub trait AdvancedTableView: TableView {
+    |           ----------------- method in this trait
+...
+167 |     fn push_filter_command(&mut self, filter_command: TableFilterCommand);
+    |        ^^^^^^^^^^^^^^^^^^^
 
-impl DrawableMut for Playlist {
-    fn draw_mut_chunk(&mut self, f: &mut Frame, chunk: Rect, selected: bool, cur_tick: u64) {
-        draw_panel_mut(f, self, chunk, selected, |t, f, chunk| {
-            draw_loadable(f, t, chunk, |t, f, chunk| {
-                Some(draw_table(f, t, chunk, cur_tick))
-            })
-        });
-    }
-}
+warning: method `ticker_gap` is never used
+  --> youtui/src/widgets/scrolling_list.rs:68:12
+   |
+42 | impl<'a, I> ScrollingList<'a, I> {
+   | -------------------------------- method in this implementation
+...
+68 |     pub fn ticker_gap(mut self, ticker_gap: u16) -> Self {
+   |            ^^^^^^^^^^
 
-impl Loadable for Playlist {
-    fn is_loading(&self) -> bool {
-        false
-    }
-}
+warning: associated function `new_with_max_cols` is never used
+  --> youtui/src/widgets/tab_grid.rs:20:12
+   |
+19 | impl<'a> TabGrid<'a> {
+   | -------------------- associated function in this implementation
+20 |     pub fn new_with_max_cols(
+   |            ^^^^^^^^^^^^^^^^^
 
-impl Scrollable for Playlist {
-    fn increment_list(&mut self, amount: isize) {
-        self.cur_selected = self
-            .cur_selected
-            .saturating_add_signed(amount)
-            .min(self.list.get_list_iter().len().saturating_sub(1))
-    }
-    fn is_scrollable(&self) -> bool {
-        true
-    }
-}
+warning: `youtui` (bin "youtui") generated 6 warnings
+    Finished `release` profile [optimized] target(s) in 0.44s
+warning: use of deprecated unit variant `common::LibraryStatusIcon::LibrarySaved`: Future deprecation see https://github.com/nick42d/youtui/issues/271
+   --> ytmapi-rs/src/common.rs:119:32
+    |
+119 |             LibraryStatusIcon::LibrarySaved => {
+    |                                ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
 
-impl TableView for Playlist {
-    fn get_selected_item(&self) -> usize {
-        self.cur_selected
-    }
-    fn get_state(&self) -> &ScrollingTableState {
-        &self.widget_state
-    }
-    fn get_layout(&self) -> &[BasicConstraint] {
-        // Not perfect as this method doesn't know the size of the parent.
-        // TODO: Change the get_layout function to something more appropriate.
-        &[
-            BasicConstraint::Length(3),
-            BasicConstraint::Length(6),
-            BasicConstraint::Length(3),
-            BasicConstraint::Percentage(Percentage(33)),
-            BasicConstraint::Percentage(Percentage(33)),
-            BasicConstraint::Percentage(Percentage(33)),
-            BasicConstraint::Length(9),
-            BasicConstraint::Length(4),
-        ]
-    }
-    fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
-        self.list.get_list_iter().enumerate().map(|(i, ls)| {
-            let first_field = if Some(i) == self.get_cur_playing_index() {
-                match self.play_status {
-                    PlayState::NotPlaying => ">>>".to_string(),
-                    PlayState::Playing(_) => "".to_string(),
-                    PlayState::Paused(_) => "".to_string(),
-                    PlayState::Stopped => ">>>".to_string(),
-                    PlayState::Error(_) => ">>>".to_string(),
-                    PlayState::Buffering(_) => "".to_string(),
-                }
-            } else {
-                (i + 1).to_string()
-            };
-            iter::once(first_field.to_string().into()).chain(ls.get_fields([
-                ListSongDisplayableField::DownloadStatus,
-                ListSongDisplayableField::TrackNo,
-                ListSongDisplayableField::Artists,
-                ListSongDisplayableField::Album,
-                ListSongDisplayableField::Song,
-                ListSongDisplayableField::Duration,
-                ListSongDisplayableField::Year,
-            ]))
-        })
-    }
-    fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        [
-            "p#", "", "t#", "Artist", "Album", "Song", "Duration", "Year",
-        ]
-        .into_iter()
-    }
-    fn get_highlighted_row(&self) -> Option<usize> {
-        self.get_cur_playing_index()
-    }
-    fn get_mut_state(&mut self) -> &mut ScrollingTableState {
-        &mut self.widget_state
-    }
-}
-impl HasTitle for Playlist {
-    fn get_title(&self) -> Cow<'_, str> {
-        format!("Local playlist - {} songs", self.list.get_list_iter().len()).into()
-    }
-}
-impl SongListComponent for Playlist {
-    fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
-        self.list.get_list_iter().nth(idx)
-    }
-}
+warning: use of deprecated unit variant `common::LibraryStatusIcon::LibraryAdd`: Future deprecation see https://github.com/nick42d/youtui/issues/271
+   --> ytmapi-rs/src/common.rs:123:32
+    |
+123 |             LibraryStatusIcon::LibraryAdd => {
+    |                                ^^^^^^^^^^
 
-// Primatives
-impl Playlist {
-    /// When creating a Playlist, an effect is also created.
-    pub fn new() -> (Self, ComponentEffect<Self>) {
-        // Ensure volume is synced with player.
-        let task = AsyncTask::new_future_option(
-            // Since IncreaseVolume responds back with player volume after change, this is a
-            // neat hack.
-            IncreaseVolume(0),
-            HandleVolumeUpdate,
-            Some(Constraint::new_block_same_type()),
-        );
-        let playlist = Playlist {
-            volume: DEFAULT_UI_VOLUME,
-            play_status: PlayState::NotPlaying,
-            list: Default::default(),
-            cur_played_dur: None,
-            cur_selected: 0,
-            queue_status: QueueState::NotQueued,
-            widget_state: Default::default(),
-        };
-        (playlist, task)
-    }
-    /// Add a task to:
-    /// - Stop playback of the song 'song_id', if it is still playing.
-    /// - If stop was succesful, update state.
-    pub fn stop_song_id(&self, song_id: ListSongID) -> ComponentEffect<Self> {
-        AsyncTask::new_future_option(
-            Stop(song_id),
-            HandleStopped,
-            Some(Constraint::new_block_matching_metadata(
-                TaskMetadata::PlayPause,
-            )),
-        )
-    }
-    /// Drop downloads no longer relevant for ID, download new
-    /// relevant downloads, start playing song at ID, set PlayState. If the
-    /// selected song is buffering, stop playback until it's complete.
-    pub fn play_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        // Drop previous songs
-        self.drop_unscoped_from_id(id);
-        // Queue next downloads
-        let mut effect = self.download_upcoming_from_id(id);
-        // Reset duration
-        self.cur_played_dur = None;
-        if let Some(song_index) = self.get_index_from_id(id) {
-            if let DownloadStatus::Downloaded(pointer) = &self
-                .get_song_from_idx(song_index)
-                .expect("Checked previously")
-                .download_status
-            {
-                // This task has the metadata of both DecodeSong and PlaySong and returns
-                // Result<PlayUpdate>.
-                let task = DecodeSong(pointer.clone()).map_stream(PlayDecodedSong(id));
-                let constraint = Some(Constraint::new_block_matching_metadata(
-                    TaskMetadata::PlayingSong,
-                ));
-                let effect = effect.push(AsyncTask::new_stream_try(
-                    task,
-                    HandlePlayUpdateOk,
-                    HandlePlayUpdateError(id),
-                    constraint,
-                ));
-                self.play_status = PlayState::Playing(id);
-                self.queue_status = QueueState::NotQueued;
-                return effect;
-            } else {
-                // Stop current song, but only if next song is buffering.
-                let maybe_effect = self
-                    .get_cur_playing_id()
-                    .map(|cur_id| self.stop_song_id(cur_id));
-                self.play_status = PlayState::Buffering(id);
-                self.queue_status = QueueState::NotQueued;
-                if let Some(stop_effect) = maybe_effect {
-                    effect = effect.push(stop_effect);
-                }
-            }
-        }
-        effect
-    }
-    /// Drop downloads no longer relevant for ID, download new
-    /// relevant downloads, start playing song at ID, set PlayState.
-    pub fn autoplay_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        // Drop previous songs
-        self.drop_unscoped_from_id(id);
-        // Queue next downloads
-        let mut effect = self.download_upcoming_from_id(id);
-        // Reset duration
-        self.cur_played_dur = None;
-        if let Some(song_index) = self.get_index_from_id(id) {
-            if let DownloadStatus::Downloaded(pointer) = &self
-                .get_song_from_idx(song_index)
-                .expect("Checked previously")
-                .download_status
-            {
-                // This task has the metadata of both DecodeSong and AutoplaySong and returns
-                // Result<AutoplayUpdate>.
-                let task = DecodeSong(pointer.clone()).map_stream(AutoplayDecodedSong(id));
-                let effect = effect.push(AsyncTask::new_stream_try(
-                    task,
-                    HandleAutoplayUpdateOk,
-                    HandlePlayUpdateError(id),
-                    None,
-                ));
-                self.play_status = PlayState::Playing(id);
-                self.queue_status = QueueState::NotQueued;
-                return effect;
-            } else {
-                // Stop current song, but only if next song is buffering.
-                let maybe_effect = self
-                    .get_cur_playing_id()
-                    // TODO: Consider how race condition is supposed to be handled with this.
-                    .map(|cur_id| self.stop_song_id(cur_id));
-                self.play_status = PlayState::Buffering(id);
-                self.queue_status = QueueState::NotQueued;
-                if let Some(stop_effect) = maybe_effect {
-                    effect = effect.push(stop_effect);
-                }
-            }
-        };
-        effect
-    }
-    /// Stop playing and clear playlist.
-    pub fn reset(&mut self) -> ComponentEffect<Self> {
-        let mut effect = AsyncTask::new_no_op();
-        // Stop playback, if playing.
-        if let Some(cur_id) = self.get_cur_playing_id() {
-            // TODO: Consider how race condition is supposed to be handled with this.
-            effect = self.stop_song_id(cur_id);
-        }
-        self.clear();
-        effect
-        // XXX: Also need to kill pending download tasks
-        // Alternatively, songs could kill their own download tasks on drop
-        // (RAII).
-    }
-    /// Clear all songs, reset PlayState to NotPlaying, set cur_played_dur to 0.
-    pub fn clear(&mut self) {
-        self.cur_played_dur = None;
-        self.play_status = PlayState::NotPlaying;
-        self.list.clear();
-    }
-    /// If currently playing, play previous song.
-    pub fn play_prev(&mut self) -> ComponentEffect<Self> {
-        let cur = &self.play_status;
-        match cur {
-            PlayState::NotPlaying | PlayState::Stopped => {
-                warn!("Asked to play prev, but not currently playing");
-            }
-            PlayState::Paused(id)
-            | PlayState::Playing(id)
-            | PlayState::Buffering(id)
-            | PlayState::Error(id) => {
-                let prev_song_id = self
-                    .get_index_from_id(*id)
-                    .and_then(|i| i.checked_sub(1))
-                    .and_then(|i| self.get_song_from_idx(i))
-                    .map(|i| i.id);
-                info!("Next song id {:?}", prev_song_id);
-                match prev_song_id {
-                    Some(id) => {
-                        return self.play_song_id(id);
-                    }
-                    None => {
-                        // TODO: Reset song to start if got here.
-                        warn!("No previous song. Doing nothing")
-                    }
-                }
-            }
-        }
-        AsyncTask::new_no_op()
-    }
-    /// Play song at ID, if it was buffering.
-    pub fn handle_song_downloaded(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        if let PlayState::Buffering(target_id) = self.play_status
-            && target_id == id
-        {
-            info!("Received downloaded song {id:?}, now trying to play it.");
-            return self.play_song_id(id);
-        }
-        AsyncTask::new_no_op()
-    }
-    /// Download song at ID, if it is still in the list.
-    pub fn download_song_if_exists(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        let Some(song_index) = self.get_index_from_id(id) else {
-            return AsyncTask::new_no_op();
-        };
-        let song = self
-            .list
-            .get_list_iter_mut()
-            .nth(song_index)
-            .expect("We got the index from the id, so song must exist");
-        // Won't download if already downloaded, or downloading.
-        match song.download_status {
-            DownloadStatus::Downloading(_)
-            | DownloadStatus::Downloaded(_)
-            | DownloadStatus::Queued => return AsyncTask::new_no_op(),
-            _ => (),
-        };
-        // TODO: Consider how to handle race conditions.
-        let effect = AsyncTask::new_stream(
-            DownloadSong(song.video_id.clone(), id),
-            HandleSongDownloadProgressUpdate,
-            None,
-        );
-        song.download_status = DownloadStatus::Queued;
-        effect
-    }
-    /// Update the volume in the UI for immediate visual feedback - response
-    /// will be delayed one tick. Note that this does not actually change the
-    /// volume!
-    // NOTE: could cause some visual race conditions.
-    pub fn increase_volume(&mut self, inc: i8) {
-        self.volume.0 = self.volume.0.saturating_add_signed(inc).clamp(0, 100);
-    }
-    /// Update the volume in the UI for immediate visual feedback - response
-    /// will be delayed one tick. Note that this does not actually change the
-    /// volume!
-    // NOTE: could cause some visual race conditions.
-    pub fn set_volume(&mut self, new_vol: u8) {
-        self.volume.0 = new_vol.clamp(0, 100);
-    }
-    /// Add a song list to the playlist. Returns the ID of the first song added.
-    pub fn push_song_list(
-        &mut self,
-        mut song_list: Vec<ListSong>,
-    ) -> (ListSongID, ComponentEffect<Self>) {
-        let get_largest_thumbnails_url = |thumbs: &Vec<Thumbnail>| {
-            thumbs
-                .iter()
-                .max_by_key(|thumbs| thumbs.height * thumbs.width)
-                .map(|thumb| thumb.url.clone())
-        };
-        let albums = song_list
-            .iter_mut()
-            .filter_map(|song| {
-                let Some(thumb_url) = get_largest_thumbnails_url(song.thumbnails.as_ref()) else {
-                    song.album_art = AlbumArtState::None;
-                    return None;
-                };
-                let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
-                Some((thumbnail_id, thumb_url))
-            })
-            .collect::<HashMap<SongThumbnailID, String>>();
-        let effect = albums
-            .into_iter()
-            .map(|(thumbnail_id, thumbnail_url)| {
-                AsyncTask::new_future_try(
-                    GetSongThumbnail {
-                        thumbnail_url,
-                        thumbnail_id: thumbnail_id.clone(),
-                    },
-                    HandleGetSongThumbnailOk,
-                    HandleGetSongThumbnailError(thumbnail_id),
-                    None,
-                )
-            })
-            .collect::<ComponentEffect<Self>>();
-        (self.list.push_song_list(song_list), effect)
-        // Download function isn't triggered inside this function, since we
-        // don't know if the caller is going to immediately change what song is
-        // playing after adding songs, although we could check and accept it may
-        // be overridden. We also need to get current playing song ID to call
-        // download_upcoming_from_id (minor inconvenience).
-    }
-    /// Play the next song in the list if it exists, otherwise, stop playing.
-    pub fn play_next_or_stop(&mut self, prev_id: ListSongID) -> ComponentEffect<Self> {
-        let cur = &self.play_status;
-        match cur {
-            PlayState::NotPlaying | PlayState::Stopped => {
-                warn!("Asked to play next, but not currently playing");
-                AsyncTask::new_no_op()
-            }
-            PlayState::Paused(id)
-            | PlayState::Playing(id)
-            | PlayState::Buffering(id)
-            | PlayState::Error(id) => {
-                // Guard against duplicate message received.
-                if id > &prev_id {
-                    return AsyncTask::new_no_op();
-                }
-                let next_song_id = self
-                    .get_index_from_id(*id)
-                    .map(|i| i + 1)
-                    .and_then(|i| self.get_id_from_index(i));
-                match next_song_id {
-                    Some(id) => self.play_song_id(id),
-                    None => {
-                        info!("No next song - finishing playback");
-                        self.queue_status = QueueState::NotQueued;
-                        self.stop_song_id(*id)
-                    }
-                }
-            }
-        }
-    }
-    /// Autoplay the next song in the list if it exists, otherwise, set to
-    /// stopped. This is triggered when a song has finished playing. The
-    /// softer, Autoplay message, lets the Player use gapless playback if songs
-    /// are queued correctly.
-    pub fn autoplay_next_or_stop(&mut self, prev_id: ListSongID) -> ComponentEffect<Self> {
-        let cur = &self.play_status;
-        match cur {
-            PlayState::NotPlaying | PlayState::Stopped => {
-                warn!("Asked to play next, but not currently playing");
-                AsyncTask::new_no_op()
-            }
-            PlayState::Paused(id)
-            | PlayState::Playing(id)
-            | PlayState::Buffering(id)
-            | PlayState::Error(id) => {
-                // Guard against duplicate message received.
-                if id > &prev_id {
-                    return AsyncTask::new_no_op();
-                }
-                let next_song_id = self
-                    .get_index_from_id(*id)
-                    .map(|i| i + 1)
-                    .and_then(|i| self.get_id_from_index(i));
-                match next_song_id {
-                    Some(id) => self.autoplay_song_id(id),
-                    None => {
-                        info!("No next song - resetting play status");
-                        self.queue_status = QueueState::NotQueued;
-                        // As a neat hack I only need to ask the player to stop current ID - even if
-                        // it's playing the queued track, it doesn't know about it.
-                        self.stop_song_id(*id)
-                    }
-                }
-            }
-        }
-    }
-    /// Download some upcoming songs, if they aren't already downloaded.
-    pub fn download_upcoming_from_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        // Won't download if already downloaded.
-        let Some(song_index) = self.get_index_from_id(id) else {
-            return AsyncTask::new_no_op();
-        };
-        let mut song_ids_list = Vec::new();
-        song_ids_list.push(id);
-        for i in 1..SONGS_AHEAD_TO_BUFFER {
-            let next_id = self.get_song_from_idx(song_index + i).map(|song| song.id);
-            if let Some(id) = next_id {
-                song_ids_list.push(id);
-            }
-        }
-        // TODO: Don't love the way metadata and constraints are handled with this task
-        // type that is collected, find a better way.
-        song_ids_list
-            .into_iter()
-            .map(|song_id| self.download_song_if_exists(song_id))
-            .collect()
-    }
-    /// Drop strong reference from previous songs or songs above the buffer list
-    /// size to drop them from memory.
-    pub fn drop_unscoped_from_id(&mut self, id: ListSongID) {
-        let Some(song_index) = self.get_index_from_id(id) else {
-            return;
-        };
-        let forward_limit = song_index + SONGS_AHEAD_TO_BUFFER;
-        let backwards_limit = song_index.saturating_sub(SONGS_BEHIND_TO_SAVE);
-        for song in self.list.get_list_iter_mut().take(backwards_limit) {
-            // TODO: Also cancel in progress downloads
-            // TODO: Write a change download status function that will warn if song is not
-            // dropped from memory.
-            song.download_status = DownloadStatus::None
-        }
-        for song in self.list.get_list_iter_mut().skip(forward_limit) {
-            // TODO: Also cancel in progress downloads
-            // TODO: Write a change download status function that will warn if song is not
-            // dropped from memory.
-            song.download_status = DownloadStatus::None
-        }
-    }
-    pub fn get_cur_playing_id(&self) -> Option<ListSongID> {
-        match self.play_status {
-            PlayState::Error(id)
-            | PlayState::Playing(id)
-            | PlayState::Paused(id)
-            | PlayState::Buffering(id) => Some(id),
-            PlayState::NotPlaying | PlayState::Stopped => None,
-        }
-    }
-    pub fn get_cur_playing_song(&self) -> Option<&ListSong> {
-        self.get_cur_playing_id()
-            .and_then(|id| self.get_song_from_id(id))
-    }
-    pub fn get_next_song(&self) -> Option<&ListSong> {
-        self.get_cur_playing_id()
-            .and_then(|id| self.get_index_from_id(id))
-            .and_then(|idx| self.list.get_list_iter().nth(idx + 1))
-    }
-    pub fn get_index_from_id(&self, id: ListSongID) -> Option<usize> {
-        self.list.get_list_iter().position(|s| s.id == id)
-    }
-    pub fn get_id_from_index(&self, index: usize) -> Option<ListSongID> {
-        self.get_song_from_idx(index).map(|s| s.id)
-    }
-    pub fn get_mut_song_from_id(&mut self, id: ListSongID) -> Option<&mut ListSong> {
-        self.list.get_list_iter_mut().find(|s| s.id == id)
-    }
-    pub fn get_song_from_id(&self, id: ListSongID) -> Option<&ListSong> {
-        self.list.get_list_iter().find(|s| s.id == id)
-    }
-    pub fn check_id_is_cur(&self, check_id: ListSongID) -> bool {
-        self.get_cur_playing_id().is_some_and(|id| id == check_id)
-    }
-    pub fn get_cur_playing_index(&self) -> Option<usize> {
-        self.get_cur_playing_id()
-            .and_then(|id| self.get_index_from_id(id))
-    }
-}
-// Event handlers
-impl Playlist {
-    // Placeholder for future use
-    pub async fn handle_tick(&mut self) {
-        // XXX: Consider downloading upcoming songs here.
-        // self.download_upcoming_songs().await;
-    }
-    /// Handle seek command (from global keypress).
-    pub fn handle_seek(
-        &mut self,
-        duration: Duration,
-        direction: SeekDirection,
-    ) -> ComponentEffect<Self> {
-        // Consider if we also want to update current duration.
-        AsyncTask::new_future_option(
-            Seek {
-                duration,
-                direction,
-            },
-            HandleSetSongPlayProgress,
-            None,
-        )
-    }
-    pub fn handle_seek_to(&mut self, position: Duration) -> ComponentEffect<Self> {
-        let id = match self.play_status {
-            PlayState::Playing(id) => {
-                self.play_status = PlayState::Paused(id);
-                id
-            }
-            PlayState::Paused(id) => {
-                self.play_status = PlayState::Playing(id);
-                id
-            }
-            _ => return AsyncTask::new_no_op(),
-        };
-        // Consider if we also want to update current duration.
-        AsyncTask::new_future_option(SeekTo { position, id }, HandleSetSongPlayProgress, None)
-    }
-    /// Handle next command (from global keypress), if currently playing.
-    pub fn handle_next(&mut self) -> ComponentEffect<Self> {
-        match self.play_status {
-            PlayState::NotPlaying | PlayState::Stopped => {
-                warn!("Asked to play next, but not currently playing");
-                AsyncTask::new_no_op()
-            }
-            PlayState::Paused(id)
-            | PlayState::Playing(id)
-            | PlayState::Buffering(id)
-            | PlayState::Error(id) => self.play_next_or_stop(id),
-        }
-    }
-    /// Handle previous command (from global keypress).
-    pub fn handle_previous(&mut self) -> ComponentEffect<Self> {
-        self.play_prev()
-    }
-    /// Play the song under the cursor (from local keypress)
-    pub fn play_selected(&mut self) -> ComponentEffect<Self> {
-        let Some(id) = self.get_id_from_index(self.cur_selected) else {
-            return AsyncTask::new_no_op();
-        };
-        self.play_song_id(id)
-    }
-    /// Delete the song under the cursor (from local keypress). If it was
-    /// playing, stop it and set PlayState to NotPlaying.
-    pub fn delete_selected(&mut self) -> ComponentEffect<Self> {
-        let mut return_task = AsyncTask::new_no_op();
-        let cur_selected_idx = self.cur_selected;
-        // If current song is playing, stop it.
-        if let Some(cur_playing_id) = self.get_cur_playing_id()
-            && Some(cur_selected_idx) == self.get_cur_playing_index()
-        {
-            self.play_status = PlayState::NotPlaying;
-            return_task = self.stop_song_id(cur_playing_id);
-        }
-        self.list.remove_song_index(cur_selected_idx);
-        // If we are removing a song at a position less than current index, decrement
-        // current index. NOTE: Ok to simply take, if list only had one element.
-        if self.cur_selected >= cur_selected_idx && cur_selected_idx != 0 {
-            // Safe, as checked above that cur_idx >= 0
-            self.cur_selected -= 1;
-        };
-        return_task
-    }
-    /// Delete all songs.
-    pub fn delete_all(&mut self) -> ComponentEffect<Self> {
-        self.reset()
-    }
-    /// Change to Browser window.
-    pub fn view_browser(&mut self) -> AppCallback {
-        AppCallback::ChangeContext(WindowContext::Browser)
-    }
-    /// Handle global pause/play action. Toggle state (visual), toggle playback
-    /// (server).
-    pub fn pauseplay(&mut self) -> ComponentEffect<Self> {
-        let id = match self.play_status {
-            PlayState::Playing(id) => {
-                self.play_status = PlayState::Paused(id);
-                id
-            }
-            PlayState::Paused(id) => {
-                self.play_status = PlayState::Playing(id);
-                id
-            }
-            _ => return AsyncTask::new_no_op(),
-        };
-        AsyncTask::new_future_option(
-            PausePlay(id),
-            HandlePausePlayResponse,
-            Some(Constraint::new_block_matching_metadata(
-                TaskMetadata::PlayPause,
-            )),
-        )
-    }
-    /// Handle global play action. Change state (visual), change playback
-    /// (server).
-    pub fn resume(&mut self) -> ComponentEffect<Self> {
-        let id = match self.play_status {
-            PlayState::Paused(id) => {
-                self.play_status = PlayState::Playing(id);
-                id
-            }
-            _ => return AsyncTask::new_no_op(),
-        };
-        AsyncTask::new_future_option(
-            Resume(id),
-            HandleResumeResponse,
-            Some(Constraint::new_block_matching_metadata(
-                TaskMetadata::PlayPause,
-            )),
-        )
-    }
-    /// Handle global pause action. Change state (visual), change playback
-    /// (server).
-    pub fn pause(&mut self) -> ComponentEffect<Self> {
-        let id = match self.play_status {
-            PlayState::Playing(id) => {
-                self.play_status = PlayState::Paused(id);
-                id
-            }
-            _ => return AsyncTask::new_no_op(),
-        };
-        AsyncTask::new_future_option(
-            Pause(id),
-            HandlePausedResponse,
-            Some(Constraint::new_block_matching_metadata(
-                TaskMetadata::PlayPause,
-            )),
-        )
-    }
-    /// Handle global stop action. Change state (visual), change playback
-    /// (server).
-    pub fn stop(&mut self) -> ComponentEffect<Self> {
-        self.play_status = PlayState::Stopped;
-        AsyncTask::new_future_option(
-            StopAll,
-            HandleAllStopped,
-            Some(Constraint::new_block_matching_metadata(
-                TaskMetadata::PlayPause,
-            )),
-        )
-    }
-}
-// Server handlers
-impl Playlist {
-    /// Handle song progress update from server.
-    pub fn handle_song_download_progress_update(
-        &mut self,
-        update: DownloadProgressUpdateType,
-        id: ListSongID,
-    ) -> ComponentEffect<Self> {
-        // Not valid if song doesn't exist or hasn't initiated download (i.e - task
-        // cancelled).
-        if let Some(song) = self.get_song_from_id(id) {
-            match song.download_status {
-                DownloadStatus::None | DownloadStatus::Downloaded(_) | DownloadStatus::Failed => {
-                    return AsyncTask::new_no_op();
-                }
-                _ => (),
-            }
-        } else {
-            return AsyncTask::new_no_op();
-        }
-        tracing::info!("Task valid - updating song download status");
-        match update {
-            DownloadProgressUpdateType::Started => {
-                if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
-                    song.download_status = DownloadStatus::Queued;
-                }
-            }
-            DownloadProgressUpdateType::Completed(song_buf) => {
-                if let Some(new_id) = self.get_mut_song_from_id(id).map(|s| {
-                    s.download_status = DownloadStatus::Downloaded(Arc::new(song_buf));
-                    s.id
-                }) {
-                    return self.handle_song_downloaded(new_id);
-                };
-            }
-            DownloadProgressUpdateType::Error => {
-                if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
-                    song.download_status = DownloadStatus::Failed;
-                }
-            }
-            DownloadProgressUpdateType::Retrying { times_retried } => {
-                if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
-                    song.download_status = DownloadStatus::Retrying { times_retried };
-                }
-            }
-            DownloadProgressUpdateType::Downloading(p) => {
-                if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
-                    song.download_status = DownloadStatus::Downloading(p);
-                }
-            }
-        }
-        AsyncTask::new_no_op()
-    }
-    /// Handle volume message from server
-    pub fn handle_volume_update(&mut self, response: VolumeUpdate) {
-        self.volume = Percentage(response.0.into())
-    }
-    pub fn handle_play_update(&mut self, update: PlayUpdate<ListSongID>) -> ComponentEffect<Self> {
-        match update {
-            PlayUpdate::PlayProgress(duration, id) => {
-                return self.handle_set_song_play_progress(duration, id);
-            }
-            PlayUpdate::Playing(duration, id) => self.handle_playing(duration, id),
-            PlayUpdate::DonePlaying(id) => return self.handle_done_playing(id),
-            // This is a player invariant.
-            PlayUpdate::Error(e) => error!("{e}"),
-        }
-        AsyncTask::new_no_op()
-    }
-    pub fn handle_queue_update(
-        &mut self,
-        update: QueueUpdate<ListSongID>,
-    ) -> ComponentEffect<Self> {
-        match update {
-            QueueUpdate::PlayProgress(duration, id) => {
-                return self.handle_set_song_play_progress(duration, id);
-            }
-            QueueUpdate::Queued(duration, id) => self.handle_queued(duration, id),
-            QueueUpdate::DonePlaying(id) => return self.handle_done_playing(id),
-            QueueUpdate::Error(e) => error!("{e}"),
-        }
-        AsyncTask::new_no_op()
-    }
-    pub fn handle_autoplay_update(
-        &mut self,
-        update: AutoplayUpdate<ListSongID>,
-    ) -> ComponentEffect<Self> {
-        match update {
-            AutoplayUpdate::PlayProgress(duration, id) => {
-                return self.handle_set_song_play_progress(duration, id);
-            }
-            AutoplayUpdate::Playing(duration, id) => self.handle_playing(duration, id),
-            AutoplayUpdate::DonePlaying(id) => return self.handle_done_playing(id),
-            AutoplayUpdate::AutoplayQueued(id) => self.handle_autoplay_queued(id),
-            AutoplayUpdate::Error(e) => error!("{e}"),
-        }
-        AsyncTask::new_no_op()
-    }
-    /// Handle song progress message from server
-    pub fn handle_set_song_play_progress(
-        &mut self,
-        d: Duration,
-        id: ListSongID,
-    ) -> ComponentEffect<Self> {
-        if !self.check_id_is_cur(id) {
-            return AsyncTask::new_no_op();
-        }
-        self.cur_played_dur = Some(d);
-        // If less than the gapless playback threshold remaining, queue up the next
-        // song, if it's downloaded, and hasn't already been queued.
-        if let Some(duration_dif) = {
-            let cur_dur = self
-                .get_cur_playing_song()
-                .and_then(|song| song.actual_duration);
-            self.cur_played_dur
-                .as_ref()
-                .zip(cur_dur)
-                .map(|(d1, d2)| d2.saturating_sub(*d1))
-        } && duration_dif
-            .saturating_sub(GAPLESS_PLAYBACK_THRESHOLD)
-            .is_zero()
-            && !matches!(self.queue_status, QueueState::Queued(_))
-            && let Some(next_song) = self.get_next_song()
-            && let DownloadStatus::Downloaded(song) = &next_song.download_status
-        {
-            // This task has the metadata of both DecodeSong and QueueSong and returns
-            // Result<QueueUpdate>.
-            let task = DecodeSong(song.clone()).map_stream(QueueDecodedSong(id));
-            info!("Queuing up song!");
-            let effect = AsyncTask::new_stream_try(
-                task,
-                HandleQueueUpdateOk,
-                HandlePlayUpdateError(id),
-                None,
-            );
-            self.queue_status = QueueState::Queued(next_song.id);
-            return effect;
-        }
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+ --> ytmapi-rs/src/parse/podcasts.rs:2:55
+  |
+2 |     ParseFrom, RUN_TEXT, SECONDARY_SECTION_LIST_ITEM, STRAPLINE_RUNS, TAB_CONTENT,
+  |                                                       ^^^^^^^^^^^^^^
 
-        AsyncTask::new_no_op()
-    }
-    /// Handle done playing message from server
-    pub fn handle_done_playing(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        if QueueState::Queued(id) == self.queue_status {
-            self.queue_status = QueueState::NotQueued;
-            return AsyncTask::new_no_op();
-        }
-        if !self.check_id_is_cur(id) {
-            return AsyncTask::new_no_op();
-        }
-        self.autoplay_next_or_stop(id)
-    }
-    /// Handle queued message from server
-    pub fn handle_queued(&mut self, duration: Option<Duration>, id: ListSongID) {
-        if let Some(song) = self.get_mut_song_from_id(id) {
-            song.actual_duration = duration;
-        }
-    }
-    /// Handle autoplay queued message from server.
-    /// This message means that the song that was queued up has played
-    /// successfully.
-    /// If this occurs, we can clear the queued track since we know that it's
-    /// playing.
-    pub fn handle_autoplay_queued(&mut self, id: ListSongID) {
-        match self.queue_status {
-            QueueState::NotQueued => (),
-            QueueState::Queued(q_id) => {
-                if id == q_id {
-                    self.queue_status = QueueState::NotQueued
-                }
-            }
-        }
-    }
-    /// Handle playing message from server
-    pub fn handle_playing(&mut self, duration: Option<Duration>, id: ListSongID) {
-        // NOTE: Happens twice, if song already was queued.
-        if let Some(song) = self.get_mut_song_from_id(id) {
-            song.actual_duration = duration;
-        }
-        if let PlayState::Paused(p_id) = self.play_status
-            && p_id == id
-        {
-            self.play_status = PlayState::Playing(id)
-        }
-    }
-    /// Handle set to error message from server (playback)
-    pub fn handle_set_to_error(&mut self, id: ListSongID) {
-        info!("Received message that song had a playback error {:?}", id);
-        if self.check_id_is_cur(id) {
-            info!("Setting song state to Error {:?}", id);
-            self.play_status = PlayState::Error(id)
-        }
-    }
-    /// Handle set to paused message from server
-    pub fn handle_paused(&mut self, s_id: ListSongID) {
-        if let PlayState::Playing(p_id) = self.play_status
-            && p_id == s_id
-        {
-            self.play_status = PlayState::Paused(s_id)
-        }
-    }
-    /// Handle resumed message from server
-    pub fn handle_resumed(&mut self, id: ListSongID) {
-        if let PlayState::Paused(p_id) = self.play_status
-            && p_id == id
-        {
-            self.play_status = PlayState::Playing(id)
-        }
-    }
-    /// Handle stopped message from server
-    pub fn handle_stopped(&mut self, id: Stopped<ListSongID>) {
-        let Stopped(id) = id;
-        // TODO: Hoist info up.
-        info!("Received message that playback {:?} has been stopped", id);
-        if self.check_id_is_cur(id) {
-            info!("Stopping {:?}", id);
-            self.play_status = PlayState::Stopped
-        }
-    }
-    /// Handle all stopped message from server
-    pub fn handle_all_stopped(&mut self, _: AllStopped) {
-        self.play_status = PlayState::Stopped
-    }
-}
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+   --> ytmapi-rs/src/parse/podcasts.rs:277:74
+    |
+277 |         let mut strapline = responsive_header.navigate_pointer(concatcp!(STRAPLINE_RUNS, "/0"))?;
+    |                                                                          ^^^^^^^^^^^^^^
+
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+   --> ytmapi-rs/src/parse/podcasts.rs:237:29
+    |
+237 |             .borrow_pointer(STRAPLINE_RUNS)?
+    |                             ^^^^^^^^^^^^^^
+
+warning: use of deprecated field `parse::artist::AlbumResult::album_type`: Future deprecation see https://github.com/nick42d/youtui/issues/211
+   --> ytmapi-rs/src/parse/artist.rs:361:9
+    |
+361 |         album_type,
+    |         ^^^^^^^^^^
+
+warning: `ytmapi-rs` (lib) generated 6 warnings
+warning: variant `Column` is never constructed
+  --> youtui/src/app/view.rs:28:5
+   |
+26 | pub enum TableFilterCommand {
+   |          ------------------ variant in this enum
+27 |     All(Filter),
+28 |     Column { filter: Filter, column: usize },
+   |     ^^^^^^
+   |
+   = note: `TableFilterCommand` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: variants `NotContains` and `Equal` are never constructed
+  --> youtui/src/app/view.rs:33:5
+   |
+31 | pub enum Filter {
+   |          ------ variants in this enum
+32 |     Contains(FilterString),
+33 |     NotContains(FilterString),
+   |     ^^^^^^^^^^^
+34 |     Equal(FilterString),
+   |     ^^^^^
+   |
+   = note: `Filter` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: variant `CaseSensitive` is never constructed
+  --> youtui/src/app/view.rs:38:5
+   |
+37 | pub enum FilterString {
+   |          ------------ variant in this enum
+38 |     CaseSensitive(String),
+   |     ^^^^^^^^^^^^^
+   |
+   = note: `FilterString` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: method `push_filter_command` is never used
+   --> youtui/src/app/view.rs:167:8
+    |
+160 | pub trait AdvancedTableView: TableView {
+    |           ----------------- method in this trait
+...
+167 |     fn push_filter_command(&mut self, filter_command: TableFilterCommand);
+    |        ^^^^^^^^^^^^^^^^^^^
+
+warning: method `ticker_gap` is never used
+  --> youtui/src/widgets/scrolling_list.rs:68:12
+   |
+42 | impl<'a, I> ScrollingList<'a, I> {
+   | -------------------------------- method in this implementation
+...
+68 |     pub fn ticker_gap(mut self, ticker_gap: u16) -> Self {
+   |            ^^^^^^^^^^
+
+warning: associated function `new_with_max_cols` is never used
+  --> youtui/src/widgets/tab_grid.rs:20:12
+   |
+19 | impl<'a> TabGrid<'a> {
+   | -------------------- associated function in this implementation
+20 |     pub fn new_with_max_cols(
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: `youtui` (bin "youtui") generated 6 warnings
+    Finished `release` profile [optimized] target(s) in 0.31s
+     Running `target/release/youtui`
+Quitting
+caos@dwl-btw ~/builds/youtui$ cargo build --release && cargo run --release
+warning: use of deprecated unit variant `common::LibraryStatusIcon::LibrarySaved`: Future deprecation see https://github.com/nick42d/youtui/issues/271
+   --> ytmapi-rs/src/common.rs:119:32
+    |
+119 |             LibraryStatusIcon::LibrarySaved => {
+    |                                ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated unit variant `common::LibraryStatusIcon::LibraryAdd`: Future deprecation see https://github.com/nick42d/youtui/issues/271
+   --> ytmapi-rs/src/common.rs:123:32
+    |
+123 |             LibraryStatusIcon::LibraryAdd => {
+    |                                ^^^^^^^^^^
+
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+ --> ytmapi-rs/src/parse/podcasts.rs:2:55
+  |
+2 |     ParseFrom, RUN_TEXT, SECONDARY_SECTION_LIST_ITEM, STRAPLINE_RUNS, TAB_CONTENT,
+  |                                                       ^^^^^^^^^^^^^^
+
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+   --> ytmapi-rs/src/parse/podcasts.rs:277:74
+    |
+277 |         let mut strapline = responsive_header.navigate_pointer(concatcp!(STRAPLINE_RUNS, "/0"))?;
+    |                                                                          ^^^^^^^^^^^^^^
+
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+   --> ytmapi-rs/src/parse/podcasts.rs:237:29
+    |
+237 |             .borrow_pointer(STRAPLINE_RUNS)?
+    |                             ^^^^^^^^^^^^^^
+
+warning: use of deprecated field `parse::artist::AlbumResult::album_type`: Future deprecation see https://github.com/nick42d/youtui/issues/211
+   --> ytmapi-rs/src/parse/artist.rs:361:9
+    |
+361 |         album_type,
+    |         ^^^^^^^^^^
+
+warning: `ytmapi-rs` (lib) generated 6 warnings
+   Compiling youtui v0.0.35 (/home/caos/builds/youtui/youtui)
+error[E0432]: unresolved import `crate::app::ui::playlist::effect_handlers_playlist`
+  --> youtui/src/app/ui/playlist.rs:18:31
+   |
+18 | use crate::app::ui::playlist::effect_handlers_playlist::{
+   |                               ^^^^^^^^^^^^^^^^^^^^^^^^ could not find `effect_handlers_playlist` in `playlist`
+
+error[E0433]: failed to resolve: could not find `PrivacyStatus` in `query`
+   --> youtui/src/app/server/messages.rs:422:35
+    |
+422 |                 ytmapi_rs::query::PrivacyStatus::Private,
+    |                                   ^^^^^^^^^^^^^ could not find `PrivacyStatus` in `query`
+    |
+help: consider importing this enum
+    |
+  1 + use ytmapi_rs::query::playlist::PrivacyStatus;
+    |
+help: if you import `PrivacyStatus`, refer to it directly
+    |
+422 -                 ytmapi_rs::query::PrivacyStatus::Private,
+422 +                 PrivacyStatus::Private,
+    |
+
+error[E0412]: cannot find type `PrivacyStatus` in module `ytmapi_rs::query`
+  --> youtui/src/app/server/api.rs:65:43
+   |
+65 |         privacy_status: ytmapi_rs::query::PrivacyStatus,
+   |                                           ^^^^^^^^^^^^^ not found in `ytmapi_rs::query`
+   |
+help: consider importing this enum
+   |
+ 1 + use ytmapi_rs::query::playlist::PrivacyStatus;
+   |
+help: if you import `PrivacyStatus`, refer to it directly
+   |
+65 -         privacy_status: ytmapi_rs::query::PrivacyStatus,
+65 +         privacy_status: PrivacyStatus,
+   |
+
+error[E0412]: cannot find type `VideoID` in this scope
+  --> youtui/src/app/server/api.rs:73:24
+   |
+73 |         video_ids: Vec<VideoID<'static>>,
+   |                        ^^^^^^^ not found in this scope
+   |
+help: consider importing this struct
+   |
+ 1 + use ytmapi_rs::common::VideoID;
+   |
+
+error[E0412]: cannot find type `PrivacyStatus` in module `ytmapi_rs::query`
+   --> youtui/src/app/server/api.rs:189:39
+    |
+189 |     privacy_status: ytmapi_rs::query::PrivacyStatus,
+    |                                       ^^^^^^^^^^^^^ not found in `ytmapi_rs::query`
+    |
+help: consider importing this enum
+    |
+  1 + use ytmapi_rs::query::playlist::PrivacyStatus;
+    |
+help: if you import `PrivacyStatus`, refer to it directly
+    |
+189 -     privacy_status: ytmapi_rs::query::PrivacyStatus,
+189 +     privacy_status: PrivacyStatus,
+    |
+
+error[E0412]: cannot find type `VideoID` in this scope
+   --> youtui/src/app/server/api.rs:203:20
+    |
+203 |     video_ids: Vec<VideoID<'static>>,
+    |                    ^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use ytmapi_rs::common::VideoID;
+    |
+
+warning: unused import: `AddSongsToPlaylist`
+ --> youtui/src/app/ui/playlist.rs:5:42
+  |
+5 | use crate::app::server::{CreatePlaylist, AddSongsToPlaylist};
+  |                                          ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ytmapi_rs::common::PlaylistID`
+ --> youtui/src/app/ui/playlist.rs:6:5
+  |
+6 | use ytmapi_rs::common::PlaylistID;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0061]: this function takes 3 arguments but 1 argument was supplied
+   --> youtui/src/app/server/api.rs:192:21
+    |
+192 |     let mut query = ytmapi_rs::query::CreatePlaylistQuery::new(name);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------
+    |                                                               ||
+    |                                                               |expected `&str`, found `String`
+    |                                                               two arguments of type `std::option::Option<&str>` and `PrivacyStatus` are missing
+    |
+note: associated function defined here
+   --> /home/caos/builds/youtui/ytmapi-rs/src/query/playlist/create.rs:53:12
+    |
+ 53 |     pub fn new(
+    |            ^^^
+help: consider borrowing here
+    |
+192 |     let mut query = ytmapi_rs::query::CreatePlaylistQuery::new(&name);
+    |                                                                +
+help: provide the arguments
+    |
+192 -     let mut query = ytmapi_rs::query::CreatePlaylistQuery::new(name);
+192 +     let mut query = ytmapi_rs::query::CreatePlaylistQuery::new(/* &str */, /* std::option::Option<&str> */, /* PrivacyStatus */);
+    |
+
+error[E0599]: no method named `with_description` found for struct `CreatePlaylistQuery<'a, C>` in the current scope
+   --> youtui/src/app/server/api.rs:194:23
+    |
+194 |         query = query.with_description(desc);
+    |                       ^^^^^^^^^^^^^^^^ method not found in `CreatePlaylistQuery<'_, BasicCreatePlaylist>`
+
+error[E0599]: no method named `with_privacy_status` found for struct `CreatePlaylistQuery<'a, C>` in the current scope
+   --> youtui/src/app/server/api.rs:196:19
+    |
+196 |     query = query.with_privacy_status(privacy_status);
+    |                   ^^^^^^^^^^^^^^^^^^^ method not found in `CreatePlaylistQuery<'_, BasicCreatePlaylist>`
+
+error[E0599]: no function or associated item named `new` found for struct `AddPlaylistItemsQuery<'a, T>` in the current scope
+   --> youtui/src/app/server/api.rs:206:58
+    |
+206 |     let query = ytmapi_rs::query::AddPlaylistItemsQuery::new(
+    |                                                          ^^^ function or associated item not found in `AddPlaylistItemsQuery<'_, _>`
+    |
+note: if you're trying to build a new `AddPlaylistItemsQuery<'_, _>` consider using one of the following associated functions:
+      AddPlaylistItemsQuery::<'a, AddPlaylistToPlaylist<'a>>::new_from_playlist
+      AddPlaylistItemsQuery::<'a, AddVideosToPlaylist<'a>>::new_from_videos
+   --> /home/caos/builds/youtui/ytmapi-rs/src/query/playlist/additems.rs:67:5
+    |
+ 67 |       pub fn new_from_playlist(id: PlaylistID<'a>, source_playlist: PlaylistID<'a>) -> Self {
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 75 | /     pub fn new_from_videos(
+ 76 | |         id: PlaylistID<'a>,
+ 77 | |         video_ids: impl IntoIterator<Item = VideoID<'a>>,
+ 78 | |         duplicate_handling_mode: DuplicateHandlingMode,
+ 79 | |     ) -> Self {
+    | |_____________^
+
+error[E0599]: no method named `as_ref` found for struct `PlaylistID<'a>` in the current scope
+   --> youtui/src/app/server/api.rs:207:21
+    |
+207 |         playlist_id.as_ref(),
+    |                     ^^^^^^
+    |
+help: there is a method `pipe_as_ref` with a similar name, but with different arguments
+   --> /home/caos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tap-1.0.1/src/pipe.rs:183:2
+    |
+183 | /     fn pipe_as_ref<'a, U, R>(&'a self, func: impl FnOnce(&'a U) -> R) -> R
+184 | |     where
+185 | |         Self: AsRef<U>,
+186 | |         U: 'a + ?Sized,
+187 | |         R: 'a + Sized,
+    | |______________________^
+
+error[E0282]: type annotations needed
+   --> youtui/src/app/server/api.rs:208:31
+    |
+208 |         video_ids.iter().map(|v| v.as_ref()),
+    |                               ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+208 |         video_ids.iter().map(|v: /* Type */| v.as_ref()),
+    |                                ++++++++++++
+
+Some errors have detailed explanations: E0061, E0282, E0412, E0432, E0433, E0599.
+For more information about an error, try `rustc --explain E0061`.
+warning: `youtui` (bin "youtui") generated 2 warnings
+error: could not compile `youtui` (bin "youtui") due to 12 previous errors; 2 warnings emitted
+caos@dwl-btw ~/builds/youtui$ cargo build --release && cargo run --release
+warning: use of deprecated unit variant `common::LibraryStatusIcon::LibrarySaved`: Future deprecation see https://github.com/nick42d/youtui/issues/271
+   --> ytmapi-rs/src/common.rs:119:32
+    |
+119 |             LibraryStatusIcon::LibrarySaved => {
+    |                                ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated unit variant `common::LibraryStatusIcon::LibraryAdd`: Future deprecation see https://github.com/nick42d/youtui/issues/271
+   --> ytmapi-rs/src/common.rs:123:32
+    |
+123 |             LibraryStatusIcon::LibraryAdd => {
+    |                                ^^^^^^^^^^
+
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+ --> ytmapi-rs/src/parse/podcasts.rs:2:55
+  |
+2 |     ParseFrom, RUN_TEXT, SECONDARY_SECTION_LIST_ITEM, STRAPLINE_RUNS, TAB_CONTENT,
+  |                                                       ^^^^^^^^^^^^^^
+
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+   --> ytmapi-rs/src/parse/podcasts.rs:277:74
+    |
+277 |         let mut strapline = responsive_header.navigate_pointer(concatcp!(STRAPLINE_RUNS, "/0"))?;
+    |                                                                          ^^^^^^^^^^^^^^
+
+warning: use of deprecated constant `nav_consts::STRAPLINE_RUNS`: Google deprecating this path in future
+   --> ytmapi-rs/src/parse/podcasts.rs:237:29
+    |
+237 |             .borrow_pointer(STRAPLINE_RUNS)?
+    |                             ^^^^^^^^^^^^^^
+
+warning: use of deprecated field `parse::artist::AlbumResult::album_type`: Future deprecation see https://github.com/nick42d/youtui/issues/211
+   --> ytmapi-rs/src/parse/artist.rs:361:9
+    |
+361 |         album_type,
+    |         ^^^^^^^^^^
+
+warning: `ytmapi-rs` (lib) generated 6 warnings
+   Compiling youtui v0.0.35 (/home/caos/builds/youtui/youtui)
+error: unknown start of token: \u{2}
+   --> youtui/src/app/server/api.rs:238:2
+    |
+238 | }␂
+    |  ^
+
+error[E0433]: failed to resolve: could not find `PrivacyStatus` in `query`
+   --> youtui/src/app/server/messages.rs:444:35
+    |
+444 |                 ytmapi_rs::query::PrivacyStatus::Private,
+    |                                   ^^^^^^^^^^^^^ could not find `PrivacyStatus` in `query`
+    |
+help: consider importing this enum
+    |
+  1 + use ytmapi_rs::query::playlist::PrivacyStatus;
+    |
+help: if you import `PrivacyStatus`, refer to it directly
+    |
+444 -                 ytmapi_rs::query::PrivacyStatus::Private,
+444 +                 PrivacyStatus::Private,
+    |
+
+error[E0412]: cannot find type `PrivacyStatus` in module `ytmapi_rs::query`
+  --> youtui/src/app/server/api.rs:65:43
+   |
+65 |         privacy_status: ytmapi_rs::query::PrivacyStatus,
+   |                                           ^^^^^^^^^^^^^ not found in `ytmapi_rs::query`
+   |
+help: consider importing this enum
+   |
+ 1 + use ytmapi_rs::query::playlist::PrivacyStatus;
+   |
+help: if you import `PrivacyStatus`, refer to it directly
+   |
+65 -         privacy_status: ytmapi_rs::query::PrivacyStatus,
+65 +         privacy_status: PrivacyStatus,
+   |
+
+error[E0412]: cannot find type `VideoID` in this scope
+  --> youtui/src/app/server/api.rs:73:20
+   |
+73 |     video_ids: Vec<VideoID<'static>>,
+   |                    ^^^^^^^ not found in this scope
+   |
+help: consider importing this struct
+   |
+ 1 + use ytmapi_rs::common::VideoID;
+   |
+
+error[E0412]: cannot find type `VideoID` in this scope
+  --> youtui/src/app/server/api.rs:80:24
+   |
+80 |         video_ids: Vec<VideoID<'static>>,
+   |                        ^^^^^^^ not found in this scope
+   |
+help: consider importing this struct
+   |
+ 1 + use ytmapi_rs::common::VideoID;
+   |
+
+error[E0412]: cannot find type `PrivacyStatus` in module `ytmapi_rs::query`
+   --> youtui/src/app/server/api.rs:196:39
+    |
+196 |     privacy_status: ytmapi_rs::query::PrivacyStatus,
+    |                                       ^^^^^^^^^^^^^ not found in `ytmapi_rs::query`
+    |
+help: consider importing this enum
+    |
+  1 + use ytmapi_rs::query::playlist::PrivacyStatus;
+    |
+help: if you import `PrivacyStatus`, refer to it directly
+    |
+196 -     privacy_status: ytmapi_rs::query::PrivacyStatus,
+196 +     privacy_status: PrivacyStatus,
+    |
+
+error[E0412]: cannot find type `VideoID` in this scope
+   --> youtui/src/app/server/api.rs:210:20
+    |
+210 |     video_ids: Vec<VideoID<'static>>,
+    |                    ^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use ytmapi_rs::common::VideoID;
+    |
+
+error[E0412]: cannot find type `VideoID` in this scope
+   --> youtui/src/app/server/api.rs:224:20
+    |
+224 |     video_ids: Vec<VideoID<'static>>,
+    |                    ^^^^^^^ not found in this scope
+    |
+help: consider importing this struct
+    |
+  1 + use ytmapi_rs::common::VideoID;
+    |
+
+error[E0422]: cannot find struct, variant or union type `CreatePlaylist` in this scope
+   --> youtui/src/app/ui/playlist.rs:744:9
+    |
+744 |         CreatePlaylist {
+    |         ^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing one of these items
+    |
+  1 + use crate::Command::CreatePlaylist;
+    |
+  1 + use crate::app::server::CreatePlaylist;
+    |
+  1 + use crate::app::ui::playlist::PlaylistAction::CreatePlaylist;
+    |
+
+error[E0425]: cannot find value `HandleCreatePlaylistOk` in this scope
+   --> youtui/src/app/ui/playlist.rs:748:9
+    |
+748 |         HandleCreatePlaylistOk,
+    |         ^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+error[E0425]: cannot find value `HandleCreatePlaylistError` in this scope
+   --> youtui/src/app/ui/playlist.rs:749:9
+    |
+749 |         HandleCreatePlaylistError,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+warning: unused import: `crate::app::server::CreatePlaylistWithVideos`
+ --> youtui/src/app/ui/playlist.rs:5:5
+  |
+5 | use crate::app::server::CreatePlaylistWithVideos;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `ytmapi_rs::common::VideoID`
+ --> youtui/src/app/ui/playlist.rs:6:5
+  |
+6 | use ytmapi_rs::common::VideoID;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0061]: this function takes 3 arguments but 1 argument was supplied
+   --> youtui/src/app/server/api.rs:199:21
+    |
+199 |     let mut query = ytmapi_rs::query::CreatePlaylistQuery::new(name);
+    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------
+    |                                                               ||
+    |                                                               |expected `&str`, found `String`
+    |                                                               two arguments of type `std::option::Option<&str>` and `PrivacyStatus` are missing
+    |
+note: associated function defined here
+   --> /home/caos/builds/youtui/ytmapi-rs/src/query/playlist/create.rs:53:12
+    |
+ 53 |     pub fn new(
+    |            ^^^
+help: consider borrowing here
+    |
+199 |     let mut query = ytmapi_rs::query::CreatePlaylistQuery::new(&name);
+    |                                                                +
+help: provide the arguments
+    |
+199 -     let mut query = ytmapi_rs::query::CreatePlaylistQuery::new(name);
+199 +     let mut query = ytmapi_rs::query::CreatePlaylistQuery::new(/* &str */, /* std::option::Option<&str> */, /* PrivacyStatus */);
+    |
+
+error[E0599]: no method named `with_description` found for struct `CreatePlaylistQuery<'a, C>` in the current scope
+   --> youtui/src/app/server/api.rs:201:23
+    |
+201 |         query = query.with_description(desc);
+    |                       ^^^^^^^^^^^^^^^^ method not found in `CreatePlaylistQuery<'_, BasicCreatePlaylist>`
+
+error[E0599]: no method named `with_privacy_status` found for struct `CreatePlaylistQuery<'a, C>` in the current scope
+   --> youtui/src/app/server/api.rs:203:19
+    |
+203 |     query = query.with_privacy_status(privacy_status);
+    |                   ^^^^^^^^^^^^^^^^^^^ method not found in `CreatePlaylistQuery<'_, BasicCreatePlaylist>`
+
+error[E0599]: no function or associated item named `new` found for struct `AddPlaylistItemsQuery<'a, T>` in the current scope
+   --> youtui/src/app/server/api.rs:213:58
+    |
+213 |     let query = ytmapi_rs::query::AddPlaylistItemsQuery::new(
+    |                                                          ^^^ function or associated item not found in `AddPlaylistItemsQuery<'_, _>`
+    |
+note: if you're trying to build a new `AddPlaylistItemsQuery<'_, _>` consider using one of the following associated functions:
+      AddPlaylistItemsQuery::<'a, AddPlaylistToPlaylist<'a>>::new_from_playlist
+      AddPlaylistItemsQuery::<'a, AddVideosToPlaylist<'a>>::new_from_videos
+   --> /home/caos/builds/youtui/ytmapi-rs/src/query/playlist/additems.rs:67:5
+    |
+ 67 |       pub fn new_from_playlist(id: PlaylistID<'a>, source_playlist: PlaylistID<'a>) -> Self {
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+ 75 | /     pub fn new_from_videos(
+ 76 | |         id: PlaylistID<'a>,
+ 77 | |         video_ids: impl IntoIterator<Item = VideoID<'a>>,
+ 78 | |         duplicate_handling_mode: DuplicateHandlingMode,
+ 79 | |     ) -> Self {
+    | |_____________^
+
+error[E0599]: no method named `as_ref` found for struct `PlaylistID<'a>` in the current scope
+   --> youtui/src/app/server/api.rs:214:21
+    |
+214 |         playlist_id.as_ref(),
+    |                     ^^^^^^
+    |
+help: there is a method `pipe_as_ref` with a similar name, but with different arguments
+   --> /home/caos/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tap-1.0.1/src/pipe.rs:183:2
+    |
+183 | /     fn pipe_as_ref<'a, U, R>(&'a self, func: impl FnOnce(&'a U) -> R) -> R
+184 | |     where
+185 | |         Self: AsRef<U>,
+186 | |         U: 'a + ?Sized,
+187 | |         R: 'a + Sized,
+    | |______________________^
+
+error[E0282]: type annotations needed
+   --> youtui/src/app/server/api.rs:215:31
+    |
+215 |         video_ids.iter().map(|v| v.as_ref()),
+    |                               ^  - type must be known at this point
+    |
+help: consider giving this closure parameter an explicit type
+    |
+215 |         video_ids.iter().map(|v: /* Type */| v.as_ref()),
+    |                                ++++++++++++
+
+Some errors have detailed explanations: E0061, E0282, E0412, E0422, E0425, E0433, E0599.
+For more information about an error, try `rustc --explain E0061`.
+warning: `youtui` (bin "youtui") generated 2 warnings
+error: could not compile `youtui` (bin "youtui") due to 17 previous errors; 2 warnings emitted
+caos@dwl-btw ~/builds/youtui$ git diff
+diff --git a/youtui/src/app/server/api.rs b/youtui/src/app/server/api.rs
+index a4fcae3..d8a65af 100644
+--- a/youtui/src/app/server/api.rs
++++ b/youtui/src/app/server/api.rs
+@@ -58,6 +58,30 @@ impl Api {
+     pub async fn search_playlists(&self, text: String) -> Result<Vec<SearchResultPlaylist>> {
+         search_playlists(self.get_api().await?, text).await
+     }
++    pub async fn create_playlist(
++        &self,
++        name: String,
++        description: Option<String>,
++        privacy_status: ytmapi_rs::query::PrivacyStatus,
++    ) -> Result<PlaylistID<'static>> {
++        create_playlist(self.get_api().await?, name, description, privacy_status).await
++    }
++    pub async fn create_playlist_with_videos(
++    &self,
++    title: String,
++    description: Option<String>,
++    video_ids: Vec<VideoID<'static>>,
++    ) -> Result<PlaylistID<'static>> {
++    create_playlist_with_videos(self.get_api().await?, title, description, video_ids).await
++    }
++    pub async fn add_playlist_items(
++        &self,
++        playlist_id: PlaylistID<'static>,
++        video_ids: Vec<VideoID<'static>>,
++    ) -> Result<()> {
++        add_playlist_items(self.get_api().await?, playlist_id, video_ids).await
++    }
++
+     pub async fn search_artists(&self, text: String) -> Result<Vec<SearchResultArtist>> {
+         search_artists(self.get_api().await?, text).await
+     }
+@@ -165,6 +189,53 @@ async fn search_playlists(api: ConcurrentApi, text: String) -> Result<Vec<Search
+         .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
+     query_api_with_retry(&api, query).await
+ }
++async fn create_playlist(
++    api: ConcurrentApi,
++    name: String,
++    description: Option<String>,
++    privacy_status: ytmapi_rs::query::PrivacyStatus,
++) -> Result<PlaylistID<'static>> {
++    tracing::info!("Creating playlist: {}", name);
++    let mut query = ytmapi_rs::query::CreatePlaylistQuery::new(name);
++    if let Some(desc) = description {
++        query = query.with_description(desc);
++    }
++    query = query.with_privacy_status(privacy_status);
++    query_api_with_retry(&api, query).await
++}
++
++async fn add_playlist_items(
++    api: ConcurrentApi,
++    playlist_id: PlaylistID<'static>,
++    video_ids: Vec<VideoID<'static>>,
++) -> Result<()> {
++    tracing::info!("Adding {} items to playlist {:?}", video_ids.len(), playlist_id);
++    let query = ytmapi_rs::query::AddPlaylistItemsQuery::new(
++        playlist_id.as_ref(),
++        video_ids.iter().map(|v| v.as_ref()),
++    );
++    query_api_with_retry(&api, query).await
++}
++
++async fn create_playlist_with_videos(
++    api: ConcurrentApi,
++    title: String,
++    description: Option<String>,
++    video_ids: Vec<VideoID<'static>>,
++) -> Result<PlaylistID<'static>> {
++    use ytmapi_rs::query::playlist::PrivacyStatus;
++
++    tracing::info!("Creating playlist with {} videos: {}", video_ids.len(), title);
++
++    let desc_ref = description.as_deref();
++    let query = ytmapi_rs::query::CreatePlaylistQuery::new(
++        &title,
++        desc_ref,
++        PrivacyStatus::Private,
++    ).with_video_ids(video_ids);
++
++    query_api_with_retry(&api, query).await
++}^B
+
+ async fn search_artists(api: ConcurrentApi, text: String) -> Result<Vec<SearchResultArtist>> {
+     tracing::info!("Searching artists for {text}");
+diff --git a/youtui/src/app/server/messages.rs b/youtui/src/app/server/messages.rs
+index 4a0166c..c0b6d02 100644
+--- a/youtui/src/app/server/messages.rs
++++ b/youtui/src/app/server/messages.rs
+@@ -36,6 +36,12 @@ pub struct GetSearchSuggestions(pub String);
+ #[derive(Debug, PartialEq)]
+ pub struct SearchArtists(pub String);
+ #[derive(Debug, PartialEq)]
++pub struct CreatePlaylistWithVideos {
++    pub title: String,
++    pub description: Option<String>,
++    pub video_ids: Vec<VideoID<'static>>,
++}
++#[derive(Debug, PartialEq)]
+ pub struct SearchSongs(pub String);
+ #[derive(Debug, PartialEq)]
+ pub struct SearchPlaylists(pub String);
+@@ -46,6 +52,17 @@ pub struct GetPlaylistSongs {
+     pub playlist_id: PlaylistID<'static>,
+     pub max_songs: usize,
+ }
++#[derive(Debug, PartialEq)]
++pub struct CreatePlaylist {
++    pub name: String,
++    pub description: Option<String>,
++}
++
++#[derive(Debug, PartialEq)]
++pub struct AddSongsToPlaylist {
++    pub playlist_id: PlaylistID<'static>,
++    pub video_ids: Vec<VideoID<'static>>,
++}
+
+ #[derive(Debug, PartialEq)]
+ pub struct DownloadSong(pub VideoID<'static>, pub ListSongID);
+@@ -336,7 +353,23 @@ impl BackendTask<ArcServer> for Pause {
+         vec![TaskMetadata::PlayPause]
+     }
+ }
+-
++impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
++    type Output = Result<PlaylistID<'static>>;
++    type MetadataType = TaskMetadata;
++    fn into_future(
++        self,
++        backend: &ArcServer,
++    ) -> impl Future<Output = Self::Output> + Send + 'static {
++        let backend = backend.clone();
++        async move {
++            backend.api.create_playlist_with_videos(
++                self.title,
++                self.description,
++                self.video_ids,
++            ).await
++        }
++    }
++}
+ impl BackendStreamingTask<ArcServer> for PlaySong {
+     type Output = PlayUpdate<ListSongID>;
+     type MetadataType = TaskMetadata;
+@@ -396,6 +429,38 @@ impl BackendTask<ArcServer> for GetSongThumbnail {
+     }
+ }
+
++impl BackendTask<ArcServer> for CreatePlaylist {
++    type Output = Result<PlaylistID<'static>>;
++    type MetadataType = TaskMetadata;
++    fn into_future(
++        self,
++        backend: &ArcServer,
++    ) -> impl Future<Output = Self::Output> + Send + 'static {
++        let backend = backend.clone();
++        async move {
++            backend.api.create_playlist(
++                self.name,
++                self.description,
++                ytmapi_rs::query::PrivacyStatus::Private,
++            ).await
++        }
++    }
++}
++
++impl BackendTask<ArcServer> for AddSongsToPlaylist {
++    type Output = Result<()>;
++    type MetadataType = TaskMetadata;
++    fn into_future(
++        self,
++        backend: &ArcServer,
++    ) -> impl Future<Output = Self::Output> + Send + 'static {
++        let backend = backend.clone();
++        async move {
++            backend.api.add_playlist_items(self.playlist_id, self.video_ids).await
++        }
++    }
++}
++
+ #[derive(PartialEq, Debug)]
+ pub struct PlayDecodedSong(pub ListSongID);
+ impl MapFn<DecodedInMemSong> for PlayDecodedSong {
+diff --git a/youtui/src/app/ui/playlist.rs b/youtui/src/app/ui/playlist.rs
+index 207a703..566c754 100644
+--- a/youtui/src/app/ui/playlist.rs
++++ b/youtui/src/app/ui/playlist.rs
+@@ -2,6 +2,8 @@ use super::action::AppAction;
+ use crate::app::component::actionhandler::{
+     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
+ };
++use crate::app::server::CreatePlaylistWithVideos;
++use ytmapi_rs::common::VideoID;
+ use crate::app::server::song_downloader::DownloadProgressUpdateType;
+ use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
+ use crate::app::server::{
+@@ -46,6 +48,8 @@ mod effect_handlers;
+ #[cfg(test)]
+ mod tests;
+
++pub struct HandleSaveQueueOk;
++pub struct HandleSaveQueueError;
+ const SONGS_AHEAD_TO_BUFFER: usize = 3;
+ const SONGS_BEHIND_TO_SAVE: usize = 1;
+ // How soon to trigger gapless playback
+@@ -112,7 +116,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
+             PlaylistAction::DeleteSelected => (self.delete_selected(), None),
+             PlaylistAction::DeleteAll => (self.delete_all(), None),
+             PlaylistAction::CreatePlaylist => (AsyncTask::new_no_op(), None),
+-            PlaylistAction::SaveQueueToPlaylist => (AsyncTask::new_no_op(), None),
++            PlaylistAction::SaveQueueToPlaylist => (self.save_queue_to_playlist(), None),
+             PlaylistAction::AddSelectedToPlaylist => (AsyncTask::new_no_op(), None),
+             PlaylistAction::RenamePlaylist => (AsyncTask::new_no_op(), None),
+             PlaylistAction::DeletePlaylist => (AsyncTask::new_no_op(), None),
+@@ -726,6 +730,27 @@ impl Playlist {
+         };
+         self.play_song_id(id)
+     }
++    /// Save current queue to a new YouTube Music playlist
++    pub fn save_queue_to_playlist(&mut self) -> ComponentEffect<Self> {
++    if self.list.get_list_iter().len() == 0 {
++        warn!("Queue is empty, nothing to save");
++        return AsyncTask::new_no_op();
++    }
++
++    let playlist_name = format!("Youtui Queue - {}",
++        chrono::Local::now().format("%Y-%m-%d %H:%M"));
++
++    AsyncTask::new_future_try(
++        CreatePlaylist {
++            name: playlist_name,
++            description: Some("Created from Youtui queue".to_string()),
++        },
++        HandleCreatePlaylistOk,
++        HandleCreatePlaylistError,
++        None,
++    )
++}
++
+     /// Delete the song under the cursor (from local keypress). If it was
+     /// playing, stop it and set PlayState to NotPlaying.
+     pub fn delete_selected(&mut self) -> ComponentEffect<Self> {
 caos@dwl-btw ~/builds/youtui$
 
