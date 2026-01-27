@@ -1,3 +1,4 @@
+use serde::{Serialize, Deserialize};
 use super::server::song_downloader::InMemSong;
 use super::server::song_thumbnail_downloader::SongThumbnail;
 use super::view::SortDirection;
@@ -21,7 +22,7 @@ pub trait SongListComponent {
     fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong>;
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum MaybeRc<T> {
     Rc(Rc<T>),
     Owned(T),
@@ -44,7 +45,7 @@ impl<T> AsRef<T> for MaybeRc<T> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BrowserSongsList {
     pub state: ListStatus,
     list: Vec<ListSong>,
@@ -52,23 +53,24 @@ pub struct BrowserSongsList {
 }
 
 // As this is a simple wrapper type we implement Copy for ease of handling
-#[derive(Clone, PartialEq, Copy, Debug, PartialOrd, Hash, Eq)]
+#[derive(Clone, PartialEq, Copy, Debug, PartialOrd, Hash, Eq, Serialize, Deserialize)]
 pub struct ListSongID(#[cfg(test)] pub usize, #[cfg(not(test))] usize);
 
 // As this is a simple wrapper type we implement Copy for ease of handling
-#[derive(Clone, PartialEq, Copy, Debug, Default, PartialOrd)]
+#[derive(Clone, PartialEq, Copy, Debug, Default, PartialOrd, Serialize, Deserialize)]
 pub struct Percentage(pub u8);
 
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub enum AlbumArtState {
     #[default]
     Init,
+    #[serde(skip)]
     Downloaded(Rc<SongThumbnail>),
     None,
     Error,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ListSong {
     pub video_id: VideoID<'static>,
     pub track_no: Option<usize>,
@@ -86,13 +88,13 @@ pub struct ListSong {
     pub album: Option<MaybeRc<ListSongAlbum>>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ListSongArtist {
     pub name: String,
     pub id: Option<ArtistOrUploadArtistID>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ListSongAlbum {
     pub name: String,
     pub id: AlbumOrUploadAlbumID,
@@ -138,19 +140,19 @@ impl From<ParsedUploadSongAlbum> for ListSongAlbum {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ArtistOrUploadArtistID {
     Artist(ArtistChannelID<'static>),
     UploadArtist(UploadArtistID<'static>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AlbumOrUploadAlbumID {
     Album(AlbumID<'static>),
     UploadAlbum(UploadAlbumID<'static>),
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ListSongDisplayableField {
     DownloadStatus,
     TrackNo,
@@ -162,7 +164,7 @@ pub enum ListSongDisplayableField {
     Plays,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ListStatus {
     New,
     Loading,
@@ -171,17 +173,24 @@ pub enum ListStatus {
     Error,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DownloadStatus {
     None,
     Queued,
     Downloading(Percentage),
+    #[serde(skip)]
     Downloaded(Arc<InMemSong>),
     Failed,
     Retrying { times_retried: usize },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+impl Default for DownloadStatus {
+    fn default() -> Self {
+        DownloadStatus::None
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PlayState {
     NotPlaying,
     Playing(ListSongID),
@@ -548,4 +557,8 @@ impl BrowserSongsList {
             tracing::info!("Album art updated");
         }
     }
+    pub fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
+        self.list.get(idx)
+    }
+
 }

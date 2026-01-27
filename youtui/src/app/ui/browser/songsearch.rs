@@ -593,6 +593,10 @@ impl SongSearchBrowser {
             warn!("Tried to sort a column that is not sortable - error {e}")
         };
     }
+    pub fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
+        self.song_list.get_song_from_idx(idx)
+    }
+
 }
 
 #[derive(Debug, PartialEq)]
