@@ -8,7 +8,7 @@ use super::component::actionhandler::{
     handle_key_stack,
 };
 use super::server::{IncreaseVolume, SetVolume};
-use super::structures::*;
+use super::structures::ListSong;
 use crate::async_rodio_sink::{SeekDirection, VolumeUpdate};
 use crate::config::Config;
 use crate::config::keymap::Keymap;
@@ -43,7 +43,7 @@ pub enum WindowContext {
 pub struct YoutuiWindow {
     context: WindowContext,
     prev_context: WindowContext,
-    playlist: Playlist,
+    pub playlist: Playlist,
     browser: Browser,
     logger: Logger,
     config: Config,

@@ -145,7 +145,8 @@ impl Youtui {
             (Some(media_controls), Some(media_control_event_stream))
         };
         let event_handler = EventHandler::new(EVENT_CHANNEL_SIZE, media_control_event_stream)?;
-        let (window_state, effect) = YoutuiWindow::new(config);
+        let (mut window_state, effect) = YoutuiWindow::new(config);
+        let _ = queue_persistence::auto_load(&mut window_state.playlist);
         // Even the creation of a YoutuiWindow causes an effect. We'll spawn it straight
         // away.
         task_manager.spawn_task(&server, effect);
@@ -195,6 +196,10 @@ impl Youtui {
                 AppStatus::Exiting(s) => {
                     // Once we're done running, destruct the terminal and print the exit message.
                     destruct_terminal()?;
+                    match queue_persistence::auto_save(&self.window_state.playlist) {
+                    Ok(_) => info!("Queue auto-saved successfully"),
+                    Err(e) => error!("Failed to auto-save queue: {}", e),
+                }
                     println!("{s}");
                     break;
                 }
@@ -343,3 +348,4 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
         .expect("Expected logger to initialise succesfully");
     Ok(())
 }
+pub mod queue_persistence;

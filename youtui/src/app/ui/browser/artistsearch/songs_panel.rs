@@ -220,6 +220,10 @@ impl AlbumSongsPanel {
         self.cur_selected = 0;
         self.list.state = ListStatus::InProgress;
     }
+    pub fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
+        self.list.get_song_from_idx(idx)
+    }
+
 }
 impl SongListComponent for AlbumSongsPanel {
     fn get_song_from_idx(&self, idx: usize) -> Option<&crate::app::structures::ListSong> {

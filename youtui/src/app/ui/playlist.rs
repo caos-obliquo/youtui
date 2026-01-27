@@ -1,3 +1,4 @@
+use crate::app::queue_persistence;
 use super::action::AppAction;
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
@@ -93,6 +94,9 @@ pub enum PlaylistAction {
     DeleteAll,
     ToggleShuffle,
     ToggleSearch,
+    SaveQueue,
+    LoadQueue,
+    DeleteQueue,
     ClearSearch,
 }
 
@@ -110,6 +114,9 @@ impl Action for PlaylistAction {
             PlaylistAction::ToggleShuffle => "Toggle Shuffle",
             PlaylistAction::ToggleSearch => "Toggle Search",
             PlaylistAction::ClearSearch => "Clear Search",
+            PlaylistAction::SaveQueue => "Save Queue",
+            PlaylistAction::LoadQueue => "Load Queue",
+            PlaylistAction::DeleteQueue => "Delete Queue",
         }
         .into()
     }
@@ -125,6 +132,15 @@ impl ActionHandler<PlaylistAction> for Playlist {
             PlaylistAction::ToggleShuffle => (self.toggle_shuffle(), None),
             PlaylistAction::ToggleSearch => (self.toggle_search(), None),
             PlaylistAction::ClearSearch => (self.clear_search(), None),
+            PlaylistAction::SaveQueue => {
+                let _ = queue_persistence::auto_save(self);
+                (AsyncTask::new_no_op(), None)
+            }
+            PlaylistAction::LoadQueue => {
+                let _ = queue_persistence::auto_load(self);
+                (AsyncTask::new_no_op(), None)
+            }
+            PlaylistAction::DeleteQueue => (AsyncTask::new_no_op(), None),
         }
     }
 }

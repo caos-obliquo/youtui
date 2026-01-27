@@ -208,6 +208,10 @@ impl PlaylistSongsPanel {
         };
         self.close_sort();
     }
+    pub fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
+        self.list.get_song_from_idx(idx)
+    }
+
 }
 impl SongListComponent for PlaylistSongsPanel {
     fn get_song_from_idx(&self, idx: usize) -> Option<&crate::app::structures::ListSong> {
