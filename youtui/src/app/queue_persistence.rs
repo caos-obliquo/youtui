@@ -33,7 +33,9 @@ pub fn save_queue(playlist: &Playlist, name: &str) -> Result<(), Box<dyn std::er
         .into_iter()
         .map(|song| ListSong {
             download_status: match song.download_status {
-                DownloadStatus::Downloaded(_) => DownloadStatus::None,
+                DownloadStatus::Downloaded(_) | DownloadStatus::Downloading(_) => {
+                    DownloadStatus::None
+                }
                 other => other,
             },
             album_art: match song.album_art {
