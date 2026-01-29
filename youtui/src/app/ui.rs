@@ -1,4 +1,5 @@
 use self::browser::Browser;
+use self::library::Library;
 use self::logger::Logger;
 use self::playlist::Playlist;
 use super::AppCallback;
@@ -14,7 +15,7 @@ use crate::config::Config;
 use crate::config::keymap::Keymap;
 use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
 use crate::widgets::ScrollingTableState;
-use action::{AppAction, ListAction, PAGE_KEY_LINES, SEEK_AMOUNT, TextEntryAction};
+use action::{AppAction, LibraryAction, ListAction, PAGE_KEY_LINES, SEEK_AMOUNT, TextEntryAction};
 use async_callback_manager::{AsyncTask, Constraint};
 use crossterm::event::{Event, KeyEvent};
 use itertools::Either;
@@ -26,17 +27,15 @@ pub mod draw;
 pub mod draw_media_controls;
 mod footer;
 mod header;
+pub mod library;
 pub mod logger;
 pub mod playlist;
 
-// Which app level keyboard shortcuts function.
-// What is displayed in header
-// The main pane of the application
-// XXX: This is a bit like a route.
 #[derive(Debug)]
 pub enum WindowContext {
     Browser,
     Playlist,
+    Library,
     Logs,
 }
 
@@ -46,6 +45,7 @@ pub struct YoutuiWindow {
     playlist: Playlist,
     browser: Browser,
     logger: Logger,
+    library: Library,
     config: Config,
     key_stack: Vec<KeyEvent>,
     help: HelpMenu,
@@ -90,6 +90,7 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
             || match self.context {
                 WindowContext::Browser => self.browser.dominant_keybinds_active(),
                 WindowContext::Playlist => false,
+                WindowContext::Library => false,
                 WindowContext::Logs => false,
             }
     }
@@ -106,15 +107,19 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
         match self.context {
             WindowContext::Browser => {
                 Either::Left(Either::Left(self.browser.get_dominant_keybinds(config)))
-            }
+                }
             WindowContext::Playlist => {
                 Either::Left(Either::Right(self.playlist.get_active_keybinds(config)))
-            }
+                }
+            WindowContext::Library => {
+                // Library doesn't have dominant keybinds, return dummy that matches type
+                Either::Right(Either::Right([&config.keybinds.help, &config.keybinds.list].into_iter()))
+                }
             WindowContext::Logs => {
                 Either::Right(Either::Left(self.logger.get_active_keybinds(config)))
+                }
             }
         }
-    }
 }
 
 impl Scrollable for YoutuiWindow {
@@ -125,6 +130,7 @@ impl Scrollable for YoutuiWindow {
         match self.context {
             WindowContext::Browser => self.browser.increment_list(amount),
             WindowContext::Playlist => self.playlist.increment_list(amount),
+            WindowContext::Library => self.library.increment_list(amount),
             WindowContext::Logs => (),
         }
     }
@@ -133,6 +139,7 @@ impl Scrollable for YoutuiWindow {
             || match self.context {
                 WindowContext::Browser => self.browser.is_scrollable(),
                 WindowContext::Playlist => self.playlist.is_scrollable(),
+                WindowContext::Library => self.library.is_scrollable(),
                 WindowContext::Logs => false,
             }
     }
@@ -164,6 +171,9 @@ impl KeyRouter<AppAction> for YoutuiWindow {
             WindowContext::Playlist => Either::Left(Either::Right(
                 kb.chain(self.playlist.get_active_keybinds(config)),
             )),
+          WindowContext::Library => Either::Left(Either::Right(
+                kb.chain(self.playlist.get_active_keybinds(config))
+            )),
             WindowContext::Logs => Either::Right(Either::Left(
                 kb.chain(self.logger.get_active_keybinds(config)),
             )),
@@ -188,6 +198,7 @@ impl TextHandler for YoutuiWindow {
         match self.context {
             WindowContext::Browser => self.browser.is_text_handling(),
             WindowContext::Playlist => self.playlist.is_text_handling(),
+            WindowContext::Library => false,
             WindowContext::Logs => self.logger.is_text_handling(),
         }
     }
@@ -195,6 +206,7 @@ impl TextHandler for YoutuiWindow {
         match self.context {
             WindowContext::Browser => self.browser.get_text(),
             WindowContext::Playlist => self.playlist.get_text(),
+            WindowContext::Library => None,
             WindowContext::Logs => self.logger.get_text(),
         }
     }
@@ -202,6 +214,7 @@ impl TextHandler for YoutuiWindow {
         match self.context {
             WindowContext::Browser => self.browser.replace_text(text),
             WindowContext::Playlist => self.playlist.replace_text(text),
+            WindowContext::Library => {},
             WindowContext::Logs => self.logger.replace_text(text),
         }
     }
@@ -209,6 +222,7 @@ impl TextHandler for YoutuiWindow {
         match self.context {
             WindowContext::Browser => self.browser.clear_text(),
             WindowContext::Playlist => self.playlist.clear_text(),
+            WindowContext::Library => false,
             WindowContext::Logs => self.logger.clear_text(),
         }
     }
@@ -222,6 +236,7 @@ impl TextHandler for YoutuiWindow {
                 .playlist
                 .handle_text_event_impl(event)
                 .map(|effect| effect.map_frontend(|this: &mut YoutuiWindow| &mut this.playlist)),
+            WindowContext::Library => None,
             WindowContext::Logs => self
                 .logger
                 .handle_text_event_impl(event)
@@ -232,10 +247,6 @@ impl TextHandler for YoutuiWindow {
 
 impl ActionHandler<AppAction> for YoutuiWindow {
     fn apply_action(&mut self, action: AppAction) -> impl Into<YoutuiEffect<Self>> {
-        // NOTE: This is the place to check if we _should_ be handling an action.
-        // For example if a user has set custom 'playlist' keybinds that trigger
-        // 'browser' actions, but browser is not shown currently, this could be filtered
-        // out here.
         match action {
             AppAction::VolUp => {
                 return Into::<YoutuiEffect<Self>>::into(self.handle_increase_volume(5));
@@ -291,6 +302,9 @@ impl ActionHandler<AppAction> for YoutuiWindow {
             }
             AppAction::TextEntry(a) => return self.handle_text_entry_action(a).into(),
             AppAction::List(a) => return self.handle_list_action(a).into(),
+            AppAction::Library(a) => {
+                return apply_action_mapped(self, a, |this: &mut Self| &mut this.library);
+            } 
             AppAction::NoOp => (),
         };
         AsyncTask::new_no_op().into()
@@ -307,6 +321,7 @@ impl YoutuiWindow {
             config,
             browser: Browser::new(),
             logger: Logger::new(),
+            library: Library::new(),
             key_stack: Vec::new(),
             help: HelpMenu::new(),
             tick: 0,
@@ -324,6 +339,9 @@ impl YoutuiWindow {
             WindowContext::Playlist => Either::Right(get_visible_keybinds_as_readable_iter(
                 self.playlist.get_all_keybinds(&self.config),
             )),
+            WindowContext::Library => Either::Right(get_visible_keybinds_as_readable_iter(
+                self.playlist.get_all_keybinds(&self.config),
+            )),
             WindowContext::Logs => Either::Left(Either::Left(
                 get_visible_keybinds_as_readable_iter(self.logger.get_all_keybinds(&self.config)),
             )),
@@ -334,16 +352,36 @@ impl YoutuiWindow {
                 .chain(std::iter::once(&self.config.keybinds.text_entry)),
         ))
     }
+    pub fn handle_library_action(&mut self, action: LibraryAction) -> ComponentEffect<Self> {
+    match action {
+        LibraryAction::Refresh => {
+            // TODO: Actually fetch playlists from API
+            // For now, just set loading to false
+            self.library.state.is_loading = false;
+            AsyncTask::new_no_op()
+        }
+        LibraryAction::Down => {
+            self.library.state.move_down();
+            AsyncTask::new_no_op()
+        }
+        LibraryAction::Up => {
+            self.library.state.move_up();
+            AsyncTask::new_no_op()
+        }
+        LibraryAction::Select => {
+            // TODO: Handle playlist selection
+            AsyncTask::new_no_op()
+        }
+    }
+}
+
     pub async fn handle_crossterm_event(
         &mut self,
         event: crossterm::event::Event,
     ) -> YoutuiEffect<Self> {
-        // TODO: This should be intercepted and keycodes mapped by us instead of going
-        // direct to rat-text.
         if let Some(effect) = self.try_handle_text(&event) {
             return effect.into();
         };
-        // Splitting out event types removes one layer of indentation.
         match event {
             Event::Key(k) => return self.handle_key_event(k),
             Event::Mouse(m) => return self.handle_mouse_event(m).into(),
@@ -355,8 +393,6 @@ impl YoutuiWindow {
         &mut self,
         event: souvlaki::MediaControlEvent,
     ) -> YoutuiEffect<Self> {
-        // This conversion function is written here as this is expected to be the only
-        // location it is used.
         let convert_dir = |dir| match dir {
             souvlaki::SeekDirection::Forward => SeekDirection::Forward,
             souvlaki::SeekDirection::Backward => SeekDirection::Back,
@@ -432,6 +468,7 @@ impl YoutuiWindow {
                 .handle_text_entry_action(action)
                 .map_frontend(|this: &mut Self| &mut this.browser),
             WindowContext::Playlist => AsyncTask::new_no_op(),
+            WindowContext::Library => AsyncTask::new_no_op(),
             WindowContext::Logs => AsyncTask::new_no_op(),
         }
     }
@@ -466,7 +503,6 @@ impl YoutuiWindow {
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
     pub fn handle_increase_volume(&mut self, inc: i8) -> ComponentEffect<Self> {
-        // Visually update the state first for instant feedback.
         self.increase_volume(inc);
         AsyncTask::new_future_option(
             IncreaseVolume(inc),
@@ -475,7 +511,6 @@ impl YoutuiWindow {
         )
     }
     pub fn handle_set_volume(&mut self, new_vol: u8) -> ComponentEffect<Self> {
-        // Visually update the state first for instant feedback.
         self.set_volume(new_vol);
         AsyncTask::new_future_option(
             SetVolume(new_vol),
@@ -540,19 +575,13 @@ impl YoutuiWindow {
             self.help.shown = false;
         } else {
             self.help.shown = true;
-            // Setup Help menu parameters
             self.help.cur = 0;
-            // We have to get the keybind length this way as the help menu iterator is not
-            // ExactSized
             self.help.len = self.get_help_list_items().count();
         }
     }
-    /// Visually increment the volume, note, does not actually change the
-    /// volume.
     fn increase_volume(&mut self, inc: i8) {
         self.playlist.increase_volume(inc);
     }
-    /// Visually set the volume, note, does not actually change the volume.
     fn set_volume(&mut self, new_vol: u8) {
         self.playlist.set_volume(new_vol);
     }
@@ -563,9 +592,6 @@ impl YoutuiWindow {
     fn _revert_context(&mut self) {
         std::mem::swap(&mut self.context, &mut self.prev_context);
     }
-    // The downside of this approach is that if draw_popup is calling this function,
-    // it is gettign called every tick.
-    // Consider a way to set this in the in state memory.
     fn get_cur_displayable_mode(
         &self,
     ) -> Option<DisplayableMode<'_, impl Iterator<Item = DisplayableKeyAction<'_>>>> {

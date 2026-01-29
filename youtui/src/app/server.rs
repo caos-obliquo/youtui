@@ -2,7 +2,7 @@ use crate::config::{ApiKey, Config};
 pub use messages::*;
 use rusty_ytdl::reqwest;
 use std::sync::Arc;
-mod messages;
+pub mod messages;
 
 pub mod api;
 pub mod api_error_handler;

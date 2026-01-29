@@ -83,6 +83,11 @@ impl Api {
     ) -> Result<()> {
         add_playlist_items(self.get_api().await?, playlist_id, video_ids).await
     }
+    pub async fn fetch_library_playlists(&self) -> Result<Vec<ytmapi_rs::parse::LibraryPlaylist>> {
+    Self::fetch_library_playlists_helper(self.get_api().await?).await
+    }
+
+
     pub async fn search_artists(&self, text: String) -> Result<Vec<SearchResultArtist>> {
         search_artists(self.get_api().await?, text).await
     }
@@ -104,6 +109,12 @@ impl Api {
         let api = self.api.clone();
         get_artist_songs(api, browse_id)
     }
+async fn fetch_library_playlists_helper(api: ConcurrentApi) -> Result<Vec<ytmapi_rs::parse::LibraryPlaylist>> {
+    tracing::info!("Fetching user's library playlists");
+    let query = ytmapi_rs::query::GetLibraryPlaylistsQuery;
+    query_api_with_retry(&api, query).await
+}
+
 }
 
 /// Update the local oauth token file.

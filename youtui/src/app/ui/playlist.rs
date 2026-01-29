@@ -70,6 +70,7 @@ impl_youtui_component!(Playlist);
 #[serde(rename_all = "snake_case")]
 pub enum PlaylistAction {
     ViewBrowser,
+    ViewLibrary,
     PlaySelected,
     DeleteSelected,
     DeleteAll,
@@ -87,6 +88,7 @@ impl Action for PlaylistAction {
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match self {
             PlaylistAction::ViewBrowser => "View Browser",
+            PlaylistAction::ViewLibrary => "View Library",
             PlaylistAction::PlaySelected => "Play Selected",
             PlaylistAction::DeleteSelected => "Delete Selected",
             PlaylistAction::DeleteAll => "Delete All",
@@ -110,6 +112,10 @@ impl ActionHandler<PlaylistAction> for Playlist {
     fn apply_action(&mut self, action: PlaylistAction) -> impl Into<YoutuiEffect<Playlist>> {
         match action {
             PlaylistAction::ViewBrowser => (AsyncTask::new_no_op(), Some(self.view_browser())),
+            PlaylistAction::ViewLibrary => (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::ChangeContext(WindowContext::Library)),
+            ),
             PlaylistAction::PlaySelected => (self.play_selected(), None),
             PlaylistAction::DeleteSelected => (self.delete_selected(), None),
             PlaylistAction::DeleteAll => (self.delete_all(), None),

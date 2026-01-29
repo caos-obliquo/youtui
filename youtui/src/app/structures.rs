@@ -14,7 +14,7 @@ use ytmapi_rs::common::{
 use ytmapi_rs::parse::{
     AlbumSong, ParsedSongAlbum, ParsedSongArtist, ParsedUploadArtist, ParsedUploadSongAlbum,
     PlaylistEpisode, PlaylistItem, PlaylistSong, PlaylistUploadSong, PlaylistVideo,
-    SearchResultSong,
+    SearchResultSong, LibraryPlaylist,
 };
 
 pub trait SongListComponent {
@@ -547,5 +547,46 @@ impl BrowserSongsList {
             }
             tracing::info!("Album art updated");
         }
+    }
+}
+
+    #[derive(Clone, Debug, Default)]
+pub struct LibraryState {
+    pub playlists: Vec<LibraryPlaylist>,
+    pub selected_index: usize,
+    pub is_loading: bool,
+}
+
+impl LibraryState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    pub fn set_playlists(&mut self, playlists: Vec<LibraryPlaylist>) {
+        self.playlists = playlists;
+        self.is_loading = false;
+        if !self.playlists.is_empty() && self.selected_index >= self.playlists.len() {
+            self.selected_index = 0;
+        }
+    }
+    
+    pub fn start_loading(&mut self) {
+        self.is_loading = true;
+    }
+    
+    pub fn move_down(&mut self) {
+        if !self.playlists.is_empty() && self.selected_index < self.playlists.len() - 1 {
+            self.selected_index += 1;
+        }
+    }
+    
+    pub fn move_up(&mut self) {
+        if self.selected_index > 0 {
+            self.selected_index -= 1;
+        }
+    }
+    
+    pub fn get_selected(&self) -> Option<&LibraryPlaylist> {
+        self.playlists.get(self.selected_index)
     }
 }

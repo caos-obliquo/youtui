@@ -18,7 +18,7 @@ use futures::{Future, Stream};
 use std::sync::Arc;
 use std::time::Duration;
 use ytmapi_rs::common::{ArtistChannelID, PlaylistID, SearchSuggestion, VideoID};
-use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
+use ytmapi_rs::parse::{LibraryPlaylist, SearchResultArtist, SearchResultPlaylist, SearchResultSong};
 
 #[derive(PartialEq, Debug)]
 pub enum TaskMetadata {
@@ -64,6 +64,9 @@ pub struct AddSongsToPlaylist {
     pub playlist_id: PlaylistID<'static>,
     pub video_ids: Vec<VideoID<'static>>,
 }
+
+#[derive(Debug, PartialEq)]
+pub struct GetLibraryPlaylists;
 
 #[derive(Debug, PartialEq)]
 pub struct DownloadSong(pub VideoID<'static>, pub ListSongID);
@@ -458,6 +461,20 @@ impl BackendTask<ArcServer> for AddSongsToPlaylist {
         let backend = backend.clone();
         async move {
             backend.api.add_playlist_items(self.playlist_id, self.video_ids).await
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for GetLibraryPlaylists {
+    type Output = Result<Vec<ytmapi_rs::parse::LibraryPlaylist>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+        backend.api.fetch_library_playlists().await
         }
     }
 }
