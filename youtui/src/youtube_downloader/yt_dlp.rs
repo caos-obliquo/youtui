@@ -75,6 +75,8 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         let command = self.yt_dlp_command.clone();
         async move {
             let args = vec![
+                "--extractor-args",
+                "youtube:player_client=android_vr",
                 // First, print filesize in bytes to stderr
                 "--print",
                 "filesize",
