@@ -4,6 +4,7 @@ use super::structures::Percentage;
 use super::ui::playlist::DEFAULT_UI_VOLUME;
 use crate::core::blocking_send_or_error;
 use futures::Stream;
+use notify_rust::{Notification, Timeout};
 use souvlaki::{MediaControlEvent, MediaMetadata, MediaPosition, PlatformConfig};
 use std::borrow::Cow;
 use std::time::Duration;
@@ -42,10 +43,56 @@ impl std::fmt::Display for MediaControlsError {
     }
 }
 
+pub struct NotificationController {
+    last_notification: Option<(String, String)>,
+}
+
+impl NotificationController {
+    pub fn new() -> Self {
+        Self {
+            last_notification: None,
+        }
+    }
+
+    pub fn notify_track_change(
+        &mut self,
+        title: &str,
+        artist: Option<&str>,
+        cover_url: Option<&str>,
+    ) -> Result<(), notify_rust::error::Error> {
+        let body = artist.unwrap_or("Unknown Artist");
+
+        if self
+            .last_notification
+            .as_ref()
+            .map(|(t, b)| (t.as_str(), b.as_str()))
+            == Some((title, body))
+        {
+            return Ok(());
+        }
+
+        let mut notification = Notification::new()
+            .summary(title)
+            .body(body)
+            .appname("youtui")
+            .timeout(Timeout::Milliseconds(5000))
+            .clone();
+
+        if let Some(url) = cover_url {
+            notification.icon(url);
+        }
+
+        notification.show()?;
+        self.last_notification = Some((title.to_string(), body.to_string()));
+        Ok(())
+    }
+}
+
 pub struct MediaController {
     inner: souvlaki::MediaControls,
     status: souvlaki::MediaPlayback,
     volume: MediaControlsVolume,
+    notification_controller: NotificationController,
     title: Option<String>,
     album: Option<String>,
     artist: Option<String>,
@@ -157,6 +204,7 @@ impl MediaController {
                 cover_url: None,
                 duration: None,
                 volume: Default::default(),
+                notification_controller: NotificationController::new(),
                 #[cfg(target_os = "macos")]
                 macos_window_handle,
             },
@@ -239,6 +287,14 @@ impl MediaController {
             self.inner
                 .set_metadata(new_metadata)
                 .map_err(MediaControlsError)?;
+
+            if let Some(title) = &self.title {
+                let _ = self.notification_controller.notify_track_change(
+                    title,
+                    self.artist.as_deref(),
+                    self.cover_url.as_deref(),
+                );
+            }
         }
         Ok(())
     }
