@@ -50,7 +50,6 @@ impl_youtui_component!(Browser);
 #[serde(rename_all = "snake_case")]
 pub enum BrowserAction {
     ViewPlaylist,
-    ViewLibrary,
     Search,
     Left,
     Right,
@@ -64,7 +63,6 @@ impl Action for BrowserAction {
     fn describe(&self) -> Cow<'_, str> {
         match self {
             BrowserAction::ViewPlaylist => "View Playlist",
-            BrowserAction::ViewLibrary => "View Library",
             BrowserAction::Search => "Toggle Search",
             BrowserAction::Left => "Left",
             BrowserAction::Right => "Right",
@@ -197,12 +195,6 @@ impl ActionHandler<BrowserAction> for Browser {
                 return (
                     AsyncTask::new_no_op(),
                     Some(AppCallback::ChangeContext(WindowContext::Playlist)),
-                );
-            }
-            BrowserAction::ViewLibrary => {
-                return (
-                    AsyncTask::new_no_op(),
-                    Some(AppCallback::ChangeContext(WindowContext::Library)),
                 );
             }
             BrowserAction::Search => self.handle_toggle_search(),

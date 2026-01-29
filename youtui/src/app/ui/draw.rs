@@ -31,7 +31,6 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                 .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
         }
         WindowContext::Logs => w.logger.draw_chunk(f, window_chunk, context_selected),
-        WindowContext::Library => w.library.draw(f, window_chunk),
         WindowContext::Playlist => {
             w.playlist
                 .draw_mut_chunk(f, window_chunk, context_selected, w.tick);

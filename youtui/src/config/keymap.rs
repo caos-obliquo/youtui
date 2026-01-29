@@ -86,7 +86,6 @@ pub struct YoutuiKeymap {
     pub text_entry: BTreeMap<Keybind, KeyActionTree<AppAction>>,
     pub list: BTreeMap<Keybind, KeyActionTree<AppAction>>,
     pub log: BTreeMap<Keybind, KeyActionTree<AppAction>>,
-    pub library: BTreeMap<Keybind, KeyActionTree<AppAction>>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -107,7 +106,6 @@ pub struct YoutuiKeymapIR {
     pub text_entry: BTreeMap<Keybind, KeyStringTree>,
     pub list: BTreeMap<Keybind, KeyStringTree>,
     pub log: BTreeMap<Keybind, KeyStringTree>,
-    pub library: BTreeMap<Keybind, KeyStringTree>,
 }
 
 #[derive(PartialEq, Debug, Serialize, Deserialize, Default)]
@@ -149,7 +147,6 @@ impl Default for YoutuiKeymap {
             log: default_log_keybinds(),
             browser_playlists: default_browser_playlists_keybinds(),
             browser_playlist_songs: default_browser_playlist_songs_keybinds(),
-            library: default_library_keybinds(),
         }
     }
 }
@@ -169,7 +166,6 @@ impl YoutuiKeymap {
             text_entry,
             list,
             log,
-            library,
             browser_artist_songs,
             browser_playlists,
             browser_playlist_songs,
@@ -319,6 +315,7 @@ impl YoutuiKeymap {
             })
             .collect::<Result<BTreeMap<_, _>>>()
             .context("List keybinds parse failed")?;
+
         let log = log
             .into_iter()
             .map(|(k, v)| {
@@ -327,6 +324,8 @@ impl YoutuiKeymap {
             })
             .collect::<Result<BTreeMap<_, _>>>()
             .context("Log keybinds parse failed")?;
+
+
         let mut keymap = YoutuiKeymap::default();
         merge_keymaps(&mut keymap.global, global);
         merge_keymaps(&mut keymap.playlist, playlist);
@@ -802,13 +801,6 @@ fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                 KeyActionVisibility::Global,
             ),
         ),
-                (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('7')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Browser(BrowserAction::ViewLibrary),
-                KeyActionVisibility::Global,
-            ),
-        ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Right),
             KeyActionTree::new_key(AppAction::Browser(BrowserAction::Right)),
@@ -1186,30 +1178,6 @@ fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
             KeyActionTree::new_key(AppAction::Log(LoggerAction::ToggleTargetSelector)),
-        ),
-    ])
-}
-
-fn default_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
-    use crate::app::ui::action::LibraryAction;
-    use crossterm::event::KeyCode;
-    
-    FromIterator::from_iter([
-        (
-            Keybind::new_unmodified(KeyCode::Char('r')),
-            KeyActionTree::new_key(AppAction::Library(LibraryAction::Refresh)),
-        ),
-        (
-            Keybind::new_unmodified(KeyCode::Down),
-            KeyActionTree::new_key(AppAction::Library(LibraryAction::Down)),
-        ),
-        (
-            Keybind::new_unmodified(KeyCode::Up),
-            KeyActionTree::new_key(AppAction::Library(LibraryAction::Up)),
-        ),
-        (
-            Keybind::new_unmodified(KeyCode::Enter),
-            KeyActionTree::new_key(AppAction::Library(LibraryAction::Select)),
         ),
     ])
 }

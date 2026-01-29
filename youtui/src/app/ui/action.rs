@@ -9,7 +9,6 @@ use super::playlist::PlaylistAction;
 use crate::app::component::actionhandler::{Action, ActionHandler, YoutuiEffect};
 use crate::app::ui::browser::playlistsearch::search_panel::BrowserPlaylistsAction;
 use crate::app::ui::browser::playlistsearch::songs_panel::BrowserPlaylistSongsAction;
-use ytmapi_rs::parse::LibraryPlaylist;
 use anyhow::bail;
 use async_callback_manager::AsyncTask;
 use serde::de::{self};
@@ -49,7 +48,6 @@ pub enum AppAction {
     Playlist(PlaylistAction),
     TextEntry(TextEntryAction),
     List(ListAction),
-    Library(LibraryAction),
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -89,6 +87,7 @@ impl Action for TextEntryAction {
         }
     }
 }
+
 impl Action for ListAction {
     fn context(&self) -> std::borrow::Cow<'_, str> {
         "Global".into()
@@ -131,7 +130,6 @@ impl Action for AppAction {
             AppAction::BrowserSongs(a) => a.context(),
             AppAction::BrowserPlaylists(a) => a.context(),
             AppAction::BrowserPlaylistSongs(a) => a.context(),
-            AppAction::Library(a) => a.context(),
         }
     }
     fn describe(&self) -> std::borrow::Cow<'_, str> {
@@ -161,7 +159,6 @@ impl Action for AppAction {
             AppAction::BrowserSongs(a) => a.describe(),
             AppAction::BrowserPlaylists(a) => a.describe(),
             AppAction::BrowserPlaylistSongs(a) => a.describe(),
-            AppAction::Library(a) => a.describe(),
         }
     }
 }
@@ -209,6 +206,7 @@ impl Action for HelpAction {
         }
     }
 }
+
 impl ActionHandler<HelpAction> for HelpMenu {
     fn apply_action(&mut self, action: HelpAction) -> impl Into<YoutuiEffect<Self>> {
         match action {
@@ -217,27 +215,3 @@ impl ActionHandler<HelpAction> for HelpMenu {
         AsyncTask::new_no_op()
     }
 }
-
-    #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LibraryAction {
-    Refresh,
-    Down,
-    Up,
-    Select,
-}
-
-impl Action for LibraryAction {
-    fn context(&self) -> std::borrow::Cow<'_, str> {
-        "Library".into()
-    }
-    fn describe(&self) -> std::borrow::Cow<'_, str> {
-        match self {
-            LibraryAction::Refresh => "Refresh playlists".into(),
-            LibraryAction::Down => "Move down".into(),
-            LibraryAction::Up => "Move up".into(),
-            LibraryAction::Select => "Select playlist".into(),
-        }
-    }
-}
-
