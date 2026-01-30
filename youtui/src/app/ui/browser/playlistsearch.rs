@@ -4,7 +4,7 @@ use crate::app::component::actionhandler::{
     ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
 use crate::app::server::api::GetPlaylistSongsProgressUpdate;
-use crate::app::server::{GetPlaylistSongs, HandleApiError, SearchPlaylists};
+use crate::app::server::{GetLibraryPlaylists, GetPlaylistSongs, HandleApiError, SearchPlaylists};
 use crate::app::structures::SongListComponent;
 use crate::app::ui::ListStatus;
 use crate::app::ui::action::{AppAction, TextEntryAction};
@@ -246,23 +246,30 @@ impl PlaylistSearchBrowser {
     }
     pub fn search(&mut self) -> ComponentEffect<Self> {
         self.playlist_search_panel.close_search();
-        let Some(search_query) = self
+        let search_text = self
             .playlist_search_panel
             .search
             .get_text()
-            .map(|s| s.to_string())
-        else {
-            // Do nothing if no text
-            return AsyncTask::new_no_op();
-        };
+            .map(|s| s.to_string());
+        
         self.playlist_search_panel.clear_text();
 
-        AsyncTask::new_future_try(
-            SearchPlaylists(search_query),
-            HandleSearchPlaylistsOk,
-            HandleSearchPlaylistsErr,
-            Some(Constraint::new_kill_same_type()),
-        )
+        // If search is empty, load library playlists. Otherwise search for playlists.
+        match search_text {
+            Some(search_query) if !search_query.trim().is_empty() => {
+                // Search for playlists with the query
+                AsyncTask::new_future_try(
+                    SearchPlaylists(search_query),
+                    HandleSearchPlaylistsOk,
+                    HandleSearchPlaylistsErr,
+                    Some(Constraint::new_kill_same_type()),
+                )
+            }
+            _ => {
+                // Load library playlists when search is empty
+                self.load_library_playlists()
+            }
+        }
     }
     pub fn get_songs(&mut self) -> ComponentEffect<Self> {
         let selected = self.playlist_search_panel.get_selected_item();
@@ -374,6 +381,21 @@ impl PlaylistSearchBrowser {
         // Handled by this function?
         self.increment_cur_list(0);
     }
+    pub fn replace_playlist_list_from_library(&mut self, playlist_list: Vec<NonPodcastSearchResultPlaylist>) {
+        self.playlist_search_panel.list = playlist_list;
+        self.increment_cur_list(0);
+    }
+    pub fn load_library_playlists(&mut self) -> ComponentEffect<Self> {
+        // Clear the search box to indicate we're loading library playlists
+        self.playlist_search_panel.close_search();
+        
+        AsyncTask::new_future_try(
+            GetLibraryPlaylists,
+            HandleGetLibraryPlaylistsOk,
+            HandleGetLibraryPlaylistsErr,
+            Some(Constraint::new_kill_same_type()),
+        )
+    }
     pub fn handle_append_song_list(&mut self, song_list: Vec<PlaylistItem>) {
         self.playlist_songs_panel
             .list
@@ -407,6 +429,10 @@ impl PlaylistSearchBrowser {
 struct HandleSearchPlaylistsOk;
 #[derive(Debug, PartialEq)]
 struct HandleSearchPlaylistsErr;
+#[derive(Debug, PartialEq)]
+struct HandleGetLibraryPlaylistsOk;
+#[derive(Debug, PartialEq)]
+struct HandleGetLibraryPlaylistsErr;
 #[derive(Debug, PartialEq, Clone)]
 struct HandleGetPlaylistSongs;
 
@@ -423,9 +449,33 @@ impl_youtui_task_handler!(
     |_, error| |_: &mut PlaylistSearchBrowser| AsyncTask::new_future(
         HandleApiError {
             error,
-            // To avoid needing to clone search query to use in the error message, this
-            // error message is minimal.
             message: "Error recieved getting playlists".to_string(),
+        },
+        NoOpHandler,
+        None,
+    )
+    );
+
+impl_youtui_task_handler!(
+    HandleGetLibraryPlaylistsOk,
+    Vec<ytmapi_rs::parse::LibraryPlaylist>,
+    PlaylistSearchBrowser,
+    |_, playlists: Vec<ytmapi_rs::parse::LibraryPlaylist>| |this: &mut PlaylistSearchBrowser| {
+        let converted: Vec<NonPodcastSearchResultPlaylist> = playlists
+            .into_iter()
+            .map(|p| p.into())
+            .collect();
+        this.replace_playlist_list_from_library(converted)
+    }
+);
+impl_youtui_task_handler!(
+    HandleGetLibraryPlaylistsErr,
+    anyhow::Error,
+    PlaylistSearchBrowser,
+    |_, error| |_: &mut PlaylistSearchBrowser| AsyncTask::new_future(
+        HandleApiError {
+            error,
+            message: "Error received getting library playlists".to_string(),
         },
         NoOpHandler,
         None,

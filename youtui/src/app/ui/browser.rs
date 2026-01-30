@@ -30,7 +30,7 @@ pub mod playlistsearch;
 pub mod shared_components;
 pub mod songsearch;
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, PartialEq)]
 enum BrowserVariant {
     #[default]
     Artist,
@@ -198,7 +198,7 @@ impl ActionHandler<BrowserAction> for Browser {
                 );
             }
             BrowserAction::Search => self.handle_toggle_search(),
-            BrowserAction::ChangeSearchType => self.handle_change_search_type(),
+            BrowserAction::ChangeSearchType => return (self.handle_change_search_type(), None),
         }
         (AsyncTask::new_no_op(), None)
     }
@@ -475,11 +475,21 @@ impl Browser {
             BrowserVariant::Playlist => self.playlist_search_browser.handle_toggle_search(),
         }
     }
-    pub fn handle_change_search_type(&mut self) {
+    pub fn handle_change_search_type(&mut self) -> ComponentEffect<Self> {
+        let prev_variant = self.variant;
         match self.variant {
             BrowserVariant::Artist => self.variant = BrowserVariant::Song,
             BrowserVariant::Song => self.variant = BrowserVariant::Playlist,
             BrowserVariant::Playlist => self.variant = BrowserVariant::Artist,
+        }
+        
+        // Auto-load library playlists when switching to Playlist view
+        if self.variant == BrowserVariant::Playlist && prev_variant != BrowserVariant::Playlist {
+            self.playlist_search_browser
+                .load_library_playlists()
+                .map_frontend(|this: &mut Self| &mut this.playlist_search_browser)
+        } else {
+            AsyncTask::new_no_op()
         }
     }
 }

@@ -52,6 +52,15 @@ impl NonPodcastSearchResultPlaylist {
     }
 }
 
+impl From<ytmapi_rs::parse::LibraryPlaylist> for NonPodcastSearchResultPlaylist {
+    fn from(p: ytmapi_rs::parse::LibraryPlaylist) -> Self {
+        NonPodcastSearchResultPlaylist {
+            title: p.title,
+            playlist_id: p.playlist_id,
+        }
+    }
+}
+
 pub struct PlaylistSearchPanel {
     pub list: Vec<NonPodcastSearchResultPlaylist>,
     // Duplicate of search popped?
