@@ -1,6 +1,6 @@
 use self::browser::Browser;
 use self::logger::Logger;
-use self::playlist::Playlist;
+use self::playlist::{Playlist, PlaylistSavePopup};
 use super::AppCallback;
 use super::component::actionhandler::{
     ActionHandler, ComponentEffect, DominantKeyRouter, KeyHandleAction, KeyRouter, Scrollable,
@@ -19,6 +19,7 @@ use async_callback_manager::{AsyncTask, Constraint};
 use crossterm::event::{Event, KeyEvent};
 use itertools::Either;
 use std::time::Duration;
+use ytmapi_rs::common::VideoID;
 
 pub mod action;
 pub mod browser;
@@ -34,6 +35,7 @@ pub enum WindowContext {
     Browser,
     Playlist,
     Logs,
+    PlaylistSavePopup,
 }
 
 pub struct YoutuiWindow {
@@ -42,6 +44,7 @@ pub struct YoutuiWindow {
     playlist: Playlist,
     browser: Browser,
     logger: Logger,
+    playlist_save_popup: Option<PlaylistSavePopup>,
     config: Config,
     key_stack: Vec<KeyEvent>,
     help: HelpMenu,
@@ -82,11 +85,16 @@ impl Scrollable for HelpMenu {
 
 impl DominantKeyRouter<AppAction> for YoutuiWindow {
     fn dominant_keybinds_active(&self) -> bool {
+        if self.playlist_save_popup.is_some() {
+            return true;
+        }
+
         self.help.shown
             || match self.context {
                 WindowContext::Browser => self.browser.dominant_keybinds_active(),
                 WindowContext::Playlist => false,
                 WindowContext::Logs => false,
+                WindowContext::PlaylistSavePopup => true, // Always dominant when active
             }
     }
 
@@ -94,23 +102,32 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
         &self,
         config: &'a Config,
     ) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
+        // If popup is active, it handles its own keys, but we still show help keybinds
+        if self.playlist_save_popup.is_some() {
+            return Either::Right(Either::Right(
+                [&config.keybinds.help, &config.keybinds.list].into_iter(),
+            ));
+        }
+        
         if self.help.shown {
             return Either::Right(Either::Right(
                 [&config.keybinds.help, &config.keybinds.list].into_iter(),
             ));
         }
+        
         match self.context {
-            WindowContext::Browser => {
-                Either::Left(Either::Left(self.browser.get_dominant_keybinds(config)))
-                }
-            WindowContext::Playlist => {
-                Either::Left(Either::Right(self.playlist.get_active_keybinds(config)))
-                }
-            WindowContext::Logs => {
-                Either::Right(Either::Left(self.logger.get_active_keybinds(config)))
-                }
-            }
+            WindowContext::Browser =>
+                Either::Left(Either::Left(self.browser.get_dominant_keybinds(config))),
+            WindowContext::Playlist =>
+                Either::Left(Either::Right(self.playlist.get_active_keybinds(config))),
+            WindowContext::Logs =>
+                Either::Right(Either::Left(self.logger.get_active_keybinds(config))),
+            WindowContext::PlaylistSavePopup =>
+                Either::Right(Either::Right(
+                    [&config.keybinds.help, &config.keybinds.list].into_iter()
+                )),
         }
+    }
 }
 
 impl Scrollable for YoutuiWindow {
@@ -122,6 +139,7 @@ impl Scrollable for YoutuiWindow {
             WindowContext::Browser => self.browser.increment_list(amount),
             WindowContext::Playlist => self.playlist.increment_list(amount),
             WindowContext::Logs => (),
+            WindowContext::PlaylistSavePopup => (),
         }
     }
     fn is_scrollable(&self) -> bool {
@@ -130,6 +148,7 @@ impl Scrollable for YoutuiWindow {
                 WindowContext::Browser => self.browser.is_scrollable(),
                 WindowContext::Playlist => self.playlist.is_scrollable(),
                 WindowContext::Logs => false,
+                WindowContext::PlaylistSavePopup => false,
             }
     }
 }
@@ -144,27 +163,38 @@ impl KeyRouter<AppAction> for YoutuiWindow {
         } else {
             Either::Right(std::iter::empty())
         };
+        
+        // PlaylistSavePopup is now handled in dominant_keybinds_active
+        // So it will use this early return path
         if self.dominant_keybinds_active() {
             return Either::Right(Either::Right(self.get_dominant_keybinds(config).chain(kb)));
         }
+        
         let kb = kb.chain(std::iter::once(&config.keybinds.global));
         let kb = if self.is_text_handling() {
             Either::Left(kb.chain(std::iter::once(&config.keybinds.text_entry)))
         } else {
             Either::Right(kb)
         };
+        
         match self.context {
             WindowContext::Browser => Either::Left(Either::Left(
-                kb.chain(self.browser.get_active_keybinds(config)),
+                    kb.chain(self.browser.get_active_keybinds(config)),
             )),
             WindowContext::Playlist => Either::Left(Either::Right(
-                kb.chain(self.playlist.get_active_keybinds(config)),
+                    kb.chain(self.playlist.get_active_keybinds(config)),
             )),
             WindowContext::Logs => Either::Right(Either::Left(
-                kb.chain(self.logger.get_active_keybinds(config)),
+                    kb.chain(self.logger.get_active_keybinds(config)),
+            )),
+            // PlaylistSavePopup now uses dominant path, so this should never be reached
+            // But we need it for exhaustiveness - just return the same as Logs
+            WindowContext::PlaylistSavePopup => Either::Right(Either::Left(
+                    kb.chain(self.logger.get_active_keybinds(config)),
             )),
         }
     }
+
     fn get_all_keybinds<'a>(
         &self,
         config: &'a Config,
@@ -178,6 +208,10 @@ impl KeyRouter<AppAction> for YoutuiWindow {
 
 impl TextHandler for YoutuiWindow {
     fn is_text_handling(&self) -> bool {
+        if self.playlist_save_popup.is_some() {
+            return false;
+        }
+
         if self.help.shown {
             return false;
         }
@@ -185,6 +219,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::Browser => self.browser.is_text_handling(),
             WindowContext::Playlist => self.playlist.is_text_handling(),
             WindowContext::Logs => self.logger.is_text_handling(),
+            WindowContext::PlaylistSavePopup => false,
         }
     }
     fn get_text(&self) -> std::option::Option<&str> {
@@ -192,6 +227,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::Browser => self.browser.get_text(),
             WindowContext::Playlist => self.playlist.get_text(),
             WindowContext::Logs => self.logger.get_text(),
+            WindowContext::PlaylistSavePopup => None,
         }
     }
     fn replace_text(&mut self, text: impl Into<String>) {
@@ -199,6 +235,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::Browser => self.browser.replace_text(text),
             WindowContext::Playlist => self.playlist.replace_text(text),
             WindowContext::Logs => self.logger.replace_text(text),
+            WindowContext::PlaylistSavePopup => {},
         }
     }
     fn clear_text(&mut self) -> bool {
@@ -206,6 +243,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::Browser => self.browser.clear_text(),
             WindowContext::Playlist => self.playlist.clear_text(),
             WindowContext::Logs => self.logger.clear_text(),
+            WindowContext::PlaylistSavePopup => false,
         }
     }
     fn handle_text_event_impl(&mut self, event: &Event) -> Option<ComponentEffect<Self>> {
@@ -222,6 +260,7 @@ impl TextHandler for YoutuiWindow {
                 .logger
                 .handle_text_event_impl(event)
                 .map(|effect| effect.map_frontend(|this: &mut YoutuiWindow| &mut this.logger)),
+            WindowContext::PlaylistSavePopup => None,
         }
     }
 }
@@ -302,12 +341,14 @@ impl YoutuiWindow {
             key_stack: Vec::new(),
             help: HelpMenu::new(),
             tick: 0,
+            playlist_save_popup: None,
         };
         (
             this,
             task.map_frontend(|this: &mut Self| &mut this.playlist),
         )
     }
+    
     pub fn get_help_list_items(&self) -> impl Iterator<Item = DisplayableKeyAction<'_>> {
         match self.context {
             WindowContext::Browser => Either::Left(
@@ -316,25 +357,38 @@ impl YoutuiWindow {
             WindowContext::Playlist => Either::Right(Either::Left(
                 get_visible_keybinds_as_readable_iter(self.playlist.get_all_keybinds(&self.config)),
             )),
-            WindowContext::Logs => Either::Right(Either::Right(
+            WindowContext::Logs => Either::Right(Either::Right(Either::Left(
                 get_visible_keybinds_as_readable_iter(self.logger.get_all_keybinds(&self.config)),
-            )),
+            ))),
+            // For PlaylistSavePopup, show empty since it handles its own display
+            WindowContext::PlaylistSavePopup => Either::Right(Either::Right(Either::Right(std::iter::empty()))),
         }
         .chain(get_visible_keybinds_as_readable_iter(
             std::iter::once(&self.config.keybinds.global)
-                .chain(std::iter::once(&self.config.keybinds.list))
-                .chain(std::iter::once(&self.config.keybinds.text_entry)),
+            .chain(std::iter::once(&self.config.keybinds.list))
+            .chain(std::iter::once(&self.config.keybinds.text_entry)),
         ))
     }
-
 
     pub async fn handle_crossterm_event(
         &mut self,
         event: crossterm::event::Event,
     ) -> YoutuiEffect<Self> {
+        // Handle popup events first - it takes precedence
+        if let Some(popup) = &mut self.playlist_save_popup {
+            if let Event::Key(k) = event {
+                let (_, callback) = popup.handle_key(k);
+                if let Some(cb) = callback {
+                    return (AsyncTask::new_no_op(), Some(cb)).into();
+                }
+                return AsyncTask::new_no_op().into();
+            }
+        }
+        
         if let Some(effect) = self.try_handle_text(&event) {
             return effect.into();
         };
+        
         match event {
             Event::Key(k) => return self.handle_key_event(k),
             Event::Mouse(m) => return self.handle_mouse_event(m).into(),
@@ -342,6 +396,7 @@ impl YoutuiWindow {
         }
         AsyncTask::new_no_op().into()
     }
+    
     pub async fn handle_media_controls_event(
         &mut self,
         event: souvlaki::MediaControlEvent,
@@ -385,14 +440,17 @@ impl YoutuiWindow {
         }
         AsyncTask::new_no_op().into()
     }
+    
     pub async fn handle_tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
         self.playlist.handle_tick().await;
     }
+    
     fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
         self.key_stack.push(key_event);
         self.global_handle_key_stack()
     }
+    
     fn handle_mouse_event(
         &mut self,
         mouse_event: crossterm::event::MouseEvent,
@@ -400,6 +458,7 @@ impl YoutuiWindow {
         tracing::warn!("Received unimplemented {:?} mouse event", mouse_event);
         AsyncTask::new_no_op()
     }
+    
     pub fn handle_list_action(&mut self, action: ListAction) -> ComponentEffect<Self> {
         if self.is_scrollable() {
             match action {
@@ -411,6 +470,7 @@ impl YoutuiWindow {
         }
         AsyncTask::new_no_op()
     }
+    
     pub fn handle_text_entry_action(&mut self, action: TextEntryAction) -> ComponentEffect<Self> {
         if !self.is_text_handling() {
             return AsyncTask::new_no_op();
@@ -422,38 +482,46 @@ impl YoutuiWindow {
                 .map_frontend(|this: &mut Self| &mut this.browser),
             WindowContext::Playlist => AsyncTask::new_no_op(),
             WindowContext::Logs => AsyncTask::new_no_op(),
+            WindowContext::PlaylistSavePopup => AsyncTask::new_no_op(),
         }
     }
+    
     pub fn pauseplay(&mut self) -> ComponentEffect<Self> {
         self.playlist
             .pauseplay()
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     pub fn resume(&mut self) -> ComponentEffect<Self> {
         self.playlist
             .resume()
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     pub fn pause(&mut self) -> ComponentEffect<Self> {
         self.playlist
             .pause()
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     pub fn stop(&mut self) -> ComponentEffect<Self> {
         self.playlist
             .stop()
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     pub fn handle_next(&mut self) -> ComponentEffect<Self> {
         self.playlist
             .handle_next()
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     pub fn handle_prev(&mut self) -> ComponentEffect<Self> {
         self.playlist
             .handle_previous()
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     pub fn handle_increase_volume(&mut self, inc: i8) -> ComponentEffect<Self> {
         self.increase_volume(inc);
         AsyncTask::new_future_option(
@@ -462,6 +530,7 @@ impl YoutuiWindow {
             Some(Constraint::new_block_same_type()),
         )
     }
+    
     pub fn handle_set_volume(&mut self, new_vol: u8) -> ComponentEffect<Self> {
         self.set_volume(new_vol);
         AsyncTask::new_future_option(
@@ -470,6 +539,7 @@ impl YoutuiWindow {
             Some(Constraint::new_block_same_type()),
         )
     }
+    
     pub fn handle_seek(
         &mut self,
         duration: Duration,
@@ -479,14 +549,17 @@ impl YoutuiWindow {
             .handle_seek(duration, direction)
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     pub fn handle_seek_to(&mut self, position: Duration) -> ComponentEffect<Self> {
         self.playlist
             .handle_seek_to(position)
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     pub fn handle_volume_update(&mut self, update: VolumeUpdate) {
         self.playlist.handle_volume_update(update)
     }
+    
     pub fn handle_add_songs_to_playlist(
         &mut self,
         song_list: Vec<ListSong>,
@@ -494,6 +567,7 @@ impl YoutuiWindow {
         let (_, effect) = self.playlist.push_song_list(song_list);
         effect.map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     pub fn handle_add_songs_to_playlist_and_play(
         &mut self,
         song_list: Vec<ListSong>,
@@ -505,6 +579,7 @@ impl YoutuiWindow {
             .push(self.playlist.play_song_id(id))
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    
     fn global_handle_key_stack(&mut self) -> YoutuiEffect<Self> {
         match handle_key_stack(self.get_active_keybinds(&self.config), &self.key_stack) {
             KeyHandleAction::Action(a) => {
@@ -519,9 +594,11 @@ impl YoutuiWindow {
             }
         }
     }
+    
     fn key_pending(&self) -> bool {
         !self.key_stack.is_empty()
     }
+    
     pub fn toggle_help(&mut self) {
         if self.help.shown {
             self.help.shown = false;
@@ -531,19 +608,32 @@ impl YoutuiWindow {
             self.help.len = self.get_help_list_items().count();
         }
     }
+    
     fn increase_volume(&mut self, inc: i8) {
         self.playlist.increase_volume(inc);
     }
+    
     fn set_volume(&mut self, new_vol: u8) {
         self.playlist.set_volume(new_vol);
     }
+    
     pub fn handle_change_context(&mut self, new_context: WindowContext) {
         std::mem::swap(&mut self.context, &mut self.prev_context);
         self.context = new_context;
     }
+    
+    pub fn open_playlist_save_popup(&mut self, video_ids: Vec<VideoID<'static>>) {
+        self.playlist_save_popup = Some(PlaylistSavePopup::new(video_ids));
+    }
+    
+    pub fn close_popup(&mut self) {
+        self.playlist_save_popup = None;
+    }
+    
     fn _revert_context(&mut self) {
         std::mem::swap(&mut self.context, &mut self.prev_context);
     }
+    
     fn get_cur_displayable_mode(
         &self,
     ) -> Option<DisplayableMode<'_, impl Iterator<Item = DisplayableKeyAction<'_>>>> {

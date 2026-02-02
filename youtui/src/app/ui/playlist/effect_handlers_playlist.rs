@@ -1,22 +1,107 @@
-use super::*;
-use crate::app::server::{CreatePlaylist, AddSongsToPlaylist};
+use super::playlist_main::Playlist;
+use crate::app::component::actionhandler::ComponentEffect;
+use crate::app::server::{AddSongsToPlaylist, ArcServer, TaskMetadata};
+use async_callback_manager::{AsyncTask, FrontendEffect};
+use tracing::{error, info};
 use ytmapi_rs::common::{PlaylistID, VideoID};
+#[allow(unused_imports)]
+use ytmapi_rs::error::Error;
 
+#[derive(Debug, PartialEq)]
 pub struct HandleCreatePlaylistOk;
+#[derive(Debug, PartialEq)]
 pub struct HandleCreatePlaylistError;
+#[derive(Debug, PartialEq)]
 pub struct HandleAddSongsOk;
+#[derive(Debug, PartialEq)]
 pub struct HandleAddSongsError;
+#[derive(Debug, PartialEq)]
+pub struct HandleSaveQueueOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleSaveQueueError;
 
-impl EffectHandler<Playlist> for HandleCreatePlaylistOk {
-    fn handle_effect(
-        component: &mut Playlist,
-        message: Result<PlaylistID<'static>>,
-    ) -> ComponentEffect<Playlist> {
-        match message {
-            Ok(playlist_id) => {
-                info!("Playlist created: {:?}", playlist_id);
+#[derive(Debug, PartialEq)]
+enum PlaylistSaveEffect {
+    CreatePlaylistSuccess(PlaylistID<'static>),
+    CreatePlaylistError,
+    AddSongsSuccess,
+    AddSongsError,
+    SaveQueueSuccess(PlaylistID<'static>),
+    SaveQueueError,
+}
+
+// Handler for successful playlist creation - needs to add songs next
+impl_youtui_task_handler!(
+    HandleCreatePlaylistOk,
+    PlaylistID<'static>,
+    Playlist,
+    |_, playlist_id| {
+        info!("Playlist created: {:?}", playlist_id);
+        PlaylistSaveEffect::CreatePlaylistSuccess(playlist_id)
+    }
+);
+
+// Handler for playlist creation error
+impl_youtui_task_handler!(
+    HandleCreatePlaylistError,
+    anyhow::Error,
+    Playlist,
+    |_, error| {
+        error!("Failed to create playlist: {}", error);
+        PlaylistSaveEffect::CreatePlaylistError
+    }
+);
+
+// Handler for successful song addition
+impl_youtui_task_handler!(
+    HandleAddSongsOk,
+    (),
+    Playlist,
+    |_, _| {
+        info!("Successfully added songs to playlist!");
+        PlaylistSaveEffect::AddSongsSuccess
+    }
+);
+
+// Handler for song addition error
+impl_youtui_task_handler!(
+    HandleAddSongsError,
+    anyhow::Error,
+    Playlist,
+    |_, error| {
+        error!("Error adding songs to playlist: {}", error);
+        PlaylistSaveEffect::AddSongsError
+    }
+);
+
+// Handler for save queue success
+impl_youtui_task_handler!(
+    HandleSaveQueueOk,
+    PlaylistID<'static>,
+    Playlist,
+    |_, playlist_id| {
+        info!("Queue saved to playlist: {:?}", playlist_id);
+        PlaylistSaveEffect::SaveQueueSuccess(playlist_id)
+    }
+);
+
+// Handler for save queue error
+impl_youtui_task_handler!(
+    HandleSaveQueueError,
+    anyhow::Error,
+    Playlist,
+    |_, error| {
+        error!("Error saving queue to playlist: {}", error);
+        PlaylistSaveEffect::SaveQueueError
+    }
+);
+
+impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for PlaylistSaveEffect {
+    fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
+        match self {
+            PlaylistSaveEffect::CreatePlaylistSuccess(playlist_id) => {
                 // Now add all songs from queue
-                let video_ids: Vec<VideoID> = component
+                let video_ids: Vec<VideoID> = target
                     .list
                     .get_list_iter()
                     .map(|song| song.video_id.clone())
@@ -25,8 +110,8 @@ impl EffectHandler<Playlist> for HandleCreatePlaylistOk {
                 if video_ids.is_empty() {
                     return AsyncTask::new_no_op();
                 }
-
-                AsyncTask::new_future_try(
+                
+                return AsyncTask::new_future_try(
                     AddSongsToPlaylist {
                         playlist_id,
                         video_ids,
@@ -34,77 +119,14 @@ impl EffectHandler<Playlist> for HandleCreatePlaylistOk {
                     HandleAddSongsOk,
                     HandleAddSongsError,
                     None,
-                )
+                );
             }
-            Err(e) => {
-                error!("Failed to create playlist: {}", e);
-                AsyncTask::new_no_op()
-            }
+            PlaylistSaveEffect::CreatePlaylistError => {},
+            PlaylistSaveEffect::AddSongsSuccess => {},
+            PlaylistSaveEffect::AddSongsError => {},
+            PlaylistSaveEffect::SaveQueueSuccess(_) => {},
+            PlaylistSaveEffect::SaveQueueError => {},
         }
-    }
-}
-
-impl EffectHandler<Playlist> for HandleCreatePlaylistError {
-    fn handle_effect(
-        _component: &mut Playlist,
-        error: anyhow::Error,
-    ) -> ComponentEffect<Playlist> {
-        error!("Error creating playlist: {}", error);
-        AsyncTask::new_no_op()
-    }
-}
-
-impl EffectHandler<Playlist> for HandleAddSongsOk {
-    fn handle_effect(
-        _component: &mut Playlist,
-        message: Result<()>,
-    ) -> ComponentEffect<Playlist> {
-        match message {
-            Ok(_) => {
-                info!("Successfully added songs to playlist!");
-                AsyncTask::new_no_op()
-            }
-            Err(e) => {
-                error!("Failed to add songs: {}", e);
-                AsyncTask::new_no_op()
-            }
-        }
-    }
-}
-
-impl EffectHandler<Playlist> for HandleAddSongsError {
-    fn handle_effect(
-        _component: &mut Playlist,
-        error: anyhow::Error,
-    ) -> ComponentEffect<Playlist> {
-        error!("Error adding songs to playlist: {}", error);
-        AsyncTask::new_no_op()
-    }
-}
-
-impl EffectHandler<Playlist> for HandleSaveQueueOk {
-    fn handle_effect(
-        _component: &mut Playlist,
-        result: Result<PlaylistID<'static>>,
-    ) -> ComponentEffect<Playlist> {
-        match result {
-            Ok(playlist_id) => {
-                info!("Queue saved to playlist: {:?}", playlist_id);
-            }
-            Err(e) => {
-                error!("Failed to save queue: {}", e);
-            }
-        }
-        AsyncTask::new_no_op()
-    }
-}
-
-impl EffectHandler<Playlist> for HandleSaveQueueError {
-    fn handle_effect(
-        _component: &mut Playlist,
-        error: Error,
-    ) -> ComponentEffect<Playlist> {
-        error!("Error saving queue to playlist: {}", error);
         AsyncTask::new_no_op()
     }
 }

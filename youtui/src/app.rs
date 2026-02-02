@@ -23,6 +23,7 @@ use structures::ListSong;
 use tracing::{error, info};
 use tracing_subscriber::prelude::*;
 use ui::{WindowContext, YoutuiWindow};
+use ytmapi_rs::common::VideoID;
 
 #[macro_use]
 pub mod component;
@@ -73,6 +74,9 @@ pub enum AppCallback {
     ChangeContext(WindowContext),
     AddSongsToPlaylist(Vec<ListSong>),
     AddSongsToPlaylistAndPlay(Vec<ListSong>),
+    OpenPlaylistSavePopup(Vec<VideoID<'static>>),
+    ClosePopup,
+
 }
 
 impl Youtui {
@@ -266,17 +270,23 @@ impl Youtui {
     }
     pub fn handle_callback(&mut self, callback: AppCallback) {
         match callback {
-            AppCallback::Quit => self.status = AppStatus::Exiting("Quitting".into()),
-            AppCallback::ChangeContext(context) => self.window_state.handle_change_context(context),
-            AppCallback::AddSongsToPlaylist(song_list) => self.task_manager.spawn_task(
-                &self.server,
-                self.window_state.handle_add_songs_to_playlist(song_list),
-            ),
-            AppCallback::AddSongsToPlaylistAndPlay(song_list) => self.task_manager.spawn_task(
-                &self.server,
-                self.window_state
-                    .handle_add_songs_to_playlist_and_play(song_list),
-            ),
+        AppCallback::Quit => self.status = AppStatus::Exiting("Quitting".into()),
+        AppCallback::ChangeContext(context) => self.window_state.handle_change_context(context),
+        AppCallback::AddSongsToPlaylist(song_list) => self.task_manager.spawn_task(
+            &self.server,
+            self.window_state.handle_add_songs_to_playlist(song_list),
+    ),
+        AppCallback::AddSongsToPlaylistAndPlay(song_list) => self.task_manager.spawn_task(
+            &self.server,
+            self.window_state
+                .handle_add_songs_to_playlist_and_play(song_list),
+    ),
+        AppCallback::OpenPlaylistSavePopup(video_ids) => {
+            self.window_state.open_playlist_save_popup(video_ids);
+        },
+        AppCallback::ClosePopup => {
+            self.window_state.close_popup();
+        },
         }
     }
 }
