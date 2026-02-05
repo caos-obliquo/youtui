@@ -609,7 +609,12 @@ impl SongSearchBrowser {
     pub fn go_to_last(&mut self) {
         match self.input_routing {
             InputRouting::List => {
-                self.cur_selected = self.get_filtered_items().count().saturating_sub(1);
+                self.cur_selected = self
+                    .get_filtered_list_iter()
+                    .enumerate()
+                    .last()
+                    .map(|(idx, _)| idx)
+                    .unwrap_or(0);
             }
             InputRouting::Sort => {
                 self.sort.cur = self.get_sortable_columns().len().saturating_sub(1);

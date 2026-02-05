@@ -1,4 +1,4 @@
-use crate::{AsyncTask, BackendStreamingTask, BackendTask, FrontendEffect, TaskHandler};
+use crate::{AsyncTask, BackendStreamingTask, BackendTask, TaskHandler};
 use futures::StreamExt;
 #[derive(Debug, PartialEq)]
 struct Task1;
