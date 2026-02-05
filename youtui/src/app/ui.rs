@@ -424,7 +424,7 @@ impl YoutuiWindow {
                     } else {
                         match self.context {
                             WindowContext::Browser => self.browser.go_to_first(),
-                            WindowContext::Playlist => self.playlist.cur_selected = 0,
+                            WindowContext::Playlist => self.playlist.go_to_first(),
                             WindowContext::Logs => self.browser.go_to_first(),
                         }
                     }
@@ -435,11 +435,8 @@ impl YoutuiWindow {
                     } else {
                         match self.context {
                             WindowContext::Browser => self.browser.go_to_last(),
-                            WindowContext::Playlist => {
-                                self.playlist.cur_selected =
-                                    self.playlist.list.get_list_iter().len().saturating_sub(1)
-                            }
-                            WindowContext::Logs => (),
+                            WindowContext::Playlist => self.playlist.go_to_last(),
+                            WindowContext::Logs => self.browser.go_to_last(),
                         }
                     }
                 }

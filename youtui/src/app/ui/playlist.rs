@@ -71,7 +71,7 @@ pub struct Playlist {
     pub play_status: PlayState,
     pub queue_status: QueueState,
     pub volume: Percentage,
-    pub cur_selected: usize,
+    cur_selected: usize,
     pub widget_state: ScrollingTableState,
     pub shuffle_enabled: bool,
     shuffle_indices: Vec<usize>,
@@ -807,6 +807,13 @@ impl Playlist {
     pub fn get_cur_playing_index(&self) -> Option<usize> {
         self.get_cur_playing_id()
             .and_then(|id| self.get_index_from_id(id))
+    }
+    pub fn go_to_first(&mut self) {
+        self.cur_selected = 0;
+    }
+
+    pub fn go_to_last(&mut self) {
+        self.cur_selected = self.list.get_list_iter().len().saturating_sub(1);
     }
 }
 
