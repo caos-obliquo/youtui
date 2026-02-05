@@ -5,8 +5,8 @@ use crate::app::component::actionhandler::{
 };
 use crate::app::server::api::GetPlaylistSongsProgressUpdate;
 use crate::app::server::{GetPlaylistSongs, HandleApiError, SearchPlaylists};
-use crate::app::structures::SongListComponent;
 use crate::app::structures::ListStatus;
+use crate::app::structures::SongListComponent;
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::ui::browser::playlistsearch::search_panel::{
     BrowserPlaylistsAction, NonPodcastSearchResultPlaylist, PlaylistSearchPanel,
@@ -400,6 +400,19 @@ impl PlaylistSearchBrowser {
     }
     pub fn change_routing(&mut self, input_routing: InputRouting) {
         self.prev_input_routing = mem::replace(&mut self.input_routing, input_routing);
+    }
+
+    pub fn go_to_first(&mut self) {
+        match self.input_routing {
+            InputRouting::Playlist => self.playlist_search_panel.go_to_first(),
+            InputRouting::Song => self.playlist_songs_panel.go_to_first(),
+        }
+    }
+    pub fn go_to_last(&mut self) {
+        match self.input_routing {
+            InputRouting::Playlist => self.playlist_search_panel.go_to_last(),
+            InputRouting::Song => self.playlist_songs_panel.go_to_last(),
+        }
     }
 }
 

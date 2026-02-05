@@ -1216,6 +1216,14 @@ fn default_list_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             Keybind::new_unmodified(crossterm::event::KeyCode::PageDown),
             KeyActionTree::new_key(AppAction::List(ListAction::PageDown)),
         ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+            KeyActionTree::new_key(AppAction::List(ListAction::First)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),
+            KeyActionTree::new_key(AppAction::List(ListAction::Last)),
+        ),
     ])
 }
 

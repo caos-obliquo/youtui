@@ -63,6 +63,8 @@ pub enum ListAction {
     Down,
     PageUp,
     PageDown,
+    First,
+    Last,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -97,6 +99,8 @@ impl Action for ListAction {
             ListAction::Down => "List Down".into(),
             ListAction::PageUp => "List PageUp".into(),
             ListAction::PageDown => "List PageDown".into(),
+            ListAction::First => "List First".into(),
+            ListAction::Last => "List Last".into(),
         }
     }
 }

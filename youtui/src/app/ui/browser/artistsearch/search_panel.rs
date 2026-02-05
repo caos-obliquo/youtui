@@ -11,6 +11,7 @@ use crate::widgets::ScrollingListState;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::iter::Iterator;
+use tracing::warn;
 use ytmapi_rs::common::SearchSuggestion;
 use ytmapi_rs::parse::SearchResultArtist;
 
@@ -68,6 +69,12 @@ impl ArtistSearchPanel {
     pub fn close_search(&mut self) {
         self.search_popped = false;
         self.route = ArtistInputRouting::List;
+    }
+    pub fn go_to_first(&mut self) {
+        self.selected = 0;
+    }
+    pub fn go_to_last(&mut self) {
+        self.selected = self.list.len().saturating_sub(1);
     }
 }
 impl Component for ArtistSearchPanel {

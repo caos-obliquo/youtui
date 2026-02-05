@@ -1,8 +1,8 @@
-use crate::app::queue_persistence;
 use super::action::AppAction;
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
+use crate::app::queue_persistence;
 use crate::app::server::song_downloader::DownloadProgressUpdateType;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::server::{
@@ -71,7 +71,7 @@ pub struct Playlist {
     pub play_status: PlayState,
     pub queue_status: QueueState,
     pub volume: Percentage,
-    cur_selected: usize,
+    pub cur_selected: usize,
     pub widget_state: ScrollingTableState,
     pub shuffle_enabled: bool,
     shuffle_indices: Vec<usize>,
@@ -1042,7 +1042,7 @@ impl Playlist {
 
         let mut rng = StdRng::seed_from_u64(self.shuffle_seed);
         for i in (1..len).rev() {
-            let j = rng.gen_range(0..=i);
+            let j = rng.random_range(0..=i);
             indices.swap(i, j);
         }
 
