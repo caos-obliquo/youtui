@@ -116,13 +116,21 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 if self.list.get_list_iter().len() == 0 {
                     (AsyncTask::new_no_op(), None)
                 } else {
-                    let video_ids: Vec<VideoID<'static>> = self.list
-                        .get_list_iter()
-                        .map(|song| song.video_id.clone())
-                        .collect();
-                (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistSavePopup(video_ids)))
-    }
-}
+                    // DEBUG: Log what's actually in the queue 
+                    tracing::info!("=== SAVE QUEUE DEBUG ===");
+                    tracing::info!("Queue has {} songs total", self.list.get_list_iter().len());
+               let video_ids: Vec<VideoID<'static>> = self.list
+                   .get_list_iter()
+                    .map(|song| song.video_id.clone())
+                    .collect();
+        
+                    tracing::info!("Collected {} unique video IDs", video_ids.len());
+                    tracing::info!("Video IDs: {:?}", video_ids);
+                    tracing::info!("=== END DEBUG ===");
+        
+                    (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistSavePopup(video_ids)))
+                }
+            }
             PlaylistAction::AddSelectedToPlaylist => (AsyncTask::new_no_op(), None),
             PlaylistAction::RenamePlaylist => (AsyncTask::new_no_op(), None),
             PlaylistAction::DeletePlaylist => (AsyncTask::new_no_op(), None),

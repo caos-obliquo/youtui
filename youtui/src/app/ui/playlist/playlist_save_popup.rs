@@ -6,7 +6,6 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
-use crate::drawutils::centered_rect;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use ytmapi_rs::common::VideoID;
@@ -165,7 +164,7 @@ impl PlaylistSavePopup {
     }
 
     pub fn handle_key(&mut self, event: KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
-        // Handle Escape
+        // Handle Escape first (works in all modes)
         if event.code == KeyCode::Esc {
             match self.mode {
                 PopupMode::EditingName | PopupMode::EditingDescription => {
@@ -178,7 +177,7 @@ impl PlaylistSavePopup {
             }
         }
 
-        // Handle Enter
+        // Handle Enter (works in all modes)
         if event.code == KeyCode::Enter {
             match (self.mode, self.focused_field) {
                 (PopupMode::EditingName, _) => {
@@ -201,6 +200,37 @@ impl PlaylistSavePopup {
             return (AsyncTask::new_no_op(), None);
         }
 
+        // Handle text input FIRST (only in edit modes)
+        match event.code {
+            KeyCode::Char(c) if !event.modifiers.contains(KeyModifiers::CONTROL) => {
+                match self.mode {
+                    PopupMode::EditingName => {
+                        self.playlist_name.push(c);
+                        return (AsyncTask::new_no_op(), None);
+                    }
+                    PopupMode::EditingDescription => {
+                        self.playlist_description.push(c);
+                        return (AsyncTask::new_no_op(), None);
+                    }
+                    _ => {} // In CreateNew mode, fall through to navigation
+                }
+            }
+            KeyCode::Backspace => {
+                match self.mode {
+                    PopupMode::EditingName => {
+                        self.playlist_name.pop();
+                        return (AsyncTask::new_no_op(), None);
+                    }
+                    PopupMode::EditingDescription => {
+                        self.playlist_description.pop();
+                        return (AsyncTask::new_no_op(), None);
+                    }
+                    _ => {} // In CreateNew mode, fall through to navigation
+                }
+            }
+            _ => {}
+        }
+
         // Handle navigation (only in CreateNew mode)
         if self.mode == PopupMode::CreateNew {
             match event.code {
@@ -212,40 +242,49 @@ impl PlaylistSavePopup {
                     let effect: YoutuiEffect<Self> = self.apply_action(PlaylistSavePopupAction::MoveDown).into();
                     return (effect.effect, effect.callback);
                 }
-                _ => {}
-            }
-        }
-
-        // Handle text input
-        match event.code {
-            KeyCode::Char(c) if !event.modifiers.contains(KeyModifiers::CONTROL) => {
-                match self.mode {
-                    PopupMode::EditingName => self.playlist_name.push(c),
-                    PopupMode::EditingDescription => self.playlist_description.push(c),
-                    _ => {}
-                }
-            }
-            KeyCode::Backspace => {
-                match self.mode {
-                    PopupMode::EditingName => { 
-                        self.playlist_name.pop(); 
+                KeyCode::Char('i') => {
+                    match self.focused_field {
+                        FocusedField::NameInput => {
+                            self.mode = PopupMode::EditingName;
+                        }
+                        FocusedField::DescriptionInput => {
+                            self.mode = PopupMode::EditingDescription;
+                        }
+                        _ => {}
                     }
-                    PopupMode::EditingDescription => { 
-                        self.playlist_description.pop(); 
-                    }
-                    _ => {}
+                    return (AsyncTask::new_no_op(), None);
                 }
+                _ => {} // Unmatched keys in CreateNew mode do nothing
             }
-            _ => {}
         }
 
         (AsyncTask::new_no_op(), None)
     }
 
 pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
-    let popup_area = centered_rect(60, 40, area);
+    let popup_area = Self::centered_rect_fixed(50, 30, area);
     frame.render_widget(Clear, popup_area);
     self.draw_create_form(frame, popup_area);
+}
+
+fn centered_rect_fixed(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
 }
 
 fn draw_create_form(&mut self, frame: &mut Frame, area: Rect) {

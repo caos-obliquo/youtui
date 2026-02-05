@@ -100,26 +100,8 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for PlaylistSaveEffect {
     fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
         match self {
             PlaylistSaveEffect::CreatePlaylistSuccess(playlist_id) => {
-                // Now add all songs from queue
-                let video_ids: Vec<VideoID> = target
-                    .list
-                    .get_list_iter()
-                    .map(|song| song.video_id.clone())
-                    .collect();
-                
-                if video_ids.is_empty() {
-                    return AsyncTask::new_no_op();
-                }
-                
-                return AsyncTask::new_future_try(
-                    AddSongsToPlaylist {
-                        playlist_id,
-                        video_ids,
-                    },
-                    HandleAddSongsOk,
-                    HandleAddSongsError,
-                    None,
-                );
+                // Playlist already created with videos - no need to add them again
+                info!("Playlist created successfully: {:?}", playlist_id);
             }
             PlaylistSaveEffect::CreatePlaylistError => {},
             PlaylistSaveEffect::AddSongsSuccess => {},
