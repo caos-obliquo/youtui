@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 const QUEUE_DIR: &str = "youtui/queues";
 const AUTO_SAVE: &str = "__autosave";
@@ -86,7 +86,7 @@ pub fn load_queue(playlist: &mut Playlist, name: &str) -> Result<(), Box<dyn std
     playlist.reset();
     if !saved.songs.is_empty() {
         info!("Loading {} songs into playlist", saved.songs.len());
-        let (first_id, _effect) = playlist.push_song_list(saved.songs);
+        let (_first_id, _effect) = playlist.push_song_list(saved.songs);
         if let Some(idx) = saved.current_index {
             if let Some(song_id) = playlist.get_id_from_index(idx) {
                 let _effect = playlist.play_song_id(song_id);

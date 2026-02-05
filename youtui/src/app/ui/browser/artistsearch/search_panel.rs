@@ -11,7 +11,6 @@ use crate::widgets::ScrollingListState;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::iter::Iterator;
-use tracing::warn;
 use ytmapi_rs::common::SearchSuggestion;
 use ytmapi_rs::parse::SearchResultArtist;
 
