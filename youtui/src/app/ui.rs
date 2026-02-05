@@ -14,6 +14,7 @@ use crate::config::Config;
 use crate::config::keymap::Keymap;
 use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
 use crate::widgets::ScrollingTableState;
+use crate::app::server::CreatePlaylistWithVideos;
 use action::{AppAction, ListAction, PAGE_KEY_LINES, SEEK_AMOUNT, TextEntryAction};
 use async_callback_manager::{AsyncTask, Constraint};
 use crossterm::event::{Event, KeyEvent};
@@ -323,6 +324,9 @@ impl ActionHandler<AppAction> for YoutuiWindow {
             AppAction::TextEntry(a) => return self.handle_text_entry_action(a).into(),
             AppAction::List(a) => return self.handle_list_action(a).into(),
             AppAction::NoOp => (),
+            AppAction::PlaylistSavePopup(_) => {
+    // Popup handles its own actions internally
+}
         };
         AsyncTask::new_no_op().into()
     }
@@ -377,11 +381,18 @@ impl YoutuiWindow {
         // Handle popup events first - it takes precedence
         if let Some(popup) = &mut self.playlist_save_popup {
             if let Event::Key(k) = event {
-                let (_, callback) = popup.handle_key(k);
-                if let Some(cb) = callback {
-                    return (AsyncTask::new_no_op(), Some(cb)).into();
-                }
-                return AsyncTask::new_no_op().into();
+                let (task, callback) = popup.handle_key(k);
+                
+                // Map the task to access the popup through YoutuiWindow
+                // The popup should exist when the task's handlers run
+                let mapped_task = task.map_frontend(|this: &mut Self| {
+                    // Safety: We return ClosePopup in callback, so popup gets closed
+                    // AFTER this function returns, not during mapping.
+                    // When the task handlers run, they just log and return no-op anyway.
+                    this.playlist_save_popup.as_mut().expect("BUG: popup should exist when task handlers run")
+                });
+                
+                return (mapped_task, callback).into();
             }
         }
         
@@ -628,6 +639,34 @@ impl YoutuiWindow {
     
     pub fn close_popup(&mut self) {
         self.playlist_save_popup = None;
+    }
+
+    pub fn handle_create_playlist_from_popup(
+        &mut self,
+        title: String,
+        description: Option<String>,
+        video_ids: Vec<VideoID<'static>>,
+    ) -> ComponentEffect<Self> {
+        use crate::app::ui::playlist::effect_handlers_playlist::{
+            HandleCreatePlaylistOk,
+            HandleCreatePlaylistError,
+        };
+        
+        tracing::info!("Creating playlist '{}' with {} videos", title, video_ids.len());
+        
+        // Create task targeting Playlist
+        AsyncTask::new_future_try(
+            CreatePlaylistWithVideos {
+                title,
+                description,
+                video_ids,
+            },
+            HandleCreatePlaylistOk,
+            HandleCreatePlaylistError,
+            None,
+        )
+        // Map from AsyncTask<Playlist> to AsyncTask<YoutuiWindow>
+        .map_frontend(|this: &mut Self| &mut this.playlist)
     }
     
     fn _revert_context(&mut self) {

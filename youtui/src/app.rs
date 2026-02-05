@@ -76,7 +76,11 @@ pub enum AppCallback {
     AddSongsToPlaylistAndPlay(Vec<ListSong>),
     OpenPlaylistSavePopup(Vec<VideoID<'static>>),
     ClosePopup,
-
+        CreatePlaylistFromPopup {
+        title: String,
+        description: Option<String>,
+        video_ids: Vec<VideoID<'static>>,
+    },
 }
 
 impl Youtui {
@@ -284,8 +288,22 @@ impl Youtui {
         AppCallback::OpenPlaylistSavePopup(video_ids) => {
             self.window_state.open_playlist_save_popup(video_ids);
         },
-        AppCallback::ClosePopup => {
+AppCallback::ClosePopup => {
             self.window_state.close_popup();
+        },
+        AppCallback::CreatePlaylistFromPopup { title, description, video_ids } => {
+            // Close popup first
+            self.window_state.close_popup();
+            
+            // Create task on Playlist
+            let task = self.window_state.handle_create_playlist_from_popup(
+                title,
+                description,
+                video_ids,
+            );
+            
+            // Spawn the task
+            self.task_manager.spawn_task(&self.server, task);
         },
         }
     }

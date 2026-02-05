@@ -216,13 +216,19 @@ async fn create_playlist_with_videos(
     description: Option<String>,
     video_ids: Vec<VideoID<'static>>,
 ) -> Result<PlaylistID<'static>> {
-    tracing::info!("Creating playlist with {} videos: {}", video_ids.len(), title);
+    tracing::info!("API FUNCTION: Creating playlist with {} videos: {}", video_ids.len(), title);
+    tracing::info!("API FUNCTION: Video IDs: {:?}", video_ids);
+    
     let query = ytmapi_rs::query::CreatePlaylistQuery::new(
         &title,
         description.as_deref(),
         PrivacyStatus::Private,
     ).with_video_ids(video_ids);
-    query_api_with_retry(&api, query).await
+    
+    tracing::info!("API FUNCTION: About to execute query_api_with_retry");
+    let result = query_api_with_retry(&api, query).await;
+    tracing::info!("API FUNCTION: Query result: {:?}", result);
+    result
 }
 
 async fn create_playlist(

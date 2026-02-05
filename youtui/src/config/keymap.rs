@@ -86,6 +86,7 @@ pub struct YoutuiKeymap {
     pub text_entry: BTreeMap<Keybind, KeyActionTree<AppAction>>,
     pub list: BTreeMap<Keybind, KeyActionTree<AppAction>>,
     pub log: BTreeMap<Keybind, KeyActionTree<AppAction>>,
+    pub playlist_save_popup: BTreeMap<Keybind, KeyActionTree<AppAction>>,
 }
 
 #[derive(Default, Debug, Serialize, Deserialize)]
@@ -106,6 +107,8 @@ pub struct YoutuiKeymapIR {
     pub text_entry: BTreeMap<Keybind, KeyStringTree>,
     pub list: BTreeMap<Keybind, KeyStringTree>,
     pub log: BTreeMap<Keybind, KeyStringTree>,
+    pub playlist_save_popup: BTreeMap<Keybind, KeyStringTree>,
+
 }
 
 #[derive(PartialEq, Debug, Serialize, Deserialize, Default)]
@@ -127,6 +130,7 @@ pub struct YoutuiModeNamesIR {
     text_entry: BTreeMap<Keybind, ModeNameEnum>,
     list: BTreeMap<Keybind, ModeNameEnum>,
     log: BTreeMap<Keybind, ModeNameEnum>,
+    playlist_save_popup: BTreeMap<Keybind, ModeNameEnum>,
 }
 
 impl Default for YoutuiKeymap {
@@ -145,6 +149,7 @@ impl Default for YoutuiKeymap {
             text_entry: default_text_entry_keybinds(),
             list: default_list_keybinds(),
             log: default_log_keybinds(),
+            playlist_save_popup: default_playlist_save_popup_keybinds(),
             browser_playlists: default_browser_playlists_keybinds(),
             browser_playlist_songs: default_browser_playlist_songs_keybinds(),
         }
@@ -166,6 +171,7 @@ impl YoutuiKeymap {
             text_entry,
             list,
             log,
+            playlist_save_popup,
             browser_artist_songs,
             browser_playlists,
             browser_playlist_songs,
@@ -183,6 +189,7 @@ impl YoutuiKeymap {
             text_entry: mut text_entry_mode_names,
             list: mut list_mode_names,
             log: mut log_mode_names,
+            playlist_save_popup: mut playlist_save_popup_mode_names,
             browser_artist_songs: mut browser_artist_songs_mode_names,
             browser_playlists: mut browser_playlists_mode_names,
             browser_playlist_songs: mut browser_playlist_songs_mode_names,
@@ -324,7 +331,15 @@ impl YoutuiKeymap {
             })
             .collect::<Result<BTreeMap<_, _>>>()
             .context("Log keybinds parse failed")?;
-
+        
+        let playlist_save_popup = playlist_save_popup
+            .into_iter()
+            .map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut playlist_save_popup_mode_names))?;
+                Ok((k, v))
+            })
+            .collect::<Result<BTreeMap<_, _>>>()
+            .context("Playlist save popup keybinds parse failed")?;
 
         let mut keymap = YoutuiKeymap::default();
         merge_keymaps(&mut keymap.global, global);
@@ -342,6 +357,7 @@ impl YoutuiKeymap {
         merge_keymaps(&mut keymap.filter, filter);
         merge_keymaps(&mut keymap.list, list);
         merge_keymaps(&mut keymap.log, log);
+        merge_keymaps(&mut keymap.playlist_save_popup, playlist_save_popup);
         remove_action_from_keymap(&mut keymap.global, &AppAction::NoOp);
         remove_action_from_keymap(&mut keymap.playlist, &AppAction::NoOp);
         remove_action_from_keymap(&mut keymap.browser, &AppAction::NoOp);
@@ -357,6 +373,7 @@ impl YoutuiKeymap {
         remove_action_from_keymap(&mut keymap.filter, &AppAction::NoOp);
         remove_action_from_keymap(&mut keymap.list, &AppAction::NoOp);
         remove_action_from_keymap(&mut keymap.log, &AppAction::NoOp);
+        remove_action_from_keymap(&mut keymap.playlist_save_popup, &AppAction::NoOp);
         Ok(keymap)
     }
     #[cfg(test)]
@@ -380,6 +397,7 @@ impl YoutuiKeymap {
             text_entry,
             list,
             log,
+            playlist_save_popup,
             browser_artist_songs,
             browser_playlists,
             browser_playlist_songs,
@@ -1205,6 +1223,32 @@ fn default_list_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::PageDown),
             KeyActionTree::new_key(AppAction::List(ListAction::PageDown)),
+        ),
+    ])
+}
+
+fn default_playlist_save_popup_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
+    use crate::app::ui::playlist::playlist_save_popup::PlaylistSavePopupAction;
+    
+    FromIterator::from_iter([
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('k')),
+            KeyActionTree::new_key(AppAction::PlaylistSavePopup(PlaylistSavePopupAction::MoveUp)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('j')),
+            KeyActionTree::new_key(AppAction::PlaylistSavePopup(PlaylistSavePopupAction::MoveDown)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+            KeyActionTree::new_key(AppAction::PlaylistSavePopup(PlaylistSavePopupAction::Save)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Esc),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::PlaylistSavePopup(PlaylistSavePopupAction::Cancel),
+                KeyActionVisibility::Global,
+            ),
         ),
     ])
 }

@@ -6,6 +6,7 @@ use super::browser::shared_components::{BrowserSearchAction, FilterAction, SortA
 use super::browser::songsearch::BrowserSongsAction;
 use super::logger::LoggerAction;
 use super::playlist::PlaylistAction;
+use super::playlist::playlist_save_popup::PlaylistSavePopupAction;
 use crate::app::component::actionhandler::{Action, ActionHandler, YoutuiEffect};
 use crate::app::ui::browser::playlistsearch::search_panel::BrowserPlaylistsAction;
 use crate::app::ui::browser::playlistsearch::songs_panel::BrowserPlaylistSongsAction;
@@ -14,6 +15,7 @@ use async_callback_manager::AsyncTask;
 use serde::de::{self};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
 
 pub const VOL_TICK: i8 = 5;
 pub const SEEK_AMOUNT: Duration = Duration::from_secs(5);
@@ -48,6 +50,7 @@ pub enum AppAction {
     Playlist(PlaylistAction),
     TextEntry(TextEntryAction),
     List(ListAction),
+    PlaylistSavePopup(PlaylistSavePopupAction),
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -130,6 +133,7 @@ impl Action for AppAction {
             AppAction::BrowserSongs(a) => a.context(),
             AppAction::BrowserPlaylists(a) => a.context(),
             AppAction::BrowserPlaylistSongs(a) => a.context(),
+            AppAction::PlaylistSavePopup(a) => a.context(),
         }
     }
     fn describe(&self) -> std::borrow::Cow<'_, str> {
@@ -159,6 +163,7 @@ impl Action for AppAction {
             AppAction::BrowserSongs(a) => a.describe(),
             AppAction::BrowserPlaylists(a) => a.describe(),
             AppAction::BrowserPlaylistSongs(a) => a.describe(),
+            AppAction::PlaylistSavePopup(a) => a.describe(),
         }
     }
 }
