@@ -418,6 +418,31 @@ impl YoutuiWindow {
                 ListAction::Down => self.increment_list(1),
                 ListAction::PageUp => self.increment_list(-PAGE_KEY_LINES),
                 ListAction::PageDown => self.increment_list(PAGE_KEY_LINES),
+                ListAction::First => {
+                    if self.help.shown {
+                        self.help.cur = 0;
+                    } else {
+                        match self.context {
+                            WindowContext::Browser => self.browser.go_to_first(),
+                            WindowContext::Playlist => self.playlist.cur_selected = 0,
+                            WindowContext::Logs => self.browser.go_to_first(),
+                        }
+                    }
+                }
+                ListAction::Last => {
+                    if self.help.shown {
+                        self.help.cur = self.help.len.saturating_sub(1);
+                    } else {
+                        match self.context {
+                            WindowContext::Browser => self.browser.go_to_last(),
+                            WindowContext::Playlist => {
+                                self.playlist.cur_selected =
+                                    self.playlist.list.get_list_iter().len().saturating_sub(1)
+                            }
+                            WindowContext::Logs => (),
+                        }
+                    }
+                }
             }
         }
         AsyncTask::new_no_op()

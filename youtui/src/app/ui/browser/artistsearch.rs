@@ -5,8 +5,8 @@ use crate::app::component::actionhandler::{
 };
 use crate::app::server::api::GetArtistSongsProgressUpdate;
 use crate::app::server::{GetArtistSongs, HandleApiError, SearchArtists};
-use crate::app::structures::SongListComponent;
 use crate::app::structures::ListStatus;
+use crate::app::structures::SongListComponent;
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{ListView, TableView};
 use crate::config::Config;
@@ -481,6 +481,20 @@ impl ArtistSearchBrowser {
     }
     pub fn change_routing(&mut self, input_routing: InputRouting) {
         self.prev_input_routing = mem::replace(&mut self.input_routing, input_routing);
+    }
+
+    pub fn go_to_first(&mut self) {
+        match self.input_routing {
+            InputRouting::Artist => self.artist_search_panel.go_to_first(),
+            InputRouting::Song => self.album_songs_panel.go_to_first(),
+        }
+    }
+
+    pub fn go_to_last(&mut self) {
+        match self.input_routing {
+            InputRouting::Artist => self.artist_search_panel.go_to_last(),
+            InputRouting::Song => self.album_songs_panel.go_to_last(),
+        }
     }
 }
 

@@ -146,7 +146,10 @@ impl Youtui {
         };
         let event_handler = EventHandler::new(EVENT_CHANNEL_SIZE, media_control_event_stream)?;
         let (mut window_state, effect) = YoutuiWindow::new(config);
-        let _ = queue_persistence::auto_load(&mut window_state.playlist);
+        if let Err(e) = queue_persistence::auto_load(&mut window_state.playlist) {
+            error!("Failed to auto-load queue: {}", e);
+        }
+
         // Even the creation of a YoutuiWindow causes an effect. We'll spawn it straight
         // away.
         task_manager.spawn_task(&server, effect);
@@ -197,9 +200,9 @@ impl Youtui {
                     // Once we're done running, destruct the terminal and print the exit message.
                     destruct_terminal()?;
                     match queue_persistence::auto_save(&self.window_state.playlist) {
-                    Ok(_) => info!("Queue auto-saved successfully"),
-                    Err(e) => error!("Failed to auto-save queue: {}", e),
-                }
+                        Ok(_) => info!("Queue auto-saved successfully"),
+                        Err(e) => error!("Failed to auto-save queue: {}", e),
+                    }
                     println!("{s}");
                     break;
                 }

@@ -597,6 +597,28 @@ impl SongSearchBrowser {
         self.song_list.get_song_from_idx(idx)
     }
 
+    pub fn go_to_first(&mut self) {
+        match self.input_routing {
+            InputRouting::List => self.cur_selected = 0,
+            InputRouting::Sort => self.sort.cur = 0,
+            InputRouting::Search | InputRouting::Filter => {
+                warn!("go_to_first called while in search/filter mode");
+            }
+        }
+    }
+    pub fn go_to_last(&mut self) {
+        match self.input_routing {
+            InputRouting::List => {
+                self.cur_selected = self.get_filtered_items().count().saturating_sub(1);
+            }
+            InputRouting::Sort => {
+                self.sort.cur = self.get_sortable_columns().len().saturating_sub(1);
+            }
+            InputRouting::Search | InputRouting::Filter => {
+                warn!("go_to_last called while in search/filter mode");
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]

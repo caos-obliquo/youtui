@@ -482,6 +482,21 @@ impl Browser {
             BrowserVariant::Playlist => self.variant = BrowserVariant::Artist,
         }
     }
+    pub fn go_to_first(&mut self) {
+        match self.variant {
+            BrowserVariant::Artist => self.artist_search_browser.go_to_first(),
+            BrowserVariant::Song => self.song_search_browser.go_to_first(),
+            BrowserVariant::Playlist => self.playlist_search_browser.go_to_first(),
+        }
+    }
+
+    pub fn go_to_last(&mut self) {
+        match self.variant {
+            BrowserVariant::Artist => self.artist_search_browser.go_to_last(),
+            BrowserVariant::Song => self.song_search_browser.go_to_last(),
+            BrowserVariant::Playlist => self.playlist_search_browser.go_to_last(),
+        }
+    }
 }
 
 pub fn get_sort_keybinds(config: &Config) -> impl Iterator<Item = &Keymap<AppAction>> + '_ {
