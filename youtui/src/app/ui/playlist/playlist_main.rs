@@ -76,6 +76,7 @@ pub enum PlaylistAction {
     AddSelectedToPlaylist,
     RenamePlaylist,
     DeletePlaylist,
+    UpdatePlaylist,
 }
 
 impl Action for PlaylistAction {
@@ -93,6 +94,7 @@ impl Action for PlaylistAction {
             PlaylistAction::AddSelectedToPlaylist => "Add to Playlist",
             PlaylistAction::RenamePlaylist => "Rename Playlist",
             PlaylistAction::DeletePlaylist => "Delete Playlist",
+            PlaylistAction::UpdatePlaylist => "Update Playlist",
         }
         .into()
     }
@@ -134,6 +136,18 @@ impl ActionHandler<PlaylistAction> for Playlist {
             PlaylistAction::AddSelectedToPlaylist => (AsyncTask::new_no_op(), None),
             PlaylistAction::RenamePlaylist => (AsyncTask::new_no_op(), None),
             PlaylistAction::DeletePlaylist => (AsyncTask::new_no_op(), None),
+                        PlaylistAction::UpdatePlaylist => {  // ADD THIS BLOCK
+                if self.list.get_list_iter().len() == 0 {
+                    (AsyncTask::new_no_op(), None)
+                } else {
+                    let video_ids: Vec<VideoID<'static>> = self.list
+                        .get_list_iter()
+                        .map(|song| song.video_id.clone())
+                        .collect();
+
+                    (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)))
+                }
+            }
         }
     }
 }

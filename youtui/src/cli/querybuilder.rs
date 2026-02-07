@@ -788,7 +788,7 @@ where
             query_type: QueryType::FromApi,
             show_source: true,
         } => {
-            yt.stream_source_browser_or_oauth(q.borrow(), max_pages)
+            yt.stream_source_browser_or_oauth(q, max_pages)
                 .await
         }
         CliQuery {

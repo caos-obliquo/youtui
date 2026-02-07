@@ -1,5 +1,11 @@
 use super::ArcServer;
 use ytmapi_rs::query::playlist::PrivacyStatus;
+use ytmapi_rs::parse::{
+    LibraryPlaylist, 
+    SearchResultArtist, 
+    SearchResultPlaylist, 
+    SearchResultSong
+};
 use super::api::GetArtistSongsProgressUpdate;
 use super::player::{DecodedInMemSong, Player};
 use super::song_downloader::{DownloadProgressUpdate, InMemSong};
@@ -18,7 +24,6 @@ use futures::{Future, Stream};
 use std::sync::Arc;
 use std::time::Duration;
 use ytmapi_rs::common::{ArtistChannelID, PlaylistID, SearchSuggestion, VideoID};
-use ytmapi_rs::parse::{LibraryPlaylist, SearchResultArtist, SearchResultPlaylist, SearchResultSong};
 
 #[derive(PartialEq, Debug)]
 pub enum TaskMetadata {
@@ -67,6 +72,37 @@ pub struct AddSongsToPlaylist {
 
 #[derive(Debug, PartialEq)]
 pub struct GetLibraryPlaylists;
+
+#[derive(Debug, PartialEq)]
+pub struct GetAllLibraryPlaylists;
+
+impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
+    type Output = Result<Vec<LibraryPlaylist>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            // Use the stream directly, not a helper method
+            use ytmapi_rs::query::GetLibraryPlaylistsQuery;
+            use futures::StreamExt;
+            use futures::TryStreamExt;
+            
+            let pages: Vec<Vec<LibraryPlaylist>> = backend
+                .api
+                .get_api()
+                .await?
+                .read()
+                .await
+                .stream_browser_or_oauth(GetLibraryPlaylistsQuery, 10)
+                .await?;
+            
+            Ok(pages.into_iter().flatten().collect())
+        }
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub struct DownloadSong(pub VideoID<'static>, pub ListSongID);

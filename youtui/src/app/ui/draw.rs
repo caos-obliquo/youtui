@@ -40,6 +40,15 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             // Just render the playlist underneath
             w.playlist
                 .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+            // Draw playlist update popup as an overlay on top of everything
+            if let Some(popup) = &mut w.playlist_update_popup {
+                popup.draw(f, f.area());
+            }
+
+        }
+        WindowContext::PlaylistUpdatePopup => {
+            // Render playlist underneath
+            w.playlist.draw_mut_chunk(f, window_chunk, context_selected, w.tick);
         }
     }
     if w.help.shown {
@@ -48,13 +57,19 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     if w.key_pending() {
         draw_popup(f, w, window_chunk);
     }
-    
+
     // Draw playlist save popup as an overlay on top of everything
     // This must be LAST so it renders on top
     if let Some(popup) = &mut w.playlist_save_popup {
         popup.draw(f, f.area());
     }
-    
+
+    // Draw playlist update popup as an overlay on top of everything
+    // This must be AFTER save popup so it renders on top if both are somehow open
+    if let Some(popup) = &mut w.playlist_update_popup {
+        popup.draw(f, f.area());
+    }
+
     footer::draw_footer(f, w, footer_chunk, terminal_image_capabilities);
 }
 

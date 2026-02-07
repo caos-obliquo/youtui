@@ -12,6 +12,7 @@ use ytmapi_rs::continuations::ParseFromContinuable;
 use ytmapi_rs::parse::ParseFrom;
 use ytmapi_rs::query::{PostQuery, Query};
 use ytmapi_rs::{YtMusic, YtMusicBuilder};
+use ytmapi_rs::parse::LibraryPlaylist;
 mod error;
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,17 @@ impl DynamicYtMusic {
             DynamicYtMusic::OAuth(yt) => Some(yt.get_token_hash()),
         })
     }
+    /// Fetch ALL library playlists using streaming (handles pagination automatically)
+    pub async fn fetch_all_library_playlists(&self) -> Result<Vec<ytmapi_rs::parse::LibraryPlaylist>> {
+        use ytmapi_rs::query::GetLibraryPlaylistsQuery;
+
+        // Use streaming to get all pages (max 10 pages = ~500 playlists)
+        // // NOTE: GetLibraryPlaylistsQuery is a unit struct, no ::default()   
+        let pages: Vec<Vec<LibraryPlaylist>> = self.stream_browser_or_oauth(GetLibraryPlaylistsQuery, 10).await?;
+       
+        // Flatten Vec<Vec<LibraryPlaylist>> to Vec<LibraryPlaylist>   
+        Ok(pages.into_iter().flatten().collect())
+}
     pub async fn query<Q, O>(&self, query: impl Borrow<Q>) -> Result<O>
     where
         Q: Query<BrowserToken, Output = O>,
@@ -139,6 +151,38 @@ impl DynamicYtMusic {
             )),
         })
     }
+pub async fn stream_source_browser_or_oauth<Q, O>(
+    &self,
+    query: impl Borrow<Q>,
+    max_pages: usize,
+) -> Result<String>
+where
+    Q: Query<BrowserToken, Output = O>,
+    Q: Query<OAuthToken, Output = O>,
+    O: ParseFromContinuable<Q>,
+    Q: PostQuery,
+{
+    Ok(match self {
+        DynamicYtMusic::Browser(yt) => {
+            yt.raw_json_stream(query.borrow())
+                .take(max_pages)
+                .try_collect()
+                .await?
+        }
+        DynamicYtMusic::OAuth(yt) => {
+            yt.raw_json_stream(query.borrow())
+                .take(max_pages)
+                .try_collect()
+                .await?
+        }
+        DynamicYtMusic::NoAuth(_) => bail!(wrong_auth_token_error_message::<Q>(
+            AuthType::Unauthenticated,
+            &[AuthType::Browser, AuthType::OAuth]
+        )),
+    })
+}
+
+
     pub async fn query_source<Q, O>(&self, query: impl Borrow<Q>) -> Result<String>
     where
         Q: Query<BrowserToken, Output = O>,
@@ -196,41 +240,6 @@ impl DynamicYtMusic {
                     .try_collect()
                     .await?
             }
-        })
-    }
-    pub async fn stream_source_browser_or_oauth<Q, O>(
-        &self,
-        query: &Q,
-        max_pages: usize,
-    ) -> Result<String>
-    where
-        Q: Query<BrowserToken, Output = O>,
-        Q: Query<OAuthToken, Output = O>,
-        Q: PostQuery,
-        O: ParseFromContinuable<Q>,
-        O: ParseFrom<Q>,
-    {
-        // If only one page, no need to stream.
-        if max_pages == 1 {
-            return self.query_source_browser_or_oauth::<Q, O>(query).await;
-        }
-        Ok(match self {
-            DynamicYtMusic::Browser(yt) => {
-                yt.raw_json_stream(query.borrow())
-                    .take(max_pages)
-                    .try_collect()
-                    .await?
-            }
-            DynamicYtMusic::OAuth(yt) => {
-                yt.raw_json_stream(query.borrow())
-                    .take(max_pages)
-                    .try_collect()
-                    .await?
-            }
-            DynamicYtMusic::NoAuth(_) => bail!(wrong_auth_token_error_message::<Q>(
-                AuthType::Unauthenticated,
-                &[AuthType::Browser, AuthType::OAuth]
-            )),
         })
     }
 }

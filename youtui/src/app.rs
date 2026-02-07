@@ -2,8 +2,14 @@ use super::appevent::{AppEvent, EventHandler};
 use crate::config::ApiKey;
 use crate::core::get_limited_sequential_file;
 use crate::{RuntimeInfo, get_data_dir};
+use crate::app::ui::playlist::effect_handlers_playlist::{
+    HandleGetAllLibraryPlaylistsOk, 
+    HandleGetAllLibraryPlaylistsError,
+    HandleAddSongsOk,
+    HandleAddSongsError,
+};
 use anyhow::{Context, Result, bail};
-use async_callback_manager::{AsyncCallbackManager, TaskOutcome};
+use async_callback_manager::{AsyncCallbackManager, AsyncTask, TaskOutcome};
 use component::actionhandler::YoutuiEffect;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
@@ -14,7 +20,7 @@ use media_controls::MediaController;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui_image::picker::Picker;
-use server::{ArcServer, Server, TaskMetadata};
+use server::{ArcServer, Server, TaskMetadata, GetAllLibraryPlaylists, AddSongsToPlaylist};
 use std::borrow::Cow;
 use std::fmt::Display;
 use std::io;
@@ -23,7 +29,7 @@ use structures::ListSong;
 use tracing::{error, info};
 use tracing_subscriber::prelude::*;
 use ui::{WindowContext, YoutuiWindow};
-use ytmapi_rs::common::VideoID;
+use ytmapi_rs::common::{PlaylistID, VideoID};
 
 #[macro_use]
 pub mod component;
@@ -52,17 +58,13 @@ pub struct Youtui {
     task_manager: AsyncCallbackManager<YoutuiWindow, ArcServer, TaskMetadata>,
     server: Arc<Server>,
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
-    // Optional as may be disabled at runtime.
     media_controls: Option<MediaController>,
-    /// Capabilities of the user's terminal in regards to image rendering - ie,
-    /// font size / kitty protocal etc. This
     terminal_image_capabilities: Picker,
 }
 
 #[derive(PartialEq)]
 pub enum AppStatus {
     Running,
-    // Cow: Message
     Exiting(Cow<'static, str>),
 }
 
@@ -75,8 +77,13 @@ pub enum AppCallback {
     AddSongsToPlaylist(Vec<ListSong>),
     AddSongsToPlaylistAndPlay(Vec<ListSong>),
     OpenPlaylistSavePopup(Vec<VideoID<'static>>),
+    OpenPlaylistUpdatePopup(Vec<VideoID<'static>>),
+    AddVideosToPlaylistFromPopup {
+        playlist_id: PlaylistID<'static>,
+        video_ids: Vec<VideoID<'static>>,
+    },
     ClosePopup,
-        CreatePlaylistFromPopup {
+    CreatePlaylistFromPopup {
         title: String,
         description: Option<String>,
         video_ids: Vec<VideoID<'static>>,
@@ -92,25 +99,21 @@ impl Youtui {
             config,
             disable_media_controls,
         } = rt;
-        // Setup tracing and link to tui_logger.
-        // NOTE: File logging is always enabled for now - I can't think of a use case
-        // where we wouldn't want this.
+
         init_tracing(debug, true).await?;
         match debug {
             true => info!("Starting in debug mode"),
             false => info!("Starting"),
         }
-        // Youtui is not designed to try to bypass youtube music advertising.
-        // Authentication is required to use it.
+
         if let ApiKey::None = api_key {
             bail!("Authentication is required to run youtui");
         }
-        // Setup terminal
+
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture,)?;
-        // By only performing panic cleanup from the main thread, this largely prevents
-        // exits that occur part-way through a redraw.
+
         IS_MAIN_THREAD.with(|flag| flag.set(true));
         std::panic::set_hook(Box::new(|panic_info| {
             if IS_MAIN_THREAD.with(|flag| flag.get()) {
@@ -118,7 +121,6 @@ impl Youtui {
                     "Panic detected on main thread. \
                      Message: {panic_info}"
                 );
-                // If we fail to exit cleanly, ignore the error as panicking anyway.
                 let _ = cleanup_tui_and_print_panic_message(&panic_info);
             } else {
                 tracing::warn!(
@@ -128,7 +130,7 @@ impl Youtui {
                 );
             }
         }));
-        // Setup components
+
         let mut task_manager = async_callback_manager::AsyncCallbackManager::new()
             .with_on_task_spawn_callback(|task| {
                 info!(
@@ -139,10 +141,6 @@ impl Youtui {
         let server = Arc::new(server::Server::new(api_key, po_token, &config));
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
-        // The docs for this function state that it must be run after entering alternate
-        // screen but before events are read, therefore this is hoisted for
-        // visibility. Note that this may briefly block, delaying startup, but likely
-        // unavoidable.
         let terminal_image_capabilities = Picker::from_query_stdio()?;
         let (media_controls, media_control_event_stream) = if disable_media_controls {
             (None, None)
@@ -154,9 +152,8 @@ impl Youtui {
         };
         let event_handler = EventHandler::new(EVENT_CHANNEL_SIZE, media_control_event_stream)?;
         let (window_state, effect) = YoutuiWindow::new(config);
-        // Even the creation of a YoutuiWindow causes an effect. We'll spawn it straight
-        // away.
         task_manager.spawn_task(&server, effect);
+
         Ok(Youtui {
             status: AppStatus::Running,
             event_handler,
@@ -168,14 +165,11 @@ impl Youtui {
             terminal_image_capabilities,
         })
     }
+
     pub async fn run(&mut self) -> Result<()> {
         loop {
             match &self.status {
                 AppStatus::Running => {
-                    // Write to terminal, using UI state as the input
-                    // We draw after handling the event, as the event could be a keypress we want to
-                    // instantly react to.
-                    // Draw occurs before the first event, to ensure up loads immediately.
                     self.terminal.draw(|f| {
                         ui::draw::draw_app(
                             f,
@@ -188,20 +182,14 @@ impl Youtui {
                             ui::draw_media_controls::draw_app_media_controls(&self.window_state),
                         )?;
                     }
-                    // When running, the app is event based, and will block until one of the
-                    // following 2 message types is received.
                     tokio::select! {
-                        // Get the next event from the event_handler and process it.
-                        // TODO: Consider checking here if redraw is required.
                         Some(event) = self.event_handler.next() =>
                             self.handle_event(event).await,
-                        // Process the next manager event.
                         Some(outcome) = self.task_manager.get_next_response() =>
                             self.handle_effect(outcome),
                     }
                 }
                 AppStatus::Exiting(s) => {
-                    // Once we're done running, destruct the terminal and print the exit message.
                     destruct_terminal()?;
                     println!("{s}");
                     break;
@@ -210,6 +198,7 @@ impl Youtui {
         }
         Ok(())
     }
+
     fn handle_effect(&mut self, effect: TaskOutcome<YoutuiWindow, ArcServer, TaskMetadata>) {
         match effect {
             async_callback_manager::TaskOutcome::StreamFinished {
@@ -230,7 +219,6 @@ impl Youtui {
                 type_debug, error, ..
             } => {
                 error!("Task {type_debug} panicked!");
-                // We are about to panic - ignore terminal destruction error.
                 let _ = cleanup_tui_and_print_panic_message(&error);
                 std::panic::resume_unwind(error.into_panic());
             }
@@ -250,6 +238,7 @@ impl Youtui {
             }
         }
     }
+
     async fn handle_event(&mut self, event: AppEvent) {
         match event {
             AppEvent::Tick => self.window_state.handle_tick().await,
@@ -272,52 +261,75 @@ impl Youtui {
             AppEvent::QuitSignal => self.status = AppStatus::Exiting("Quit signal received".into()),
         }
     }
+
     pub fn handle_callback(&mut self, callback: AppCallback) {
         match callback {
-        AppCallback::Quit => self.status = AppStatus::Exiting("Quitting".into()),
-        AppCallback::ChangeContext(context) => self.window_state.handle_change_context(context),
-        AppCallback::AddSongsToPlaylist(song_list) => self.task_manager.spawn_task(
-            &self.server,
-            self.window_state.handle_add_songs_to_playlist(song_list),
-    ),
-        AppCallback::AddSongsToPlaylistAndPlay(song_list) => self.task_manager.spawn_task(
-            &self.server,
-            self.window_state
-                .handle_add_songs_to_playlist_and_play(song_list),
-    ),
-        AppCallback::OpenPlaylistSavePopup(video_ids) => {
-            self.window_state.open_playlist_save_popup(video_ids);
-        },
-AppCallback::ClosePopup => {
-            self.window_state.close_popup();
-        },
-        AppCallback::CreatePlaylistFromPopup { title, description, video_ids } => {
-            // Close popup first
-            self.window_state.close_popup();
-            
-            // Create task on Playlist
-            let task = self.window_state.handle_create_playlist_from_popup(
-                title,
-                description,
-                video_ids,
-            );
-            
-            // Spawn the task
-            self.task_manager.spawn_task(&self.server, task);
-        },
+            AppCallback::Quit => self.status = AppStatus::Exiting("Quitting".into()),
+            AppCallback::ChangeContext(context) => self.window_state.handle_change_context(context),
+            AppCallback::AddSongsToPlaylist(song_list) => self.task_manager.spawn_task(
+                &self.server,
+                self.window_state.handle_add_songs_to_playlist(song_list),
+            ),
+            AppCallback::AddSongsToPlaylistAndPlay(song_list) => self.task_manager.spawn_task(
+                &self.server,
+                self.window_state.handle_add_songs_to_playlist_and_play(song_list),
+            ),
+            AppCallback::OpenPlaylistSavePopup(video_ids) => {
+                self.window_state.open_playlist_save_popup(video_ids);
+            }
+AppCallback::OpenPlaylistUpdatePopup(video_ids) => {
+    self.window_state.open_playlist_update_popup(video_ids);
+    
+    let effect = AsyncTask::new_future_try(
+        GetAllLibraryPlaylists,
+        HandleGetAllLibraryPlaylistsOk,
+        HandleGetAllLibraryPlaylistsError,
+        None,
+    )
+    .map_frontend(|window: &mut YoutuiWindow| {
+        window.playlist_update_popup
+            .as_mut()
+            .expect("Popup should exist")
+    });
+    
+    self.task_manager.spawn_task(&self.server, effect);
+}
+
+AppCallback::AddVideosToPlaylistFromPopup { playlist_id, video_ids } => {
+    self.window_state.close_popup();
+    
+    let effect = AsyncTask::new_future_try(
+        AddSongsToPlaylist { playlist_id, video_ids },
+        HandleAddSongsOk,
+        HandleAddSongsError,
+        None,
+    )
+    .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+    
+    self.task_manager.spawn_task(&self.server, effect);
+}
+            AppCallback::ClosePopup => {
+                self.window_state.close_popup();
+            }
+            AppCallback::CreatePlaylistFromPopup { title, description, video_ids } => {
+                self.window_state.close_popup();
+                let effect = self.window_state.handle_create_playlist_from_popup(
+                    title,
+                    description,
+                    video_ids,
+                );
+                self.task_manager.spawn_task(&self.server, effect);
+            }
         }
     }
 }
 
-/// When panicking in the tui, terminal cleanup and error message must be in the
-/// correct order.
 fn cleanup_tui_and_print_panic_message(panic: &impl Display) -> Result<()> {
     destruct_terminal()?;
     println!("{panic}");
     Ok(())
 }
 
-/// Cleanly exit the tui
 fn destruct_terminal() -> Result<()> {
     disable_raw_mode()?;
     execute!(
@@ -329,9 +341,6 @@ fn destruct_terminal() -> Result<()> {
     Ok(())
 }
 
-/// Initialise tracing and subscribers such as tuilogger and file logging.
-/// # Panics
-/// If tracing fails to initialise, function will panic
 async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
     let tui_logger_layer = tui_logger::TuiTracingSubscriberLayer;
     let (tracing_log_level, tui_logger_log_level) = if debug {

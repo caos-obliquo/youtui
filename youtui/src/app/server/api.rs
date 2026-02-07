@@ -20,7 +20,7 @@ use ytmapi_rs::query::playlist::{PrivacyStatus, DuplicateHandlingMode};
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail};
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,
-    SearchResultArtist, SearchResultPlaylist, SearchResultSong,
+    SearchResultArtist, SearchResultPlaylist, SearchResultSong, LibraryPlaylist
 };
 use ytmapi_rs::query::{GetAlbumQuery, GetArtistAlbumsQuery};
 
@@ -113,6 +113,27 @@ async fn fetch_library_playlists_helper(api: ConcurrentApi) -> Result<Vec<ytmapi
     tracing::info!("Fetching user's library playlists");
     let query = ytmapi_rs::query::GetLibraryPlaylistsQuery;
     query_api_with_retry(&api, query).await
+}
+
+async fn fetch_all_library_playlists_helper(api: ConcurrentApi) -> Result<Vec<LibraryPlaylist>> {
+    use ytmapi_rs::query::GetLibraryPlaylistsQuery;
+    use futures::StreamExt;
+    use futures::TryStreamExt;
+    
+    tracing::info!("Fetching ALL user's library playlists with pagination");
+    
+    // Use streaming to get all pages (max 10 pages = ~500 playlists)
+    let pages: Vec<Vec<LibraryPlaylist>> = api
+        .read()
+        .await
+        .stream_browser_or_oauth(GetLibraryPlaylistsQuery, 10)
+        .await?;
+    
+    // Flatten Vec<Vec<LibraryPlaylist>> into Vec<LibraryPlaylist>
+    let all_playlists: Vec<LibraryPlaylist> = pages.into_iter().flatten().collect();
+    
+    tracing::info!("Fetched {} total playlists", all_playlists.len());
+    Ok(all_playlists)
 }
 
 }

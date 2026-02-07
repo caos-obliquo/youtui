@@ -1,3 +1,5 @@
+
+caos@dwl-btw ~/builds/youtui$ cat youtui/src/app/ui.rs
 use self::browser::Browser;
 use self::logger::Logger;
 use self::playlist::{Playlist, PlaylistSavePopup, PlaylistUpdatePopup};
@@ -7,7 +9,7 @@ use super::component::actionhandler::{
     TextHandler, YoutuiEffect, apply_action_mapped, get_visible_keybinds_as_readable_iter,
     handle_key_stack,
 };
-use super::server::{IncreaseVolume, SetVolume};
+use super::server::{IncreaseVolume, SetVolume, GetAllLibraryPlaylists};
 use super::structures::*;
 use crate::async_rodio_sink::{SeekDirection, VolumeUpdate};
 use crate::config::Config;
@@ -41,17 +43,17 @@ pub enum WindowContext {
 }
 
 pub struct YoutuiWindow {
-    pub context: WindowContext,
-    pub prev_context: WindowContext,
-    pub playlist: Playlist,
-    pub browser: Browser,
-    pub logger: Logger,
-    pub playlist_save_popup: Option<PlaylistSavePopup>,
-    pub playlist_update_popup: Option<PlaylistUpdatePopup>,
-    pub config: Config,
-    pub key_stack: Vec<KeyEvent>,
-    pub help: HelpMenu,
-    pub tick: u64,
+    context: WindowContext,
+    prev_context: WindowContext,
+    playlist: Playlist,
+    browser: Browser,
+    logger: Logger,
+    playlist_save_popup: Option<PlaylistSavePopup>,
+    playlist_update_popup: Option<PlaylistUpdatePopup>,
+    config: Config,
+    key_stack: Vec<KeyEvent>,
+    help: HelpMenu,
+    tick: u64,
 }
 
 impl_youtui_component!(YoutuiWindow);
@@ -130,10 +132,9 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
                 Either::Right(Either::Right(
                     [&config.keybinds.help, &config.keybinds.list].into_iter()
                 )),
-            WindowContext::PlaylistUpdatePopup =>
-                Either::Right(Either::Right(
+            WindowContext::PlaylistUpdatePopup => Either::Right(Either::Right(
                     [&config.keybinds.help, &config.keybinds.list].into_iter()
-                )),
+                    )),
         }
     }
 }
@@ -158,6 +159,7 @@ impl Scrollable for YoutuiWindow {
                 WindowContext::Playlist => self.playlist.is_scrollable(),
                 WindowContext::Logs => false,
                 WindowContext::PlaylistSavePopup => false,
+                WindowContext::PlaylistUpdatePopup => false,
                 WindowContext::PlaylistUpdatePopup => false,
             }
     }
@@ -734,3 +736,5 @@ impl_youtui_task_handler!(
         AsyncTask::new_no_op()
     }
 );
+caos@dwl-btw ~/builds/youtui$
+

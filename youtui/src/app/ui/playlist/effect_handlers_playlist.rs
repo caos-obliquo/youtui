@@ -1,11 +1,10 @@
-use super::playlist_main::Playlist;
 use crate::app::component::actionhandler::ComponentEffect;
-use crate::app::server::{AddSongsToPlaylist, ArcServer, TaskMetadata};
+use crate::app::server::{ArcServer, TaskMetadata};
+use crate::app::ui::playlist::{Playlist, PlaylistUpdatePopup};
 use async_callback_manager::{AsyncTask, FrontendEffect};
 use tracing::{error, info};
-use ytmapi_rs::common::{PlaylistID, VideoID};
-#[allow(unused_imports)]
-use ytmapi_rs::error::Error;
+use ytmapi_rs::common::PlaylistID;
+use ytmapi_rs::parse::LibraryPlaylist;
 
 #[derive(Debug, PartialEq)]
 pub struct HandleCreatePlaylistOk;
@@ -19,9 +18,14 @@ pub struct HandleAddSongsError;
 pub struct HandleSaveQueueOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleSaveQueueError;
-
 #[derive(Debug, PartialEq)]
-enum PlaylistSaveEffect {
+pub struct HandleGetAllLibraryPlaylistsOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleGetAllLibraryPlaylistsError;
+
+// Effect enum for Playlist operations
+#[derive(Debug, PartialEq)]
+pub enum PlaylistEffect {
     CreatePlaylistSuccess(PlaylistID<'static>),
     CreatePlaylistError,
     AddSongsSuccess,
@@ -30,84 +34,130 @@ enum PlaylistSaveEffect {
     SaveQueueError,
 }
 
-// Handler for successful playlist creation - needs to add songs next
+// Effect enum for PlaylistUpdatePopup
+#[derive(Debug, PartialEq)]
+pub enum PlaylistUpdateEffect {
+    FetchPlaylistsSuccess(Vec<LibraryPlaylist>),
+    FetchPlaylistsError(String),
+}
+
+// Playlist effect handlers
 impl_youtui_task_handler!(
     HandleCreatePlaylistOk,
     PlaylistID<'static>,
     Playlist,
-    |_, playlist_id| {
-        info!("Playlist created: {:?}", playlist_id);
-        PlaylistSaveEffect::CreatePlaylistSuccess(playlist_id)
+    |_, playlist_id: PlaylistID<'static>| {
+        PlaylistEffect::CreatePlaylistSuccess(playlist_id)
     }
 );
 
-// Handler for playlist creation error
 impl_youtui_task_handler!(
     HandleCreatePlaylistError,
     anyhow::Error,
     Playlist,
-    |_, error| {
+    |_, error: anyhow::Error| {
         error!("Failed to create playlist: {}", error);
-        PlaylistSaveEffect::CreatePlaylistError
+        PlaylistEffect::CreatePlaylistError
     }
 );
 
-// Handler for successful song addition
 impl_youtui_task_handler!(
     HandleAddSongsOk,
     (),
     Playlist,
     |_, _| {
         info!("Successfully added songs to playlist!");
-        PlaylistSaveEffect::AddSongsSuccess
+        PlaylistEffect::AddSongsSuccess
     }
 );
 
-// Handler for song addition error
 impl_youtui_task_handler!(
     HandleAddSongsError,
     anyhow::Error,
     Playlist,
-    |_, error| {
+    |_, error: anyhow::Error| {
         error!("Error adding songs to playlist: {}", error);
-        PlaylistSaveEffect::AddSongsError
+        PlaylistEffect::AddSongsError
     }
 );
 
-// Handler for save queue success
 impl_youtui_task_handler!(
     HandleSaveQueueOk,
     PlaylistID<'static>,
     Playlist,
-    |_, playlist_id| {
+    |_, playlist_id: PlaylistID<'static>| {
         info!("Queue saved to playlist: {:?}", playlist_id);
-        PlaylistSaveEffect::SaveQueueSuccess(playlist_id)
+        PlaylistEffect::SaveQueueSuccess(playlist_id)
     }
 );
 
-// Handler for save queue error
 impl_youtui_task_handler!(
     HandleSaveQueueError,
     anyhow::Error,
     Playlist,
-    |_, error| {
+    |_, error: anyhow::Error| {
         error!("Error saving queue to playlist: {}", error);
-        PlaylistSaveEffect::SaveQueueError
+        PlaylistEffect::SaveQueueError
     }
 );
 
-impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for PlaylistSaveEffect {
+// PlaylistUpdatePopup effect handlers
+impl_youtui_task_handler!(
+    HandleGetAllLibraryPlaylistsOk,
+    Vec<LibraryPlaylist>,
+    PlaylistUpdatePopup,
+    |_, playlists: Vec<LibraryPlaylist>| {
+        info!("Successfully fetched {} library playlists", playlists.len());
+        PlaylistUpdateEffect::FetchPlaylistsSuccess(playlists)
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleGetAllLibraryPlaylistsError,
+    anyhow::Error,
+    PlaylistUpdatePopup,
+    |_, error: anyhow::Error| {
+        error!("Failed to fetch library playlists: {}", error);
+        PlaylistUpdateEffect::FetchPlaylistsError(error.to_string())
+    }
+);
+
+// FrontendEffect implementations
+impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for PlaylistEffect {
     fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
         match self {
-            PlaylistSaveEffect::CreatePlaylistSuccess(playlist_id) => {
-                // Playlist already created with videos - no need to add them again
-                info!("Playlist created successfully: {:?}", playlist_id);
+            PlaylistEffect::CreatePlaylistSuccess(playlist_id) => {
+                info!("Playlist created: {:?}", playlist_id);
             }
-            PlaylistSaveEffect::CreatePlaylistError => {},
-            PlaylistSaveEffect::AddSongsSuccess => {},
-            PlaylistSaveEffect::AddSongsError => {},
-            PlaylistSaveEffect::SaveQueueSuccess(_) => {},
-            PlaylistSaveEffect::SaveQueueError => {},
+            PlaylistEffect::CreatePlaylistError => {
+                error!("Failed to create playlist");
+            }
+            PlaylistEffect::AddSongsSuccess => {
+                info!("Successfully added songs to playlist!");
+            }
+            PlaylistEffect::AddSongsError => {
+                error!("Error adding songs to playlist");
+            }
+            PlaylistEffect::SaveQueueSuccess(playlist_id) => {
+                info!("Queue saved to playlist: {:?}", playlist_id);
+            }
+            PlaylistEffect::SaveQueueError => {
+                error!("Error saving queue to playlist");
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+impl FrontendEffect<PlaylistUpdatePopup, ArcServer, TaskMetadata> for PlaylistUpdateEffect {
+    fn apply(self, target: &mut PlaylistUpdatePopup) -> impl Into<ComponentEffect<PlaylistUpdatePopup>> {
+        match self {
+            PlaylistUpdateEffect::FetchPlaylistsSuccess(playlists) => {
+                target.set_playlists(playlists);
+            }
+            PlaylistUpdateEffect::FetchPlaylistsError(error) => {
+                target.set_error(error);
+            }
         }
         AsyncTask::new_no_op()
     }
