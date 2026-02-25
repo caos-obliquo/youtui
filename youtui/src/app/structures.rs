@@ -84,6 +84,10 @@ pub struct ListSong {
     pub year: Option<Rc<String>>,
     pub album_art: AlbumArtState,
     pub artists: MaybeRc<Vec<ListSongArtist>>,
+    #[serde(skip)]
+    pub artists_string: String,
+    #[serde(skip)]
+    pub track_no_string: String,
     pub thumbnails: MaybeRc<Vec<Thumbnail>>,
     pub album: Option<MaybeRc<ListSongAlbum>>,
 }
@@ -225,6 +229,20 @@ impl DownloadStatus {
             Self::Retrying { .. } => '',
         }
     }
+    pub fn list_icon_str(&self) -> &'static str {
+        match self {
+            Self::Failed => "\u{f00d}",
+            Self::Queued => "\u{f03a}",
+            Self::None => " ",
+            Self::Downloading(_) => "\u{f0ab}",
+            Self::Downloaded(_) => "\u{f00c}",
+            Self::Retrying { .. } => "\u{f021}",
+        }
+    }
+}
+
+fn compute_artists_string(artists: &[ListSongArtist]) -> String {
+    Itertools::intersperse(artists.iter().map(|a| a.name.as_str()), ", ").collect()
 }
 
 impl ListSong {
@@ -239,33 +257,21 @@ impl ListSong {
     }
     pub fn get_field(&self, field: ListSongDisplayableField) -> Cow<'_, str> {
         match field {
-            ListSongDisplayableField::DownloadStatus =>
-            // Type annotation to help rust compiler
-            {
-                Cow::from(match self.download_status {
-                    DownloadStatus::Downloading(p) => {
-                        format!("{}[{}]%", self.download_status.list_icon(), p.0)
-                    }
-                    DownloadStatus::Retrying { times_retried } => {
-                        format!("{}[x{}]", self.download_status.list_icon(), times_retried)
-                    }
-                    _ => self.download_status.list_icon().to_string(),
-                })
+            ListSongDisplayableField::DownloadStatus => match &self.download_status {
+                DownloadStatus::Downloading(p) => {
+                    Cow::Owned(format!("{}[{}]%", self.download_status.list_icon(), p.0))
+                }
+                DownloadStatus::Retrying { times_retried } => {
+                    Cow::Owned(format!("{}[x{}]", self.download_status.list_icon(), *times_retried))
+                }
+                _ => Cow::Borrowed(self.download_status.list_icon_str()),
+            },
+            ListSongDisplayableField::TrackNo => {
+                Cow::Borrowed(self.track_no_string.as_str())
             }
-            ListSongDisplayableField::TrackNo => self
-                .get_track_no()
-                .map(|track_no| track_no.to_string())
-                .unwrap_or_default()
-                .into(),
-            ListSongDisplayableField::Artists => Itertools::intersperse(
-                self.artists
-                    .as_ref()
-                    .iter()
-                    .map(|artist| artist.name.as_str()),
-                ", ",
-            )
-            .collect::<String>()
-            .into(),
+            ListSongDisplayableField::Artists => {
+                Cow::Borrowed(self.artists_string.as_str())
+            }
             ListSongDisplayableField::Album => self
                 .album
                 .as_ref()
@@ -372,6 +378,7 @@ impl BrowserSongsList {
             explicit,
             ..
         } = song;
+        let artists_string = compute_artists_string(&artists);
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
@@ -387,6 +394,8 @@ impl BrowserSongsList {
             duration_string: duration,
             thumbnails: MaybeRc::Rc(thumbnails),
             album_art: Default::default(),
+            artists_string,
+            track_no_string: track_no.to_string(),
         });
         id
     }
@@ -403,6 +412,7 @@ impl BrowserSongsList {
             thumbnails,
             ..
         } = song;
+        let artists_string = artist.clone();
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
@@ -421,6 +431,8 @@ impl BrowserSongsList {
             duration_string: duration,
             thumbnails: MaybeRc::Owned(thumbnails),
             album_art: Default::default(),
+            artists_string,
+            track_no_string: String::new(),
         });
         id
     }
@@ -489,6 +501,7 @@ impl BrowserSongsList {
                 None,
             ),
         };
+        let artists_string = compute_artists_string(&artists);
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
@@ -504,12 +517,18 @@ impl BrowserSongsList {
             duration_string: duration,
             thumbnails: MaybeRc::Owned(thumbnails),
             album_art: Default::default(),
+            artists_string,
+            track_no_string: track_no.to_string(),
         });
         id
     }
     // Returns the ID of the first song added.
     pub fn push_song_list(&mut self, mut song_list: Vec<ListSong>) -> ListSongID {
         let first_id = self.create_next_id();
+        for song in &mut song_list {
+            song.artists_string = compute_artists_string(&song.artists);
+            song.track_no_string = song.track_no.map(|n| n.to_string()).unwrap_or_default();
+        }
         if let Some(song) = song_list.first_mut() {
             song.id = first_id;
         };
