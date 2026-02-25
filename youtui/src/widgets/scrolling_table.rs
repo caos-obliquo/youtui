@@ -1,6 +1,7 @@
 use crate::widgets::get_scrolled_line;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::Style;
+use ratatui::text::Line;
 use ratatui::widgets::{Cell, Row, StatefulWidget, Table, TableState};
 use std::borrow::Cow;
 
@@ -218,26 +219,32 @@ where
                 debug_assert!(table_widths_len == col_count, "Debug warning: Table has a different number of columns to constraints.\
                     This is probably a bug, but this will be ignored in release mode and column scrolling will be disabled");
                 if table_widths_len != col_count {
-                    return Row::new(items_vec);
+                    // Bypass Text::raw / str::lines() by going through Line::raw.
+                    return Row::new(items_vec.into_iter().map(|item| Cell::from(Line::raw(item))));
                 }
                 let row_items = items_vec
                     .into_iter()
                     .enumerate()
-                    .map(|(idx, item)| {
+                    .map(|(col_idx, item)| {
                         let item_len = item.len();
-                        get_scrolled_line(
+                        let scrolled = get_scrolled_line(
                             item,
                             adj_tick,
                             // Sync scrolling between all columns.
                             (max_col_length.saturating_sub(item_len) + min_ticker_gap as usize)
                                 as u16,
-                            guessed_column_widths[idx],
+                            guessed_column_widths[col_idx],
                             max_times_to_scroll,
-                        )
+                        );
+                        // Bypass Text::raw / str::lines() by going through Line::raw.
+                        Cell::from(scrolled)
                     });
                 Row::new(row_items)
             } else {
-                Row::new(row_items)
+                // Bypass Text::raw / str::lines() by going through Line::raw.
+                // Cell::from<Cow<str>> → Text::raw → str::lines() → Vec collect is the
+                // hot path (~10% CPU). Line::raw creates a single Span with no iteration.
+                Row::new(row_items.into_iter().map(|item| Cell::from(Line::raw(item))))
             };
             row.style(row_style)
         });
