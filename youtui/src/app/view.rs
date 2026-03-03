@@ -36,7 +36,7 @@ pub enum Filter {
 #[derive(Clone, Debug)]
 pub enum FilterString {
     CaseSensitive(String),
-    CaseInsensitive(String),
+    CaseInsensitive { original: String, lowercased: String },
 }
 
 impl TableFilterCommand {
@@ -54,25 +54,24 @@ impl TableFilterCommand {
         fields_in_table: [ListSongDisplayableField; N],
         filterable_colums: &[usize],
     ) -> bool {
-        let fields = row.get_fields(fields_in_table);
         match self {
             TableFilterCommand::All(filter) => match filter {
                 Filter::Contains(filter_string) => filterable_colums
                     .iter()
-                    .any(|col| filter_string.is_in(fields[*col].as_ref())),
+                    .any(|col| filter_string.is_in(row.get_field(fields_in_table[*col]).as_ref())),
                 Filter::NotContains(filter_string) => filterable_colums
                     .iter()
-                    .all(|col| !filter_string.is_in(fields[*col].as_ref())),
+                    .all(|col| !filter_string.is_in(row.get_field(fields_in_table[*col]).as_ref())),
                 Filter::Equal(filter_string) => filterable_colums
                     .iter()
-                    .any(|col| filter_string.is_equal(fields[*col].as_ref())),
+                    .any(|col| filter_string.is_equal(row.get_field(fields_in_table[*col]).as_ref())),
             },
             TableFilterCommand::Column { filter, column } => match filter {
-                Filter::Contains(filter_string) => filter_string.is_in(fields[*column].as_ref()),
+                Filter::Contains(filter_string) => filter_string.is_in(row.get_field(fields_in_table[*column]).as_ref()),
                 Filter::NotContains(filter_string) => {
-                    !filter_string.is_in(fields[*column].as_ref())
+                    !filter_string.is_in(row.get_field(fields_in_table[*column]).as_ref())
                 }
-                Filter::Equal(filter_string) => filter_string.is_equal(fields[*column].as_ref()),
+                Filter::Equal(filter_string) => filter_string.is_equal(row.get_field(fields_in_table[*column]).as_ref()),
             },
         }
     }
@@ -87,28 +86,38 @@ impl Filter {
     }
 }
 impl FilterString {
+    /// Constructs a CaseInsensitive filter, pre-computing the lowercased form
+    /// so it is not recomputed on every call to is_in/is_equal.
+    pub fn case_insensitive(s: String) -> Self {
+        let lowercased = s.to_ascii_lowercase();
+        Self::CaseInsensitive {
+            original: s,
+            lowercased,
+        }
+    }
     fn as_readable(&self) -> String {
         match self {
             FilterString::CaseSensitive(s) => format!("a=a:{s}"),
-            FilterString::CaseInsensitive(s) => format!("a=A:{s}"),
+            FilterString::CaseInsensitive { original, .. } => format!("a=A:{original}"),
         }
     }
     pub fn is_in<S: AsRef<str>>(&self, test_str: S) -> bool {
         match self {
             FilterString::CaseSensitive(s) => test_str.as_ref().contains(s),
-            // Ascii lowercase may not be correct but it avoids frequent allocations.
-            FilterString::CaseInsensitive(s) => test_str
+            // Lowercased form of the filter string is pre-computed at construction.
+            FilterString::CaseInsensitive { lowercased, .. } => test_str
                 .as_ref()
                 .to_ascii_lowercase()
-                .contains(s.to_ascii_lowercase().as_str()),
+                .contains(lowercased.as_str()),
         }
     }
     pub fn is_equal<S: AsRef<str>>(&self, test_str: S) -> bool {
         match self {
             FilterString::CaseSensitive(s) => test_str.as_ref() == s,
-            // Ascii lowercase may not be correct but it avoids frequent allocations.
-            FilterString::CaseInsensitive(s) => {
-                test_str.as_ref().to_ascii_lowercase() == s.to_ascii_uppercase()
+            // Fix: was comparing lowercase lhs to uppercase rhs (never matched).
+            // Use pre-computed lowercased form on the rhs.
+            FilterString::CaseInsensitive { lowercased, .. } => {
+                test_str.as_ref().to_ascii_lowercase() == *lowercased
             }
         }
     }
@@ -163,6 +172,11 @@ pub trait AdvancedTableView: TableView {
     fn get_filterable_columns(&self) -> &[usize];
     // This can't be ExactSized as return type may be Filter<T>
     fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_>;
+    /// Returns the number of rows after filtering. Override this in impls that
+    /// have a cheaper path (e.g. iterating &ListSong without field extraction).
+    fn get_filtered_count(&self) -> usize {
+        self.get_filtered_items().count()
+    }
     fn get_filter_commands(&self) -> &[TableFilterCommand];
     fn push_filter_command(&mut self, filter_command: TableFilterCommand);
     fn clear_filter_commands(&mut self);

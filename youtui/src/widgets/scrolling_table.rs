@@ -165,6 +165,38 @@ where
         let cur_selected = state.table_state.selected();
         let adj_tick = cur_tick.saturating_sub(state.last_scrolled_tick);
 
+        // Height available for data rows (subtract 1 for the heading row).
+        let visible_rows = (area.height as usize).saturating_sub(1);
+
+        // Replicate ratatui's ensure_selected_in_view_on_offset so we can
+        // manage windowing ourselves.  After this, offset is guaranteed to
+        // satisfy: selected ∈ [offset, offset + visible_rows).
+        let offset = {
+            let raw = state.table_state.offset();
+            let new_offset = match cur_selected {
+                Some(sel) if sel < raw => sel,
+                Some(sel) if visible_rows > 0 && sel >= raw + visible_rows => {
+                    sel + 1 - visible_rows
+                }
+                _ => raw,
+            };
+            *state.table_state.offset_mut() = new_offset;
+            new_offset
+        };
+
+        // Window-relative indices: translate absolute → position within window.
+        let windowed_selected = cur_selected.and_then(|s| {
+            let rel = s.saturating_sub(offset);
+            if rel < visible_rows { Some(rel) } else { None }
+        });
+        let windowed_secondary = secondary_highlight_row.and_then(|s| {
+            if s >= offset && s < offset + visible_rows {
+                Some(s - offset)
+            } else {
+                None
+            }
+        });
+
         /// Copied from ratatui
         fn get_column_widths(
             column_spacing: u16,
@@ -194,15 +226,17 @@ where
             table_widths.len(),
         );
         let table_widths_len = table_widths.len();
-        let items = items.into_iter().enumerate().map(|(idx, row_items)| {
+        // Only yield rows within the visible window; ratatui sees at most
+        // `visible_rows` rows and never iterates the rest.
+        let items = items.into_iter().skip(offset).take(visible_rows).enumerate().map(|(idx, row_items)| {
             // Secondary row highlight style is not supported by ratatui's standard Table
             // widget, so it's handled manually here.
-            let row_style = if secondary_highlight_row == Some(idx) {
+            let row_style = if windowed_secondary == Some(idx) {
                 secondary_row_highlight_style
             } else {
                 Default::default()
             };
-            let row = if Some(idx) == cur_selected {
+            let row = if Some(idx) == windowed_selected {
                 // TODO: See if there is a way to remove allocation (may not be).
                 let items_vec: Vec<_> = row_items.into_iter().collect();
 
@@ -253,7 +287,11 @@ where
             .row_highlight_style(row_highlight_style)
             .column_spacing(column_spacing)
             .header(Row::new(headings).style(headings_style));
-        table.render(area, buf, &mut state.table_state);
+        // Use a local TableState with the window-relative selected index and
+        // offset=0.  Our own offset in state.table_state is already correct
+        // from above; we do not need ratatui to manage it.
+        let mut local_state = TableState::default().with_selected(windowed_selected);
+        table.render(area, buf, &mut local_state);
     }
 }
 

@@ -282,7 +282,7 @@ impl TableView for Playlist {
         let list_len = if !self.search_text.is_empty() {
             self.search_indices.len()
         } else {
-            self.list.get_list_iter().count()
+            self.list.get_list_iter().len()
         };
 
         let cur_playing_visual = self
@@ -294,8 +294,7 @@ impl TableView for Playlist {
 
             let ls = self
                 .list
-                .get_list_iter()
-                .nth(actual_i)
+                .get_song_from_idx(actual_i)
                 .expect("BUG: Visual index mapping failed");
 
             let first_field = if Some(visual_i) == cur_playing_visual {

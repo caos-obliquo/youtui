@@ -260,12 +260,7 @@ pub fn draw_advanced_table(
     // Set the state to the currently selected item.
     let selected_item = table.get_selected_item();
     table.get_mut_state().select(Some(selected_item), cur_tick);
-    // Likely expensive, and could be optimised.
-    let filtered_items: Vec<Vec<Cow<str>>> = table
-        .get_filtered_items()
-        .map(|row| row.collect())
-        .collect();
-    let number_items = filtered_items.len();
+    let number_items = table.get_filtered_count();
     // Minus for height of block and heading.
     let heading_names = table.get_headings();
     let sort_headings = get_table_sort_character_array(table.get_sort_commands())
