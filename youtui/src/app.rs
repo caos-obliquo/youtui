@@ -56,6 +56,7 @@ pub struct Youtui {
     /// Capabilities of the user's terminal in regards to image rendering - ie,
     /// font size / kitty protocal etc. This
     terminal_image_capabilities: Picker,
+    needs_redraw: bool,
 }
 
 #[derive(PartialEq)]
@@ -162,6 +163,7 @@ impl Youtui {
             terminal,
             media_controls,
             terminal_image_capabilities,
+            needs_redraw: true,
         })
     }
     pub async fn run(&mut self) -> Result<()> {
@@ -172,17 +174,22 @@ impl Youtui {
                     // We draw after handling the event, as the event could be a keypress we want to
                     // instantly react to.
                     // Draw occurs before the first event, to ensure up loads immediately.
-                    self.terminal.draw(|f| {
-                        ui::draw::draw_app(
-                            f,
-                            &mut self.window_state,
-                            &self.terminal_image_capabilities,
-                        );
-                    })?;
-                    if let Some(media_controls) = &mut self.media_controls {
-                        media_controls.update_controls(
-                            ui::draw_media_controls::draw_app_media_controls(&self.window_state),
-                        )?;
+                    if self.needs_redraw {
+                        self.terminal.draw(|f| {
+                            ui::draw::draw_app(
+                                f,
+                                &mut self.window_state,
+                                &self.terminal_image_capabilities,
+                            );
+                        })?;
+                        if let Some(media_controls) = &mut self.media_controls {
+                            media_controls.update_controls(
+                                ui::draw_media_controls::draw_app_media_controls(
+                                    &self.window_state,
+                                ),
+                            )?;
+                        }
+                        self.needs_redraw = false;
                     }
                     // When running, the app is event based, and will block until one of the
                     // following 2 message types is received.
@@ -241,10 +248,10 @@ impl Youtui {
                 task_id,
                 ..
             } => {
-                info!(
-                    "Received response to {:?}: type_id: {:?}, task_id: {:?}",
-                    type_debug, type_id, task_id
-                );
+                // info!(
+                //     "Received response to {:?}: type_id: {:?}, task_id: {:?}",
+                //     type_debug, type_id, task_id
+                // );
                 let next_task = mutation(&mut self.window_state);
                 self.task_manager.spawn_task(&self.server, next_task);
             }
@@ -252,7 +259,10 @@ impl Youtui {
     }
     async fn handle_event(&mut self, event: AppEvent) {
         match event {
-            AppEvent::Tick => self.window_state.handle_tick().await,
+            AppEvent::Tick => {
+                self.window_state.handle_tick().await;
+                self.needs_redraw = true;
+            }
             AppEvent::Crossterm(e) => {
                 let YoutuiEffect { effect, callback } =
                     self.window_state.handle_crossterm_event(e).await;
@@ -260,6 +270,7 @@ impl Youtui {
                 if let Some(callback) = callback {
                     self.handle_callback(callback);
                 }
+                self.needs_redraw = true;
             }
             AppEvent::MediaControls(e) => {
                 let YoutuiEffect { effect, callback } =
@@ -268,6 +279,7 @@ impl Youtui {
                 if let Some(callback) = callback {
                     self.handle_callback(callback);
                 }
+                self.needs_redraw = true;
             }
             AppEvent::QuitSignal => self.status = AppStatus::Exiting("Quit signal received".into()),
         }

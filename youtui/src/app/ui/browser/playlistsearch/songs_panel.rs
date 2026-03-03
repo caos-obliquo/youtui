@@ -127,14 +127,14 @@ impl PlaylistSongsPanel {
             return;
         };
         let cmd = TableFilterCommand::All(crate::app::view::Filter::Contains(
-            FilterString::CaseInsensitive(filter),
+            FilterString::case_insensitive(filter),
         ));
-        let prev_max_cur = self.get_filtered_items().count().saturating_sub(1);
+        let prev_max_cur = self.get_filtered_list_iter().count().saturating_sub(1);
         let prev_cur = self.cur_selected;
         let prev_offset = self.widget_state.offset();
         self.filter.filter_commands.push(cmd);
         // Clamp current selected row to length of list.
-        let new_max_cur = self.get_filtered_items().count().saturating_sub(1);
+        let new_max_cur = self.get_filtered_list_iter().count().saturating_sub(1);
         self.cur_selected = self.cur_selected.min(new_max_cur);
         // Adjust offset accordingly to ensure if list fits on the screen, offset is
         // zero.
@@ -229,7 +229,7 @@ impl PlaylistSongsPanel {
     pub fn go_to_last(&mut self) {
         match self.route {
             PlaylistSongsInputRouting::List => {
-                self.cur_selected = self.get_filtered_items().count().saturating_sub(1);
+                self.cur_selected = self.get_filtered_list_iter().count().saturating_sub(1);
             }
             PlaylistSongsInputRouting::Sort => {
                 self.cur_selected = self.get_sortable_columns().len().saturating_sub(1);
@@ -311,7 +311,7 @@ impl Scrollable for PlaylistSongsPanel {
             self.cur_selected = self
                 .cur_selected
                 .saturating_add_signed(amount)
-                .min(self.get_filtered_items().count().saturating_sub(1))
+                .min(self.get_filtered_list_iter().count().saturating_sub(1))
         }
     }
     fn is_scrollable(&self) -> bool {
@@ -351,6 +351,10 @@ impl TableView for PlaylistSongsPanel {
     }
 }
 impl AdvancedTableView for PlaylistSongsPanel {
+    fn get_filtered_count(&self) -> usize {
+        // Cheaper than get_filtered_items().count() — no field extraction.
+        self.get_filtered_list_iter().count()
+    }
     // TODO: Consider if perhaps this table should not be sortable or filterable!
     fn get_sortable_columns(&self) -> &[usize] {
         &[0, 1, 2, 3]
