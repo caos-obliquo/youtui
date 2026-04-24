@@ -120,6 +120,13 @@ impl FilterManager {
         }
     }
 }
+impl FilterManager {
+    pub fn delete_word(&mut self) {
+        if !self.filter_text.is_empty() {
+            let _ = self.filter_text.delete_prev_word();
+        }
+    }
+}
 impl TextHandler for FilterManager {
     fn is_text_handling(&self) -> bool {
         true
@@ -184,6 +191,12 @@ impl Suggestable for SearchBlock {
 }
 
 impl SearchBlock {
+    pub fn delete_word(&mut self) {
+        if !self.search_contents.is_empty() {
+            let _ = self.search_contents.delete_prev_word();
+        }
+    }
+
     // Ask the UI for search suggestions for the current query
     fn fetch_search_suggestions(&mut self) -> ComponentEffect<Self> {
         // No need to fetch search suggestions if contents is empty.

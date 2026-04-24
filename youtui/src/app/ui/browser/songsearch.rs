@@ -513,6 +513,10 @@ impl SongSearchBrowser {
                 TextEntryAction::Left => (),
                 TextEntryAction::Right => (),
                 TextEntryAction::Backspace => (),
+                TextEntryAction::DeleteWord => {
+                    self.search.delete_word();
+                    return AsyncTask::new_no_op();
+                }
             }
         }
         AsyncTask::new_no_op()
