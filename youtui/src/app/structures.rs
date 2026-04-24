@@ -289,6 +289,26 @@ impl ListSong {
             ListSongDisplayableField::Plays => self.plays.as_str().into(),
         }
     }
+    pub fn create_placeholder(video_id: VideoID<'static>) -> Self {
+        ListSong {
+            video_id,
+            track_no: None,
+            plays: String::new(),
+            title: String::from("(Loading...)"),
+            explicit: None,
+            download_status: DownloadStatus::None,
+            id: ListSongID(0),
+            duration_string: String::from("--:--"),
+            actual_duration: None,
+            year: None,
+            album_art: AlbumArtState::Init,
+            artists: MaybeRc::Owned(Vec::new()),
+            artists_string: String::new(),
+            track_no_string: String::new(),
+            thumbnails: MaybeRc::Owned(Vec::new()),
+            album: None,
+        }
+    }
 }
 
 impl Default for BrowserSongsList {
