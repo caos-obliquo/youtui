@@ -74,6 +74,7 @@ pub enum TextEntryAction {
     Left,
     Right,
     Backspace,
+    DeleteWord,
 }
 
 impl Action for TextEntryAction {
@@ -86,6 +87,7 @@ impl Action for TextEntryAction {
             TextEntryAction::Left => "Left".into(),
             TextEntryAction::Right => "Right".into(),
             TextEntryAction::Backspace => "Backspace".into(),
+            TextEntryAction::DeleteWord => "Delete Word".into(),
         }
     }
 }

@@ -231,6 +231,10 @@ impl PlaylistSearchBrowser {
                 TextEntryAction::Left => (),
                 TextEntryAction::Right => (),
                 TextEntryAction::Backspace => (),
+                TextEntryAction::DeleteWord => {
+                    self.playlist_search_panel.search.delete_word();
+                    return AsyncTask::new_no_op();
+                }
             }
         }
         AsyncTask::new_no_op()

@@ -1131,6 +1131,13 @@ fn default_text_entry_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> 
                 KeyActionVisibility::Hidden,
             ),
         ),
+        (
+            Keybind::new(crossterm::event::KeyCode::Char('w'), KeyModifiers::CONTROL),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::TextEntry(TextEntryAction::DeleteWord),
+                KeyActionVisibility::Hidden,
+            ),
+        ),
     ])
 }
 fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {

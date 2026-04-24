@@ -224,6 +224,10 @@ impl ArtistSearchBrowser {
                 TextEntryAction::Left => (),
                 TextEntryAction::Right => (),
                 TextEntryAction::Backspace => (),
+                TextEntryAction::DeleteWord => {
+                    self.artist_search_panel.search.delete_word();
+                    return AsyncTask::new_no_op();
+                }
             }
         }
         AsyncTask::new_no_op()
