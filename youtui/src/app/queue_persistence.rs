@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
 use ytmapi_rs::common::VideoID;
+use crate::app::structures::Thumbnail;
 
 const QUEUE_DIR: &str = "youtui/queues";
 const AUTO_SAVE: &str = "__autosave";
@@ -22,9 +23,24 @@ pub struct MinimalSongRef {
     pub video_id: VideoID<'static>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CompactSongRef {
+    pub video_id: VideoID<'static>,
+    pub title: String,
+    pub artists_string: String,
+    pub duration_string: String,
+    pub thumbnail_url: Option<String>,
+}
+
 #[derive(Serialize, Deserialize)]
 struct MinimalSavedQueue {
     songs: Vec<MinimalSongRef>,
+    current_index: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CompactSavedQueue {
+    songs: Vec<CompactSongRef>,
     current_index: Option<usize>,
 }
 
@@ -39,15 +55,26 @@ pub fn get_queue_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
 pub fn save_queue(playlist: &Playlist, name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let raw_songs: Vec<ListSong> = playlist.list.get_list_iter().cloned().collect();
 
-    let songs: Vec<MinimalSongRef> = raw_songs
+    let get_largest_thumbnail_url = |thumbs: &Vec<Thumbnail>| -> Option<String> {
+        thumbs
+            .iter()
+            .max_by_key(|t| t.height * t.width)
+            .map(|t| t.url.clone())
+    };
+
+    let songs: Vec<CompactSongRef> = raw_songs
         .iter()
-        .map(|song| MinimalSongRef {
+        .map(|song| CompactSongRef {
             video_id: song.video_id.clone(),
+            title: song.title.clone(),
+            artists_string: song.artists_string.clone(),
+            duration_string: song.duration_string.clone(),
+            thumbnail_url: get_largest_thumbnail_url(song.thumbnails.as_ref()),
         })
         .collect();
 
     let current_idx = playlist.get_cur_playing_index();
-    let saved = MinimalSavedQueue {
+    let saved = CompactSavedQueue {
         songs,
         current_index: current_idx,
     };
@@ -80,12 +107,51 @@ pub fn load_queue(playlist: &mut Playlist, name: &str) -> Result<(), Box<dyn std
     let json = fs::read_to_string(&path)?;
     debug!("Read JSON: {}", json);
 
-    if let Ok(saved) = serde_json::from_str::<MinimalSavedQueue>(&json) {
+    if let Ok(saved) = serde_json::from_str::<CompactSavedQueue>(&json) {
+        load_compact_queue(playlist, saved)?;
+    } else if let Ok(saved) = serde_json::from_str::<MinimalSavedQueue>(&json) {
         load_minimal_queue(playlist, saved)?;
     } else {
         warn!("Legacy save format detected - loading with full metadata");
         drop(json);
         load_legacy_format(playlist, name)?;
+    }
+    Ok(())
+}
+
+fn load_compact_queue(playlist: &mut Playlist, saved: CompactSavedQueue) -> Result<(), Box<dyn std::error::Error>> {
+    debug!("Loaded compact queue with {} songs", saved.songs.len());
+    info!("Clearing playlist (reset)");
+    let _ = playlist.reset();
+    
+    if !saved.songs.is_empty() {
+        let songs: Vec<ListSong> = saved.songs
+            .iter()
+            .map(|ref_| {
+                ListSong::create_with_metadata(
+                    ref_.video_id.clone(),
+                    ref_.title.clone(),
+                    ref_.artists_string.clone(),
+                    ref_.duration_string.clone(),
+                    ref_.thumbnail_url.clone(),
+                )
+            })
+            .collect();
+        
+        info!("Created {} songs from compact metadata", songs.len());
+        let (_first_id, _effect) = playlist.push_song_list(songs);
+        
+        if let Some(idx) = saved.current_index {
+            if let Some(song_id) = playlist.get_id_from_index(idx) {
+                let _effect = playlist.play_song_id(song_id);
+                info!("Restored playback to song at index {}", idx);
+            } else {
+                warn!("Saved index {} out of bounds, not restoring playback", idx);
+            }
+        }
+        info!("Load complete");
+    } else {
+        info!("No songs to load from save file");
     }
     Ok(())
 }

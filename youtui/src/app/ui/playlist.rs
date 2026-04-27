@@ -12,7 +12,7 @@ use crate::app::server::{
 };
 use crate::app::structures::{
     AlbumArtState, BrowserSongsList, DownloadStatus, ListSong, ListSongDisplayableField,
-    ListSongID, Percentage, PlayState, SongListComponent,
+    ListSongID, Percentage, PlayState, SongListComponent, Thumbnail,
 };
 use crate::app::ui::playlist::effect_handlers::{
     HandleAllStopped, HandleAutoplayUpdateOk, HandleGetSongThumbnailError,
@@ -42,7 +42,6 @@ use std::iter;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tracing::{error, info, warn};
-use ytmapi_rs::common::Thumbnail;
 
 mod effect_handlers;
 #[cfg(test)]
@@ -61,7 +60,7 @@ pub enum QueueState {
 
 #[derive(Debug, Clone)]
 pub struct DownloadTask {
-    _cancel_token: Arc<tokio_util::sync::CancellationToken>,
+    cancel_token: Arc<tokio_util::sync::CancellationToken>,
 }
 
 #[derive(Debug, Clone)]
@@ -578,7 +577,7 @@ impl Playlist {
         downloads.push((
             id,
             DownloadTask {
-                _cancel_token: cancel_token,
+                cancel_token,
             },
         ));
 
@@ -741,9 +740,62 @@ impl Playlist {
             }
         }
 
-        song_ids_list
+        let audio_effects: Vec<_> = song_ids_list
+            .iter()
+            .filter_map(|song_id| Some(self.download_song_if_exists(*song_id)))
+            .collect();
+
+        let thumbnail_effects = self.prefetch_thumbnails_for_indices(&song_ids_list);
+
+        let mut combined_effect = AsyncTask::new_no_op();
+        for effect in audio_effects {
+            combined_effect = combined_effect.push(effect);
+        }
+        combined_effect = combined_effect.push(thumbnail_effects);
+        combined_effect
+    }
+
+    fn prefetch_thumbnails_for_indices(&self, song_ids: &[ListSongID]) -> ComponentEffect<Self> {
+        let get_largest_thumbnail_url = |thumbs: &Vec<Thumbnail>| {
+            thumbs
+                .iter()
+                .max_by_key(|t| t.height * t.width)
+                .map(|t| t.url.clone())
+        };
+
+        let thumb_tasks: Vec<_> = song_ids
+            .iter()
+            .filter_map(|song_id| {
+                let song = self.get_song_from_id(*song_id)?;
+                if matches!(song.album_art, AlbumArtState::Downloaded(_)) {
+                    return None;
+                }
+                if !song.thumbnails.as_ref().is_empty() && song.thumbnails.as_ref().iter().any(|t| !t.url.is_empty()) {
+                    return None;
+                }
+                let thumb_url = get_largest_thumbnail_url(song.thumbnails.as_ref())?;
+                let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
+                Some((thumbnail_id, thumb_url))
+            })
+            .collect();
+
+        if thumb_tasks.is_empty() {
+            return AsyncTask::new_no_op();
+        }
+
+        thumb_tasks
             .into_iter()
-            .map(|song_id| self.download_song_if_exists(song_id))
+            .map(|(thumbnail_id, thumbnail_url)| {
+                AsyncTask::new_future_try(
+                    GetSongThumbnail {
+                        thumbnail_url,
+                        thumbnail_id: thumbnail_id.clone(),
+                    },
+                    HandleGetSongThumbnailOk,
+                    HandleGetSongThumbnailError(thumbnail_id),
+                    None,
+                )
+            })
             .collect()
     }
 
@@ -754,6 +806,17 @@ impl Playlist {
 
         let forward_limit = song_index.saturating_add(SONGS_AHEAD_TO_BUFFER);
         let backwards_limit = song_index.saturating_sub(SONGS_BEHIND_TO_SAVE);
+
+        let mut downloads = self.active_downloads.lock().unwrap();
+        downloads.retain(|(song_id, task)| {
+            if let Some(idx) = self.get_index_from_id(*song_id) {
+                if idx < backwards_limit || idx >= forward_limit {
+                    task.cancel_token.cancel();
+                    return false;
+                }
+            }
+            true
+        });
 
         for (idx, song) in self.list.get_list_iter_mut().enumerate() {
             if idx < backwards_limit || idx >= forward_limit {
