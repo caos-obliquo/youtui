@@ -329,7 +329,7 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
     let (tracing_log_level, tui_logger_log_level) = if debug {
         (tracing::Level::DEBUG, tui_logger::LevelFilter::Debug)
     } else {
-        (tracing::Level::INFO, tui_logger::LevelFilter::Info)
+        (tracing::Level::WARN, tui_logger::LevelFilter::Warn)
     };
     let context_layer =
         tracing_subscriber::filter::Targets::new().with_target("youtui", tracing_log_level);

@@ -10,8 +10,9 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use ytmapi_rs::common::{
-    AlbumID, ArtistChannelID, Explicit, Thumbnail, UploadAlbumID, UploadArtistID, VideoID,
+    AlbumID, ArtistChannelID, Explicit, UploadAlbumID, UploadArtistID, VideoID,
 };
+pub use ytmapi_rs::common::Thumbnail;
 use ytmapi_rs::parse::{
     AlbumSong, ParsedSongAlbum, ParsedSongArtist, ParsedUploadArtist, ParsedUploadSongAlbum,
     PlaylistEpisode, PlaylistItem, PlaylistSong, PlaylistUploadSong, PlaylistVideo,
@@ -306,6 +307,40 @@ impl ListSong {
             artists_string: String::new(),
             track_no_string: String::new(),
             thumbnails: MaybeRc::Owned(Vec::new()),
+            album: None,
+        }
+    }
+    pub fn create_with_metadata(
+        video_id: VideoID<'static>,
+        title: String,
+        artists_string: String,
+        duration_string: String,
+        thumbnail_url: Option<String>,
+    ) -> Self {
+        let thumb = thumbnail_url.map(|url| {
+            let thumb = Thumbnail {
+                height: 200,
+                width: 200,
+                url,
+            };
+            vec![thumb]
+        });
+        ListSong {
+            video_id,
+            track_no: None,
+            plays: String::new(),
+            title,
+            explicit: None,
+            download_status: DownloadStatus::None,
+            id: ListSongID(0),
+            duration_string,
+            actual_duration: None,
+            year: None,
+            album_art: AlbumArtState::Init,
+            artists: MaybeRc::Owned(Vec::new()),
+            artists_string,
+            track_no_string: String::new(),
+            thumbnails: MaybeRc::Owned(thumb.unwrap_or_default()),
             album: None,
         }
     }
