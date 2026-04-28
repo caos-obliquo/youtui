@@ -9,11 +9,15 @@ pub struct YoutubeMusicDownload<S> {
     pub song: S,
 }
 
+use crate::app::AudioQuality;
+use std::pin::Pin;
+
 pub trait YoutubeMusicDownloader {
     type Error;
     fn stream_song(
         &self,
         song_video_id: impl AsRef<str> + Send,
+        audio_quality: AudioQuality,
     ) -> impl Future<
         Output = Result<
             YoutubeMusicDownload<impl Stream<Item = Result<bytes::Bytes, Self::Error>> + Send>,

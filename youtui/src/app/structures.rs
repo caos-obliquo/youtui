@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use ytmapi_rs::common::{
-    AlbumID, ArtistChannelID, Explicit, UploadAlbumID, UploadArtistID, VideoID,
+    AlbumID, ArtistChannelID, Explicit, UploadAlbumID, UploadArtistID, VideoID, YoutubeID,
 };
 pub use ytmapi_rs::common::Thumbnail;
 use ytmapi_rs::parse::{
@@ -206,6 +206,20 @@ pub enum PlayState {
     Buffering(ListSongID),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum AudioQuality {
+    Best,
+    High,
+    Medium,
+    Low,
+}
+
+impl Default for AudioQuality {
+    fn default() -> Self {
+        AudioQuality::Low
+    }
+}
+
 impl PlayState {
     pub fn list_icon(&self) -> char {
         match self {
@@ -222,22 +236,22 @@ impl PlayState {
 impl DownloadStatus {
     pub fn list_icon(&self) -> char {
         match self {
-            Self::Failed => '',
-            Self::Queued => '',
+            Self::Failed => 'X',
+            Self::Queued => '↓',
             Self::None => ' ',
-            Self::Downloading(_) => '',
-            Self::Downloaded(_) => '',
-            Self::Retrying { .. } => '',
+            Self::Downloading(_) => '↓',
+            Self::Downloaded(_) => '✓',
+            Self::Retrying { .. } => '↻',
         }
     }
     pub fn list_icon_str(&self) -> &'static str {
         match self {
-            Self::Failed => "\u{f00d}",
-            Self::Queued => "\u{f03a}",
+            Self::Failed => "X",
+            Self::Queued => "↓",
             Self::None => " ",
-            Self::Downloading(_) => "\u{f0ab}",
-            Self::Downloaded(_) => "\u{f00c}",
-            Self::Retrying { .. } => "\u{f021}",
+            Self::Downloading(_) => "↓",
+            Self::Downloaded(_) => "✓",
+            Self::Retrying { .. } => "↻",
         }
     }
 }
@@ -247,9 +261,6 @@ fn compute_artists_string(artists: &[ListSongArtist]) -> String {
 }
 
 impl ListSong {
-    pub fn get_track_no(&self) -> Option<usize> {
-        self.track_no
-    }
     pub fn get_fields<const N: usize>(
         &self,
         fields: [ListSongDisplayableField; N],
@@ -258,14 +269,8 @@ impl ListSong {
     }
     pub fn get_field(&self, field: ListSongDisplayableField) -> Cow<'_, str> {
         match field {
-            ListSongDisplayableField::DownloadStatus => match &self.download_status {
-                DownloadStatus::Downloading(p) => {
-                    Cow::Owned(format!("{}[{}]%", self.download_status.list_icon(), p.0))
-                }
-                DownloadStatus::Retrying { times_retried } => {
-                    Cow::Owned(format!("{}[x{}]", self.download_status.list_icon(), *times_retried))
-                }
-                _ => Cow::Borrowed(self.download_status.list_icon_str()),
+            ListSongDisplayableField::DownloadStatus => {
+                Cow::Borrowed(self.download_status.list_icon_str())
             },
             ListSongDisplayableField::TrackNo => {
                 Cow::Borrowed(self.track_no_string.as_str())
@@ -290,30 +295,11 @@ impl ListSong {
             ListSongDisplayableField::Plays => self.plays.as_str().into(),
         }
     }
-    pub fn create_placeholder(video_id: VideoID<'static>) -> Self {
-        ListSong {
-            video_id,
-            track_no: None,
-            plays: String::new(),
-            title: String::from("(Loading...)"),
-            explicit: None,
-            download_status: DownloadStatus::None,
-            id: ListSongID(0),
-            duration_string: String::from("--:--"),
-            actual_duration: None,
-            year: None,
-            album_art: AlbumArtState::Init,
-            artists: MaybeRc::Owned(Vec::new()),
-            artists_string: String::new(),
-            track_no_string: String::new(),
-            thumbnails: MaybeRc::Owned(Vec::new()),
-            album: None,
-        }
-    }
     pub fn create_with_metadata(
         video_id: VideoID<'static>,
         title: String,
-        artists_string: String,
+        artists: Vec<String>,
+        album: Option<String>,
         duration_string: String,
         thumbnail_url: Option<String>,
     ) -> Self {
@@ -325,6 +311,19 @@ impl ListSong {
             };
             vec![thumb]
         });
+        let list_artists: Vec<ListSongArtist> = artists
+            .iter()
+            .map(|name| ListSongArtist {
+                name: name.clone(),
+                id: None,
+            })
+            .collect();
+        let artists_refs: Vec<&str> = list_artists.iter().map(|a| a.name.as_str()).collect();
+        let artists_string = Itertools::intersperse(artists_refs.into_iter(), ", ").collect();
+        let list_album = album.map(|name| MaybeRc::Owned(ListSongAlbum {
+            name,
+            id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+        }));
         ListSong {
             video_id,
             track_no: None,
@@ -337,11 +336,11 @@ impl ListSong {
             actual_duration: None,
             year: None,
             album_art: AlbumArtState::Init,
-            artists: MaybeRc::Owned(Vec::new()),
+            artists: MaybeRc::Owned(list_artists),
             artists_string,
             track_no_string: String::new(),
             thumbnails: MaybeRc::Owned(thumb.unwrap_or_default()),
-            album: None,
+            album: list_album,
         }
     }
 }

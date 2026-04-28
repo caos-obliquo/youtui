@@ -1,4 +1,4 @@
-use crate::app::structures::{AlbumArtState, PlayState};
+use crate::app::structures::PlayState;
 use crate::drawutils::{
     BUTTON_BG_COLOUR, BUTTON_FG_COLOUR, PROGRESS_BG_COLOUR, PROGRESS_FG_COLOUR,
 };
@@ -12,8 +12,6 @@ use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
 use ratatui_image::picker::Picker;
 use std::time::Duration;
 
-pub const ALBUM_ART_WIDTH: u16 = 7;
-
 pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
     time_string
         .as_ref()
@@ -24,7 +22,6 @@ pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
 }
 
 pub fn secs_to_time_string(secs: usize) -> String {
-    // Naive implementation
     let hours = secs / 3600;
     let rem_mins = (secs - (hours * 3600)) / 60;
     let rem_secs = secs - (hours * 3600 + rem_mins * 60);
@@ -84,7 +81,6 @@ pub fn draw_footer(
         .and_then(|s| s.album.as_ref())
         .map(|s| s.name.as_str())
         .unwrap_or_default();
-    let album_art = cur_active_song.map(|s| &s.album_art);
     let footer = Paragraph::new(vec![
         Line::from(song_and_artists_string),
         Line::from(album_title),
@@ -142,74 +138,20 @@ pub fn draw_footer(
     let vol_bar = Paragraph::new(vol_bar_spans).alignment(Alignment::Right);
 
     let block_inner = block.inner(chunk);
-    let [album_art_and_progress_bar_chunk, vol_bar_chunk] = Layout::default()
+    let [song_text_and_progress_bar_chunk, vol_bar_chunk] = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Min(1), Constraint::Length(4)])
         .areas(block_inner);
-    let get_progress_bar_and_text_layout = |r: Rect| {
-        let [song_text_chunk, progress_bar_chunk] = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(2), Constraint::Max(1)])
-            .areas(r);
-        (
-            song_text_chunk,
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Max(4), Constraint::Min(1), Constraint::Max(4)])
-                .areas(progress_bar_chunk),
-        )
-    };
-    let (song_text_chunk, [left_arrow_chunk, progress_bar_chunk, right_arrow_chunk]) =
-        match album_art {
-            Some(AlbumArtState::None) | None => {
-                get_progress_bar_and_text_layout(album_art_and_progress_bar_chunk)
-            }
-            Some(album_art) => {
-                let [_album_art_chunk, _, progress_bar_chunk] = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Length(ALBUM_ART_WIDTH),
-                        Constraint::Length(1),
-                        Constraint::Min(0),
-                    ])
-                    .areas(album_art_and_progress_bar_chunk);
-                match album_art {
-                    AlbumArtState::Downloaded(_album_art) => {
-                        // TODO: consider hoist ability to panic here up to album_art_downloader
-                        // server call.
-                        // Since album art is fixed size, no
-                        // need to use resize protocol so this might be acceptable.
-                        // Drawback: This would mean relying on the server to provide a correctly
-                        // sized image.
-                        // Benefit: This includes an encoding step and so would be good to do that
-                        // on the backend.
-                        // let _image = terminal_image_capabilities
-                        //     .new_protocol(
-                        //         album_art.in_mem_image.clone(),
-                        //         Rect {
-                        //             x: 0,
-                        //             y: 0,
-                        //             width: ALBUM_ART_WIDTH,
-                        //             height: ALBUM_ART_WIDTH,
-                        //         },
-                        //         ratatui_image::Resize::Fit(None),
-                        //     )
-                        //     .unwrap();
-                    }
-                    AlbumArtState::Error => {
-                        let _fallback_album_widget = Paragraph::new("").centered();
-                    }
-                    AlbumArtState::Init => {
-                        let _fallback_album_widget = Paragraph::new("").centered();
-                    }
-                    AlbumArtState::None => {
-                        unreachable!("This arm is covered by the earlier match statement")
-                    }
-                };
-                get_progress_bar_and_text_layout(progress_bar_chunk)
-            }
-        };
-    f.render_widget(bar, progress_bar_chunk);
+    let [song_text_chunk, progress_bar_chunk] = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(2), Constraint::Max(1)])
+        .areas(song_text_and_progress_bar_chunk);
+    let [left_arrow_chunk, progress_bar_only_chunk, right_arrow_chunk] = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Max(3), Constraint::Min(1), Constraint::Max(3)])
+        .areas(progress_bar_chunk);
+
+    f.render_widget(bar, progress_bar_only_chunk);
     f.render_widget(left_arrow, left_arrow_chunk);
     f.render_widget(right_arrow, right_arrow_chunk);
     f.render_widget(block, chunk);

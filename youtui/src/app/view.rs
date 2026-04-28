@@ -25,13 +25,10 @@ pub enum SortDirection {
 #[derive(Clone, Debug)]
 pub enum TableFilterCommand {
     All(Filter),
-    Column { filter: Filter, column: usize },
 }
 #[derive(Clone, Debug)]
 pub enum Filter {
     Contains(FilterString),
-    NotContains(FilterString),
-    Equal(FilterString),
 }
 #[derive(Clone, Debug)]
 pub enum FilterString {
@@ -43,9 +40,6 @@ impl TableFilterCommand {
     fn as_readable(&self) -> String {
         match self {
             TableFilterCommand::All(f) => format!("ALL{}", f.as_readable()),
-            TableFilterCommand::Column { filter, column } => {
-                format!("COL{}{}", column, filter.as_readable())
-            }
         }
     }
     pub fn matches_row<const N: usize>(
@@ -59,19 +53,6 @@ impl TableFilterCommand {
                 Filter::Contains(filter_string) => filterable_colums
                     .iter()
                     .any(|col| filter_string.is_in(row.get_field(fields_in_table[*col]).as_ref())),
-                Filter::NotContains(filter_string) => filterable_colums
-                    .iter()
-                    .all(|col| !filter_string.is_in(row.get_field(fields_in_table[*col]).as_ref())),
-                Filter::Equal(filter_string) => filterable_colums
-                    .iter()
-                    .any(|col| filter_string.is_equal(row.get_field(fields_in_table[*col]).as_ref())),
-            },
-            TableFilterCommand::Column { filter, column } => match filter {
-                Filter::Contains(filter_string) => filter_string.is_in(row.get_field(fields_in_table[*column]).as_ref()),
-                Filter::NotContains(filter_string) => {
-                    !filter_string.is_in(row.get_field(fields_in_table[*column]).as_ref())
-                }
-                Filter::Equal(filter_string) => filter_string.is_equal(row.get_field(fields_in_table[*column]).as_ref()),
             },
         }
     }
@@ -80,8 +61,6 @@ impl Filter {
     fn as_readable(&self) -> String {
         match self {
             Filter::Contains(f) => format!("~{}", f.as_readable()),
-            Filter::NotContains(f) => format!("!={}", f.as_readable()),
-            Filter::Equal(f) => format!("={}", f.as_readable()),
         }
     }
 }

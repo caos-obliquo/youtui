@@ -11,9 +11,10 @@ use crate::app::server::{
     TaskMetadata,
 };
 use crate::app::structures::{
-    AlbumArtState, BrowserSongsList, DownloadStatus, ListSong, ListSongDisplayableField,
+    AlbumArtState, AudioQuality, BrowserSongsList, DownloadStatus, ListSong, ListSongDisplayableField,
     ListSongID, Percentage, PlayState, SongListComponent, Thumbnail,
 };
+use std::collections::VecDeque;
 use crate::app::ui::playlist::effect_handlers::{
     HandleAllStopped, HandleAutoplayUpdateOk, HandleGetSongThumbnailError,
     HandleGetSongThumbnailOk, HandlePausePlayResponse, HandlePausedResponse, HandlePlayUpdateError,
@@ -41,13 +42,14 @@ use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
+use ytmapi_rs::common::YoutubeID;
 
 mod effect_handlers;
 #[cfg(test)]
 mod tests;
 
-const SONGS_AHEAD_TO_BUFFER: usize = 3;
+const SONGS_AHEAD_TO_BUFFER: usize = 2;
 const SONGS_BEHIND_TO_SAVE: usize = 1;
 const GAPLESS_PLAYBACK_THRESHOLD: Duration = Duration::from_secs(1);
 pub const DEFAULT_UI_VOLUME: Percentage = Percentage(50);
@@ -70,12 +72,14 @@ pub struct Playlist {
     pub play_status: PlayState,
     pub queue_status: QueueState,
     pub volume: Percentage,
+    pub audio_quality: AudioQuality,
     cur_selected: usize,
     pub widget_state: ScrollingTableState,
     pub shuffle_enabled: bool,
     shuffle_indices: Vec<usize>,
     shuffle_seed: u64,
     active_downloads: Arc<std::sync::Mutex<Vec<(ListSongID, DownloadTask)>>>,
+    download_queue: VecDeque<ListSongID>,
     pub search_enabled: bool,
     pub search_text: String,
     search_indices: Vec<usize>,
@@ -97,6 +101,7 @@ pub enum PlaylistAction {
     LoadQueue,
     DeleteQueue,
     ClearSearch,
+    CycleAudioQuality,
 }
 
 impl Action for PlaylistAction {
@@ -116,6 +121,7 @@ impl Action for PlaylistAction {
             PlaylistAction::SaveQueue => "Save Queue",
             PlaylistAction::LoadQueue => "Load Queue",
             PlaylistAction::DeleteQueue => "Delete Queue",
+            PlaylistAction::CycleAudioQuality => "Cycle Audio Quality",
         }
         .into()
     }
@@ -140,6 +146,16 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             }
             PlaylistAction::DeleteQueue => (AsyncTask::new_no_op(), None),
+            PlaylistAction::CycleAudioQuality => {
+                self.audio_quality = match self.audio_quality {
+                    AudioQuality::Best => AudioQuality::High,
+                    AudioQuality::High => AudioQuality::Medium,
+                    AudioQuality::Medium => AudioQuality::Low,
+                    AudioQuality::Low => AudioQuality::Best,
+                };
+                info!("Audio quality set to: {:?}", self.audio_quality);
+                (AsyncTask::new_no_op(), None)
+            },
         }
     }
 }
@@ -346,6 +362,13 @@ impl HasTitle for Playlist {
             ""
         };
 
+        let quality_indicator = match self.audio_quality {
+            AudioQuality::Best => " [Q:Best]",
+            AudioQuality::High => " [Q:High]",
+            AudioQuality::Medium => " [Q:Medium]",
+            AudioQuality::Low => " [Q:Low]",
+        };
+
         let search_indicator = if !self.search_text.is_empty() {
             format!(" [SEARCH: {}]", self.search_text)
         } else if self.search_enabled {
@@ -355,8 +378,9 @@ impl HasTitle for Playlist {
         };
 
         format!(
-            "Local playlist - {} songs{}{}",
-            self.list.get_list_iter().count(),
+            "Local playlist - {} songs{}{}{}",
+            self.list.get_list_iter().len(),
+            quality_indicator,
             shuffle_indicator,
             search_indicator
         )
@@ -385,6 +409,7 @@ impl Playlist {
             cur_played_dur: None,
             cur_selected: 0,
             queue_status: QueueState::NotQueued,
+            audio_quality: AudioQuality::default(),
             widget_state: Default::default(),
             shuffle_enabled: false,
             shuffle_indices: Vec::new(),
@@ -393,6 +418,7 @@ impl Playlist {
                 .unwrap_or_default()
                 .as_secs(),
             active_downloads: Arc::new(std::sync::Mutex::new(Vec::new())),
+            download_queue: VecDeque::new(),
             search_enabled: false,
             search_text: String::new(),
             search_indices: Vec::new(),
@@ -414,7 +440,6 @@ impl Playlist {
 
     pub fn play_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
         self.drop_unscoped_from_id(id);
-        self.cancel_out_of_scope_downloads();
 
         let mut effect = self.download_upcoming_from_id(id);
 
@@ -455,7 +480,6 @@ impl Playlist {
 
     pub fn autoplay_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
         self.drop_unscoped_from_id(id);
-        self.cancel_out_of_scope_downloads();
 
         let mut effect = self.download_upcoming_from_id(id);
 
@@ -509,6 +533,7 @@ impl Playlist {
         self.list.clear();
         self.shuffle_indices.clear();
         self.search_indices.clear();
+        self.download_queue.clear();
         self.cur_selected = 0;
     }
 
@@ -533,56 +558,24 @@ impl Playlist {
     }
 
     pub fn handle_song_downloaded(&mut self, id: ListSongID) -> ComponentEffect<Self> {
+        let start = std::time::Instant::now();
         if let PlayState::Buffering(target_id) = self.play_status {
             if target_id == id {
-                info!("Received downloaded song {id:?}, now trying to play it.");
+                info!("play_attempt: song_id={:?}, state=Buffering, ms_since_download={}", 
+                    id, start.elapsed().as_millis());
                 return if matches!(self.queue_status, QueueState::Queued(_)) {
-                    self.autoplay_song_id(id)
+                    let effect = self.autoplay_song_id(id);
+                    info!("autoplay_started: song_id={:?}, ms_to_start={}", id, start.elapsed().as_millis());
+                    effect
                 } else {
-                    self.play_song_id(id)
+                    let effect = self.play_song_id(id);
+                    info!("play_started: song_id={:?}, ms_to_start={}", id, start.elapsed().as_millis());
+                    effect
                 };
             }
         }
+        info!("download_handled_not_playing: song_id={:?}, state={:?}", id, self.play_status);
         AsyncTask::new_no_op()
-    }
-
-    pub fn download_song_if_exists(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        let Some(song_index) = self.get_index_from_id(id) else {
-            return AsyncTask::new_no_op();
-        };
-
-        let song = self
-            .list
-            .get_list_iter_mut()
-            .nth(song_index)
-            .expect("We got the index from the id, so song must exist");
-
-        match song.download_status {
-            DownloadStatus::Downloading(_)
-            | DownloadStatus::Downloaded(_)
-            | DownloadStatus::Queued => return AsyncTask::new_no_op(),
-            _ => (),
-        };
-
-        let cancel_token = Arc::new(tokio_util::sync::CancellationToken::new());
-
-        let effect = AsyncTask::new_stream(
-            DownloadSong(song.video_id.clone(), id),
-            HandleSongDownloadProgressUpdate,
-            None,
-        );
-
-        let mut downloads = self.active_downloads.lock().unwrap();
-        downloads.retain(|(song_id, _)| *song_id != id);
-        downloads.push((
-            id,
-            DownloadTask {
-                cancel_token,
-            },
-        ));
-
-        song.download_status = DownloadStatus::Queued;
-        effect
     }
 
     pub fn increase_volume(&mut self, inc: i8) {
@@ -715,8 +708,18 @@ impl Playlist {
             return AsyncTask::new_no_op();
         };
 
-        let mut song_ids_list = Vec::new();
-        song_ids_list.push(id);
+        info!("download_upcoming_from_id: START for id={:?}, index={}", id, song_index);
+
+        // Build list of song IDs in scope: [current, N-1, +1, +2]
+        // Current song downloads first, rest queue naturally
+        let mut song_ids: Vec<ListSongID> = vec![id];
+
+        // Add N-1 (previous) if exists
+        if song_index > 0 {
+            if let Some(prev_id) = self.get_id_from_index(song_index - 1) {
+                song_ids.push(prev_id);
+            }
+        }
 
         if self.shuffle_enabled {
             let Some(visual_index) = self.actual_to_visual_index(song_index) else {
@@ -728,31 +731,130 @@ impl Playlist {
                 if next_pos < self.shuffle_indices.len() {
                     let next_actual = self.shuffle_indices[next_pos];
                     if let Some(next_id) = self.get_id_from_index(next_actual) {
-                        song_ids_list.push(next_id);
+                        if !song_ids.contains(&next_id) {
+                            song_ids.push(next_id);
+                        }
                     }
                 }
             }
         } else {
             for offset in 1..=SONGS_AHEAD_TO_BUFFER {
                 if let Some(next_song) = self.get_song_from_idx(song_index.saturating_add(offset)) {
-                    song_ids_list.push(next_song.id);
+                    if !song_ids.contains(&next_song.id) {
+                        song_ids.push(next_song.id);
+                    }
                 }
             }
         }
 
-        let audio_effects: Vec<_> = song_ids_list
-            .iter()
-            .filter_map(|song_id| Some(self.download_song_if_exists(*song_id)))
-            .collect();
-
-        let thumbnail_effects = self.prefetch_thumbnails_for_indices(&song_ids_list);
-
-        let mut combined_effect = AsyncTask::new_no_op();
-        for effect in audio_effects {
-            combined_effect = combined_effect.push(effect);
+        // Log what songs are in scope with their current status
+        for &sid in &song_ids {
+            if let Some(idx) = self.get_index_from_id(sid) {
+                if let Some(s) = self.list.get_list_iter().nth(idx) {
+                    info!("  scope_song: id={:?}, video_id={}, status={:?}", sid, s.video_id.get_raw(), s.download_status);
+                }
+            }
         }
+
+        // Cancel downloads not in scope
+        self.cancel_out_of_scope_downloads(&song_ids);
+
+        info!("download_upcoming_from_id: queue BEFORE clear: {:?}", self.download_queue);
+        
+        // Clear existing download queue and add new songs
+        // BUT: preserve songs that are already downloaded - they don't need to be re-queued
+        self.download_queue.clear();
+        for song_id in &song_ids {
+            let is_downloaded = if let Some(idx) = self.get_index_from_id(*song_id) {
+                if let Some(s) = self.get_song_from_idx(idx) {
+                    matches!(s.download_status, DownloadStatus::Downloaded(_))
+                } else { false }
+            } else { false };
+            
+            if is_downloaded {
+                info!("download_upcoming_from_id: skipping {:?} (already downloaded)", song_id);
+            } else {
+                self.download_queue.push_back(*song_id);
+            }
+        }
+
+        info!("download_upcoming_from_id: queue AFTER filtering: {:?}", self.download_queue);
+
+        // Start only the first download (current song)
+        // Others will be started sequentially as downloads complete
+        let mut combined_effect = AsyncTask::new_no_op();
+        if let Some(first_id) = self.download_queue.pop_front() {
+            info!("download_upcoming_from_id: STARTING FIRST DOWNLOAD: {:?}", first_id);
+            combined_effect = combined_effect.push(self.download_song(first_id));
+        } else {
+            info!("download_upcoming_from_id: no download needed (all in scope already downloaded)");
+        }
+
+        let thumbnail_effects = self.prefetch_thumbnails_for_indices(&song_ids);
         combined_effect = combined_effect.push(thumbnail_effects);
         combined_effect
+    }
+
+    pub fn download_song(&mut self, id: ListSongID) -> ComponentEffect<Self> {
+        let Some(song_index) = self.get_index_from_id(id) else {
+            debug!("download_song: song id {:?} not found", id);
+            return AsyncTask::new_no_op();
+        };
+
+        let song = self
+            .list
+            .get_list_iter_mut()
+            .nth(song_index)
+            .expect("Checked previously");
+
+        let video_id = song.video_id.get_raw().to_string();
+        debug!("download_song: {}", video_id);
+        
+        match &song.download_status {
+            DownloadStatus::Downloading(_) => {
+                debug!("download_song: {} already downloading", video_id);
+                return AsyncTask::new_no_op();
+            }
+            DownloadStatus::Downloaded(_) => {
+                debug!("download_song: {} already downloaded", video_id);
+                return AsyncTask::new_no_op();
+            }
+            DownloadStatus::Queued => {
+                debug!("download_song: {} already queued", video_id);
+                return AsyncTask::new_no_op();
+            }
+            _ => (),
+        };
+
+        // Cancel existing download for this song if any
+        {
+            let downloads = self.active_downloads.lock().unwrap();
+            if let Some((_, task)) = downloads.iter().find(|(sid, _)| *sid == id) {
+                debug!("download_song: cancelling existing download for {}", video_id);
+                task.cancel_token.cancel();
+            }
+        }
+
+        let cancel_token = Arc::new(tokio_util::sync::CancellationToken::new());
+        debug!("download_song: starting download for {}", video_id);
+
+        let effect = AsyncTask::new_stream(
+            DownloadSong(song.video_id.clone(), id, cancel_token.clone(), self.audio_quality),
+            HandleSongDownloadProgressUpdate,
+            None,
+        );
+
+        let mut downloads = self.active_downloads.lock().unwrap();
+        downloads.retain(|(song_id, _)| *song_id != id);
+        downloads.push((
+            id,
+            DownloadTask {
+                cancel_token,
+            },
+        ));
+
+        song.download_status = DownloadStatus::Queued;
+        effect
     }
 
     fn prefetch_thumbnails_for_indices(&self, song_ids: &[ListSongID]) -> ComponentEffect<Self> {
@@ -993,7 +1095,7 @@ impl Playlist {
     }
 
     pub fn play_selected(&mut self) -> ComponentEffect<Self> {
-        if self.list.get_list_iter().count() == 0 {
+        if self.list.get_list_iter().len() == 0 {
             return AsyncTask::new_no_op();
         }
 
@@ -1012,7 +1114,7 @@ impl Playlist {
 
         let mut return_task = AsyncTask::new_no_op();
 
-        if self.list.get_list_iter().count() == 0 {
+        if self.list.get_list_iter().len() == 0 {
             return return_task;
         }
 
@@ -1038,7 +1140,7 @@ impl Playlist {
                 visual_index_before.min(self.search_indices.len() - 1)
             };
         } else {
-            let new_max = self.list.get_list_iter().count().saturating_sub(1);
+            let new_max = self.list.get_list_iter().len().saturating_sub(1);
             self.cur_selected = self.cur_selected.min(new_max);
         }
 
@@ -1092,7 +1194,7 @@ impl Playlist {
         } else {
             if let Some(playing_idx) = self.get_cur_playing_index() {
                 self.cur_selected =
-                    playing_idx.min(self.list.get_list_iter().count().saturating_sub(1));
+                    playing_idx.min(self.list.get_list_iter().len().saturating_sub(1));
             }
             self.shuffle_indices.clear();
         }
@@ -1163,26 +1265,24 @@ impl Playlist {
                     .get_fields([ListSongDisplayableField::Song])
                     .into_iter()
                     .next()
-                    .unwrap_or_default()
-                    .to_lowercase();
+                    .unwrap_or_default();
 
                 let album = song
                     .get_fields([ListSongDisplayableField::Album])
                     .into_iter()
                     .next()
-                    .unwrap_or_default()
-                    .to_lowercase();
+                    .unwrap_or_default();
 
                 let artist = song
                     .get_fields([ListSongDisplayableField::Artists])
                     .into_iter()
                     .next()
-                    .unwrap_or_default()
-                    .to_lowercase();
+                    .unwrap_or_default();
 
-                let searchable = format!("{} {} {}", title, album, artist);
-
-                if searchable.contains(&search_lower) {
+                if title.to_lowercase().contains(&search_lower)
+                    || album.to_lowercase().contains(&search_lower)
+                    || artist.to_lowercase().contains(&search_lower) 
+                {
                     Some(actual_idx)
                 } else {
                     None
@@ -1284,47 +1384,24 @@ impl Playlist {
         downloads.clear();
     }
 
-    fn cancel_out_of_scope_downloads(&self) {
-        let current_scope = self.get_current_download_scope();
-        let mut downloads = self.active_downloads.lock().unwrap();
+    fn cancel_out_of_scope_downloads(&self, scope_ids: &[ListSongID]) {
+        let downloads = self.active_downloads.lock().unwrap();
 
-        downloads.retain(|(song_id, _task)| {
-            current_scope
-                .iter()
-                .any(|(scope_id, _)| *scope_id == *song_id)
-        });
+        for (song_id, task) in downloads.iter() {
+            if !scope_ids.contains(song_id) {
+                info!("cancel_out_of_scope_downloads: cancelling out-of-scope download for {:?}", song_id);
+                task.cancel_token.cancel();
+            }
+        }
     }
 
     fn regenerate_downloads_for_current(&mut self) -> ComponentEffect<Self> {
         if let Some(current_id) = self.get_cur_playing_id() {
             self.drop_unscoped_from_id(current_id);
-            self.cancel_out_of_scope_downloads();
             self.download_upcoming_from_id(current_id)
         } else {
             AsyncTask::new_no_op()
         }
-    }
-
-    fn get_current_download_scope(&self) -> Vec<(ListSongID, DownloadTask)> {
-        let mut scope: Vec<(ListSongID, DownloadTask)> = Vec::new();
-
-        if let Some(current_id) = self.get_cur_playing_id() {
-            if let Some(song_index) = self.get_index_from_id(current_id) {
-                let forward_limit = song_index.saturating_add(SONGS_AHEAD_TO_BUFFER);
-                let backwards_limit = song_index.saturating_sub(SONGS_BEHIND_TO_SAVE);
-
-                let downloads = self.active_downloads.lock().unwrap();
-                for (idx, song) in self.list.get_list_iter().enumerate() {
-                    if idx >= backwards_limit && idx < forward_limit {
-                        if let Some(task) = downloads.iter().find(|(id, _)| *id == song.id) {
-                            scope.push(task.clone());
-                        }
-                    }
-                }
-            }
-        }
-
-        scope
     }
 
     pub fn handle_song_download_progress_update(
@@ -1332,14 +1409,19 @@ impl Playlist {
         update: DownloadProgressUpdateType,
         id: ListSongID,
     ) -> ComponentEffect<Self> {
-        if let Some(song) = self.get_song_from_id(id) {
-            match song.download_status {
+        let song = self.get_song_from_id(id);
+        let video_id = song.map(|s| s.video_id.get_raw().to_string()).unwrap_or_else(|| "unknown".to_string());
+        
+        if let Some(song) = song {
+            match &song.download_status {
                 DownloadStatus::None | DownloadStatus::Downloaded(_) | DownloadStatus::Failed => {
+                    debug!("handle_song_download_progress: song {} already in final state, ignoring", video_id);
                     return AsyncTask::new_no_op();
                 }
                 _ => (),
             }
         } else {
+            debug!("handle_song_download_progress: song id {:?} not found", id);
             return AsyncTask::new_no_op();
         }
 
@@ -1347,37 +1429,68 @@ impl Playlist {
 
         match update {
             DownloadProgressUpdateType::Started => {
-                if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
-                    song.download_status = DownloadStatus::Queued;
+                info!("download_started: song_id={}", video_id);
+                // Use index lookup for reliable status update
+                if let Some(idx) = self.get_index_from_id(id) {
+                    if let Some(song) = self.list.get_list_iter_mut().nth(idx) {
+                        song.download_status = DownloadStatus::Queued;
+                    }
+                } else {
+                    warn!("download_started: song {} not found by id {:?}", video_id, id);
+                }
+            }
+            DownloadProgressUpdateType::Downloading(pct) => {
+                debug!("download_progress: song_id={} {}%", video_id, pct.0);
+                if let Some(idx) = self.get_index_from_id(id) {
+                    if let Some(song) = self.list.get_list_iter_mut().nth(idx) {
+                        song.download_status = DownloadStatus::Downloading(pct);
+                    }
                 }
             }
             DownloadProgressUpdateType::Completed(song_buf) => {
-                if let Some(s) = self.get_mut_song_from_id(id) {
-                    s.download_status = DownloadStatus::Downloaded(Arc::new(song_buf));
+                info!("download_done: song_id={}, size={}", video_id, song_buf.0.len());
+                if let Some(idx) = self.get_index_from_id(id) {
+                    if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
+                        s.download_status = DownloadStatus::Downloaded(Arc::new(song_buf));
+                        info!("download_status_updated: song_id={} -> Downloaded", video_id);
+                    }
+                } else {
+                    error!("download_done: song {} not found by id {:?}", video_id, id);
                 }
                 self.active_downloads
                     .lock()
                     .unwrap()
                     .retain(|(song_id, _)| *song_id != id);
                 effect = self.handle_song_downloaded(id);
+                
+                // Start next download in queue if available
+                if let Some(next_id) = self.download_queue.pop_front() {
+                    info!("queue_starting_next: song_id={:?}", next_id);
+                    effect = effect.push(self.download_song(next_id));
+                }
             }
             DownloadProgressUpdateType::Error => {
-                if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
-                    song.download_status = DownloadStatus::Failed;
+                error!("download_error: song_id={}", video_id);
+                if let Some(idx) = self.get_index_from_id(id) {
+                    if let Some(song) = self.list.get_list_iter_mut().nth(idx) {
+                        song.download_status = DownloadStatus::Failed;
+                    }
                 }
                 self.active_downloads
                     .lock()
                     .unwrap()
                     .retain(|(song_id, _)| *song_id != id);
-            }
-            DownloadProgressUpdateType::Retrying { times_retried } => {
-                if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
-                    song.download_status = DownloadStatus::Retrying { times_retried };
+                
+                // Start next download in queue if available (even on error)
+                if let Some(next_id) = self.download_queue.pop_front() {
+                    debug!("Starting next download in queue after error: {:?}", next_id);
+                    effect = effect.push(self.download_song(next_id));
                 }
             }
-            DownloadProgressUpdateType::Downloading(p) => {
+            DownloadProgressUpdateType::Retrying { times_retried } => {
+                debug!("handle_song_download_progress: RETRYING (try {}) for {}", times_retried, video_id);
                 if let Some(song) = self.list.get_list_iter_mut().find(|x| x.id == id) {
-                    song.download_status = DownloadStatus::Downloading(p);
+                    song.download_status = DownloadStatus::Retrying { times_retried };
                 }
             }
         }

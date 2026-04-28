@@ -6,7 +6,6 @@ use crate::app::component::actionhandler::{
 use crate::app::server::api::GetPlaylistSongsProgressUpdate;
 use crate::app::server::{GetPlaylistSongs, HandleApiError, SearchPlaylists};
 use crate::app::structures::ListStatus;
-use crate::app::structures::SongListComponent;
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::ui::browser::playlistsearch::search_panel::{
     BrowserPlaylistsAction, NonPodcastSearchResultPlaylist, PlaylistSearchPanel,

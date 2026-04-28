@@ -4,6 +4,7 @@ use crate::app::media_controls::{MediaControlsStatus, MediaControlsUpdate, Media
 use crate::app::structures::{AlbumArtState, PlayState};
 use itertools::Itertools;
 use std::time::Duration;
+use tracing::debug;
 
 pub fn draw_app_media_controls(w: &YoutuiWindow) -> MediaControlsUpdate<'_> {
     let mut duration = 0;
@@ -35,15 +36,22 @@ pub fn draw_app_media_controls(w: &YoutuiWindow) -> MediaControlsUpdate<'_> {
         .and_then(|s| s.album.as_ref())
         .map(|s| s.name.as_str())
         .unwrap_or_default();
-    let album_art_path = cur_active_song
-        .and_then(|s| {
-            if let AlbumArtState::Downloaded(album_art) = &s.album_art {
-                Some(album_art)
+    
+    let cover_url = cur_active_song.and_then(|s| {
+        if let AlbumArtState::Downloaded(album_art) = &s.album_art {
+            debug!("draw_media_controls: using local album art: {:?}", album_art.on_disk_path);
+            Some(format!("file://{}", &album_art.on_disk_path.display()))
+        } else {
+            let thumb = s.thumbnails.iter().max_by_key(|t| t.height * t.width);
+            if let Some(t) = thumb {
+                debug!("draw_media_controls: using thumbnail URL: {}", t.url);
+                Some(t.url.clone())
             } else {
+                debug!("draw_media_controls: no thumbnail available");
                 None
             }
-        })
-        .map(|s| format!("file://{}", &s.on_disk_path.display()));
+        }
+    });
     let artist_title = cur_active_song
         .map(|s| s.artists.as_ref())
         .map(|s| {
@@ -61,7 +69,7 @@ pub fn draw_app_media_controls(w: &YoutuiWindow) -> MediaControlsUpdate<'_> {
         title: Some(song_title.into()),
         album: Some(album_title.into()),
         artist: Some(artist_title),
-        cover_url: album_art_path.map(Into::into),
+        cover_url: cover_url.map(Into::into),
         duration: Some(std::time::Duration::from_secs(duration as u64)),
         playback_status,
         volume,

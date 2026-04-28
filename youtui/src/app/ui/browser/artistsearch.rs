@@ -6,7 +6,6 @@ use crate::app::component::actionhandler::{
 use crate::app::server::api::GetArtistSongsProgressUpdate;
 use crate::app::server::{GetArtistSongs, HandleApiError, SearchArtists};
 use crate::app::structures::ListStatus;
-use crate::app::structures::SongListComponent;
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{ListView, TableView};
 use crate::config::Config;

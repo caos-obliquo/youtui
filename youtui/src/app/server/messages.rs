@@ -5,6 +5,7 @@ use super::song_downloader::{DownloadProgressUpdate, InMemSong};
 use super::song_thumbnail_downloader::SongThumbnail;
 use crate::app::server::api::GetPlaylistSongsProgressUpdate;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
+use crate::app::AudioQuality;
 use crate::app::structures::ListSongID;
 use crate::async_rodio_sink::rodio::decoder::DecoderError;
 use crate::async_rodio_sink::{
@@ -16,6 +17,7 @@ use async_callback_manager::{BackendStreamingTask, BackendTask, MapFn};
 use futures::{Future, Stream};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use ytmapi_rs::common::{ArtistChannelID, PlaylistID, SearchSuggestion, VideoID};
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
 
@@ -47,8 +49,14 @@ pub struct GetPlaylistSongs {
     pub max_songs: usize,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct DownloadSong(pub VideoID<'static>, pub ListSongID);
+#[derive(Debug)]
+pub struct DownloadSong(pub VideoID<'static>, pub ListSongID, pub Arc<CancellationToken>, pub AudioQuality);
+
+impl PartialEq for DownloadSong {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0 && self.1 == other.1
+    }
+}
 
 // Player Requests documentation:
 // NOTE: I considered giving player more control of the playback than playlist,
@@ -215,7 +223,7 @@ impl BackendStreamingTask<ArcServer> for DownloadSong {
         backend: &ArcServer,
     ) -> impl futures::Stream<Item = Self::Output> + Send + Unpin + 'static {
         let backend = backend.clone();
-        backend.song_downloader.download_song(self.0, self.1)
+        backend.song_downloader.download_song(self.0, self.1, Some(self.2), self.3)
     }
 }
 impl BackendTask<ArcServer> for Seek {
