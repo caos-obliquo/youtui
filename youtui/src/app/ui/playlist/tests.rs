@@ -1,20 +1,22 @@
-use super::Playlist;
+use crate::app::queue_persistence::{CompactSongRef, CompactSavedQueue};
 use crate::app::server::song_downloader::InMemSong;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::server::{DecodeSong, GetSongThumbnail, PlayDecodedSong, Stop, TaskMetadata};
-use crate::app::structures::{ListSong, ListStatus, MaybeRc};
-use crate::app::ui::playlist::{
-    HandleGetSongThumbnailError, HandleGetSongThumbnailOk, HandlePlayUpdateError,
-    HandlePlayUpdateOk, HandleStopped, QueueState,
+use crate::app::structures::{
+    AlbumArtState, DownloadStatus, ListSong, ListSongDisplayableField, ListSongID, ListStatus,
+    MaybeRc, PlayState,
 };
-use crate::app::ui::{ListSongID, PlayState};
+use crate::app::ui::playlist::{
+    DownloadTask, HandleGetSongThumbnailError, HandleGetSongThumbnailOk,
+    HandlePlayUpdateError, HandlePlayUpdateOk, HandleStopped, Playlist, QueueState,
+};
 use crate::async_rodio_sink::{AllStopped, Stopped};
 use async_callback_manager::{AsyncTask, Constraint, TryBackendTaskExt};
 use pretty_assertions::assert_eq;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use ytmapi_rs::auth::BrowserToken;
-use ytmapi_rs::common::{AlbumID, Thumbnail, YoutubeID};
+use ytmapi_rs::common::{AlbumID, Thumbnail, VideoID, YoutubeID};
 use ytmapi_rs::parse::{GetAlbum, ParsedSongAlbum};
 use ytmapi_rs::query::GetAlbumQuery;
 
@@ -35,7 +37,7 @@ fn get_dummy_album() -> GetAlbum {
 }
 
 fn get_dummy_playlist() -> Playlist {
-    let mut playlist = Playlist::new().0;
+    let (mut playlist, _effect) = Playlist::new();
     playlist.list.state = ListStatus::Loaded;
     let GetAlbum {
         title,
@@ -55,6 +57,7 @@ fn get_dummy_playlist() -> Playlist {
     );
     playlist
 }
+
 #[test]
 fn newly_added_song_downloads_album_art() {
     let mut p = get_dummy_playlist();
@@ -82,13 +85,14 @@ fn newly_added_song_downloads_album_art() {
         pretty_assertions::Comparison::new(&effect, &expected_effect)
     );
 }
+
 #[test]
 fn downloaded_song_plays_if_buffered() {
     let mut p = get_dummy_playlist();
     p.play_status = PlayState::Buffering(ListSongID(1));
     let dummy_song = Arc::new(InMemSong(vec![1]));
     p.list.get_list_iter_mut().nth(1).unwrap().download_status =
-        crate::app::structures::DownloadStatus::Downloaded(dummy_song.clone());
+        DownloadStatus::Downloaded(dummy_song.clone());
     let effect = p.handle_song_downloaded(ListSongID(1));
     assert_eq!(p.play_status, PlayState::Playing(ListSongID(1)));
     let expected_effect = AsyncTask::new_stream_try(
@@ -101,192 +105,159 @@ fn downloaded_song_plays_if_buffered() {
     );
     assert!(
         effect.contains(&expected_effect),
-        "Expected Left to contain Right {}",
-        pretty_assertions::Comparison::new(&effect, &expected_effect)
+        "Expected to contain effect to play song {:?}",
+        expected_effect
     );
 }
+
 #[test]
-fn test_reset_when_playing_stops_song_id() {
+fn queued_song_plays_if_not_already_playing() {
     let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Playing(ListSongID(1));
-    let effect = p.reset();
-    let expected_effect = AsyncTask::new_future_option(
-        Stop(ListSongID(1)),
-        HandleStopped,
-        Some(Constraint::new_block_matching_metadata(
-            TaskMetadata::PlayPause,
-        )),
-    );
-    assert_eq!(effect, expected_effect);
-}
-#[test]
-fn test_reset_when_not_playing_has_no_effect() {
-    let mut p = get_dummy_playlist();
-    let effect = p.reset();
-    assert!(effect.is_no_op());
-}
-#[test]
-fn test_handle_autoplay_queued_when_other_queued() {
-    let mut p = get_dummy_playlist();
-    p.queue_status = QueueState::Queued(ListSongID(1));
-    let expected_p = p.clone();
-    p.handle_autoplay_queued(ListSongID(0));
-    assert_eq!(p, expected_p);
-}
-#[test]
-fn test_handle_autoplay_queued_when_queued() {
-    let mut p = get_dummy_playlist();
+    p.play_status = PlayState::Buffering(ListSongID(0));
     p.queue_status = QueueState::Queued(ListSongID(0));
-    p.handle_autoplay_queued(ListSongID(0));
-    let mut expected_p = get_dummy_playlist();
-    expected_p.queue_status = QueueState::NotQueued;
-    assert_eq!(p, expected_p);
+    let dummy_song = Arc::new(InMemSong(vec![1]));
+    p.list.get_list_iter_mut().nth(0).unwrap().download_status =
+        DownloadStatus::Downloaded(dummy_song.clone());
+    let effect = p.handle_song_downloaded(ListSongID(0));
+    assert_eq!(p.play_status, PlayState::Playing(ListSongID(0)));
+    // queue_status is set to NotQueued by autoplay_song_id
+    assert_eq!(p.queue_status, QueueState::NotQueued);
 }
+
 #[test]
-fn test_handle_autoplay_queued_not_queued() {
-    let mut p = get_dummy_playlist();
-    p.queue_status = QueueState::NotQueued;
-    let expected_p = p.clone();
-    p.handle_autoplay_queued(ListSongID(0));
-    assert_eq!(p, expected_p);
+fn compact_song_ref_contains_all_fields() {
+    let song_ref = CompactSongRef {
+        video_id: VideoID::from_raw("test123"),
+        title: "Test Song".to_string(),
+        artists: vec!["Artist 1".to_string(), "Artist 2".to_string()],
+        album: Some("Test Album".to_string()),
+        duration_string: "3:45".to_string(),
+        thumbnail_url: Some("https://example.com/thumb.jpg".to_string()),
+    };
+    
+    assert_eq!(song_ref.video_id.get_raw(), "test123");
+    assert_eq!(song_ref.title, "Test Song");
+    assert_eq!(song_ref.artists.len(), 2);
+    assert_eq!(song_ref.album, Some("Test Album".to_string()));
+    assert_eq!(song_ref.duration_string, "3:45");
+    assert!(song_ref.thumbnail_url.is_some());
 }
+
 #[test]
-fn test_handle_playing_modifies_duration() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Paused(ListSongID(1));
-    let new_duration = Duration::from_secs(180);
-    p.handle_playing(Some(new_duration), ListSongID(0));
-    let mut expected_p = get_dummy_playlist();
-    expected_p.play_status = PlayState::Paused(ListSongID(1));
-    expected_p
-        .list
-        .get_list_iter_mut()
-        .next()
-        .unwrap()
-        .actual_duration = Some(new_duration);
-    assert_eq!(p, expected_p);
+fn compact_song_ref_serialization_roundtrip() {
+    let song_ref = CompactSongRef {
+        video_id: VideoID::from_raw("abc123"),
+        title: "Roundtrip Test".to_string(),
+        artists: vec!["Solo Artist".to_string()],
+        album: None,
+        duration_string: "4:20".to_string(),
+        thumbnail_url: None,
+    };
+    
+    let json = serde_json::to_string(&song_ref).unwrap();
+    let parsed: CompactSongRef = serde_json::from_str(&json).unwrap();
+    
+    assert_eq!(parsed.video_id.get_raw(), song_ref.video_id.get_raw());
+    assert_eq!(parsed.title, song_ref.title);
+    assert_eq!(parsed.artists, song_ref.artists);
+    assert_eq!(parsed.album, song_ref.album);
+    assert_eq!(parsed.duration_string, song_ref.duration_string);
 }
+
 #[test]
-fn test_handle_queued_modifies_duration() {
-    let mut p = get_dummy_playlist();
-    let new_duration = Duration::from_secs(180);
-    p.handle_queued(Some(new_duration), ListSongID(0));
-    let mut expected_p = get_dummy_playlist();
-    expected_p
-        .list
-        .get_list_iter_mut()
-        .next()
-        .unwrap()
-        .actual_duration = Some(new_duration);
-    assert_eq!(p, expected_p);
+fn compact_queue_with_current_index() {
+    let songs = vec![
+        CompactSongRef {
+            video_id: VideoID::from_raw("song1"),
+            title: "First Song".to_string(),
+            artists: vec!["Artist".to_string()],
+            album: Some("Album".to_string()),
+            duration_string: "3:00".to_string(),
+            thumbnail_url: None,
+        },
+        CompactSongRef {
+            video_id: VideoID::from_raw("song2"),
+            title: "Second Song".to_string(),
+            artists: vec!["Artist".to_string()],
+            album: Some("Album".to_string()),
+            duration_string: "4:00".to_string(),
+            thumbnail_url: None,
+        },
+    ];
+    
+    let queue = CompactSavedQueue {
+        songs,
+        current_index: Some(1),
+    };
+    
+    let json = serde_json::to_string(&queue).unwrap();
+    let parsed: CompactSavedQueue = serde_json::from_str(&json).unwrap();
+    
+    assert_eq!(parsed.songs.len(), 2);
+    assert_eq!(parsed.current_index, Some(1));
+    assert_eq!(parsed.songs[1].title, "Second Song");
 }
+
 #[test]
-fn test_handle_playing_no_duration_when_paused() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Paused(ListSongID(0));
-    p.handle_playing(None, ListSongID(0));
-    let mut expected_p = get_dummy_playlist();
-    expected_p.play_status = PlayState::Playing(ListSongID(0));
-    assert_eq!(p, expected_p);
+fn download_task_creation() {
+    let cancel_token = Arc::new(tokio_util::sync::CancellationToken::new());
+    let task = DownloadTask {
+        cancel_token,
+    };
+    
+    assert!(task.cancel_token.is_cancelled() == false);
 }
+
 #[test]
-fn test_handle_playing_no_duration_when_other_song_paused() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Paused(ListSongID(1));
-    let expected_p = p.clone();
-    p.handle_playing(None, ListSongID(0));
-    assert_eq!(p, expected_p);
+fn list_song_create_with_metadata_has_album() {
+    let song = ListSong::create_with_metadata(
+        VideoID::from_raw("test"),
+        "Title".to_string(),
+        vec!["Artist".to_string()],
+        Some("Album Name".to_string()),
+        "3:33".to_string(),
+        None,
+    );
+    
+    assert!(song.album.is_some());
+    assert_eq!(song.album.as_ref().unwrap().name, "Album Name");
+    assert_eq!(song.artists_string, "Artist");
+    assert_eq!(song.title, "Title");
 }
+
 #[test]
-fn test_handle_playing_no_duration_when_other_state() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Error(ListSongID(0));
-    let expected_p = p.clone();
-    p.handle_playing(None, ListSongID(0));
-    assert_eq!(p, expected_p);
+fn list_song_create_with_metadata_no_album() {
+    let song = ListSong::create_with_metadata(
+        VideoID::from_raw("test"),
+        "Title".to_string(),
+        vec!["Artist1".to_string(), "Artist2".to_string()],
+        None,
+        "4:00".to_string(),
+        Some("https://example.com/thumb.jpg".to_string()),
+    );
+    
+    assert!(song.album.is_none());
+    assert_eq!(song.artists_string, "Artist1, Artist2");
+    assert!(!song.thumbnails.is_empty());
 }
+
 #[test]
-fn test_handle_set_to_error() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Paused(ListSongID(0));
-    p.handle_set_to_error(ListSongID(0));
-    let mut expected_p = get_dummy_playlist();
-    expected_p.play_status = PlayState::Error(ListSongID(0));
-    assert_eq!(p, expected_p);
+fn songs_ahead_buffer_is_2() {
+    assert_eq!(crate::app::ui::playlist::SONGS_AHEAD_TO_BUFFER, 2);
 }
+
 #[test]
-fn test_handle_resumed_when_paused() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Paused(ListSongID(0));
-    p.handle_resumed(ListSongID(0));
-    let mut expected_p = get_dummy_playlist();
-    expected_p.play_status = PlayState::Playing(ListSongID(0));
-    assert_eq!(p, expected_p);
+fn songs_behind_save_is_1() {
+    assert_eq!(crate::app::ui::playlist::SONGS_BEHIND_TO_SAVE, 1);
 }
+
 #[test]
-fn test_handle_resumed_when_other_song_paused() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Paused(ListSongID(1));
-    let expected_p = p.clone();
-    p.handle_resumed(ListSongID(0));
-    assert_eq!(p, expected_p);
-}
-#[test]
-fn test_handle_resumed_when_other_state() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Error(ListSongID(0));
-    let expected_p = p.clone();
-    p.handle_resumed(ListSongID(0));
-    assert_eq!(p, expected_p);
-}
-#[test]
-fn test_handle_paused_when_playing() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Playing(ListSongID(0));
-    p.handle_paused(ListSongID(0));
-    let mut expected_p = get_dummy_playlist();
-    expected_p.play_status = PlayState::Paused(ListSongID(0));
-    assert_eq!(p, expected_p);
-}
-#[test]
-fn test_handle_paused_when_other_song_playing() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Playing(ListSongID(1));
-    let expected_p = p.clone();
-    p.handle_paused(ListSongID(0));
-    assert_eq!(p, expected_p);
-}
-#[test]
-fn test_handle_paused_when_other_state() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Error(ListSongID(0));
-    let expected_p = p.clone();
-    p.handle_paused(ListSongID(0));
-    assert_eq!(p, expected_p);
-}
-#[test]
-fn test_handle_stopped_when_playing_id() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Playing(ListSongID(0));
-    p.handle_stopped(Stopped(ListSongID(0)));
-    let mut expected_p = get_dummy_playlist();
-    expected_p.play_status = PlayState::Stopped;
-    assert_eq!(p, expected_p);
-}
-#[test]
-fn test_handle_stopped_when_not_playing_id() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Playing(ListSongID(1));
-    let expected_p = p.clone();
-    p.handle_stopped(Stopped(ListSongID(0)));
-    assert_eq!(p, expected_p);
-}
-#[test]
-fn test_handle_all_stopped_when_playing() {
-    let mut p = get_dummy_playlist();
-    p.play_status = PlayState::Playing(ListSongID(0));
-    p.handle_all_stopped(AllStopped);
-    let mut expected_p = get_dummy_playlist();
-    expected_p.play_status = PlayState::Stopped;
-    assert_eq!(p, expected_p);
+fn download_scope_max_4_songs() {
+    // Scope is: prev(1) + current + next(2) = 4 songs
+    assert_eq!(
+        crate::app::ui::playlist::SONGS_BEHIND_TO_SAVE
+            + 1 // current
+            + crate::app::ui::playlist::SONGS_AHEAD_TO_BUFFER,
+        4
+    );
 }

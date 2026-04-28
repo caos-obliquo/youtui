@@ -120,13 +120,6 @@ impl FilterManager {
         }
     }
 }
-impl FilterManager {
-    pub fn delete_word(&mut self) {
-        if !self.filter_text.is_empty() {
-            let _ = self.filter_text.delete_prev_word();
-        }
-    }
-}
 impl TextHandler for FilterManager {
     fn is_text_handling(&self) -> bool {
         true

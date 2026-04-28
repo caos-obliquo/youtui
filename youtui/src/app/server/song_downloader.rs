@@ -1,6 +1,7 @@
 use super::{AUDIO_QUALITY, DL_CALLBACK_CHUNK_SIZE};
 use crate::app::CALLBACK_CHANNEL_SIZE;
 use crate::app::server::MAX_RETRIES;
+use crate::app::AudioQuality;
 use crate::app::structures::{ListSongID, Percentage};
 use crate::config::{Config, DownloaderType};
 use crate::core::send_or_error;
@@ -11,6 +12,8 @@ use async_callback_manager::PanickingReceiverStream;
 use futures::{Stream, StreamExt, TryStreamExt};
 use rusty_ytdl::reqwest;
 use std::future::Future;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
 use ytmapi_rs::common::{VideoID, YoutubeID};
 
@@ -22,6 +25,16 @@ const MIN_SONG_PROGRESS_INTERVAL: usize = 3;
 pub struct DownloadProgressUpdate {
     pub kind: DownloadProgressUpdateType,
     pub id: ListSongID,
+}
+
+// Maximum number of concurrent yt-dlp downloads.
+const MAX_CONCURRENT_DOWNLOADS: usize = 4;
+static DOWNLOAD_SEMAPHORE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+fn get_download_semaphore() -> Arc<Semaphore> {
+    DOWNLOAD_SEMAPHORE
+        .get_or_init(|| Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS)))
+        .clone()
 }
 
 #[derive(Debug, PartialEq)]
@@ -69,8 +82,8 @@ impl SongDownloader {
                     "Initiating yt-dlp downloader using yt-dlp path `{}`",
                     config.yt_dlp_command
                 );
-                let downloader = YtDlpDownloader::new(config.yt_dlp_command.clone());
-                let downloader_clone = YtDlpDownloader::new(config.yt_dlp_command.clone());
+                let downloader = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), AudioQuality::default());
+                let downloader_clone = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), AudioQuality::default());
                 tokio::task::spawn(async {
                     let output = downloader_clone.get_version().await;
                     match output {
@@ -88,6 +101,8 @@ impl SongDownloader {
         &self,
         song_video_id: VideoID<'static>,
         song_playlist_id: ListSongID,
+        cancel_token: Option<Arc<tokio_util::sync::CancellationToken>>,
+        audio_quality: AudioQuality,
     ) -> impl Stream<Item = DownloadProgressUpdate> + use<> {
         match self {
             SongDownloader::YtDlp(yt_dlp_downloader) => {
@@ -95,6 +110,8 @@ impl SongDownloader {
                     yt_dlp_downloader.clone(),
                     song_video_id,
                     song_playlist_id,
+                    cancel_token,
+                    audio_quality,
                 ))
             }
             SongDownloader::Native(native_youtube_downloader) => {
@@ -102,6 +119,8 @@ impl SongDownloader {
                     native_youtube_downloader.clone(),
                     song_video_id,
                     song_playlist_id,
+                    cancel_token,
+                    audio_quality,
                 ))
             }
         }
@@ -112,6 +131,8 @@ fn download_song_using_downloader<T>(
     downloader: T,
     song_video_id: VideoID<'static>,
     song_playlist_id: ListSongID,
+    cancel_token: Option<Arc<tokio_util::sync::CancellationToken>>,
+    audio_quality: AudioQuality,
 ) -> impl Stream<Item = DownloadProgressUpdate>
 where
     T: YoutubeMusicDownloader + Send + Sync + 'static,
@@ -119,6 +140,22 @@ where
 {
     let (tx, rx) = tokio::sync::mpsc::channel(CALLBACK_CHANNEL_SIZE);
     let handle = tokio::spawn(async move {
+        let semaphore = get_download_semaphore();
+        let _permit = match semaphore.acquire().await {
+            Ok(permit) => permit,
+            Err(_) => {
+                error!("Download semaphore closed");
+                return;
+            }
+        };
+        // Check if already cancelled before starting
+        if let Some(ref token) = cancel_token {
+            if token.is_cancelled() {
+                info!("Download cancelled before starting for song {:?}", song_playlist_id);
+                return;
+            }
+        }
+        
         info!("Running download");
         send_or_error(
             &tx.clone(),
@@ -128,23 +165,17 @@ where
             },
         )
         .await;
+        
         let song_download = || {
             let tx = tx.clone();
+            let audio_quality = audio_quality.clone();
+            // No progress callback - icons handle the status entirely
             download_song_with_progress_update_callback(
                 &downloader,
                 song_video_id.clone(),
-                MIN_SONG_PROGRESS_INTERVAL,
-                move |p| {
-                    let tx_clone = tx.clone();
-                    info!("Sending song progress update");
-                    send_or_error(
-                        tx_clone,
-                        DownloadProgressUpdate {
-                            kind: DownloadProgressUpdateType::Downloading(p),
-                            id: song_playlist_id,
-                        },
-                    )
-                },
+                0, // Disabled
+                audio_quality,
+                move |_| async move { /* No-op - status shown via icons */ },
             )
         };
         let song = run_future_with_retries_and_retry_callback(
@@ -221,7 +252,8 @@ where
 async fn download_song_with_progress_update_callback<T, Fut>(
     downloader: &T,
     song_video_id: VideoID<'static>,
-    min_song_progress_interval: usize,
+    _min_song_progress_interval: usize,
+    audio_quality: AudioQuality,
     run_on_progress_interval: impl Fn(Percentage) -> Fut + Send + Sync,
 ) -> Result<InMemSong, T::Error>
 where
@@ -230,7 +262,7 @@ where
     T::Error: std::fmt::Display + Send,
 {
     let song_video_id = song_video_id.get_raw();
-    let stream_future = downloader.stream_song(song_video_id);
+    let stream_future = downloader.stream_song(song_video_id, audio_quality);
     let callback = run_on_progress_interval;
     let YoutubeMusicDownload {
         total_size_bytes,
@@ -243,46 +275,57 @@ where
         Ok(x) => x,
     };
     info!("Commencing streaming song {song_video_id}, expected size bytes: {total_size_bytes}");
-    let song = stream
-        .scan((0, 0), |(bytes_streamed, last_progress_reported), chunk| {
-            let chunk_bytes = match &chunk {
-                Ok(chunk) => chunk.len(),
-                Err(_) => 0,
-            };
-            *bytes_streamed += chunk_bytes;
-            let bytes_streamed_clone = *bytes_streamed;
-            let progress = bytes_streamed_clone * 100 / total_size_bytes;
-            let report_progress = progress >= *last_progress_reported + min_song_progress_interval;
-            if report_progress {
-                *last_progress_reported = progress;
+    // No progress reporting - UI uses icons only (↓ downloading, ✓ downloaded)
+    // Just stream the audio data directly without callback overhead
+    let start_time = std::time::Instant::now();
+    
+    // Collect all chunks
+    let mut song_data = Vec::new();
+    let mut stream = Box::pin(stream);
+    while let Some(chunk_result) = stream.next().await {
+        match chunk_result {
+            Ok(chunk) => song_data.extend_from_slice(&chunk),
+            Err(e) => {
+                error!("Error receiving song data: <{e}>");
+                return Err(e.into());
             }
-            let callback = callback(Percentage(progress as u8));
-            async move {
-                if report_progress {
-                    callback.await;
-                }
-                Some(chunk)
-            }
-        })
-        .flat_map(|chunk| match chunk {
-            Ok(chunk) => {
-                futures::future::Either::Left(futures::stream::iter(chunk.into_iter().map(Ok)))
-            }
-            Err(e) => futures::future::Either::Right(futures::stream::once(async { Err(e) })),
-        })
-        .try_collect::<Vec<u8>>()
-        .await;
-    match song {
-        Ok(song) => {
-            info!(
-                "Completed streaming song {song_video_id}, actual size bytes: {}",
-                song.len()
-            );
-            Ok(InMemSong(song))
         }
-        Err(e) => {
-            error!("Error received downloading song: <{e}>");
-            Err(e)
+    }
+    
+    let song = song_data;
+    info!(
+        "download_complete: song_id={}, actual_size={}, download_ms={}",
+        song_video_id,
+        song.len(),
+        start_time.elapsed().as_millis()
+    );
+    Ok(InMemSong(song))
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    #[tokio::test]
+    async fn test_semaphore_limiting() {
+        let semaphore = get_download_semaphore();
+        let mut permits = Vec::new();
+        
+        // Acquire all permits
+        for _ in 0..MAX_CONCURRENT_DOWNLOADS {
+            let p = semaphore.try_acquire();
+            assert!(p.is_ok(), "Should be able to acquire permit");
+            permits.push(p.unwrap());
         }
+        
+        // Next acquisition should fail
+        assert!(semaphore.try_acquire().is_err(), "Should not be able to acquire more than MAX_CONCURRENT_DOWNLOADS permits");
+        
+        // Release one permit
+        drop(permits.pop());
+        
+        // Next acquisition should succeed
+        assert!(semaphore.try_acquire().is_ok(), "Should be able to acquire permit after releasing one");
     }
 }

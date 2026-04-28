@@ -58,8 +58,9 @@ pub fn bottom_of_rect(r: Rect) -> Rect {
         height: 1,
     }
 }
-/// Helper function to get the middle line of a chunk, ignoring side borders.
-/// Warning: Not currently bounds checked.
+/// Helper function to get `offset` of a list widget like `List` or `Table`
+/// after changing the size of the list.
+#[allow(dead_code)]
 pub fn middle_of_rect(r: Rect) -> Rect {
     Rect {
         x: r.x,
@@ -68,8 +69,6 @@ pub fn middle_of_rect(r: Rect) -> Rect {
         height: 1,
     }
 }
-/// Helper function to get `offset` of a list widget like `List` or `Table`
-/// after changing the size of the list.
 pub fn get_offset_after_list_resize(
     prev_offset: usize,
     prev_cur: usize,

@@ -13,35 +13,25 @@ const QUEUE_DIR: &str = "youtui/queues";
 const AUTO_SAVE: &str = "__autosave";
 
 #[derive(Serialize, Deserialize)]
-struct SavedQueue {
+struct LegacySong {
     songs: Vec<ListSong>,
     current_index: Option<usize>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct MinimalSongRef {
-    pub video_id: VideoID<'static>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CompactSongRef {
     pub video_id: VideoID<'static>,
     pub title: String,
-    pub artists_string: String,
+    pub artists: Vec<String>,
+    pub album: Option<String>,
     pub duration_string: String,
     pub thumbnail_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
-struct MinimalSavedQueue {
-    songs: Vec<MinimalSongRef>,
-    current_index: Option<usize>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct CompactSavedQueue {
-    songs: Vec<CompactSongRef>,
-    current_index: Option<usize>,
+pub struct CompactSavedQueue {
+    pub songs: Vec<CompactSongRef>,
+    pub current_index: Option<usize>,
 }
 
 pub fn get_queue_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -64,12 +54,17 @@ pub fn save_queue(playlist: &Playlist, name: &str) -> Result<(), Box<dyn std::er
 
     let songs: Vec<CompactSongRef> = raw_songs
         .iter()
-        .map(|song| CompactSongRef {
-            video_id: song.video_id.clone(),
-            title: song.title.clone(),
-            artists_string: song.artists_string.clone(),
-            duration_string: song.duration_string.clone(),
-            thumbnail_url: get_largest_thumbnail_url(song.thumbnails.as_ref()),
+        .map(|song| {
+            let artists: Vec<String> = song.artists.iter().map(|a| a.name.clone()).collect();
+            let album = song.album.as_ref().map(|a| a.name.clone());
+            CompactSongRef {
+                video_id: song.video_id.clone(),
+                title: song.title.clone(),
+                artists,
+                album,
+                duration_string: song.duration_string.clone(),
+                thumbnail_url: get_largest_thumbnail_url(song.thumbnails.as_ref()),
+            }
         })
         .collect();
 
@@ -109,12 +104,10 @@ pub fn load_queue(playlist: &mut Playlist, name: &str) -> Result<(), Box<dyn std
 
     if let Ok(saved) = serde_json::from_str::<CompactSavedQueue>(&json) {
         load_compact_queue(playlist, saved)?;
-    } else if let Ok(saved) = serde_json::from_str::<MinimalSavedQueue>(&json) {
-        load_minimal_queue(playlist, saved)?;
+    } else if let Ok(saved) = serde_json::from_str::<LegacySong>(&json) {
+        normalize_and_load(playlist, saved, name)?;
     } else {
-        warn!("Legacy save format detected - loading with full metadata");
-        drop(json);
-        load_legacy_format(playlist, name)?;
+        warn!("Queue file corrupted, starting fresh");
     }
     Ok(())
 }
@@ -131,7 +124,8 @@ fn load_compact_queue(playlist: &mut Playlist, saved: CompactSavedQueue) -> Resu
                 ListSong::create_with_metadata(
                     ref_.video_id.clone(),
                     ref_.title.clone(),
-                    ref_.artists_string.clone(),
+                    ref_.artists.clone(),
+                    ref_.album.clone(),
                     ref_.duration_string.clone(),
                     ref_.thumbnail_url.clone(),
                 )
@@ -156,62 +150,44 @@ fn load_compact_queue(playlist: &mut Playlist, saved: CompactSavedQueue) -> Resu
     Ok(())
 }
 
-fn load_minimal_queue(playlist: &mut Playlist, saved: MinimalSavedQueue) -> Result<(), Box<dyn std::error::Error>> {
-    debug!("Loaded minimal queue with {} songs", saved.songs.len());
+fn normalize_and_load(playlist: &mut Playlist, saved: LegacySong, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    info!("Normalizing queue file to compact format");
+    let get_largest_thumbnail_url = |thumbs: &Vec<Thumbnail>| -> Option<String> {
+        thumbs.iter().max_by_key(|t| t.height * t.width).map(|t| t.url.clone())
+    };
+
+    let songs: Vec<CompactSongRef> = saved.songs.iter().map(|song| {
+        let artists: Vec<String> = song.artists.iter().map(|a| a.name.clone()).collect();
+        let album = song.album.as_ref().map(|a| a.name.clone());
+        CompactSongRef {
+            video_id: song.video_id.clone(),
+            title: song.title.clone(),
+            artists,
+            album,
+            duration_string: song.duration_string.clone(),
+            thumbnail_url: get_largest_thumbnail_url(song.thumbnails.as_ref()),
+        }
+    }).collect();
+
+    let current_idx = saved.current_index;
+    let compact = CompactSavedQueue { songs, current_index: current_idx };
+
+    let queue_dir = get_queue_dir()?;
+    let path = queue_dir.join(format!("{}.json", name));
+    let temp_path = queue_dir.join(format!("{}.json.tmp", name));
+
+    let json = serde_json::to_string_pretty(&compact)?;
+    let mut file = fs::File::create(&temp_path)?;
+    file.write_all(json.as_bytes())?;
+    file.sync_all()?;
+    fs::rename(&temp_path, &path)?;
+
     info!("Clearing playlist (reset)");
     let _ = playlist.reset();
-    
-    if !saved.songs.is_empty() {
-        let songs: Vec<ListSong> = saved.songs
-            .iter()
-            .map(|ref_| {
-                ListSong::create_placeholder(ref_.video_id.clone())
-            })
-            .collect();
-        
-        info!("Created {} placeholder songs (metadata will refresh on API fetch)", songs.len());
-        let (_first_id, _effect) = playlist.push_song_list(songs);
-        
-        if let Some(idx) = saved.current_index {
-            if let Some(song_id) = playlist.get_id_from_index(idx) {
-                let _effect = playlist.play_song_id(song_id);
-                info!("Restored playback to song at index {}", idx);
-            } else {
-                warn!("Saved index {} out of bounds, not restoring playback", idx);
-            }
-        }
-        info!("Load complete");
-    } else {
-        info!("No songs to load from save file");
-    }
-    Ok(())
+    load_compact_queue(playlist, compact)
 }
 
-fn load_legacy_format(playlist: &mut Playlist, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let path = get_queue_dir()?.join(format!("{}.json", name));
-    let json = fs::read_to_string(&path)?;
-    let saved: SavedQueue = serde_json::from_str(&json)?;
-    debug!("Parsed {} songs from legacy JSON", saved.songs.len());
-    info!("Clearing playlist (reset)");
-    let _ = playlist.reset();
-    if !saved.songs.is_empty() {
-        info!("Loading {} songs into playlist (legacy format)", saved.songs.len());
-        let (_first_id, _effect) = playlist.push_song_list(saved.songs);
-        if let Some(idx) = saved.current_index {
-            if let Some(song_id) = playlist.get_id_from_index(idx) {
-                let _effect = playlist.play_song_id(song_id);
-                info!("Restored playback to song at index {}", idx);
-            } else {
-                warn!("Saved index {} out of bounds, not restoring playback", idx);
-            }
-        }
-        info!("Load complete");
-    } else {
-        info!("No songs to load from save file");
-    }
-    Ok(())
-}
-
+#[allow(dead_code)]
 pub fn list_queues() -> Vec<String> {
     let Ok(queue_dir) = get_queue_dir() else {
         return Vec::new();
@@ -231,6 +207,7 @@ pub fn list_queues() -> Vec<String> {
         .collect()
 }
 
+#[allow(dead_code)]
 pub fn delete_queue(name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let path = get_queue_dir()?.join(format!("{}.json", name));
     fs::remove_file(path)?;
@@ -253,13 +230,88 @@ mod tests {
     use ytmapi_rs::common::YoutubeID;
 
     #[test]
-    fn test_minimal_song_ref_serialization() {
+    fn test_compact_song_ref_serialization() {
         let video_id = VideoID::from_raw("abc123");
-        let song_ref = MinimalSongRef {
+        let song_ref = CompactSongRef {
             video_id: video_id.clone(),
+            title: "Test Song".to_string(),
+            artists: vec!["Artist 1".to_string(), "Artist 2".to_string()],
+            album: Some("Test Album".to_string()),
+            duration_string: "3:45".to_string(),
+            thumbnail_url: Some("https://example.com/thumb.jpg".to_string()),
         };
         let json = serde_json::to_string_pretty(&song_ref).unwrap();
         assert!(json.contains("abc123"));
         assert!(json.contains("video_id"));
+        assert!(json.contains("Test Song"));
+        assert!(json.contains("Artist 1"));
+        assert!(json.contains("Artist 2"));
+        assert!(json.contains("Test Album"));
+        assert!(json.contains("album"));
+    }
+
+    #[test]
+    fn test_compact_song_ref_deserialization() {
+        let json = r#"{
+            "video_id": "test123",
+            "title": "Loaded Song",
+            "artists": ["Artist X", "Artist Y"],
+            "album": "Album Name",
+            "duration_string": "5:00",
+            "thumbnail_url": null
+        }"#;
+        
+        let song_ref: CompactSongRef = serde_json::from_str(json).unwrap();
+        assert_eq!(song_ref.video_id.get_raw(), "test123");
+        assert_eq!(song_ref.title, "Loaded Song");
+        assert_eq!(song_ref.artists.len(), 2);
+        assert_eq!(song_ref.artists[0], "Artist X");
+        assert_eq!(song_ref.album, Some("Album Name".to_string()));
+        assert_eq!(song_ref.duration_string, "5:00");
+        assert!(song_ref.thumbnail_url.is_none());
+    }
+
+    #[test]
+    fn test_compact_format_json_structure() {
+        let song_ref = CompactSongRef {
+            video_id: VideoID::from_raw("v123"),
+            title: "Compact Song".to_string(),
+            artists: vec!["Solo Artist".to_string()],
+            album: Some("Album Title".to_string()),
+            duration_string: "3:33".to_string(),
+            thumbnail_url: Some("https://example.com/img.jpg".to_string()),
+        };
+        
+        let json = serde_json::to_string(&song_ref).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        
+        // Verify structure has only compact fields
+        let keys: Vec<_> = parsed.as_object().unwrap().keys().collect();
+        let expected_keys = vec!["video_id", "title", "artists", "album", "duration_string", "thumbnail_url"];
+        for key in expected_keys {
+            assert!(keys.iter().any(|k| *k == key));
+        }
+        
+        // Verify no heavy fields
+        let excluded_keys = vec!["thumbnails", "album_art", "artists_string"];
+        for key in excluded_keys {
+            assert!(!keys.iter().any(|k| *k == key));
+        }
+    }
+
+    #[test]
+    fn test_artists_serialization_format() {
+        let song_ref = CompactSongRef {
+            video_id: VideoID::from_raw("multi"),
+            title: "Multi Artist Song".to_string(),
+            artists: vec!["First".to_string(), "Second".to_string(), "Third".to_string()],
+            album: None,
+            duration_string: "4:00".to_string(),
+            thumbnail_url: None,
+        };
+        
+        let json = serde_json::to_string(&song_ref).unwrap();
+        // Artists should be a JSON array
+        assert!(json.contains(r#""artists":["First","Second","Third"]"#));
     }
 }

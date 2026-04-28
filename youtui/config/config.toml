@@ -22,6 +22,9 @@ C-c = "quit"
 
 [keybinds.playlist]
 F5 = {action = "playlist.view_browser", visibility = "global"}
+s = {action = "playlist.toggle_shuffle", visibility = "global"}
+A = {action = "playlist.cycle_audio_quality", visibility = "global"}
+"/" = {action = "playlist.toggle_search", visibility = "global"}
 enter.enter = "playlist.play_selected"
 enter.d = "playlist.delete_selected"
 enter.D = "playlist.delete_all"
@@ -118,9 +121,12 @@ enter = {action = "text_entry.submit", visibility = "hidden"}
 left = {action = "text_entry.left", visibility = "hidden"}
 right = {action = "text_entry.right", visibility = "hidden"}
 backspace = {action = "text_entry.backspace", visibility = "hidden"}
+C-w = {action = "text_entry.delete_word", visibility = "hidden"}
 
 [keybinds.list]
 up = {action = "list.up", visibility = "hidden"}
 down = {action = "list.down", visibility = "hidden"}
-pageup = "list.page_up"  
-pagedown = "list.page_down"  
+pageup = "list.page_up"
+pagedown = "list.page_down"
+g = "list.first"
+G = "list.last"

@@ -750,7 +750,7 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('S')),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::ToggleShuffle),
                 KeyActionVisibility::Global,
@@ -760,6 +760,13 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::ToggleSearch),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('A')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::CycleAudioQuality),
                 KeyActionVisibility::Global,
             ),
         ),

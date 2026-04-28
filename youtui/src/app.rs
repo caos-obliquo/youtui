@@ -20,6 +20,7 @@ use std::fmt::Display;
 use std::io;
 use std::sync::Arc;
 use structures::ListSong;
+pub use structures::AudioQuality;
 use tracing::{error, info};
 use tracing_subscriber::prelude::*;
 use ui::{WindowContext, YoutuiWindow};
@@ -243,9 +244,9 @@ impl Youtui {
             }
             async_callback_manager::TaskOutcome::MutationReceived {
                 mutation,
-                type_id,
-                type_debug,
-                task_id,
+                type_id: _,
+                type_debug: _,
+                task_id: _,
                 ..
             } => {
                 // info!(
