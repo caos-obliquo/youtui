@@ -155,6 +155,7 @@ impl Youtui {
         // Even the creation of a YoutuiWindow causes an effect. We'll spawn it straight
         // away.
         task_manager.spawn_task(&server, effect);
+        let thumbnail_downloader = server.song_thumbnail_downloader.clone();
         Ok(Youtui {
             status: AppStatus::Running,
             event_handler,
@@ -162,7 +163,10 @@ impl Youtui {
             task_manager,
             server,
             terminal,
-            media_controls,
+            media_controls: media_controls.map(|mut mc| {
+                mc.set_thumbnail_downloader(thumbnail_downloader);
+                mc
+            }),
             terminal_image_capabilities,
             needs_redraw: true,
         })

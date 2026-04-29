@@ -9,7 +9,9 @@ use souvlaki::{MediaControlEvent, MediaMetadata, MediaPosition, PlatformConfig};
 use std::borrow::Cow;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::task;
 use tokio_stream::wrappers::ReceiverStream;
+use ytmapi_rs::common::YoutubeID;
 
 /// Minimum change in playing position before triggering a redraw. This is to
 /// reduce number of calls to the platform.
@@ -45,20 +47,29 @@ impl std::fmt::Display for MediaControlsError {
 
 pub struct NotificationController {
     last_notification: Option<(String, String)>,
+    cover_url: Option<String>,
+}
+
+impl Default for NotificationController {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl NotificationController {
     pub fn new() -> Self {
         Self {
             last_notification: None,
+            cover_url: None,
         }
     }
 
-    pub fn notify_track_change(
+    pub async fn notify_track_change(
         &mut self,
         title: &str,
         artist: Option<&str>,
         cover_url: Option<&str>,
+        thumbnail_downloader: &crate::app::server::song_thumbnail_downloader::SongThumbnailDownloader,
     ) -> Result<(), notify_rust::error::Error> {
         let body = artist.unwrap_or("Unknown Artist");
 
@@ -71,6 +82,35 @@ impl NotificationController {
             return Ok(());
         }
 
+        let icon_path = if let Some(url) = cover_url {
+            let thumbnail_id = crate::app::server::song_thumbnail_downloader::SongThumbnailID::Video(
+                ytmapi_rs::common::VideoID::from_raw(url.trim_start_matches("file://").to_string()),
+            );
+            let thumbnail_id_owned = thumbnail_id.into_owned();
+            let url_owned = url.to_string();
+            
+            if url.starts_with("file://") {
+                Some(url.to_string())
+            } else {
+                match tokio::time::timeout(
+                    std::time::Duration::from_millis(800),
+                    thumbnail_downloader.download_song_thumbnail(
+                        thumbnail_id_owned,
+                        url_owned,
+                    ),
+                )
+                .await
+                {
+                    Ok(Ok(thumbnail)) => {
+                        Some(format!("file://{}", thumbnail.on_disk_path.display()))
+                    }
+                    _ => None,
+                }
+            }
+        } else {
+            None
+        };
+
         let mut notification = Notification::new()
             .summary(title)
             .body(body)
@@ -78,12 +118,13 @@ impl NotificationController {
             .timeout(Timeout::Milliseconds(5000))
             .clone();
 
-        if let Some(url) = cover_url {
-            notification.icon(url);
+        if let Some(path) = &icon_path {
+            notification.icon(path.as_str());
         }
 
         notification.show()?;
         self.last_notification = Some((title.to_string(), body.to_string()));
+        self.cover_url = cover_url.map(String::from);
         Ok(())
     }
 }
@@ -93,6 +134,7 @@ pub struct MediaController {
     status: souvlaki::MediaPlayback,
     volume: MediaControlsVolume,
     notification_controller: NotificationController,
+    thumbnail_downloader: Option<crate::app::server::song_thumbnail_downloader::SongThumbnailDownloader>,
     title: Option<String>,
     album: Option<String>,
     artist: Option<String>,
@@ -205,11 +247,19 @@ impl MediaController {
                 duration: None,
                 volume: Default::default(),
                 notification_controller: NotificationController::new(),
+                thumbnail_downloader: None,
                 #[cfg(target_os = "macos")]
                 macos_window_handle,
             },
             ReceiverStream::new(rx),
         ))
+    }
+
+    pub fn set_thumbnail_downloader(
+        &mut self,
+        downloader: crate::app::server::song_thumbnail_downloader::SongThumbnailDownloader,
+    ) {
+        self.thumbnail_downloader = Some(downloader);
     }
     pub fn update_controls(&mut self, update: MediaControlsUpdate<'_>) -> anyhow::Result<()> {
         let MediaControlsUpdate {
@@ -289,11 +339,25 @@ impl MediaController {
                 .map_err(MediaControlsError)?;
 
             if let Some(title) = &self.title {
-                let _ = self.notification_controller.notify_track_change(
-                    title,
-                    self.artist.as_deref(),
-                    self.cover_url.as_deref(),
-                );
+                if let Some(downloader) = &self.thumbnail_downloader {
+                    let title = title.clone();
+                    let artist = self.artist.clone();
+                    let cover_url = self.cover_url.clone();
+                    let mut controller = std::mem::take(&mut self.notification_controller);
+                    
+                    let _ = task::block_in_place(|| {
+                        let rt = tokio::runtime::Handle::current();
+                        rt.block_on(async {
+                            controller.notify_track_change(
+                                &title,
+                                artist.as_deref(),
+                                cover_url.as_deref(),
+                                downloader,
+                            ).await
+                        })
+                    });
+                    self.notification_controller = controller;
+                }
             }
         }
         Ok(())

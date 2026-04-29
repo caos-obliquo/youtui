@@ -107,6 +107,7 @@ impl Clone for SongThumbnail {
     }
 }
 
+#[derive(Clone)]
 pub struct SongThumbnailDownloader {
     client: reqwest::Client,
     // In-memory LRU cache for thumbnails to avoid re-downloading.
