@@ -322,7 +322,7 @@ impl MediaController {
                 .set_metadata(new_metadata)
                 .map_err(MediaControlsError)?;
 
-                let title = title.clone();
+            if let Some(title) = &self.title {
                 let artist = self.artist.clone();
                 let cover_url = self.cover_url.clone();
                 let mut controller = std::mem::take(&mut self.notification_controller);
@@ -330,14 +330,15 @@ impl MediaController {
                 let _ = task::block_in_place(|| {
                     let rt = tokio::runtime::Handle::current();
                     rt.block_on(async {
-                    controller.notify_track_change(
-                        &title.as_ref().unwrap(),
-                        artist.as_deref(),
-                        cover_url.as_deref(),
-                    ).await
+                        controller.notify_track_change(
+                            title,
+                            artist.as_deref(),
+                            cover_url.as_deref(),
+                        ).await
                     })
                 });
                 self.notification_controller = controller;
+            }
         }
         Ok(())
     }
