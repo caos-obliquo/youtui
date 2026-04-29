@@ -115,7 +115,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             info!("Using format {} for quality {:?}", format_string, audio_quality);
             
             let format_ref = format_string.as_str();
-            let mut stream_args = vec![
+            let stream_args = vec![
                 "--no-simulate",
                 "-q",
                 "--no-warnings",
