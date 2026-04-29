@@ -11,7 +11,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task;
 use tokio_stream::wrappers::ReceiverStream;
-use ytmapi_rs::common::YoutubeID;
+
 
 /// Minimum change in playing position before triggering a redraw. This is to
 /// reduce number of calls to the platform.
@@ -69,7 +69,6 @@ impl NotificationController {
         title: &str,
         artist: Option<&str>,
         cover_url: Option<&str>,
-        thumbnail_downloader: &crate::app::server::song_thumbnail_downloader::SongThumbnailDownloader,
     ) -> Result<(), notify_rust::error::Error> {
         let body = artist.unwrap_or("Unknown Artist");
 
@@ -83,29 +82,14 @@ impl NotificationController {
         }
 
         let icon_path = if let Some(url) = cover_url {
-            let thumbnail_id = crate::app::server::song_thumbnail_downloader::SongThumbnailID::Video(
-                ytmapi_rs::common::VideoID::from_raw(url.trim_start_matches("file://").to_string()),
-            );
-            let thumbnail_id_owned = thumbnail_id.into_owned();
-            let url_owned = url.to_string();
-            
+            // Only use file:// URLs directly for instant responsiveness
+            // Skip thumbnail downloading to avoid delays in notifications
             if url.starts_with("file://") {
                 Some(url.to_string())
             } else {
-                match tokio::time::timeout(
-                    std::time::Duration::from_millis(800),
-                    thumbnail_downloader.download_song_thumbnail(
-                        thumbnail_id_owned,
-                        url_owned,
-                    ),
-                )
-                .await
-                {
-                    Ok(Ok(thumbnail)) => {
-                        Some(format!("file://{}", thumbnail.on_disk_path.display()))
-                    }
-                    _ => None,
-                }
+                // For non-file URLs (including YouTube thumbnails), show no icon
+                // to ensure notifications are instantly responsive
+                None
             }
         } else {
             None
@@ -338,27 +322,22 @@ impl MediaController {
                 .set_metadata(new_metadata)
                 .map_err(MediaControlsError)?;
 
-            if let Some(title) = &self.title {
-                if let Some(downloader) = &self.thumbnail_downloader {
-                    let title = title.clone();
-                    let artist = self.artist.clone();
-                    let cover_url = self.cover_url.clone();
-                    let mut controller = std::mem::take(&mut self.notification_controller);
-                    
-                    let _ = task::block_in_place(|| {
-                        let rt = tokio::runtime::Handle::current();
-                        rt.block_on(async {
-                            controller.notify_track_change(
-                                &title,
-                                artist.as_deref(),
-                                cover_url.as_deref(),
-                                downloader,
-                            ).await
-                        })
-                    });
-                    self.notification_controller = controller;
-                }
-            }
+                let title = title.clone();
+                let artist = self.artist.clone();
+                let cover_url = self.cover_url.clone();
+                let mut controller = std::mem::take(&mut self.notification_controller);
+                
+                let _ = task::block_in_place(|| {
+                    let rt = tokio::runtime::Handle::current();
+                    rt.block_on(async {
+                    controller.notify_track_change(
+                        &title.as_ref().unwrap(),
+                        artist.as_deref(),
+                        cover_url.as_deref(),
+                    ).await
+                    })
+                });
+                self.notification_controller = controller;
         }
         Ok(())
     }
