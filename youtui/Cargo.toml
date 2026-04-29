@@ -44,6 +44,7 @@ toml = "0.9.11"
 
 
 itertools = "0.14.0"
+lru = "0.12"
 tokio-stream = { version = "0.1.18", features = ["fs"] }
 async_cell = "0.2.3"
 bytes = "1.11.1"
