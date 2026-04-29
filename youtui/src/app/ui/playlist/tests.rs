@@ -118,7 +118,7 @@ fn queued_song_plays_if_not_already_playing() {
     let dummy_song = Arc::new(InMemSong(vec![1]));
     p.list.get_list_iter_mut().nth(0).unwrap().download_status =
         DownloadStatus::Downloaded(dummy_song.clone());
-    let effect = p.handle_song_downloaded(ListSongID(0));
+    let _effect = p.handle_song_downloaded(ListSongID(0));
     assert_eq!(p.play_status, PlayState::Playing(ListSongID(0)));
     // queue_status is set to NotQueued by autoplay_song_id
     assert_eq!(p.queue_status, QueueState::NotQueued);
@@ -219,9 +219,11 @@ fn list_song_create_with_metadata_has_album() {
         None,
     );
     
+    use crate::app::structures::ListSongDisplayableField;
+    
     assert!(song.album.is_some());
     assert_eq!(song.album.as_ref().unwrap().name, "Album Name");
-    assert_eq!(song.artists_string, "Artist");
+    assert_eq!(song.get_field(ListSongDisplayableField::Artists).as_ref(), "Artist");
     assert_eq!(song.title, "Title");
 }
 
@@ -237,7 +239,7 @@ fn list_song_create_with_metadata_no_album() {
     );
     
     assert!(song.album.is_none());
-    assert_eq!(song.artists_string, "Artist1, Artist2");
+    assert_eq!(song.get_field(ListSongDisplayableField::Artists).as_ref(), "Artist1, Artist2");
     assert!(!song.thumbnails.is_empty());
 }
 

@@ -85,10 +85,6 @@ pub struct ListSong {
     pub year: Option<Rc<String>>,
     pub album_art: AlbumArtState,
     pub artists: MaybeRc<Vec<ListSongArtist>>,
-    #[serde(skip)]
-    pub artists_string: String,
-    #[serde(skip)]
-    pub track_no_string: String,
     pub thumbnails: MaybeRc<Vec<Thumbnail>>,
     pub album: Option<MaybeRc<ListSongAlbum>>,
 }
@@ -221,6 +217,7 @@ impl Default for AudioQuality {
 }
 
 impl PlayState {
+    #[allow(dead_code)]
     pub fn list_icon(&self) -> char {
         match self {
             PlayState::Buffering(_) => '',
@@ -272,12 +269,12 @@ impl ListSong {
             ListSongDisplayableField::DownloadStatus => {
                 Cow::Borrowed(self.download_status.list_icon_str())
             },
-            ListSongDisplayableField::TrackNo => {
-                Cow::Borrowed(self.track_no_string.as_str())
-            }
-            ListSongDisplayableField::Artists => {
-                Cow::Borrowed(self.artists_string.as_str())
-            }
+            ListSongDisplayableField::TrackNo => self
+                .track_no
+                .map(|track_no| track_no.to_string())
+                .unwrap_or_default()
+                .into(),
+            ListSongDisplayableField::Artists => compute_artists_string(&self.artists).into(),
             ListSongDisplayableField::Album => self
                 .album
                 .as_ref()
@@ -318,8 +315,6 @@ impl ListSong {
                 id: None,
             })
             .collect();
-        let artists_refs: Vec<&str> = list_artists.iter().map(|a| a.name.as_str()).collect();
-        let artists_string = Itertools::intersperse(artists_refs.into_iter(), ", ").collect();
         let list_album = album.map(|name| MaybeRc::Owned(ListSongAlbum {
             name,
             id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
@@ -337,8 +332,6 @@ impl ListSong {
             year: None,
             album_art: AlbumArtState::Init,
             artists: MaybeRc::Owned(list_artists),
-            artists_string,
-            track_no_string: String::new(),
             thumbnails: MaybeRc::Owned(thumb.unwrap_or_default()),
             album: list_album,
         }
@@ -432,7 +425,6 @@ impl BrowserSongsList {
             explicit,
             ..
         } = song;
-        let artists_string = compute_artists_string(&artists);
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
@@ -448,8 +440,6 @@ impl BrowserSongsList {
             duration_string: duration,
             thumbnails: MaybeRc::Rc(thumbnails),
             album_art: Default::default(),
-            artists_string,
-            track_no_string: track_no.to_string(),
         });
         id
     }
@@ -460,13 +450,12 @@ impl BrowserSongsList {
             artist,
             album,
             duration,
-            plays,
+            plays: _,
             explicit,
             video_id,
             thumbnails,
             ..
         } = song;
-        let artists_string = artist.clone();
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
@@ -479,14 +468,12 @@ impl BrowserSongsList {
             actual_duration: None,
             video_id,
             track_no: None,
-            plays,
+            plays: String::new(),
             title,
             explicit: Some(explicit),
             duration_string: duration,
             thumbnails: MaybeRc::Owned(thumbnails),
             album_art: Default::default(),
-            artists_string,
-            track_no_string: String::new(),
         });
         id
     }
@@ -555,7 +542,6 @@ impl BrowserSongsList {
                 None,
             ),
         };
-        let artists_string = compute_artists_string(&artists);
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
@@ -571,18 +557,12 @@ impl BrowserSongsList {
             duration_string: duration,
             thumbnails: MaybeRc::Owned(thumbnails),
             album_art: Default::default(),
-            artists_string,
-            track_no_string: track_no.to_string(),
         });
         id
     }
     // Returns the ID of the first song added.
     pub fn push_song_list(&mut self, mut song_list: Vec<ListSong>) -> ListSongID {
         let first_id = self.create_next_id();
-        for song in &mut song_list {
-            song.artists_string = compute_artists_string(&song.artists);
-            song.track_no_string = song.track_no.map(|n| n.to_string()).unwrap_or_default();
-        }
         if let Some(song) = song_list.first_mut() {
             song.id = first_id;
         };

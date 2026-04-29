@@ -5,9 +5,11 @@ use anyhow::{Context, anyhow};
 use async_cell::sync::AsyncCell;
 use futures::FutureExt;
 use futures::future::try_join;
+use lru::LruCache;
 use rusty_ytdl::reqwest;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing::{error, info};
 use ytmapi_rs::common::{AlbumID, UploadAlbumID, VideoID, YoutubeID};
 
@@ -95,14 +97,32 @@ impl std::fmt::Debug for SongThumbnail {
     }
 }
 
+impl Clone for SongThumbnail {
+    fn clone(&self) -> Self {
+        Self {
+            in_mem_image: self.in_mem_image.clone(),
+            on_disk_path: self.on_disk_path.clone(),
+            song_thumbnail_id: self.song_thumbnail_id.clone(),
+        }
+    }
+}
+
 pub struct SongThumbnailDownloader {
     client: reqwest::Client,
+    // In-memory LRU cache for thumbnails to avoid re-downloading.
+    cache: Arc<Mutex<LruCache<SongThumbnailID<'static>, SongThumbnail>>>,
     // For information about why this error is stringly typed, see DynamicApiError
     status: Arc<AsyncCell<Result<(), String>>>,
 }
 
+const THUMBNAIL_CACHE_SIZE: usize = 100;
+
 impl SongThumbnailDownloader {
     pub fn new(client: reqwest::Client) -> Self {
+        let cache = Arc::new(Mutex::new(LruCache::new(
+            std::num::NonZeroUsize::new(THUMBNAIL_CACHE_SIZE).unwrap(),
+        )));
+        let cache_clone = cache.clone();
         let status = AsyncCell::new().into_shared();
         let status_clone = status.clone();
         tokio::spawn(async move {
@@ -128,13 +148,26 @@ impl SongThumbnailDownloader {
                 }
             }
         });
-        Self { client, status }
+        Self {
+            client,
+            cache: cache_clone,
+            status,
+        }
     }
     pub async fn download_song_thumbnail(
         &self,
         thumbnail_id: SongThumbnailID<'static>,
         thumbnail_url: String,
     ) -> anyhow::Result<SongThumbnail> {
+        // Check in-memory cache first.
+        let thumbnail_id_owned = thumbnail_id.clone().into_owned();
+        {
+            let mut cache = self.cache.lock().await;
+            if let Some(cached) = cache.get(&thumbnail_id_owned) {
+                info!("Thumbnail cache hit for {}", thumbnail_id);
+                return Ok(cached.clone());
+            }
+        }
         // Do not download album art until directory setup and clean has completed.
         self.status.get().await.map_err(|e| anyhow!(e))?;
         let url = reqwest::Url::parse(&thumbnail_url)?;
@@ -155,10 +188,14 @@ impl SongThumbnailDownloader {
                 .map(|res| res.map_err(anyhow::Error::from)),
         )
         .await?;
-        Ok(SongThumbnail {
+        let thumbnail = SongThumbnail {
             in_mem_image: in_mem_image?,
             on_disk_path,
-            song_thumbnail_id: thumbnail_id,
-        })
+            song_thumbnail_id: thumbnail_id.clone().into_owned(),
+        };
+        // Cache the result.
+        let mut cache = self.cache.lock().await;
+        cache.push(thumbnail_id_owned, thumbnail.clone());
+        Ok(thumbnail)
     }
 }

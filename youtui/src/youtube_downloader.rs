@@ -10,7 +10,6 @@ pub struct YoutubeMusicDownload<S> {
 }
 
 use crate::app::AudioQuality;
-use std::pin::Pin;
 
 pub trait YoutubeMusicDownloader {
     type Error;
