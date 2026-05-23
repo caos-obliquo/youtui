@@ -1,5 +1,5 @@
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSong, ListSongAlbum};
-use crate::core::create_or_clean_directory;
+use crate::core::{create_or_clean_directory, get_dir_file_paths, touch_file_with_timestamp};
 use crate::get_data_dir;
 use anyhow::{Context, anyhow};
 use async_cell::sync::AsyncCell;
@@ -8,7 +8,9 @@ use futures::future::try_join;
 use rusty_ytdl::reqwest;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::{error, info};
+use std::time::SystemTime;
+use tokio_stream::StreamExt;
+use tracing::{debug, error, info, warn};
 use ytmapi_rs::common::{AlbumID, UploadAlbumID, VideoID, YoutubeID};
 
 // The directory and prefix are to protect the user - files in this directory
@@ -137,6 +139,21 @@ impl SongThumbnailDownloader {
     ) -> anyhow::Result<SongThumbnail> {
         // Do not download album art until directory setup and clean has completed.
         self.status.get().await.map_err(|e| anyhow!(e))?;
+
+        // Return early if thumbnail already exists in disk cache.
+        if let Some(cached_song_thumbnail) = get_cached_album_art(thumbnail_id.clone()).await {
+            if let Err(e) =
+                touch_file_with_timestamp(&cached_song_thumbnail.on_disk_path, SystemTime::now())
+                    .await
+            {
+                warn!(
+                    "Error <{e} whilst trying to update timestamp on image {}",
+                    cached_song_thumbnail.on_disk_path.display()
+                )
+            }
+            return Ok(cached_song_thumbnail);
+        }
+
         let url = reqwest::Url::parse(&thumbnail_url)?;
         let image_bytes = self.client.get(url).send().await?.bytes().await?;
         // `Bytes` is cheap to clone.
@@ -161,4 +178,110 @@ impl SongThumbnailDownloader {
             song_thumbnail_id: thumbnail_id,
         })
     }
+}
+
+/// Get the first matching thumbnail in the cache directory matching
+/// thumbnail_id if there is one with the correct name and format.
+async fn get_cached_album_art(thumbnail_id: SongThumbnailID<'_>) -> Option<SongThumbnail> {
+    let album_art_dir = get_album_art_dir()
+        .inspect_err(|e| {
+            warn!("Error <{e}> getting list of files in album art dir, falling back to network",)
+        })
+        .ok()?;
+
+    let dir_file_paths = get_dir_file_paths(&album_art_dir)
+        .await
+        .inspect_err(|e| {
+            warn!(
+                "Error <{e}> iterating through files in album art dir {}, falling back to network",
+                album_art_dir.display()
+            )
+        })
+        .ok()?
+        .filter_map(|maybe_path| match maybe_path {
+            Ok(path) => Some(path),
+            Err(e) => {
+                warn!(
+                    "Error <{e}> iterating through files in album art dir {}, ignoring this entry",
+                    album_art_dir.display()
+                );
+                None
+            }
+        });
+    let thumbnail_id_clone = thumbnail_id.clone();
+    let matching_album_art = futures::stream::StreamExt::filter_map(dir_file_paths, async |path| {
+        if path
+            .file_prefix()
+            .and_then(|dir_file_prefix| dir_file_prefix.to_str())
+            // Youtui album art is valid unicode - ie YAA_{STRING}
+            // Therefore, we can ignore all invalid unicode files in this directory as they
+            // are not from Youtui.
+            .is_none_or(|dir_file_prefix| {
+                dir_file_prefix
+                    != format!("{}{}", ALBUM_ART_FILENAME_PREFIX, thumbnail_id_clone).as_str()
+            })
+        {
+            warn!(
+                "Detected a file in youtui album art directory with invalid filename {:?}",
+                path.file_name()
+            );
+            return None;
+        }
+        // Youtui will always write a file extension.
+        let Some(file_ext) = path.extension() else {
+            warn!(
+                "Detected a file in youtui album art directory with no extension {:?}",
+                path.file_name()
+            );
+            return None;
+        };
+        // ...and it will be a valid image format extension.
+        let Some(image_format) = image::ImageFormat::from_extension(file_ext) else {
+            warn!(
+                "Detected a file in youtui album art directory with invalid extension {:?}",
+                path.file_name()
+            );
+            return None;
+        };
+        let image_bytes = match tokio::fs::read(&path).await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                info!("Unable to read image {path:?}, with error <{e}> ignoring");
+                return None;
+            }
+        };
+        let image_reader =
+            image::ImageReader::with_format(std::io::Cursor::new(image_bytes), image_format);
+        let image_decoded = match tokio::task::spawn_blocking(|| image_reader.decode()).await {
+            Ok(Ok(img)) => img,
+            Ok(Err(e)) => {
+                warn!(
+                    "Decoding image {:?} errored with error <{e}>, ignoring",
+                    path.file_name()
+                );
+                return None;
+            }
+            Err(e) => {
+                error!(
+                    "Decoding image {:?} panicked with error <{e}>, ignoring",
+                    path.file_name()
+                );
+                return None;
+            }
+        };
+        Some((image_decoded, path.as_path().to_owned()))
+    });
+    let mut matching_album_art = std::pin::pin!(matching_album_art);
+    if let Some((in_mem_image, on_disk_path)) = matching_album_art.next().await {
+        debug!(
+            "Loaded thumbnail id {thumbnail_id:?} from disk path {}",
+            on_disk_path.display()
+        );
+        return Some(SongThumbnail {
+            in_mem_image,
+            on_disk_path,
+            song_thumbnail_id: thumbnail_id.into_owned(),
+        });
+    };
+    None
 }
