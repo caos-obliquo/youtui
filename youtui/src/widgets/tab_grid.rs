@@ -21,6 +21,7 @@ enum TabGridConstraint {
 }
 
 impl<'a> TabGrid<'a> {
+    #[allow(dead_code)]
     pub fn new_with_max_cols(
         titles: impl IntoIterator<Item = impl Into<Cow<'a, str>>>,
         cols: u16,
@@ -55,22 +56,11 @@ impl<'a> TabGrid<'a> {
         }
     }
 
-    pub fn deselect(self) -> Self {
-        Self {
-            selected: None,
-            ..self
-        }
-    }
-
     pub fn highlight_style(self, highlight_style: Style) -> Self {
         Self {
             highlight_style: Some(highlight_style),
             ..self
         }
-    }
-
-    pub fn style(self, style: Style) -> Self {
-        Self { style, ..self }
     }
 
     /// Returns 0 if there are 0 cols or 0 titles.

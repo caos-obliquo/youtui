@@ -515,10 +515,9 @@ where
                     }
                 }
             }
-            // Should never reach here! Player should send either Error, Stopped or Playing
-            // message first.
-            error!(
-                "The sender has been dropped and there are no further messages while I was waiting for a play song outcome for {:?}",
+            // Channel closed during shutdown - this is expected on app exit
+            warn!(
+                "Playback channel closed for {:?} before final status received",
                 identifier
             );
         });
@@ -567,10 +566,9 @@ where
                     }
                 }
             }
-            // Should never reach here! Player should send either Error, Stopped or Playing
-            // message first.
-            error!(
-                "The sender has been dropped and there are no further messages while I was waiting for a play song outcome for {:?}",
+            // Channel closed during shutdown - this is expected on app exit
+            warn!(
+                "Playback channel closed for {:?} before final status received",
                 identifier
             );
         });
@@ -620,10 +618,9 @@ where
                     }
                 }
             }
-            // Should never reach here! Player should send either Error, Stopped or Playing
-            // message first.
-            error!(
-                "The sender has been dropped and there are no further messages while I was waiting for a play song outcome for {:?}",
+            // Channel closed during shutdown - this is expected on app exit
+            warn!(
+                "Playback channel closed for {:?} before final status received",
                 identifier
             );
         });

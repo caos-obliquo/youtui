@@ -32,7 +32,6 @@ pub enum Filter {
 }
 #[derive(Clone, Debug)]
 pub enum FilterString {
-    CaseSensitive(String),
     CaseInsensitive { original: String, lowercased: String },
 }
 
@@ -76,28 +75,15 @@ impl FilterString {
     }
     fn as_readable(&self) -> String {
         match self {
-            FilterString::CaseSensitive(s) => format!("a=a:{s}"),
             FilterString::CaseInsensitive { original, .. } => format!("a=A:{original}"),
         }
     }
     pub fn is_in<S: AsRef<str>>(&self, test_str: S) -> bool {
         match self {
-            FilterString::CaseSensitive(s) => test_str.as_ref().contains(s),
-            // Lowercased form of the filter string is pre-computed at construction.
             FilterString::CaseInsensitive { lowercased, .. } => test_str
                 .as_ref()
                 .to_ascii_lowercase()
                 .contains(lowercased.as_str()),
-        }
-    }
-    pub fn is_equal<S: AsRef<str>>(&self, test_str: S) -> bool {
-        match self {
-            FilterString::CaseSensitive(s) => test_str.as_ref() == s,
-            // Fix: was comparing lowercase lhs to uppercase rhs (never matched).
-            // Use pre-computed lowercased form on the rhs.
-            FilterString::CaseInsensitive { lowercased, .. } => {
-                test_str.as_ref().to_ascii_lowercase() == *lowercased
-            }
         }
     }
 }
@@ -157,7 +143,6 @@ pub trait AdvancedTableView: TableView {
         self.get_filtered_items().count()
     }
     fn get_filter_commands(&self) -> &[TableFilterCommand];
-    fn push_filter_command(&mut self, filter_command: TableFilterCommand);
     fn clear_filter_commands(&mut self);
     // SortableTableView should maintain it's own popup state.
     fn get_sort_popup_cur(&self) -> usize;

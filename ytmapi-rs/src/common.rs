@@ -102,10 +102,8 @@ pub struct LibraryManager {
 /// See https://github.com/nick42d/youtui/issues/271
 enum LibraryStatusIcon {
     #[serde(rename = "LIBRARY_SAVED")]
-    #[deprecated = "Future deprecation see https://github.com/nick42d/youtui/issues/271"]
     LibrarySaved,
     #[serde(rename = "LIBRARY_ADD")]
-    #[deprecated = "Future deprecation see https://github.com/nick42d/youtui/issues/271"]
     LibraryAdd,
     #[serde(rename = "BOOKMARK_BORDER")]
     BookmarkBorder,
@@ -116,14 +114,8 @@ enum LibraryStatusIcon {
 impl From<LibraryStatusIcon> for LibraryStatus {
     fn from(value: LibraryStatusIcon) -> Self {
         match value {
-            LibraryStatusIcon::LibrarySaved => {
-                ab_warn!();
-                LibraryStatus::InLibrary
-            }
-            LibraryStatusIcon::LibraryAdd => {
-                ab_warn!();
-                LibraryStatus::NotInLibrary
-            }
+            LibraryStatusIcon::LibrarySaved => LibraryStatus::InLibrary,
+            LibraryStatusIcon::LibraryAdd => LibraryStatus::NotInLibrary,
             LibraryStatusIcon::BookmarkBorder => LibraryStatus::NotInLibrary,
             LibraryStatusIcon::Bookmark => LibraryStatus::InLibrary,
         }

@@ -184,7 +184,6 @@ pub struct RelatedResult {
 #[non_exhaustive]
 pub struct AlbumResult {
     pub title: String,
-    #[deprecated = "Future deprecation see https://github.com/nick42d/youtui/issues/211"]
     pub album_type: Option<AlbumType>,
     pub year: String,
     pub album_id: AlbumID<'static>,

@@ -87,7 +87,6 @@ fn get_download_semaphore() -> Arc<Semaphore> {
 #[derive(Debug, PartialEq)]
 pub enum DownloadProgressUpdateType {
     Started,
-    Downloading(Percentage),
     Completed(InMemSong),
     Error,
     Retrying { times_retried: usize },
@@ -196,11 +195,10 @@ where
             }
         };
         // Check if already cancelled before starting
-        if let Some(ref token) = cancel_token {
-            if token.is_cancelled() {
-                info!("Download cancelled before starting for song {:?}", song_playlist_id);
-                return;
-            }
+        if let Some(ref token) = cancel_token
+            && token.is_cancelled() {
+            info!("Download cancelled before starting for song {:?}", song_playlist_id);
+            return;
         }
         
         info!("Running download");
@@ -215,7 +213,7 @@ where
         
         let song_download = || {
             let _tx = tx.clone();
-            let audio_quality = audio_quality.clone();
+        let audio_quality = audio_quality;
             // No progress callback - icons handle the status entirely
             download_song_with_progress_update_callback(
                 &downloader,
@@ -331,7 +329,7 @@ where
             Ok(chunk) => song_data.extend_from_slice(&chunk),
             Err(e) => {
                 error!("Error receiving song data: <{e}>");
-                return Err(e.into());
+                return Err(e);
             }
         }
     }

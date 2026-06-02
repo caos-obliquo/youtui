@@ -62,6 +62,7 @@ impl<'a, I> ScrollingList<'a, I> {
         self.highlight_style = style.into();
         self
     }
+    #[allow(dead_code)]
     #[must_use = "method moves the value of self and returns the modified value"]
     /// Set gap between end of text and start of text (when wrapping around).
     /// Default = [DEFAULT_TICKER_GAP]

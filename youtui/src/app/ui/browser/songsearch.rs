@@ -307,9 +307,6 @@ impl AdvancedTableView for SongSearchBrowser {
     fn get_filter_commands(&self) -> &[TableFilterCommand] {
         &self.filter.filter_commands
     }
-    fn push_filter_command(&mut self, filter_command: TableFilterCommand) {
-        self.filter.filter_commands.push(filter_command)
-    }
     fn clear_filter_commands(&mut self) {
         self.filter.filter_commands.clear()
     }

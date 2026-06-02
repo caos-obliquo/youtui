@@ -121,7 +121,7 @@ const THUMBNAIL_CACHE_SIZE: usize = 100;
 impl SongThumbnailDownloader {
     pub fn new(client: reqwest::Client) -> Self {
         let cache = Arc::new(Mutex::new(LruCache::new(
-            std::num::NonZeroUsize::new(THUMBNAIL_CACHE_SIZE).unwrap(),
+            std::num::NonZeroUsize::new(THUMBNAIL_CACHE_SIZE).expect("THUMBNAIL_CACHE_SIZE must be greater than 0"),
         )));
         let cache_clone = cache.clone();
         let status = AsyncCell::new().into_shared();

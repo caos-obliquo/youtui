@@ -85,7 +85,7 @@ pub const DEFAULT_ENDPOINT: &str = concatcp!("/defaultServiceEndpoint", FEEDBACK
 pub const TOGGLED_ENDPOINT: &str = concatcp!("/toggledServiceEndpoint", FEEDBACK_TOKEN);
 pub const TITLE_TEXT: &str = concatcp!("/title", RUN_TEXT);
 pub const NAVIGATION_VIDEO_ID: &str = concatcp!("/navigationEndpoint", WATCH_VIDEO_ID);
-pub const PLAYLIST_ITEM_VIDEO_ID: &str = "/playlistItemData/videoId";
+pub const PLAYLIST_ITEM_VIDEO_ID: &str = concatcp!(PLAY_BUTTON, "/playNavigationEndpoint", WATCH_VIDEO_ID);
 pub const SINGLE_COLUMN_TAB: &str = concatcp!(SINGLE_COLUMN, TAB_CONTENT);
 pub const SECTION_LIST_ITEM: &str = concatcp!("/sectionListRenderer", CONTENT);
 pub const SECONDARY_SECTION_LIST_RENDERER: &str =
@@ -128,12 +128,7 @@ pub const _CAROUSEL_CONTENTS: &str = concatcp!(CAROUSEL, "/contents");
 pub const CAROUSEL_TITLE: &str = concatcp!("/header/musicCarouselShelfBasicHeaderRenderer", TITLE);
 pub const _CARD_SHELF_TITLE: &str =
     concatcp!("/header/musicCardShelfHeaderBasicRenderer", TITLE_TEXT);
-#[cfg_attr(
-    debug_assertions,
-    deprecated(note = "Google deprecating this path in future")
-)]
 pub const STRAPLINE_TEXT: &str = concatcp!("/straplineTextOne", RUN_TEXT);
-#[deprecated = "Google deprecating this path in future"]
 pub const STRAPLINE_RUNS: &str = "/straplineTextOne/runs";
 pub const DELETION_ENTITY_ID: &str = "/menuNavigationItemRenderer/navigationEndpoint/confirmDialogEndpoint/content/confirmDialogRenderer/confirmButton/buttonRenderer/command/musicDeletePrivatelyOwnedEntityCommand/entityId";
 pub const FACEPILE_MODEL: &str = "/facepile/avatarStackViewModel";
