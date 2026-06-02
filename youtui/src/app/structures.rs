@@ -174,8 +174,9 @@ pub enum ListStatus {
     Error,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub enum DownloadStatus {
+    #[default]
     None,
     Queued,
     Downloading(Percentage),
@@ -183,12 +184,6 @@ pub enum DownloadStatus {
     Downloaded(Arc<InMemSong>),
     Failed,
     Retrying { times_retried: usize },
-}
-
-impl Default for DownloadStatus {
-    fn default() -> Self {
-        DownloadStatus::None
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -202,45 +197,29 @@ pub enum PlayState {
     Buffering(ListSongID),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub enum AudioQuality {
     Best,
     High,
     Medium,
+    #[default]
     Low,
 }
 
-impl Default for AudioQuality {
-    fn default() -> Self {
-        AudioQuality::Low
-    }
-}
-
 impl PlayState {
-    #[allow(dead_code)]
     pub fn list_icon(&self) -> char {
         match self {
             PlayState::Buffering(_) => '',
             PlayState::NotPlaying => '',
             PlayState::Playing(_) => '',
             PlayState::Paused(_) => '',
-            PlayState::Stopped => '',
+            PlayState::Stopped => '',
             PlayState::Error(_) => '',
         }
     }
 }
 
 impl DownloadStatus {
-    pub fn list_icon(&self) -> char {
-        match self {
-            Self::Failed => 'X',
-            Self::Queued => '↓',
-            Self::None => ' ',
-            Self::Downloading(_) => '↓',
-            Self::Downloaded(_) => '✓',
-            Self::Retrying { .. } => '↻',
-        }
-    }
     pub fn list_icon_str(&self) -> &'static str {
         match self {
             Self::Failed => "X",
@@ -560,15 +539,14 @@ impl BrowserSongsList {
         });
         id
     }
-    // Returns the ID of the first song added.
-    pub fn push_song_list(&mut self, mut song_list: Vec<ListSong>) -> ListSongID {
+    pub fn push_song_list(&mut self, song_list: Vec<ListSong>) -> ListSongID {
         let first_id = self.create_next_id();
-        if let Some(song) = song_list.first_mut() {
-            song.id = first_id;
-        };
-        // XXX: Below panics - consider a better option.
-        self.list.push(song_list.remove(0));
-        for mut song in song_list {
+        let mut iter = song_list.into_iter();
+        if let Some(mut first) = iter.next() {
+            first.id = first_id;
+            self.list.push(first);
+        }
+        for mut song in iter {
             song.id = self.create_next_id();
             self.list.push(song);
         }

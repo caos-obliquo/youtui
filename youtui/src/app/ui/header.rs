@@ -31,14 +31,20 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
              description,
              ..
          }| {
+            let label = if description.is_empty() {
+                "Action".into() // Fallback label if description is empty
+            } else {
+                description.clone() // Use the description as the label
+            };
             vec![
                 Span::styled(
-                    keybinds,
+                    keybinds, // The keybind itself
                     Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
                 ),
-                Span::raw(" "),
-                Span::raw(description),
-                Span::raw(" "),
+                Span::raw(" ("), // Separator
+                Span::raw(label), // The context/label
+                Span::raw(")"),  // Closing parenthesis
+                Span::raw(" "),  // Space after the entry
             ]
         },
     ));

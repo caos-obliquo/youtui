@@ -255,7 +255,7 @@ impl MediaController {
             playback_status,
             volume,
         } = update;
-        self.update_metadata(title, album, artist, cover_url, duration)?;
+        self.update_metadata_internal(title, album, artist, cover_url, duration)?;
         self.update_playback(playback_status)?;
         #[cfg(any(
             target_os = "linux",
@@ -281,7 +281,8 @@ impl MediaController {
         }
         Ok(())
     }
-    fn update_metadata(
+
+    fn update_metadata_internal(
         &mut self,
         title: Option<Cow<'_, str>>,
         album: Option<Cow<'_, str>>,
@@ -304,7 +305,8 @@ impl MediaController {
         }
         if self.cover_url.as_deref() != cover_url.as_deref() {
             redraw = true;
-            self.cover_url = cover_url.map(|cover_url| cover_url.to_string());
+            // Correctly assign the cover_url from the parameter
+            self.cover_url = cover_url.map(|url| url.to_string());
         }
         if self.duration != duration {
             redraw = true;
@@ -315,6 +317,7 @@ impl MediaController {
                 title: self.title.as_deref(),
                 album: self.album.as_deref(),
                 artist: self.artist.as_deref(),
+                // Use the updated self.cover_url here
                 cover_url: self.cover_url.as_deref(),
                 duration: self.duration,
             };
@@ -324,7 +327,8 @@ impl MediaController {
 
             if let Some(title) = &self.title {
                 let artist = self.artist.clone();
-                let cover_url = self.cover_url.clone();
+                // Pass the updated cover_url to notify_track_change
+                let cover_url_for_notification = self.cover_url.clone();
                 let mut controller = std::mem::take(&mut self.notification_controller);
                 
                 let _ = task::block_in_place(|| {
@@ -333,7 +337,7 @@ impl MediaController {
                         controller.notify_track_change(
                             title,
                             artist.as_deref(),
-                            cover_url.as_deref(),
+                            cover_url_for_notification.as_deref(),
                         ).await
                     })
                 });

@@ -312,20 +312,20 @@ impl TableView for Playlist {
                 .get_song_from_idx(actual_i)
                 .expect("BUG: Visual index mapping failed");
 
-            let first_field = if Some(visual_i) == cur_playing_visual {
+            let first_field: Cow<'_, str> = if Some(visual_i) == cur_playing_visual {
                 match self.play_status {
-                    PlayState::NotPlaying => ">>>".to_string(),
-                    PlayState::Playing(_) => "".to_string(),
-                    PlayState::Paused(_) => "".to_string(),
-                    PlayState::Stopped => ">>>".to_string(),
-                    PlayState::Error(_) => ">>>".to_string(),
-                    PlayState::Buffering(_) => "".to_string(),
+                    PlayState::NotPlaying => Cow::Borrowed(">>>"),
+                    PlayState::Playing(_) => Cow::Borrowed(""),
+                    PlayState::Paused(_) => Cow::Borrowed(""),
+                    PlayState::Stopped => Cow::Borrowed(">>>"),
+                    PlayState::Error(_) => Cow::Borrowed(">>>"),
+                    PlayState::Buffering(_) => Cow::Borrowed(""),
                 }
             } else {
-                (visual_i + 1).to_string()
+                Cow::Owned((visual_i + 1).to_string())
             };
 
-            iter::once(first_field.to_string().into()).chain(ls.get_fields([
+            iter::once(first_field).chain(ls.get_fields([
                 ListSongDisplayableField::DownloadStatus,
                 ListSongDisplayableField::TrackNo,
                 ListSongDisplayableField::Artists,
@@ -1437,14 +1437,6 @@ impl Playlist {
                     }
                 } else {
                     warn!("download_started: song {} not found by id {:?}", video_id, id);
-                }
-            }
-            DownloadProgressUpdateType::Downloading(pct) => {
-                debug!("download_progress: song_id={} {}%", video_id, pct.0);
-                if let Some(idx) = self.get_index_from_id(id) {
-                    if let Some(song) = self.list.get_list_iter_mut().nth(idx) {
-                        song.download_status = DownloadStatus::Downloading(pct);
-                    }
                 }
             }
             DownloadProgressUpdateType::Completed(song_buf) => {
