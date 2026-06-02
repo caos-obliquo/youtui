@@ -1,6 +1,6 @@
 use crate::app::structures::ListSong;
 use crate::app::ui::playlist::Playlist;
-use dirs::data_dir;
+use crate::get_data_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
@@ -35,8 +35,8 @@ pub struct CompactSavedQueue {
 }
 
 pub fn get_queue_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let dir = data_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+    let dir = get_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
         .join(QUEUE_DIR);
     fs::create_dir_all(&dir)?;
     Ok(dir)

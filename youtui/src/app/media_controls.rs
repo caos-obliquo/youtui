@@ -4,14 +4,11 @@ use super::structures::Percentage;
 use super::ui::playlist::DEFAULT_UI_VOLUME;
 use crate::core::blocking_send_or_error;
 use futures::Stream;
-use notify_rust::{Notification, Timeout};
 use souvlaki::{MediaControlEvent, MediaMetadata, MediaPosition, PlatformConfig};
 use std::borrow::Cow;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::task;
 use tokio_stream::wrappers::ReceiverStream;
-
 
 /// Minimum change in playing position before triggering a redraw. This is to
 /// reduce number of calls to the platform.
@@ -45,80 +42,10 @@ impl std::fmt::Display for MediaControlsError {
     }
 }
 
-pub struct NotificationController {
-    last_notification: Option<(String, String)>,
-    cover_url: Option<String>,
-}
-
-impl Default for NotificationController {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl NotificationController {
-    pub fn new() -> Self {
-        Self {
-            last_notification: None,
-            cover_url: None,
-        }
-    }
-
-    pub async fn notify_track_change(
-        &mut self,
-        title: &str,
-        artist: Option<&str>,
-        cover_url: Option<&str>,
-    ) -> Result<(), notify_rust::error::Error> {
-        let body = artist.unwrap_or("Unknown Artist");
-
-        if self
-            .last_notification
-            .as_ref()
-            .map(|(t, b)| (t.as_str(), b.as_str()))
-            == Some((title, body))
-        {
-            return Ok(());
-        }
-
-        let icon_path = if let Some(url) = cover_url {
-            // Only use file:// URLs directly for instant responsiveness
-            // Skip thumbnail downloading to avoid delays in notifications
-            if url.starts_with("file://") {
-                Some(url.to_string())
-            } else {
-                // For non-file URLs (including YouTube thumbnails), show no icon
-                // to ensure notifications are instantly responsive
-                None
-            }
-        } else {
-            None
-        };
-
-        let mut notification = Notification::new()
-            .summary(title)
-            .body(body)
-            .appname("youtui")
-            .timeout(Timeout::Milliseconds(5000))
-            .clone();
-
-        if let Some(path) = &icon_path {
-            notification.icon(path.as_str());
-        }
-
-        notification.show()?;
-        self.last_notification = Some((title.to_string(), body.to_string()));
-        self.cover_url = cover_url.map(String::from);
-        Ok(())
-    }
-}
-
 pub struct MediaController {
     inner: souvlaki::MediaControls,
     status: souvlaki::MediaPlayback,
     volume: MediaControlsVolume,
-    notification_controller: NotificationController,
-    thumbnail_downloader: Option<crate::app::server::song_thumbnail_downloader::SongThumbnailDownloader>,
     title: Option<String>,
     album: Option<String>,
     artist: Option<String>,
@@ -230,20 +157,11 @@ impl MediaController {
                 cover_url: None,
                 duration: None,
                 volume: Default::default(),
-                notification_controller: NotificationController::new(),
-                thumbnail_downloader: None,
                 #[cfg(target_os = "macos")]
                 macos_window_handle,
             },
             ReceiverStream::new(rx),
         ))
-    }
-
-    pub fn set_thumbnail_downloader(
-        &mut self,
-        downloader: crate::app::server::song_thumbnail_downloader::SongThumbnailDownloader,
-    ) {
-        self.thumbnail_downloader = Some(downloader);
     }
     pub fn update_controls(&mut self, update: MediaControlsUpdate<'_>) -> anyhow::Result<()> {
         let MediaControlsUpdate {
@@ -255,7 +173,7 @@ impl MediaController {
             playback_status,
             volume,
         } = update;
-        self.update_metadata_internal(title, album, artist, cover_url, duration)?;
+        self.update_metadata(title, album, artist, cover_url, duration)?;
         self.update_playback(playback_status)?;
         #[cfg(any(
             target_os = "linux",
@@ -281,8 +199,7 @@ impl MediaController {
         }
         Ok(())
     }
-
-    fn update_metadata_internal(
+    fn update_metadata(
         &mut self,
         title: Option<Cow<'_, str>>,
         album: Option<Cow<'_, str>>,
@@ -305,8 +222,7 @@ impl MediaController {
         }
         if self.cover_url.as_deref() != cover_url.as_deref() {
             redraw = true;
-            // Correctly assign the cover_url from the parameter
-            self.cover_url = cover_url.map(|url| url.to_string());
+            self.cover_url = cover_url.map(|cover_url| cover_url.to_string());
         }
         if self.duration != duration {
             redraw = true;
@@ -317,32 +233,12 @@ impl MediaController {
                 title: self.title.as_deref(),
                 album: self.album.as_deref(),
                 artist: self.artist.as_deref(),
-                // Use the updated self.cover_url here
                 cover_url: self.cover_url.as_deref(),
                 duration: self.duration,
             };
             self.inner
                 .set_metadata(new_metadata)
                 .map_err(MediaControlsError)?;
-
-            if let Some(title) = &self.title {
-                let artist = self.artist.clone();
-                // Pass the updated cover_url to notify_track_change
-                let cover_url_for_notification = self.cover_url.clone();
-                let mut controller = std::mem::take(&mut self.notification_controller);
-                
-                let _ = task::block_in_place(|| {
-                    let rt = tokio::runtime::Handle::current();
-                    rt.block_on(async {
-                        controller.notify_track_change(
-                            title,
-                            artist.as_deref(),
-                            cover_url_for_notification.as_deref(),
-                        ).await
-                    })
-                });
-                self.notification_controller = controller;
-            }
         }
         Ok(())
     }
