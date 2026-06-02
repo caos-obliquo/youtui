@@ -19,9 +19,9 @@ use std::borrow::Cow;
 use std::fmt::Display;
 use std::io;
 use std::sync::Arc;
-use structures::ListSong;
 pub use structures::AudioQuality;
-use tracing::{error, info};
+use structures::ListSong;
+use tracing::{debug, error, info};
 use tracing_subscriber::prelude::*;
 use ui::{WindowContext, YoutuiWindow};
 
@@ -30,6 +30,7 @@ pub mod component;
 mod media_controls;
 mod server;
 mod structures;
+pub mod queue_persistence;
 pub mod ui;
 pub mod view;
 
@@ -57,7 +58,6 @@ pub struct Youtui {
     /// Capabilities of the user's terminal in regards to image rendering - ie,
     /// font size / kitty protocal etc. This
     terminal_image_capabilities: Picker,
-    needs_redraw: bool,
 }
 
 #[derive(PartialEq)]
@@ -138,6 +138,7 @@ impl Youtui {
         // visibility. Note that this may briefly block, delaying startup, but likely
         // unavoidable.
         let terminal_image_capabilities = Picker::from_query_stdio()?;
+        debug!("Terminal info: {terminal_image_capabilities:#?}");
         let (media_controls, media_control_event_stream) = if disable_media_controls {
             (None, None)
         } else {
@@ -147,15 +148,10 @@ impl Youtui {
             (Some(media_controls), Some(media_control_event_stream))
         };
         let event_handler = EventHandler::new(EVENT_CHANNEL_SIZE, media_control_event_stream)?;
-        let (mut window_state, effect) = YoutuiWindow::new(config);
-        if let Err(e) = queue_persistence::auto_load(&mut window_state.playlist) {
-            error!("Failed to auto-load queue: {}", e);
-        }
-
+        let (window_state, effect) = YoutuiWindow::new(config);
         // Even the creation of a YoutuiWindow causes an effect. We'll spawn it straight
         // away.
         task_manager.spawn_task(&server, effect);
-        let thumbnail_downloader = server.song_thumbnail_downloader.clone();
         Ok(Youtui {
             status: AppStatus::Running,
             event_handler,
@@ -163,12 +159,8 @@ impl Youtui {
             task_manager,
             server,
             terminal,
-            media_controls: media_controls.map(|mut mc| {
-                mc.set_thumbnail_downloader(thumbnail_downloader);
-                mc
-            }),
+            media_controls,
             terminal_image_capabilities,
-            needs_redraw: true,
         })
     }
     pub async fn run(&mut self) -> Result<()> {
@@ -179,22 +171,17 @@ impl Youtui {
                     // We draw after handling the event, as the event could be a keypress we want to
                     // instantly react to.
                     // Draw occurs before the first event, to ensure up loads immediately.
-                    if self.needs_redraw {
-                        self.terminal.draw(|f| {
-                            ui::draw::draw_app(
-                                f,
-                                &mut self.window_state,
-                                &self.terminal_image_capabilities,
-                            );
-                        })?;
-                        if let Some(media_controls) = &mut self.media_controls {
-                            media_controls.update_controls(
-                                ui::draw_media_controls::draw_app_media_controls(
-                                    &self.window_state,
-                                ),
-                            )?;
-                        }
-                        self.needs_redraw = false;
+                    self.terminal.draw(|f| {
+                        ui::draw::draw_app(
+                            f,
+                            &mut self.window_state,
+                            &self.terminal_image_capabilities,
+                        );
+                    })?;
+                    if let Some(media_controls) = &mut self.media_controls {
+                        media_controls.update_controls(
+                            ui::draw_media_controls::draw_app_media_controls(&self.window_state),
+                        )?;
                     }
                     // When running, the app is event based, and will block until one of the
                     // following 2 message types is received.
@@ -211,10 +198,6 @@ impl Youtui {
                 AppStatus::Exiting(s) => {
                     // Once we're done running, destruct the terminal and print the exit message.
                     destruct_terminal()?;
-                    match queue_persistence::auto_save(&self.window_state.playlist) {
-                        Ok(_) => info!("Queue auto-saved successfully"),
-                        Err(e) => error!("Failed to auto-save queue: {}", e),
-                    }
                     println!("{s}");
                     break;
                 }
@@ -248,15 +231,15 @@ impl Youtui {
             }
             async_callback_manager::TaskOutcome::MutationReceived {
                 mutation,
-                type_id: _,
-                type_debug: _,
-                task_id: _,
+                type_id,
+                type_debug,
+                task_id,
                 ..
             } => {
-                // info!(
-                //     "Received response to {:?}: type_id: {:?}, task_id: {:?}",
-                //     type_debug, type_id, task_id
-                // );
+                info!(
+                    "Received response to {:?}: type_id: {:?}, task_id: {:?}",
+                    type_debug, type_id, task_id
+                );
                 let next_task = mutation(&mut self.window_state);
                 self.task_manager.spawn_task(&self.server, next_task);
             }
@@ -264,10 +247,7 @@ impl Youtui {
     }
     async fn handle_event(&mut self, event: AppEvent) {
         match event {
-            AppEvent::Tick => {
-                self.window_state.handle_tick().await;
-                self.needs_redraw = true;
-            }
+            AppEvent::Tick => self.window_state.handle_tick().await,
             AppEvent::Crossterm(e) => {
                 let YoutuiEffect { effect, callback } =
                     self.window_state.handle_crossterm_event(e).await;
@@ -275,7 +255,6 @@ impl Youtui {
                 if let Some(callback) = callback {
                     self.handle_callback(callback);
                 }
-                self.needs_redraw = true;
             }
             AppEvent::MediaControls(e) => {
                 let YoutuiEffect { effect, callback } =
@@ -284,7 +263,6 @@ impl Youtui {
                 if let Some(callback) = callback {
                     self.handle_callback(callback);
                 }
-                self.needs_redraw = true;
             }
             AppEvent::QuitSignal => self.status = AppStatus::Exiting("Quit signal received".into()),
         }
@@ -334,7 +312,7 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
     let (tracing_log_level, tui_logger_log_level) = if debug {
         (tracing::Level::DEBUG, tui_logger::LevelFilter::Debug)
     } else {
-        (tracing::Level::WARN, tui_logger::LevelFilter::Warn)
+        (tracing::Level::INFO, tui_logger::LevelFilter::Info)
     };
     let context_layer =
         tracing_subscriber::filter::Targets::new().with_target("youtui", tracing_log_level);
@@ -368,4 +346,3 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
         .expect("Expected logger to initialise succesfully");
     Ok(())
 }
-pub mod queue_persistence;
