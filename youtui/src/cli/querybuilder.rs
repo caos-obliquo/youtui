@@ -19,8 +19,9 @@ use ytmapi_rs::query::library::{GetLibraryChannelsQuery, GetLibraryPodcastsQuery
 use ytmapi_rs::query::playlist::GetPlaylistDetailsQuery;
 use ytmapi_rs::query::rate::{RatePlaylistQuery, RateSongQuery};
 use ytmapi_rs::query::search::{
-    AlbumsFilter, ArtistsFilter, CommunityPlaylistsFilter, EpisodesFilter, FeaturedPlaylistsFilter,
-    PlaylistsFilter, PodcastsFilter, ProfilesFilter, SongsFilter, VideosFilter,
+    AlbumsFilter, ArtistsFilter, BasicSearch, CommunityPlaylistsFilter, EpisodesFilter,
+    FeaturedPlaylistsFilter, PlaylistsFilter, PodcastsFilter, ProfilesFilter, SongsFilter,
+    VideosFilter,
 };
 use ytmapi_rs::query::song::GetSongTrackingUrlQuery;
 use ytmapi_rs::query::{
@@ -116,12 +117,13 @@ pub async fn command_to_query(
             .await
         }
         Command::Search { query } => {
-            get_string_output_of_query(yt, SearchQuery::new(query), cli_query).await
+            let q: SearchQuery<'_, BasicSearch> = SearchQuery::from(query);
+            get_string_output_of_query(yt, q, cli_query).await
         }
         Command::SearchArtists { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(ArtistsFilter),
+                SearchQuery::new_filtered(query, ArtistsFilter),
                 cli_query,
                 max_pages,
             )
@@ -130,7 +132,7 @@ pub async fn command_to_query(
         Command::SearchAlbums { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(AlbumsFilter),
+                SearchQuery::new_filtered(query, AlbumsFilter),
                 cli_query,
                 max_pages,
             )
@@ -139,7 +141,7 @@ pub async fn command_to_query(
         Command::SearchSongs { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(SongsFilter),
+                SearchQuery::new_filtered(query, SongsFilter),
                 cli_query,
                 max_pages,
             )
@@ -148,7 +150,7 @@ pub async fn command_to_query(
         Command::SearchPlaylists { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(PlaylistsFilter),
+                SearchQuery::new_filtered(query, PlaylistsFilter),
                 cli_query,
                 max_pages,
             )
@@ -157,7 +159,7 @@ pub async fn command_to_query(
         Command::SearchCommunityPlaylists { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(CommunityPlaylistsFilter),
+                SearchQuery::new_filtered(query, CommunityPlaylistsFilter),
                 cli_query,
                 max_pages,
             )
@@ -166,7 +168,7 @@ pub async fn command_to_query(
         Command::SearchFeaturedPlaylists { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(FeaturedPlaylistsFilter),
+                SearchQuery::new_filtered(query, FeaturedPlaylistsFilter),
                 cli_query,
                 max_pages,
             )
@@ -175,7 +177,7 @@ pub async fn command_to_query(
         Command::SearchVideos { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(VideosFilter),
+                SearchQuery::new_filtered(query, VideosFilter),
                 cli_query,
                 max_pages,
             )
@@ -184,7 +186,7 @@ pub async fn command_to_query(
         Command::SearchEpisodes { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(EpisodesFilter),
+                SearchQuery::new_filtered(query, EpisodesFilter),
                 cli_query,
                 max_pages,
             )
@@ -193,7 +195,7 @@ pub async fn command_to_query(
         Command::SearchProfiles { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(ProfilesFilter),
+                SearchQuery::new_filtered(query, ProfilesFilter),
                 cli_query,
                 max_pages,
             )
@@ -202,7 +204,7 @@ pub async fn command_to_query(
         Command::SearchPodcasts { query, max_pages } => {
             get_string_output_of_streaming_query(
                 yt,
-                SearchQuery::new(query).with_filter(PodcastsFilter),
+                SearchQuery::new_filtered(query, PodcastsFilter),
                 cli_query,
                 max_pages,
             )
