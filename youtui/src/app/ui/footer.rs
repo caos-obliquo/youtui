@@ -2,7 +2,6 @@ use crate::app::structures::{AlbumArtState, PlayState};
 use crate::drawutils::{
     BUTTON_BG_COLOUR, BUTTON_FG_COLOUR, PROGRESS_BG_COLOUR, PROGRESS_FG_COLOUR, middle_of_rect,
 };
-use itertools::Itertools;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::prelude::Alignment;
@@ -70,15 +69,18 @@ pub fn draw_footer(
     };
     let song_and_artists_string = cur_active_song
         .map(|song| {
-            let artists =
-                Itertools::intersperse(song.artists.iter().map(|s| s.name.as_str()), ", ")
-                    .collect::<String>();
-            format!(
-                "{} {} - {}",
+            let mut s = format!(
+                "{} {} - ",
                 w.playlist.play_status.list_icon(),
                 song.title,
-                artists
-            )
+            );
+            for (i, artist) in song.artists.iter().enumerate() {
+                if i > 0 {
+                    s.push_str(", ");
+                }
+                s.push_str(&artist.name);
+            }
+            s
         })
         .unwrap_or_default();
     let album_title = cur_active_song
