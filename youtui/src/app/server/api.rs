@@ -215,7 +215,7 @@ async fn create_playlist_with_videos(
     video_ids: Vec<VideoID<'static>>,
 ) -> Result<PlaylistID<'static>> {
     tracing::info!("Creating playlist with {} videos: {}", video_ids.len(), title);
-    let query = CreatePlaylistQuery::new(&title, description.as_deref(), PrivacyStatus::Private)
+    let query = CreatePlaylistQuery::new(&title, description.as_deref(), PrivacyStatus::Unlisted)
         .with_video_ids(video_ids);
     query_api_with_retry(&api, query).await
 }
