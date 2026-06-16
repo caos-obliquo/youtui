@@ -31,6 +31,7 @@ use crate::config::Config;
 use crate::config::keymap::Keymap;
 use crate::widgets::ScrollingTableState;
 use async_callback_manager::{AsyncTask, Constraint, TryBackendTaskExt};
+use ytmapi_rs::common::VideoID;
 use crossterm::event::KeyCode;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -45,7 +46,10 @@ use std::time::{Duration, SystemTime};
 use tracing::{debug, error, info, warn};
 use ytmapi_rs::common::YoutubeID;
 
+pub mod playlist_save_popup;
+pub mod playlist_update_popup;
 mod effect_handlers;
+pub mod effect_handlers_playlist;
 #[cfg(test)]
 mod tests;
 
@@ -102,6 +106,7 @@ pub enum PlaylistAction {
     DeleteQueue,
     ClearSearch,
     CycleAudioQuality,
+    SaveToNewPlaylist,
 }
 
 impl Action for PlaylistAction {
@@ -122,6 +127,7 @@ impl Action for PlaylistAction {
             PlaylistAction::LoadQueue => "Load Queue",
             PlaylistAction::DeleteQueue => "Delete Queue",
             PlaylistAction::CycleAudioQuality => "Cycle Audio Quality",
+            PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
         }
         .into()
     }
@@ -155,6 +161,15 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 };
                 info!("Audio quality set to: {:?}", self.audio_quality);
                 (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::SaveToNewPlaylist => {
+                let video_ids: Vec<VideoID<'static>> = self.list.get_list_iter()
+                    .map(|song| song.video_id.clone())
+                    .collect();
+                if video_ids.is_empty() {
+                    return (AsyncTask::new_no_op(), None);
+                }
+                (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistSavePopup(video_ids)))
             },
         }
     }

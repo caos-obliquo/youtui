@@ -164,6 +164,12 @@ impl ActionHandler<BrowserArtistSongsAction> for ArtistSearchBrowser {
             BrowserArtistSongsAction::AddSongsToPlaylist => {
                 return self.add_songs_to_playlist().into();
             }
+            BrowserArtistSongsAction::AddSongToExistingPlaylist => {
+                return self.add_song_to_existing_playlist().into();
+            }
+            BrowserArtistSongsAction::AddSongsToExistingPlaylist => {
+                return self.add_songs_to_existing_playlist().into();
+            }
             BrowserArtistSongsAction::Sort => self.album_songs_panel.handle_pop_sort(),
             BrowserArtistSongsAction::Filter => self.album_songs_panel.toggle_filter(),
         }
@@ -336,6 +342,31 @@ impl ArtistSearchBrowser {
             );
         }
         (AsyncTask::new_no_op(), None)
+    }
+    pub fn add_song_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.album_songs_panel.get_selected_item();
+        if let Some(cur_song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::OpenPlaylistUpdatePopup(vec![
+                    cur_song.video_id.clone(),
+                ])),
+            );
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn add_songs_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.album_songs_panel.get_selected_item();
+        let video_ids = self
+            .album_songs_panel
+            .get_filtered_list_iter()
+            .skip(cur_idx)
+            .map(|song| song.video_id.clone())
+            .collect();
+        (
+            AsyncTask::new_no_op(),
+            Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
+        )
     }
     pub fn add_album_to_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> {
         // Consider how resource intensive this is as it runs in the main thread.

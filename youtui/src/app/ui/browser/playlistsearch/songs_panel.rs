@@ -52,6 +52,8 @@ pub enum BrowserPlaylistSongsAction {
     PlaySongs,
     AddSongToPlaylist,
     AddSongsToPlaylist,
+    AddSongToExistingPlaylist,
+    AddSongsToExistingPlaylist,
 }
 
 impl Action for BrowserPlaylistSongsAction {
@@ -64,6 +66,8 @@ impl Action for BrowserPlaylistSongsAction {
             BrowserPlaylistSongsAction::PlaySongs => "Play songs",
             BrowserPlaylistSongsAction::AddSongToPlaylist => "Add song to playlist",
             BrowserPlaylistSongsAction::AddSongsToPlaylist => "Add songs to playlist",
+            BrowserPlaylistSongsAction::AddSongToExistingPlaylist => "Add song to existing playlist",
+            BrowserPlaylistSongsAction::AddSongsToExistingPlaylist => "Add songs to existing playlist",
             BrowserPlaylistSongsAction::Sort => "Sort",
             BrowserPlaylistSongsAction::Filter => "Filter",
         }

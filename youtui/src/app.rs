@@ -3,7 +3,7 @@ use crate::config::ApiKey;
 use crate::core::get_limited_sequential_file;
 use crate::{RuntimeInfo, get_data_dir};
 use anyhow::{Context, Result, bail};
-use async_callback_manager::{AsyncCallbackManager, TaskOutcome};
+use async_callback_manager::{AsyncCallbackManager, AsyncTask, TaskOutcome};
 use component::actionhandler::YoutuiEffect;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
@@ -14,8 +14,9 @@ use media_controls::MediaController;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui_image::picker::Picker;
-use server::{ArcServer, Server, TaskMetadata};
+use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist};
 use std::borrow::Cow;
+use ytmapi_rs::common::{PlaylistID, VideoID};
 use std::fmt::Display;
 use std::io;
 use std::sync::Arc;
@@ -23,7 +24,12 @@ pub use structures::AudioQuality;
 use structures::ListSong;
 use tracing::{debug, error, info};
 use tracing_subscriber::prelude::*;
-use ui::{WindowContext, YoutuiWindow};
+use ui::{
+    WindowContext, YoutuiWindow,
+    playlist::effect_handlers_playlist::{
+        HandleAddSongsOk, HandleAddSongsError,
+    },
+};
 
 #[macro_use]
 pub mod component;
@@ -75,6 +81,20 @@ pub enum AppCallback {
     ChangeContext(WindowContext),
     AddSongsToPlaylist(Vec<ListSong>),
     AddSongsToPlaylistAndPlay(Vec<ListSong>),
+    #[allow(dead_code)]
+    OpenPlaylistSavePopup(Vec<VideoID<'static>>),
+    #[allow(dead_code)]
+    OpenPlaylistUpdatePopup(Vec<VideoID<'static>>),
+    AddVideosToPlaylistFromPopup {
+        playlist_id: PlaylistID<'static>,
+        video_ids: Vec<VideoID<'static>>,
+    },
+    ClosePopup,
+    CreatePlaylistFromPopup {
+        title: String,
+        description: Option<String>,
+        video_ids: Vec<VideoID<'static>>,
+    },
 }
 
 impl Youtui {
@@ -280,6 +300,46 @@ impl Youtui {
                 self.window_state
                     .handle_add_songs_to_playlist_and_play(song_list),
             ),
+            AppCallback::OpenPlaylistSavePopup(video_ids) => {
+                self.window_state.open_playlist_save_popup(video_ids);
+            }
+            AppCallback::OpenPlaylistUpdatePopup(video_ids) => {
+                let effect = self.window_state.open_playlist_update_popup(video_ids);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::AddVideosToPlaylistFromPopup {
+                playlist_id,
+                video_ids,
+            } => {
+                self.window_state.close_popup();
+                let effect = AsyncTask::new_future_try(
+                    AddSongsToPlaylist {
+                        playlist_id,
+                        video_ids,
+                    },
+                    HandleAddSongsOk,
+                    HandleAddSongsError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::ClosePopup => {
+                self.window_state.close_popup();
+            }
+            AppCallback::CreatePlaylistFromPopup {
+                title,
+                description,
+                video_ids,
+            } => {
+                self.window_state.close_popup();
+                let effect = self.window_state.handle_create_playlist_from_popup(
+                    title,
+                    description,
+                    video_ids,
+                );
+                self.task_manager.spawn_task(&self.server, effect);
+            }
         }
     }
 }

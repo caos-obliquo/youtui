@@ -28,6 +28,7 @@ A = {action = "playlist.cycle_audio_quality", visibility = "global"}
 enter.enter = "playlist.play_selected"
 enter.d = "playlist.delete_selected"
 enter.D = "playlist.delete_all"
+enter.n = "playlist.save_to_new_playlist"
 
 [mode_names.playlist]
 enter = "Playlist Action"
@@ -55,6 +56,8 @@ enter.a = "browser_artist_songs.play_album"
 enter.space = "browser_artist_songs.add_song_to_playlist"
 enter.P = "browser_artist_songs.add_songs_to_playlist"
 enter.A = "browser_artist_songs.add_album_to_playlist"
+enter.e = "browser_artist_songs.add_song_to_existing_playlist"
+enter.E = "browser_artist_songs.add_songs_to_existing_playlist"
 
 [mode_names.browser_artist_songs]
 enter = "Play"
@@ -69,6 +72,8 @@ enter.enter = "browser_playlist_songs.play_song"
 enter.p = "browser_playlist_songs.play_songs"
 enter.space = "browser_playlist_songs.add_song_to_playlist"
 enter.P = "browser_playlist_songs.add_songs_to_playlist"
+enter.e = "browser_playlist_songs.add_song_to_existing_playlist"
+enter.E = "browser_playlist_songs.add_songs_to_existing_playlist"
 
 [mode_names.browser_playlist_songs]
 enter = "Play"
@@ -80,6 +85,8 @@ enter.enter = "browser_songs.play_song"
 enter.p = "browser_songs.play_songs"
 enter.space = "browser_songs.add_song_to_playlist"
 enter.P = "browser_songs.add_songs_to_playlist"
+enter.e = "browser_songs.add_song_to_existing_playlist"
+enter.E = "browser_songs.add_songs_to_existing_playlist"
 
 [mode_names.browser_songs]
 enter = "Play"
@@ -130,3 +137,9 @@ pageup = "list.page_up"
 pagedown = "list.page_down"
 g = "list.first"
 G = "list.last"
+
+[keybinds.playlist_save_popup]
+k = "playlist_save_popup.move_up"
+j = "playlist_save_popup.move_down"
+enter = "playlist_save_popup.save"
+esc = {action = "playlist_save_popup.cancel", visibility = "global"}

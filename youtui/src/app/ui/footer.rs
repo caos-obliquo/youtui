@@ -69,11 +69,7 @@ pub fn draw_footer(
     };
     let song_and_artists_string = cur_active_song
         .map(|song| {
-            let mut s = format!(
-                "{} {} - ",
-                w.playlist.play_status.list_icon(),
-                song.title,
-            );
+            let mut s = format!("{} {} - ", w.playlist.play_status.list_icon(), song.title,);
             for (i, artist) in song.artists.iter().enumerate() {
                 if i > 0 {
                     s.push_str(", ");
@@ -129,7 +125,7 @@ pub fn draw_footer(
                 .bg(BUTTON_BG_COLOUR)
                 .add_modifier(Modifier::BOLD),
         )),
-        Line::from(Span::raw(format!("{vol:>3}"))),
+        Line::from(Span::raw(format!(" {vol:>3} "))),
         Line::from(Span::styled(
             " - ",
             Style::new()
@@ -147,7 +143,7 @@ pub fn draw_footer(
     let block_inner = block.inner(chunk);
     let [album_art_and_progress_bar_chunk, vol_bar_chunk] = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(1), Constraint::Length(4)])
+        .constraints([Constraint::Min(1), Constraint::Length(6)])
         .areas(block_inner);
     let get_progress_bar_and_text_layout = |r: Rect| {
         let [song_text_chunk, progress_bar_chunk] = Layout::default()

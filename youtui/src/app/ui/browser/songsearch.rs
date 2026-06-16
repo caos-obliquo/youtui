@@ -51,6 +51,8 @@ pub enum BrowserSongsAction {
     PlaySongs,
     AddSongToPlaylist,
     AddSongsToPlaylist,
+    AddSongToExistingPlaylist,
+    AddSongsToExistingPlaylist,
 }
 
 impl Action for BrowserSongsAction {
@@ -65,6 +67,8 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::PlaySongs => "Play songs",
             BrowserSongsAction::AddSongToPlaylist => "Add song to playlist",
             BrowserSongsAction::AddSongsToPlaylist => "Add songs to playlist",
+            BrowserSongsAction::AddSongToExistingPlaylist => "Add song to existing playlist",
+            BrowserSongsAction::AddSongsToExistingPlaylist => "Add songs to existing playlist",
         }
         .into()
     }
@@ -200,6 +204,12 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::PlaySongs => return self.play_songs().into(),
             BrowserSongsAction::AddSongToPlaylist => return self.add_song_to_playlist().into(),
             BrowserSongsAction::AddSongsToPlaylist => return self.add_songs_to_playlist().into(),
+            BrowserSongsAction::AddSongToExistingPlaylist => {
+                return self.add_song_to_existing_playlist().into();
+            }
+            BrowserSongsAction::AddSongsToExistingPlaylist => {
+                return self.add_songs_to_existing_playlist().into();
+            }
         }
         YoutuiEffect::new_no_op()
     }
@@ -590,6 +600,28 @@ impl SongSearchBrowser {
             );
         }
         (AsyncTask::new_no_op(), None)
+    }
+    pub fn add_song_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        if let Some(cur_song) = self.get_song_from_idx(cur_idx) {
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::OpenPlaylistUpdatePopup(vec![cur_song.video_id.clone()])),
+            );
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn add_songs_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        let video_ids = self
+            .get_filtered_list_iter()
+            .skip(cur_idx)
+            .map(|song| song.video_id.clone())
+            .collect();
+        (
+            AsyncTask::new_no_op(),
+            Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
+        )
     }
     pub fn replace_song_list(&mut self, song_list: Vec<SearchResultSong>) {
         self.song_list.clear();

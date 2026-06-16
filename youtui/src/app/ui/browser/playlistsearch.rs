@@ -169,6 +169,12 @@ impl ActionHandler<BrowserPlaylistSongsAction> for PlaylistSearchBrowser {
             BrowserPlaylistSongsAction::AddSongsToPlaylist => {
                 return self.add_songs_to_playlist().into();
             }
+            BrowserPlaylistSongsAction::AddSongToExistingPlaylist => {
+                return self.add_song_to_existing_playlist().into();
+            }
+            BrowserPlaylistSongsAction::AddSongsToExistingPlaylist => {
+                return self.add_songs_to_existing_playlist().into();
+            }
             BrowserPlaylistSongsAction::Sort => self.playlist_songs_panel.handle_pop_sort(),
             BrowserPlaylistSongsAction::Filter => self.playlist_songs_panel.toggle_filter(),
         }
@@ -345,6 +351,31 @@ impl PlaylistSearchBrowser {
             );
         }
         (AsyncTask::new_no_op(), None)
+    }
+    pub fn add_song_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.playlist_songs_panel.get_selected_item();
+        if let Some(cur_song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::OpenPlaylistUpdatePopup(vec![
+                    cur_song.video_id.clone(),
+                ])),
+            );
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn add_songs_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.playlist_songs_panel.get_selected_item();
+        let video_ids = self
+            .playlist_songs_panel
+            .get_filtered_list_iter()
+            .skip(cur_idx)
+            .map(|song| song.video_id.clone())
+            .collect();
+        (
+            AsyncTask::new_no_op(),
+            Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
+        )
     }
     pub fn handle_search_playlist_error(
         &mut self,
