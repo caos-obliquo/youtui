@@ -259,6 +259,7 @@ pub enum GetArtistSongsProgressUpdate {
         year: String,
         artists: Vec<ParsedSongArtist>,
         thumbnails: Vec<Thumbnail>,
+        category: Option<String>,
     },
     // Stream closes here.
     AllSongsSent,
@@ -308,14 +309,14 @@ fn get_artist_songs(
             results: artist_albums_results,
             ..
         } = albums;
-        let browse_id_list: Vec<AlbumID> = if artist_albums_browse_id.is_none()
+        let browse_id_list: Vec<(AlbumID<'static>, Option<String>)> = if artist_albums_browse_id.is_none()
             && artist_albums_params.is_none()
             && !artist_albums_results.is_empty()
         {
             // Assume we already got all the albums from the search.
             artist_albums_results
                 .into_iter()
-                .map(|r| r.album_id)
+                .map(|r| (r.album_id, None))
                 .collect()
         } else if artist_albums_params.is_none() || artist_albums_browse_id.is_none() {
             tracing::info!("Telling caller no songs found (no params or browse_id)");
@@ -338,7 +339,7 @@ fn get_artist_songs(
                     return;
                 }
             };
-            albums.into_iter().map(|a| a.browse_id).collect()
+            albums.into_iter().map(|a| (a.browse_id, a.category)).collect()
         };
         send_or_error(&tx, GetArtistSongsProgressUpdate::SongsFound).await;
         // Request all albums, concurrently but retaining order.
@@ -346,18 +347,18 @@ fn get_artist_songs(
         // willy-nilly but with an index, so the caller can insert songs in place.
         let mut stream = browse_id_list
             .into_iter()
-            .inspect(|a_id| {
+            .inspect(|(a_id, _)| {
                 tracing::info!("Spawning request for caller tracks for album ID {:?}", a_id,)
             })
-            .map(|a_id| {
+            .map(|(a_id, category)| {
                 let api = api.clone();
                 async move {
                     let query = GetAlbumQuery::new(&a_id);
-                    (query_api_with_retry(&api, query).await, a_id)
+                    (query_api_with_retry(&api, query).await, a_id, category)
                 }
             })
             .collect::<FuturesOrdered<_>>();
-        while let Some((maybe_album, album_id)) = stream.next().await {
+        while let Some((maybe_album, album_id, category)) = stream.next().await {
             let album = match maybe_album {
                 Ok(album) => album,
                 Err(e) => {
@@ -378,18 +379,24 @@ fn get_artist_songs(
                 thumbnails,
                 ..
             } = album;
+            let display_name = if let Some(ref cat) = category {
+                format!("{cat}: {title}")
+            } else {
+                title
+            };
             tracing::info!("Sending caller tracks for artist {:?}", browse_id);
             send_or_error(
                 &tx,
                 GetArtistSongsProgressUpdate::Songs {
                     song_list: tracks,
                     album: ParsedSongAlbum {
-                        name: title,
+                        name: display_name,
                         id: album_id,
                     },
                     year,
                     artists,
                     thumbnails,
+                    category,
                 },
             )
             .await;
