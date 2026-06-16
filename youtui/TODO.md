@@ -41,6 +41,6 @@
 ### Remaining
 
 - [ ] Context menu (`o` key, ncspot-style)
-- [ ] Search: retrieve EPs and singles in browser
+- [x] Search: show EPs and singles in artist browser (category prepended to album name)
 - [ ] Playlist creation 401 — cookie expired, need fresh cookie or debug OAuth (didn't work before)
 - [ ] Plain-text config for easy editing
