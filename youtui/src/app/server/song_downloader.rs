@@ -109,7 +109,7 @@ pub enum SongDownloader {
 }
 
 impl SongDownloader {
-    pub fn new(po_token: Option<String>, client: reqwest::Client, config: &Config) -> Self {
+    pub fn new(po_token: Option<String>, client: reqwest::Client, cookie_path: Option<String>, config: &Config) -> Self {
         match config.downloader_type {
             DownloaderType::Native => {
                 info!(
@@ -128,8 +128,8 @@ impl SongDownloader {
                     "Initiating yt-dlp downloader using yt-dlp path `{}`",
                     config.yt_dlp_command
                 );
-                let downloader = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), AudioQuality::default());
-                let downloader_clone = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), AudioQuality::default());
+                let downloader = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), AudioQuality::default());
+                let downloader_clone = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), AudioQuality::default());
                 tokio::task::spawn(async {
                     let output = downloader_clone.get_version().await;
                     match output {

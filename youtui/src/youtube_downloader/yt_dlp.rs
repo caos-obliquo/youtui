@@ -20,6 +20,7 @@ const ESTIMATED_AUDIO_SIZE_BYTES: usize = 4 * 1024 * 1024; // 4MB estimate
 pub struct YtDlpDownloader {
     yt_dlp_command: Arc<OsString>,
     po_token: Option<String>,
+    cookie_path: Option<String>,
     audio_quality: AudioQuality,
 }
 
@@ -59,10 +60,11 @@ impl std::fmt::Display for YtDlpDownloaderError {
 }
 
 impl YtDlpDownloader {
-    pub fn new(yt_dlp_command: String, po_token: Option<String>, audio_quality: AudioQuality) -> Self {
+    pub fn new(yt_dlp_command: String, po_token: Option<String>, cookie_path: Option<String>, audio_quality: AudioQuality) -> Self {
         Self {
             yt_dlp_command: Arc::new(yt_dlp_command.into()),
             po_token,
+            cookie_path,
             audio_quality,
         }
     }
@@ -113,19 +115,22 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             
             info!("Using format {} for quality {:?}", format_string, audio_quality);
             
-            let format_ref = format_string.as_str();
-            let stream_args = vec![
+            let mut stream_args = vec![
                 "--extractor-args",
                 "youtube:player_client=android_vr",
                 "--no-simulate",
                 "-q",
                 "--no-warnings",
                 "-f",
-                format_ref,
+                format_string.as_str(),
                 "-o",
                 "-",
-                song_video_id.as_ref(),
             ];
+            if let Some(cookie_path) = &self.cookie_path {
+                stream_args.push("--cookies");
+                stream_args.push(cookie_path.as_str());
+            }
+            stream_args.push(song_video_id.as_ref());
             
             debug!(%video_id, ?stream_args, "yt-dlp stream args");
             
@@ -191,21 +196,21 @@ use crate::app::AudioQuality;
 
     #[tokio::test]
     async fn test_yt_dlp_downloader_with_po_token() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), Some("test_po_token".to_string()), AudioQuality::default());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), Some("test_po_token".to_string()), None, AudioQuality::default());
         assert!(downloader.po_token.is_some());
         assert_eq!(downloader.po_token.unwrap(), "test_po_token");
     }
 
     #[tokio::test]
     async fn test_yt_dlp_downloader_without_po_token() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, AudioQuality::default());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, AudioQuality::default());
         assert!(downloader.po_token.is_none());
     }
 
     #[tokio::test]
     #[ignore = "Network and yt-dlp required"]
     async fn test_downloading_a_song_with_ytdlp() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, AudioQuality::default());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, AudioQuality::default());
         let YoutubeMusicDownload { song: stream, .. } =
             downloader.stream_song("lYBUbBu4W08", AudioQuality::default()).await.unwrap();
         stream
