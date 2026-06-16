@@ -1,4 +1,5 @@
 use super::ArcServer;
+use ytmapi_rs::parse::LibraryPlaylist;
 use super::api::GetArtistSongsProgressUpdate;
 use super::player::{DecodedInMemSong, Player};
 use super::song_downloader::{DownloadProgressUpdate, InMemSong};
@@ -47,6 +48,79 @@ pub struct GetArtistSongs(pub ArtistChannelID<'static>);
 pub struct GetPlaylistSongs {
     pub playlist_id: PlaylistID<'static>,
     pub max_songs: usize,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct CreatePlaylistWithVideos {
+    pub title: String,
+    pub description: Option<String>,
+    pub video_ids: Vec<VideoID<'static>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct AddSongsToPlaylist {
+    pub playlist_id: PlaylistID<'static>,
+    pub video_ids: Vec<VideoID<'static>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct GetAllLibraryPlaylists;
+
+impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
+    type Output = Result<Vec<LibraryPlaylist>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::GetLibraryPlaylistsQuery;
+
+            let pages: Vec<Vec<LibraryPlaylist>> = backend
+                .api
+                .get_api()
+                .await?
+                .read()
+                .await
+                .stream_browser_or_oauth(GetLibraryPlaylistsQuery, 10)
+                .await?;
+
+            Ok(pages.into_iter().flatten().collect())
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
+    type Output = Result<PlaylistID<'static>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            backend.api.create_playlist_with_videos(
+                self.title,
+                self.description,
+                self.video_ids,
+            ).await
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for AddSongsToPlaylist {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            backend.api.add_playlist_items(self.playlist_id, self.video_ids).await
+        }
+    }
 }
 
 #[derive(Debug)]

@@ -1,4 +1,6 @@
-use super::{WindowContext, YoutuiWindow, footer, header};
+use super::{
+    WindowContext, YoutuiWindow, footer, header,
+};
 use crate::app::view::draw::{draw_panel_mut_impl, draw_table_impl};
 use crate::app::view::{BasicConstraint, Drawable, DrawableMut};
 use crate::drawutils::{SELECTED_BORDER_COLOUR, TEXT_COLOUR, left_bottom_corner_rect};
@@ -35,12 +37,26 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             w.playlist
                 .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
         }
+        WindowContext::PlaylistSavePopup => {
+            w.playlist
+                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+        }
+        WindowContext::PlaylistUpdatePopup => {
+            w.playlist
+                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+        }
     }
     if w.help.shown {
         draw_help(f, w, window_chunk);
     }
     if w.key_pending() {
         draw_popup(f, w, window_chunk);
+    }
+    if let Some(popup) = &mut w.playlist_save_popup {
+        popup.draw(f, f.area());
+    }
+    if let Some(popup) = &mut w.playlist_update_popup {
+        popup.draw(f, f.area());
     }
     footer::draw_footer(f, w, footer_chunk, terminal_image_capabilities);
 }
@@ -107,6 +123,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
     // testable.
     let (mut s_len, mut c_len, mut d_len, items) = w
         .get_help_list_items()
+        .into_iter()
         .map(
             |DisplayableKeyAction {
                  keybinds,
@@ -146,7 +163,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
         true,
         |_| "Help".into(),
         |t, f, chunk| {
-            let commands_table = t.get_help_list_items().map(
+            let commands_table = t.get_help_list_items().into_iter().map(
                 |DisplayableKeyAction {
                      keybinds,
                      context,

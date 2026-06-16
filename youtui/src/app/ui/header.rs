@@ -25,37 +25,49 @@ pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     let keybinds = get_global_keybinds_as_readable_iter(w.get_active_keybinds(&w.config));
 
-    let help_string = Line::from_iter(keybinds.flat_map(
+    let help_string = Line::from_iter(keybinds.filter_map(
         |DisplayableKeyAction {
              keybinds,
              description,
              ..
          }| {
+            let is_vim_key = keybinds == "j"
+                || keybinds == "k"
+                || keybinds.starts_with("C-")
+                || keybinds == "?"
+                || keybinds == "0"
+                || keybinds == "1"
+                || keybinds == "2"
+                || keybinds == "3"
+                || keybinds == "4"
+                || keybinds == "5"
+                || keybinds == "6"
+                || keybinds == "q"
+                || keybinds == "space";
+
+            if !is_vim_key {
+                return None;
+            }
+
             let label = if description.is_empty() {
-                "Action".into() // Fallback label if description is empty
+                "Action".into()
             } else {
-                description.clone() // Use the description as the label
+                description.clone()
             };
-            vec![
+            Some(vec![
                 Span::styled(
-                    keybinds, // The keybind itself
+                    keybinds,
                     Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
                 ),
-                Span::raw(" ("), // Separator
-                Span::raw(label), // The context/label
-                Span::raw(")"),  // Closing parenthesis
-                Span::raw(" "),  // Space after the entry
-            ]
+                Span::raw(" ("),
+                Span::raw(label),
+                Span::raw(")"),
+                Span::raw(" "),
+            ])
         },
-    ));
-    let commands_block = Block::default().borders(Borders::ALL).title("Commands");
+    ).flatten());
+    let commands_block = Block::default().borders(Borders::ALL).title("Vim Commands");
     let commands_widget = Paragraph::new(help_string).wrap(Wrap { trim: true });
-    // Only render the tab menu if Browser is selected.
-    // Ideally, this would be less hardcoded - ie, YoutuiWindow could implement a
-    // trait like OptDelegateHasTabs that allows you to get an Option<&dyn
-    // HasTabs> depending on which context pane is selected.
-    // However, HasTabs is not currently dyn compatible so I have stuck with this
-    // approach for now.
     if !matches!(w.context, WindowContext::Browser) {
         f.render_widget(commands_widget, commands_block.inner(chunk));
         f.render_widget(commands_block, chunk);

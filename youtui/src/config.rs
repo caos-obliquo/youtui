@@ -203,6 +203,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             text_entry,
             list,
             log,
+            playlist_save_popup,
             browser_playlists,
             browser_playlist_songs,
         } = keybinds;
@@ -226,6 +227,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             text_entry: def_text_entry,
             list: def_list,
             log: def_log,
+            playlist_save_popup: def_playlist_save_popup,
             browser_playlists: def_browser_playlists,
             browser_playlist_songs: def_browser_playlist_songs,
         } = def_keybinds;
@@ -275,6 +277,10 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
         );
         assert_eq!(list, def_list, "list keybinds don't match");
         assert_eq!(log, def_log, "log keybinds don't match");
+        assert_eq!(
+            playlist_save_popup, def_playlist_save_popup,
+            "playlist_save_popup keybinds don't match"
+        );
     }
     #[tokio::test]
     async fn test_default_config_equals_blank_config() {
@@ -299,6 +305,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             text_entry,
             list,
             log,
+            playlist_save_popup,
             browser_playlists,
             browser_playlist_songs,
         } = keybinds;
@@ -322,6 +329,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             text_entry: def_text_entry,
             list: def_list,
             log: def_log,
+            playlist_save_popup: def_playlist_save_popup,
             browser_playlists: def_browser_playlists,
             browser_playlist_songs: def_browser_playlist_songs,
         } = def_keybinds;
@@ -344,6 +352,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
         assert_eq!(text_entry, def_text_entry);
         assert_eq!(list, def_list);
         assert_eq!(log, def_log);
+        assert_eq!(playlist_save_popup, def_playlist_save_popup);
     }
     #[tokio::test]
     async fn test_different_config_to_default() {

@@ -15,12 +15,17 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID};
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,
     SearchResultArtist, SearchResultPlaylist, SearchResultSong,
 };
-use ytmapi_rs::query::{GetAlbumQuery, GetArtistAlbumsQuery};
+use ytmapi_rs::query::{
+    GetAlbumQuery, GetArtistAlbumsQuery,
+};
+use ytmapi_rs::query::playlist::{
+    PrivacyStatus, CreatePlaylistQuery, DuplicateHandlingMode, AddPlaylistItemsQuery,
+};
 
 #[derive(Clone)]
 /// # Note
@@ -63,6 +68,21 @@ impl Api {
     }
     pub async fn search_songs(&self, text: String) -> Result<Vec<SearchResultSong>> {
         search_songs(self.get_api().await?, text).await
+    }
+    pub async fn create_playlist_with_videos(
+        &self,
+        title: String,
+        description: Option<String>,
+        video_ids: Vec<VideoID<'static>>,
+    ) -> Result<PlaylistID<'static>> {
+        create_playlist_with_videos(self.get_api().await?, title, description, video_ids).await
+    }
+    pub async fn add_playlist_items(
+        &self,
+        playlist_id: PlaylistID<'static>,
+        video_ids: Vec<VideoID<'static>>,
+    ) -> Result<()> {
+        add_playlist_items(self.get_api().await?, playlist_id, video_ids).await
     }
     pub fn get_playlist_songs(
         &self,
@@ -186,6 +206,29 @@ async fn search_songs(api: ConcurrentApi, text: String) -> Result<Vec<SearchResu
     )
     .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
     query_api_with_retry(&api, query).await
+}
+
+async fn create_playlist_with_videos(
+    api: ConcurrentApi,
+    title: String,
+    description: Option<String>,
+    video_ids: Vec<VideoID<'static>>,
+) -> Result<PlaylistID<'static>> {
+    tracing::info!("Creating playlist with {} videos: {}", video_ids.len(), title);
+    let query = CreatePlaylistQuery::new(&title, description.as_deref(), PrivacyStatus::Private)
+        .with_video_ids(video_ids);
+    query_api_with_retry(&api, query).await
+}
+
+async fn add_playlist_items(
+    api: ConcurrentApi,
+    playlist_id: PlaylistID<'static>,
+    video_ids: Vec<VideoID<'static>>,
+) -> Result<()> {
+    tracing::info!("Adding {} videos to playlist", video_ids.len());
+    let query =
+        AddPlaylistItemsQuery::new_from_videos(playlist_id, video_ids, DuplicateHandlingMode::ReturnError);
+    query_api_with_retry(&api, query).await.map(|_: Vec<ytmapi_rs::parse::AddPlaylistItem>| ())
 }
 
 pub async fn get_search_suggestions(
