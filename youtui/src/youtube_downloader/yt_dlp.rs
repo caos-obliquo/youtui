@@ -103,17 +103,8 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let stream_start = Instant::now();
             info!(%video_id, %total_size_bytes, "Using estimated size for progress");
             
-            // Use format based on audio quality setting
-            // All use m4a for rodio compatibility
-            // Different quality levels - let yt-dlp pick within range
-            let format_string = match audio_quality {
-                AudioQuality::Best => "bestaudio[ext=m4a]/bestaudio/best".to_string(),
-                AudioQuality::High => "bestaudio[ext=m4a]/bestaudio/best".to_string(),
-                AudioQuality::Medium => "bestaudio[ext=m4a]/bestaudio/best".to_string(),
-                AudioQuality::Low => "bestaudio[ext=m4a]/bestaudio".to_string(),  // Smaller m4a, still compatible
-            };
-            
-            info!("Using format {} for quality {:?}", format_string, audio_quality);
+            // Always use best audio quality with m4a container for rodio compatibility
+            let format_string = "bestaudio[ext=m4a]/bestaudio/best".to_string();
             
             let mut stream_args = vec![
                 "--extractor-args",
@@ -125,12 +116,8 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                 format_string.as_str(),
                 "-o",
                 "-",
+                song_video_id.as_ref(),
             ];
-            if let Some(cookie_path) = &self.cookie_path {
-                stream_args.push("--cookies");
-                stream_args.push(cookie_path.as_str());
-            }
-            stream_args.push(song_video_id.as_ref());
             
             debug!(%video_id, ?stream_args, "yt-dlp stream args");
             
