@@ -63,21 +63,22 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
             MoveUp => {
                 if self.selected_idx > 0 {
                     self.selected_idx -= 1;
-                    self.list_state.select(Some(self.selected_idx));
                 }
+                self.list_state.select(Some(self.selected_idx));
                 (AsyncTask::new_no_op(), None)
             }
             MoveDown => {
                 if let PlaylistUpdatePopupState::Loaded(playlists) = &self.state {
                     if self.selected_idx < playlists.len().saturating_sub(1) {
                         self.selected_idx += 1;
-                        self.list_state.select(Some(self.selected_idx));
                     }
                 }
+                self.list_state.select(Some(self.selected_idx));
                 (AsyncTask::new_no_op(), None)
             }
             Select => {
                 if let PlaylistUpdatePopupState::Loaded(playlists) = &self.state {
+                    self.list_state.select(Some(self.selected_idx));
                     if let Some(playlist) = playlists.get(self.selected_idx) {
                         let playlist_id = playlist.playlist_id.clone();
                         let video_ids = self.video_ids.clone();
@@ -104,11 +105,13 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
 
 impl PlaylistUpdatePopup {
     pub fn new(video_ids: Vec<VideoID<'static>>) -> Self {
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
         Self {
             video_ids,
             state: PlaylistUpdatePopupState::Loading,
             selected_idx: 0,
-            list_state: ListState::default(),
+            list_state,
         }
     }
 
