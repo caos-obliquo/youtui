@@ -212,7 +212,7 @@ impl PlaylistSavePopup {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        let popup_area = Self::centered_rect_fixed(50, 30, area);
+        let popup_area = Self::centered_rect_fixed(55, 50, area);
         frame.render_widget(Clear, popup_area);
         self.draw_create_form(frame, popup_area);
     }
