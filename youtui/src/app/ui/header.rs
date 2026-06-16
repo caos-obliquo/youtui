@@ -25,36 +25,18 @@ pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     let keybinds = get_global_keybinds_as_readable_iter(w.get_active_keybinds(&w.config));
 
-    let help_string = Line::from_iter(keybinds.filter_map(
+    let help_string = Line::from_iter(keybinds.flat_map(
         |DisplayableKeyAction {
              keybinds,
              description,
              ..
          }| {
-            let is_vim_key = keybinds == "j"
-                || keybinds == "k"
-                || keybinds.starts_with("C-")
-                || keybinds == "?"
-                || keybinds == "0"
-                || keybinds == "1"
-                || keybinds == "2"
-                || keybinds == "3"
-                || keybinds == "4"
-                || keybinds == "5"
-                || keybinds == "6"
-                || keybinds == "q"
-                || keybinds == "space";
-
-            if !is_vim_key {
-                return None;
-            }
-
             let label = if description.is_empty() {
-                "Action".into()
+                "Action".to_string()
             } else {
-                description.clone()
+                description.into_owned()
             };
-            Some(vec![
+            vec![
                 Span::styled(
                     keybinds,
                     Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
@@ -63,10 +45,10 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
                 Span::raw(label),
                 Span::raw(")"),
                 Span::raw(" "),
-            ])
+            ]
         },
-    ).flatten());
-    let commands_block = Block::default().borders(Borders::ALL).title("Vim Commands");
+    ));
+    let commands_block = Block::default().borders(Borders::ALL).title("Commands");
     let commands_widget = Paragraph::new(help_string).wrap(Wrap { trim: true });
     if !matches!(w.context, WindowContext::Browser) {
         f.render_widget(commands_widget, commands_block.inner(chunk));

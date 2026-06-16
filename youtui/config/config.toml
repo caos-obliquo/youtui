@@ -1,6 +1,6 @@
 # Example config.toml file for youtui containing the application defaults.
 auth_type = "Browser"
-downloader_type = "Native"
+downloader_type = "YtDlp"
 yt_dlp_command = "yt-dlp"
 
 # Global keybinds
@@ -11,9 +11,9 @@ yt_dlp_command = "yt-dlp"
 "<" = "prev_song"
 "]" = "seek_forward"
 "[" = "seek_back"
-F1 = {action = "toggle_help", visibility = "global"}
-F10 = {action = "quit", visibility = "global"}
-F12 = {action = "view_logs", visibility = "global"}
+"?" = {action = "toggle_help", visibility = "global"}
+q = {action = "quit", visibility = "global"}
+l = {action = "view_logs", visibility = "global"}
 space = {action = "play_pause", visibility = "global"}
 C-c = "quit"
 
@@ -21,10 +21,10 @@ C-c = "quit"
 [mode_names.global]
 
 [keybinds.playlist]
-F5 = {action = "playlist.view_browser", visibility = "global"}
+1 = {action = "playlist.view_browser", visibility = "global"}
 s = {action = "playlist.toggle_shuffle", visibility = "global"}
-A = {action = "playlist.cycle_audio_quality", visibility = "global"}
 "/" = {action = "playlist.toggle_search", visibility = "global"}
+A = {action = "playlist.cycle_audio_quality", visibility = "global"}
 enter.enter = "playlist.play_selected"
 enter.d = "playlist.delete_selected"
 enter.D = "playlist.delete_all"
@@ -34,22 +34,22 @@ enter.n = "playlist.save_to_new_playlist"
 enter = "Playlist Action"
 
 [keybinds.browser]
-F5 = {action = "browser.view_playlist", visibility = "global"}
-F2 = {action = "browser.search", visibility = "global"}
-left = "browser.left"
-right = "browser.right"
-F6 = {action = "browser.change_search_type", visibility = "global"}
+5 = {action = "browser.view_playlist", visibility = "global"}
+2 = {action = "browser.search", visibility = "global"}
+h = "browser.left"
+l = "browser.right"
+6 = {action = "browser.change_search_type", visibility = "global"}
 
 [keybinds.browser_artists]
 enter = "browser_artists.display_selected_artist_albums"
 
 [keybinds.browser_search]
-down = "browser_search.next_search_suggestion"
-up = "browser_search.prev_search_suggestion"
+j = "browser_search.next_search_suggestion"
+k = "browser_search.prev_search_suggestion"
 
 [keybinds.browser_artist_songs]
-F3 = {action = "browser_artist_songs.filter", visibility = "global"}
-F4 = {action = "browser_artist_songs.sort", visibility = "global"}
+3 = {action = "browser_artist_songs.filter", visibility = "global"}
+4 = {action = "browser_artist_songs.sort", visibility = "global"}
 enter.enter = "browser_artist_songs.play_song"
 enter.p = "browser_artist_songs.play_songs"
 enter.a = "browser_artist_songs.play_album"
@@ -66,8 +66,8 @@ enter = "Play"
 enter = "browser_playlists.display_selected_playlist"
 
 [keybinds.browser_playlist_songs]
-F3 = {action = "browser_playlist_songs.filter", visibility = "global"}
-F4 = {action = "browser_playlist_songs.sort", visibility = "global"}
+3 = {action = "browser_playlist_songs.filter", visibility = "global"}
+4 = {action = "browser_playlist_songs.sort", visibility = "global"}
 enter.enter = "browser_playlist_songs.play_song"
 enter.p = "browser_playlist_songs.play_songs"
 enter.space = "browser_playlist_songs.add_song_to_playlist"
@@ -79,8 +79,8 @@ enter.E = "browser_playlist_songs.add_songs_to_existing_playlist"
 enter = "Play"
 
 [keybinds.browser_songs]
-F3 = {action = "browser_songs.filter", visibility = "global"}
-F4 = {action = "browser_songs.sort", visibility = "global"}
+3 = {action = "browser_songs.filter", visibility = "global"}
+4 = {action = "browser_songs.sort", visibility = "global"}
 enter.enter = "browser_songs.play_song"
 enter.p = "browser_songs.play_songs"
 enter.space = "browser_songs.add_song_to_playlist"
@@ -92,32 +92,33 @@ enter.E = "browser_songs.add_songs_to_existing_playlist"
 enter = "Play"
 
 [keybinds.help]
-F1 = {action = "help.close", visibility = "global"}
+"?" = {action = "help.close", visibility = "global"}
 esc = {action = "help.close", visibility = "hidden"}
+q = {action = "help.close", visibility = "hidden"}
 
 [keybinds.filter]
 esc = {action = "filter.close", visibility = "hidden"}
-F3 = {action = "filter.close", visibility = "global"}
+3 = {action = "filter.close", visibility = "global"}
 Enter = {action = "filter.apply", visibility = "global"}
-A-F3 = {action = "filter.clear_filter", visibility = "global"}
+A-3 = {action = "filter.clear_filter", visibility = "global"}
 
 [keybinds.sort]
 enter = {action = "sort.sort_selected_asc", visibility = "global"}
 A-enter = {action = "sort.sort_selected_desc", visibility = "global"}
-A-F4 = {action = "sort.clear_sort", visibility = "global"}
+A-4 = {action = "sort.clear_sort", visibility = "global"}
 esc = {action = "sort.close", visibility = "hidden"}
-F4 = {action = "sort.close", visibility = "global"}
+4 = {action = "sort.close", visibility = "global"}
 
 [keybinds.log]
-F5 = {action = "log.view_browser", visibility = "global"}
+5 = {action = "log.view_browser", visibility = "global"}
 S-left = "log.reduce_captured"
 S-right = "log.increase_captured"
 left = "log.reduce_shown"
 right = "log.increase_shown"
-up = "log.up"
-down = "log.down"
-pageup = "log.page_up"
-pagedown = "log.page_down"
+k = "log.up"
+j = "log.down"
+C-u = "log.page_up"
+C-d = "log.page_down"
 t = "log.toggle_hide_filtered"
 esc = "log.exit_page_mode"
 f = "log.toggle_target_focus"
@@ -133,8 +134,12 @@ C-w = {action = "text_entry.delete_word", visibility = "hidden"}
 [keybinds.list]
 up = {action = "list.up", visibility = "hidden"}
 down = {action = "list.down", visibility = "hidden"}
+k = {action = "list.up", visibility = "hidden"}
+j = {action = "list.down", visibility = "hidden"}
 pageup = "list.page_up"
 pagedown = "list.page_down"
+C-b = "list.page_up"
+C-f = "list.page_down"
 g = "list.first"
 G = "list.last"
 
