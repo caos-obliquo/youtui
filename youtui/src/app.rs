@@ -103,6 +103,7 @@ impl Youtui {
             api_key,
             debug,
             po_token,
+            cookie_path,
             config,
             disable_media_controls,
         } = rt;
@@ -150,7 +151,7 @@ impl Youtui {
                     task.type_debug, task.type_id, task.constraint
                 )
             });
-        let server = Arc::new(server::Server::new(api_key, po_token, &config));
+        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path, &config));
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
         // The docs for this function state that it must be run after entering alternate

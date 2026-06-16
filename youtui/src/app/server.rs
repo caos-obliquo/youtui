@@ -28,7 +28,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(api_key: ApiKey, po_token: Option<String>, config: &Config) -> Server {
+    pub fn new(api_key: ApiKey, po_token: Option<String>, cookie_path: Option<String>, config: &Config) -> Server {
         let client = reqwest::Client::builder()
             .use_rustls_tls()
             .pool_max_idle_per_host(8)
@@ -41,7 +41,7 @@ impl Server {
         let api = api::Api::new(api_key, client.clone());
         let player = player::Player::new();
         let song_downloader =
-            song_downloader::SongDownloader::new(po_token, client.clone(), config);
+            song_downloader::SongDownloader::new(po_token, client.clone(), cookie_path, config);
         let song_thumbnail_downloader =
             song_thumbnail_downloader::SongThumbnailDownloader::new(client);
         let api_error_handler = api_error_handler::ApiErrorHandler::new();

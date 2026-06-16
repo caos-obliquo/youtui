@@ -360,6 +360,7 @@ pub struct RuntimeInfo {
     config: Config,
     api_key: ApiKey,
     po_token: Option<String>,
+    cookie_path: Option<String>,
 }
 
 #[tokio::main]
@@ -428,11 +429,19 @@ async fn try_main() -> anyhow::Result<()> {
     let api_key = load_api_key(&config).await?;
     // Use PoToken, if the user has supplied one (otherwise don't).
     let po_token = load_po_token().await.ok();
+    let cookie_path = {
+        let mut path = get_config_dir().ok();
+        if let Some(ref mut p) = path {
+            p.push(COOKIE_FILENAME);
+        }
+        path.map(|p| p.to_string_lossy().to_string())
+    };
     let rt = RuntimeInfo {
         debug,
         config,
         api_key,
         po_token,
+        cookie_path,
         disable_media_controls,
     };
     match cli.command {
