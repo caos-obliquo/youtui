@@ -24,7 +24,7 @@ C-c = "quit"
 1 = {action = "playlist.view_browser", visibility = "global"}
 s = {action = "playlist.toggle_shuffle", visibility = "global"}
 "/" = {action = "playlist.toggle_search", visibility = "global"}
-A = {action = "playlist.cycle_audio_quality", visibility = "global"}
+A = {action = "playlist.set_best_quality", visibility = "global"}
 enter.enter = "playlist.play_selected"
 enter.d = "playlist.delete_selected"
 enter.D = "playlist.delete_all"

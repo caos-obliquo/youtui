@@ -105,7 +105,7 @@ pub enum PlaylistAction {
     LoadQueue,
     DeleteQueue,
     ClearSearch,
-    CycleAudioQuality,
+    SetBestQuality,
     SaveToNewPlaylist,
 }
 
@@ -126,7 +126,7 @@ impl Action for PlaylistAction {
             PlaylistAction::SaveQueue => "Save Queue",
             PlaylistAction::LoadQueue => "Load Queue",
             PlaylistAction::DeleteQueue => "Delete Queue",
-            PlaylistAction::CycleAudioQuality => "Cycle Audio Quality",
+            PlaylistAction::SetBestQuality => "Set Best Quality",
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
         }
         .into()
@@ -152,13 +152,8 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             }
             PlaylistAction::DeleteQueue => (AsyncTask::new_no_op(), None),
-            PlaylistAction::CycleAudioQuality => {
-                self.audio_quality = match self.audio_quality {
-                    AudioQuality::Best => AudioQuality::High,
-                    AudioQuality::High => AudioQuality::Medium,
-                    AudioQuality::Medium => AudioQuality::Low,
-                    AudioQuality::Low => AudioQuality::Best,
-                };
+            PlaylistAction::SetBestQuality => {
+                self.audio_quality = AudioQuality::Best;
                 info!("Audio quality set to: {:?}", self.audio_quality);
                 (AsyncTask::new_no_op(), None)
             },

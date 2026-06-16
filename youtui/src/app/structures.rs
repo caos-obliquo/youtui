@@ -199,10 +199,10 @@ pub enum PlayState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub enum AudioQuality {
+    #[default]
     Best,
     High,
     Medium,
-    #[default]
     Low,
 }
 
