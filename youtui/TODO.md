@@ -42,5 +42,5 @@
 
 - [ ] Context menu (`o` key, ncspot-style)
 - [ ] Search: retrieve EPs and singles in browser
-- [ ] Playlist update popup: debug list display (shows count but not items)
+- [ ] Playlist creation 401 — cookie expired, need fresh cookie or debug OAuth (didn't work before)
 - [ ] Plain-text config for easy editing
