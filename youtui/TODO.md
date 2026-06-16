@@ -42,5 +42,7 @@
 
 - [ ] Context menu (`o` key, ncspot-style)
 - [x] Search: show EPs and singles in artist browser (category prepended to album name)
-- [ ] Playlist creation 401 — cookie expired, need fresh cookie or debug OAuth (didn't work before)
+- [x] Playlist creation 401 — fixed with fresh cookie + client version bump
 - [ ] Plain-text config for easy editing
+- [ ] Lyrics — native Musixmatch integration (`musixmatch-cli` crate) with dedicated keybind
+- [ ] Scrobbling — embed Rescrobbled natively (ListenBrainz / Maloja)

@@ -259,7 +259,6 @@ pub enum GetArtistSongsProgressUpdate {
         year: String,
         artists: Vec<ParsedSongArtist>,
         thumbnails: Vec<Thumbnail>,
-        category: Option<String>,
     },
     // Stream closes here.
     AllSongsSent,
@@ -398,7 +397,6 @@ fn get_artist_songs(
                     year,
                     artists,
                     thumbnails,
-                    category,
                 },
             )
             .await;
