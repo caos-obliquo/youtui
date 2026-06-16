@@ -528,7 +528,7 @@ mod tests {
         let b = Browser::new();
         let actual_kb = b.get_active_keybinds(&cfg);
         let expected_kb = (
-            &Keybind::new_unmodified(crossterm::event::KeyCode::Down),
+            &Keybind::new_unmodified(crossterm::event::KeyCode::Char('j')),
             &KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::NextSearchSuggestion,
             )),
@@ -545,7 +545,7 @@ mod tests {
         b.apply_action(BrowserAction::ChangeSearchType);
         let actual_kb = b.get_active_keybinds(&cfg);
         let expected_kb = (
-            &Keybind::new_unmodified(crossterm::event::KeyCode::Down),
+            &Keybind::new_unmodified(crossterm::event::KeyCode::Char('j')),
             &KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::NextSearchSuggestion,
             )),
@@ -562,7 +562,7 @@ mod tests {
         b.apply_action(BrowserAction::Right);
         let actual_kb = b.get_active_keybinds(&cfg);
         let expected_kb = (
-            &Keybind::new_unmodified(crossterm::event::KeyCode::F(3)),
+            &Keybind::new_unmodified(crossterm::event::KeyCode::Char('3')),
             &KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserArtistSongs(BrowserArtistSongsAction::Filter),
                 KeyActionVisibility::Global,

@@ -45,8 +45,8 @@ pub enum AuthType {
 
 #[derive(ValueEnum, Copy, PartialEq, Clone, Default, Debug, Serialize, Deserialize)]
 pub enum DownloaderType {
-    #[default]
     Native,
+    #[default]
     YtDlp,
 }
 

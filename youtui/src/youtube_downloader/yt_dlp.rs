@@ -93,7 +93,6 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
     > {
         let command = self.yt_dlp_command.clone();
         async move {
-            // Skip extractor args - they add API overhead without benefit
             let video_id = song_video_id.as_ref().to_string();
             info!(%video_id, "Starting yt-dlp stream_song");
             
@@ -116,6 +115,8 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             
             let format_ref = format_string.as_str();
             let stream_args = vec![
+                "--extractor-args",
+                "youtube:player_client=android_vr",
                 "--no-simulate",
                 "-q",
                 "--no-warnings",
