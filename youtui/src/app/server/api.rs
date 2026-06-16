@@ -297,50 +297,52 @@ fn get_artist_songs(
                 return;
             }
         };
-        let Some(albums) = artist.top_releases.albums else {
-            tracing::info!("Telling caller no songs found (no params)");
-            send_or_error(tx, GetArtistSongsProgressUpdate::NoSongsFound).await;
-            return;
-        };
-
-        let GetArtistAlbums {
-            browse_id: artist_albums_browse_id,
-            params: artist_albums_params,
-            results: artist_albums_results,
-            ..
-        } = albums;
-        let browse_id_list: Vec<(AlbumID<'static>, Option<String>)> = if artist_albums_browse_id.is_none()
-            && artist_albums_params.is_none()
-            && !artist_albums_results.is_empty()
-        {
-            // Assume we already got all the albums from the search.
-            artist_albums_results
-                .into_iter()
-                .map(|r| (r.album_id, None))
-                .collect()
-        } else if artist_albums_params.is_none() || artist_albums_browse_id.is_none() {
-            tracing::info!("Telling caller no songs found (no params or browse_id)");
-            send_or_error(&tx, GetArtistSongsProgressUpdate::NoSongsFound).await;
-            return;
-        } else {
-            // Must have params and browse_id
-            let Some(temp_browse_id) = artist_albums_browse_id else {
-                unreachable!("Checked not none above")
-            };
-            let Some(temp_params) = artist_albums_params else {
-                unreachable!("Checked not none above")
-            };
+        // Process both albums and singles/EPs sections from the artist page
+        async fn process_section(
+            api: &ConcurrentApi,
+            tx: &tokio::sync::mpsc::Sender<GetArtistSongsProgressUpdate>,
+            section: Option<GetArtistAlbums>,
+        ) -> Option<Vec<(AlbumID<'static>, Option<String>)>> {
+            let GetArtistAlbums {
+                browse_id: section_browse_id,
+                params: section_params,
+                results: section_results,
+                ..
+            } = section?;
+            if section_browse_id.is_none()
+                && section_params.is_none()
+                && !section_results.is_empty()
+            {
+                return Some(section_results.into_iter().map(|r| (r.album_id, None)).collect());
+            }
+            if section_params.is_none() || section_browse_id.is_none() {
+                return None;
+            }
+            let temp_browse_id = section_browse_id?;
+            let temp_params = section_params?;
             let query = GetArtistAlbumsQuery::new(temp_browse_id, temp_params);
-            let albums = match query_api_with_retry(&api, query).await {
-                Ok(r) => r,
+            match query_api_with_retry(&api, query).await {
+                Ok(albums) => Some(albums.into_iter().map(|a| (a.browse_id, a.category)).collect()),
                 Err(e) => {
                     error!("Received error on get_artist_albums query \"{}\"", e);
                     send_or_error(tx, GetArtistSongsProgressUpdate::GetArtistAlbumsError(e)).await;
-                    return;
+                    None
                 }
-            };
-            albums.into_iter().map(|a| (a.browse_id, a.category)).collect()
-        };
+            }
+        }
+
+        let mut browse_id_list: Vec<(AlbumID<'static>, Option<String>)> = Vec::new();
+        if let Some(albums) = process_section(&api, &tx, artist.top_releases.albums).await {
+            browse_id_list.extend(albums);
+        }
+        if let Some(singles) = process_section(&api, &tx, artist.top_releases.singles).await {
+            browse_id_list.extend(singles);
+        }
+        if browse_id_list.is_empty() {
+            tracing::info!("Telling caller no songs found (no albums or singles)");
+            send_or_error(&tx, GetArtistSongsProgressUpdate::NoSongsFound).await;
+            return;
+        }
         send_or_error(&tx, GetArtistSongsProgressUpdate::SongsFound).await;
         // Request all albums, concurrently but retaining order.
         // Future improvement: instead of using a FuturesOrdered, we could send
