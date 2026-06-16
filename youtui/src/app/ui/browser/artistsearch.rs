@@ -586,6 +586,7 @@ impl_youtui_task_handler!(
                     year,
                     artists,
                     thumbnails,
+                    ..
                 } => this.handle_append_song_list(song_list, album, year, artists, thumbnails),
                 GetArtistSongsProgressUpdate::AllSongsSent => this.handle_song_list_loaded(),
             }
