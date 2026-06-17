@@ -1051,6 +1051,20 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('n')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::NextSearchResult),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('N')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::PrevSearchResult),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::ViewLyrics),
