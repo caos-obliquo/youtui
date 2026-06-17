@@ -303,11 +303,23 @@ impl BackendTask<ArcServer> for GetLyrics {
                                             .replace("&#x2019;", "'").replace("&amp;", "&")
                                             .replace("&lt;", "<").replace("&gt;", ">")
                                             .replace("&#x2014;", "--").replace("&#x2013;", "-");
-                                        let cleaned: String = cleaned.lines()
-                                            .map(|l| l.trim()).filter(|l| !l.is_empty())
-                                            .filter(|l| !l.contains("Contributors") && !l.contains("You might also like"))
-                                            .collect::<Vec<_>>()
-                                            .join("\n");
+                                        let raw_lines: Vec<&str> = cleaned.lines().collect();
+                                        let mut merged: Vec<String> = Vec::new();
+                                        for line in raw_lines {
+                                            let t = line.trim();
+                                            if t.is_empty() || t.contains("Contributors") || t.contains("You might also like") {
+                                                continue;
+                                            }
+                                            if t == "(" || t == ")" || t.len() <= 2 && (t.contains('(') || t.contains(')')) {
+                                                if let Some(last) = merged.last_mut() {
+                                                    if t == "(" { last.push_str(" ("); }
+                                                    else { last.push(')'); }
+                                                }
+                                            } else {
+                                                merged.push(t.to_string());
+                                            }
+                                        }
+                                        let cleaned: String = merged.join("\n");
                                         if !cleaned.is_empty() {
                                             tracing::info!("Genius scrape: {} chars", cleaned.len());
                                             return Ok(cleaned);
