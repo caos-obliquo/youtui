@@ -15,6 +15,7 @@ pub struct SearchBlock {
     pub suggestions_cur: Option<usize>,
     pub vim_mode: bool,
     vim_pending: Option<char>,
+    vim_visual: bool,
 }
 impl_youtui_component!(SearchBlock);
 
@@ -184,23 +185,27 @@ impl TextHandler for SearchBlock {
                 // Check pending multi-key command first (d? + key)
                 if let Some(pending) = self.vim_pending.take() {
                     match (pending, key.code) {
-                        ('d', crossterm::event::KeyCode::Char('d')) => { self.search_contents.clear(); return Some(AsyncTask::new_no_op()); }
-                        ('d', crossterm::event::KeyCode::Char('w')) => { self.search_contents.delete_next_word(); return Some(AsyncTask::new_no_op()); }
-                        ('d', crossterm::event::KeyCode::Char('b')) => { self.search_contents.delete_prev_word(); return Some(AsyncTask::new_no_op()); }
+                        ('d', crossterm::event::KeyCode::Char('d')) => { self.search_contents.clear(); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
+                        ('d', crossterm::event::KeyCode::Char('w')) => { self.search_contents.delete_next_word(); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
+                        ('d', crossterm::event::KeyCode::Char('b')) => { self.search_contents.delete_prev_word(); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
                         _ => {}
                     }
                 }
+                let extend = self.vim_visual;
                 match key.code {
-                    crossterm::event::KeyCode::Char('i') => { self.vim_mode = false; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left => { self.search_contents.move_left(false); return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right => { self.search_contents.move_right(false); return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('0') => { self.search_contents.move_to_line_start(false); return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('$') | crossterm::event::KeyCode::Char('A') => { self.search_contents.move_to_line_end(false); return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('w') => { self.search_contents.move_to_next_word(false); return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('b') => { self.search_contents.move_to_prev_word(false); return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('d') => { self.vim_pending = Some('d'); return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('D') => { self.search_contents.move_to_line_end(false); return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('x') => { let _ = self.search_contents.delete_next_word(); return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('i') => { self.vim_mode = false; self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('v') => { self.vim_visual = !self.vim_visual; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('V') => { self.vim_visual = true; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left => { self.search_contents.move_left(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right => { self.search_contents.move_right(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('0') => { self.search_contents.move_to_line_start(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('$') | crossterm::event::KeyCode::Char('A') => { self.search_contents.move_to_line_end(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('w') => { self.search_contents.move_to_next_word(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('b') => { self.search_contents.move_to_prev_word(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('e') => { self.search_contents.move_to_next_word(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('d') => { if self.vim_visual { self.search_contents.clear(); self.vim_visual = false; } else { self.vim_pending = Some('d'); } return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('D') => { self.search_contents.move_to_line_end(false); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('x') => { let _ = self.search_contents.delete_next_word(); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
                     _ => {}
                 }
             }

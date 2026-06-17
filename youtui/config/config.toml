@@ -37,6 +37,7 @@ enter.n = "playlist.save_to_new_playlist"
 o.enter = "playlist.play_selected"
 o.d = "playlist.delete_selected"
 o.l = "playlist.view_lyrics"
+o.y = "playlist.copy_song_url"
 
 
 [mode_names.playlist]
