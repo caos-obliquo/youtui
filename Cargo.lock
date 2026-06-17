@@ -8076,6 +8076,7 @@ dependencies = [
  "ratatui",
  "ratatui-image",
  "raw-window-handle",
+ "reqwest",
  "rodio",
  "serde",
  "serde_json",

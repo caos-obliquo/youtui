@@ -21,6 +21,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use ytmapi_rs::common::{ArtistChannelID, PlaylistID, SearchSuggestion, VideoID};
 use musixmatch_inofficial::Musixmatch;
+use reqwest;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
 
 #[derive(PartialEq, Debug)]
@@ -257,11 +258,68 @@ impl BackendTask<ArcServer> for GetLyrics {
                     .collect::<Vec<_>>()
                     .join(" ")
             }
+            tracing::info!("Lyrics fallback: artist='{}', title='{}'", &artist, &title);
+
+            // Try Genius search + scrape direct (most reliable, bypasses lyr matching)
+            fn urlenc(s: &str) -> String {
+                s.split_whitespace().collect::<Vec<_>>().join("+")
+            }
+            let search_url = format!(
+                "https://genius.com/api/search/song?q={}+{}",
+                urlenc(&title),
+                urlenc(&artist)
+            );
+            match reqwest::get(&search_url).await {
+                Ok(resp) => {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        if let Some(hit) = data.pointer("/response/sections/0/hits/0/result") {
+                            if let Some(url) = hit.get("url").and_then(|u| u.as_str()) {
+                                tracing::info!("Genius found: {}", url);
+                                // Fetch the Genius page and extract lyrics
+                                if let Ok(page) = reqwest::get(url).await {
+                                    if let Ok(html) = page.text().await {
+                                        // Extract lyrics from Genius page data-lyrics-container divs
+                                        let containers: Vec<&str> = html.split("data-lyrics-container=\"true\"").collect();
+                                        if containers.len() > 1 {
+                                            let lyrics_html = containers[1];
+                                            if let Some(tag_end) = lyrics_html.find(">") {
+                                                let content = &lyrics_html[tag_end + 1..];
+                                                let mut lyrics_text = String::new();
+                                                let mut in_tag = false;
+                                                for ch in content.chars() {
+                                                    match ch {
+                                                        '<' => in_tag = true,
+                                                        '>' if in_tag => {
+                                                            in_tag = false;
+                                                            lyrics_text.push('\n');
+                                                        }
+                                                        _ if !in_tag => lyrics_text.push(ch),
+                                                        _ => {}
+                                                    }
+                                                }
+                                                let cleaned: String = lyrics_text.lines()
+                                                    .map(|l| l.trim())
+                                                    .filter(|l| !l.is_empty())
+                                                    .collect::<Vec<_>>()
+                                                    .join("\n");
+                                                if !cleaned.is_empty() {
+                                                    tracing::info!("Genius scrape: {} chars", cleaned.len());
+                                                    return Ok(cleaned);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!("Genius search failed: {}", e),
+            }
+
+            // Fallback to lyr with original artist (try multiple variants)
             let norm_artist = normalize(&artist);
             let norm_title = normalize(&title);
-
-            // Fallback: try lyr CLI (supports Genius, AZLyrics, JahLyrics, Musixmatch)
-            // Try multiple artist/title variants for better fuzzy matching
             let first_artist = artist.split(',').next().unwrap_or(&artist).trim().to_string();
             let two_artists = artist.splitn(3, ',').take(2).collect::<Vec<_>>().join(" and ").trim().to_string();
             let variants: Vec<(&str, &str)> = vec![
@@ -278,11 +336,10 @@ impl BackendTask<ArcServer> for GetLyrics {
                     .args(["--artist", artist_name, "--title", song_title])
                     .output()
                     .await;
-
                 match output {
                     Ok(out) if out.status.success() => {
                         let raw = String::from_utf8_lossy(&out.stdout).to_string();
-                        let lyrics: String = raw.lines().skip(1).collect::<Vec<_>>().join("\n");
+                        let lyrics = raw.lines().skip(1).collect::<Vec<_>>().join("\n");
                         let lyrics = lyrics.splitn(2, "Lyrics").nth(1).unwrap_or(&lyrics).trim().to_string();
                         if !lyrics.is_empty() {
                             return Ok(lyrics);
