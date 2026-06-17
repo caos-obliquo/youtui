@@ -553,6 +553,7 @@ impl Playlist {
         tracing::info!("add_yt_video: {} {}", raw_id, url);
 
         // Fetch metadata via yt-dlp
+        let mut duration = String::from("0");
         let (title, artist) = match std::process::Command::new("yt-dlp")
             .args(["--dump-json", "--no-warnings", "--flat-playlist", &format!("https://youtu.be/{}", raw_id)])
             .output()
@@ -562,14 +563,22 @@ impl Playlist {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
                     let t = v.get("title").and_then(|s| s.as_str()).unwrap_or(&raw_id).to_string();
                     let a = v.get("uploader").and_then(|s| s.as_str()).unwrap_or("Unknown").to_string();
+                    if let Some(d) = v.get("duration").and_then(|s| s.as_f64()) {
+                        duration = format!("{}", d as u64);
+                    }
                     (t, a)
                 } else { (raw_id.clone(), "YouTube".to_string()) }
             }
             _ => (raw_id.clone(), "YouTube".to_string()),
         };
 
+        let album_name = format!("YouTube: {}", artist);
+        let album = Some(ytmapi_rs::parse::ParsedSongAlbum {
+            name: album_name,
+            id: ytmapi_rs::common::AlbumID::from_raw(raw_id.clone()),
+        });
         let song = ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
-            title, artist, video_id, None, "0".to_string(),
+            title, artist, video_id, album, format!("{}", duration),
         );
         let old_count = self.list.get_list_iter().count();
         self.list.append_raw_search_result_songs(vec![song]);
