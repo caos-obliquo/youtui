@@ -45,6 +45,10 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             w.playlist
                 .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
         }
+        WindowContext::Lyrics => {
+            w.playlist
+                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+        }
     }
     if w.help.shown {
         draw_help(f, w, window_chunk);
@@ -56,6 +60,9 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         popup.draw(f, f.area());
     }
     if let Some(popup) = &mut w.playlist_update_popup {
+        popup.draw(f, f.area());
+    }
+    if let Some(popup) = &mut w.lyrics_popup {
         popup.draw(f, f.area());
     }
     footer::draw_footer(f, w, footer_chunk, terminal_image_capabilities);

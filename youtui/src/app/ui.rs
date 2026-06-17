@@ -1,6 +1,7 @@
 use self::browser::Browser;
 use self::logger::Logger;
 use self::playlist::Playlist;
+use self::playlist::lyrics_popup::LyricsPopup;
 use self::playlist::playlist_save_popup::PlaylistSavePopup;
 use self::playlist::playlist_update_popup::PlaylistUpdatePopup;
 use super::AppCallback;
@@ -42,6 +43,7 @@ pub enum WindowContext {
     Logs,
     PlaylistSavePopup,
     PlaylistUpdatePopup,
+    Lyrics,
 }
 
 pub struct YoutuiWindow {
@@ -52,6 +54,7 @@ pub struct YoutuiWindow {
     pub logger: Logger,
     pub playlist_save_popup: Option<PlaylistSavePopup>,
     pub playlist_update_popup: Option<PlaylistUpdatePopup>,
+    pub lyrics_popup: Option<LyricsPopup>,
     pub config: Config,
     pub key_stack: Vec<KeyEvent>,
     pub help: HelpMenu,
@@ -103,6 +106,7 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
                 WindowContext::Logs => false,
                 WindowContext::PlaylistSavePopup => true,
                 WindowContext::PlaylistUpdatePopup => true,
+                WindowContext::Lyrics => true,
             }
     }
 
@@ -136,6 +140,9 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
             WindowContext::PlaylistUpdatePopup => Either::Right(Either::Right(
                 [&config.keybinds.help, &config.keybinds.list].into_iter(),
             )),
+            WindowContext::Lyrics => Either::Right(Either::Right(
+                [&config.keybinds.help, &config.keybinds.list].into_iter(),
+            )),
         }
     }
 }
@@ -151,6 +158,7 @@ impl Scrollable for YoutuiWindow {
             WindowContext::Logs => (),
             WindowContext::PlaylistSavePopup => (),
             WindowContext::PlaylistUpdatePopup => (),
+            WindowContext::Lyrics => (),
         }
     }
     fn is_scrollable(&self) -> bool {
@@ -161,6 +169,7 @@ impl Scrollable for YoutuiWindow {
                 WindowContext::Logs => false,
                 WindowContext::PlaylistSavePopup => false,
                 WindowContext::PlaylistUpdatePopup => false,
+                WindowContext::Lyrics => false,
             }
     }
 }
@@ -216,6 +225,11 @@ impl KeyRouter<AppAction> for YoutuiWindow {
                 v.extend(self.logger.get_active_keybinds(config));
                 v.into_iter()
             }
+            WindowContext::Lyrics => {
+                let mut v: Vec<&Keymap<AppAction>> = kb.collect();
+                v.extend(self.logger.get_active_keybinds(config));
+                v.into_iter()
+            }
         }
     }
     fn get_all_keybinds<'a>(
@@ -243,6 +257,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::Logs => self.logger.is_text_handling(),
             WindowContext::PlaylistSavePopup => false,
             WindowContext::PlaylistUpdatePopup => false,
+            WindowContext::Lyrics => false,
         }
     }
     fn get_text(&self) -> std::option::Option<&str> {
@@ -252,6 +267,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::Logs => self.logger.get_text(),
             WindowContext::PlaylistSavePopup => None,
             WindowContext::PlaylistUpdatePopup => None,
+            WindowContext::Lyrics => None,
         }
     }
     fn replace_text(&mut self, text: impl Into<String>) {
@@ -261,6 +277,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::Logs => self.logger.replace_text(text),
             WindowContext::PlaylistSavePopup => {}
             WindowContext::PlaylistUpdatePopup => {}
+            WindowContext::Lyrics => {}
         }
     }
     fn clear_text(&mut self) -> bool {
@@ -270,6 +287,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::Logs => self.logger.clear_text(),
             WindowContext::PlaylistSavePopup => false,
             WindowContext::PlaylistUpdatePopup => false,
+            WindowContext::Lyrics => false,
         }
     }
     fn handle_text_event_impl(&mut self, event: &Event) -> Option<ComponentEffect<Self>> {
@@ -288,6 +306,7 @@ impl TextHandler for YoutuiWindow {
                 .map(|effect| effect.map_frontend(|this: &mut YoutuiWindow| &mut this.logger)),
             WindowContext::PlaylistSavePopup => None,
             WindowContext::PlaylistUpdatePopup => None,
+            WindowContext::Lyrics => None,
         }
     }
 }
@@ -354,6 +373,13 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                     });
                 }
             }
+            AppAction::LyricsPopup(a) => {
+                if let Some(popup) = &mut self.lyrics_popup {
+                    return apply_action_mapped(self, a, |this: &mut Self| {
+                        this.lyrics_popup.as_mut().expect("popup exists")
+                    });
+                }
+            }
             AppAction::TextEntry(a) => return self.handle_text_entry_action(a).into(),
             AppAction::List(a) => return self.handle_list_action(a).into(),
             AppAction::NoOp => (),
@@ -374,6 +400,7 @@ impl YoutuiWindow {
             logger: Logger::new(),
             playlist_save_popup: None,
             playlist_update_popup: None,
+            lyrics_popup: None,
             key_stack: Vec::new(),
             help: HelpMenu::new(),
             tick: 0,
@@ -404,6 +431,7 @@ impl YoutuiWindow {
                     std::iter::once(&self.config.keybinds.playlist_save_popup),
                 ).collect()
             }
+            WindowContext::Lyrics => vec![],
         };
         items.extend(get_visible_keybinds_as_readable_iter(
             std::iter::once(&self.config.keybinds.global)
@@ -417,6 +445,16 @@ impl YoutuiWindow {
         event: crossterm::event::Event,
     ) -> YoutuiEffect<Self> {
         // Route events to popup if one is active
+        if self.lyrics_popup.is_some() {
+            if let Event::Key(k) = event {
+                let popup = self.lyrics_popup.as_mut().unwrap();
+                let (effect, callback) = popup.handle_key(k);
+                let effect = effect.map_frontend(|this: &mut Self| {
+                    this.lyrics_popup.as_mut().unwrap()
+                });
+                return YoutuiEffect { effect, callback };
+            }
+        }
         if self.playlist_save_popup.is_some() {
             if let Event::Key(k) = event {
                 let popup = self.playlist_save_popup.as_mut().unwrap();
@@ -524,6 +562,7 @@ impl YoutuiWindow {
                             WindowContext::Logs => self.browser.go_to_first(),
                             WindowContext::PlaylistSavePopup => {}
                             WindowContext::PlaylistUpdatePopup => {}
+                            WindowContext::Lyrics => {}
                         }
                     }
                 }
@@ -537,6 +576,7 @@ impl YoutuiWindow {
                             WindowContext::Logs => self.browser.go_to_last(),
                             WindowContext::PlaylistSavePopup => {}
                             WindowContext::PlaylistUpdatePopup => {}
+                            WindowContext::Lyrics => {}
                         }
                     }
                 }
@@ -557,6 +597,7 @@ impl YoutuiWindow {
             WindowContext::Logs => AsyncTask::new_no_op(),
             WindowContext::PlaylistSavePopup => AsyncTask::new_no_op(),
             WindowContext::PlaylistUpdatePopup => AsyncTask::new_no_op(),
+            WindowContext::Lyrics => AsyncTask::new_no_op(),
         }
     }
     pub fn pauseplay(&mut self) -> ComponentEffect<Self> {
@@ -732,9 +773,28 @@ impl YoutuiWindow {
             this.playlist_update_popup.as_mut().expect("popup exists")
         })
     }
+    pub fn open_lyrics_popup(&mut self, artist: String, title: String) -> ComponentEffect<Self> {
+        use crate::app::server::GetLyrics;
+        use crate::app::ui::playlist::effect_handlers_playlist::{
+            HandleGetLyricsOk, HandleGetLyricsErr,
+        };
+        self.lyrics_popup = Some(LyricsPopup::new());
+        self.prev_context = self.context;
+        self.context = WindowContext::Lyrics;
+        AsyncTask::new_future_try(
+            GetLyrics(artist, title),
+            HandleGetLyricsOk,
+            HandleGetLyricsErr,
+            None,
+        )
+        .map_frontend(|this: &mut Self| {
+            this.lyrics_popup.as_mut().expect("popup exists")
+        })
+    }
     pub fn close_popup(&mut self) {
         self.playlist_save_popup = None;
         self.playlist_update_popup = None;
+        self.lyrics_popup = None;
         std::mem::swap(&mut self.context, &mut self.prev_context);
     }
     fn _revert_context(&mut self) {
