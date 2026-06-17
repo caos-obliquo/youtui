@@ -50,12 +50,6 @@ l = "browser.right"
 enter = "browser_artists.display_selected_artist_albums"
 
 [keybinds.browser_search]
-j = "browser_search.next_search_suggestion"
-k = "browser_search.prev_search_suggestion"
-tab = "browser_search.next_search_suggestion"
-S-tab = "browser_search.prev_search_suggestion"
-C-j = "browser_search.next_search_suggestion"
-C-k = "browser_search.prev_search_suggestion"
 C-n = "browser_search.next_search_suggestion"
 C-p = "browser_search.prev_search_suggestion"
 esc = "browser_search.close"
