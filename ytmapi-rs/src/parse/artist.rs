@@ -220,7 +220,7 @@ pub struct TableListSong {
 enum ArtistTopReleaseCategory {
     #[serde(alias = "albums")]
     Albums,
-    #[serde(alias = "singles")]
+    #[serde(alias = "singles", alias = "eps")]
     Singles,
     #[serde(alias = "videos")]
     Videos,
@@ -310,7 +310,18 @@ fn parse_artist_top_releases_from_section_list_contents(
         match category {
             ArtistTopReleaseCategory::Related => (),
             ArtistTopReleaseCategory::Videos => (),
-            ArtistTopReleaseCategory::Singles => (),
+            ArtistTopReleaseCategory::Singles => {
+                let mut results = Vec::new();
+                for i in r.navigate_pointer("/contents")?.try_iter_mut()? {
+                    results.push(parse_album_from_mtrir(i.navigate_pointer(MTRIR)?)?);
+                }
+                let singles = GetArtistAlbums {
+                    browse_id,
+                    params,
+                    results,
+                };
+                top_releases.singles = Some(singles);
+            }
             ArtistTopReleaseCategory::Albums => {
                 let mut results = Vec::new();
                 for i in r.navigate_pointer("/contents")?.try_iter_mut()? {

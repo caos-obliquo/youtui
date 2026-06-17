@@ -477,7 +477,242 @@ GetArtist {
                 ),
             },
         ),
-        singles: None,
+        singles: Some(
+            GetArtistAlbums {
+                results: [
+                    AlbumResult {
+                        title: "Aisumasen (I’m Sorry) (Ultimate Mix)",
+                        album_type: None,
+                        year: "2024",
+                        album_id: AlbumID(
+                            "MPREb_BJDe0OqAGKh",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/zSKyauwO6Te1Z5CdVKWDBWm_SWkEcvIW1kUU2MKi903jO0h0AyGcjCjCLA1WIUQCzDWAehVbPqPHoa-N=w226-h226-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/zSKyauwO6Te1Z5CdVKWDBWm_SWkEcvIW1kUU2MKi903jO0h0AyGcjCjCLA1WIUQCzDWAehVbPqPHoa-N=w544-h544-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                    AlbumResult {
+                        title: "You Are Here (Ultimate Mix)",
+                        album_type: None,
+                        year: "2024",
+                        album_id: AlbumID(
+                            "MPREb_JyCH48eqOdE",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/zSKyauwO6Te1Z5CdVKWDBWm_SWkEcvIW1kUU2MKi903jO0h0AyGcjCjCLA1WIUQCzDWAehVbPqPHoa-N=w226-h226-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/zSKyauwO6Te1Z5CdVKWDBWm_SWkEcvIW1kUU2MKi903jO0h0AyGcjCjCLA1WIUQCzDWAehVbPqPHoa-N=w544-h544-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                    AlbumResult {
+                        title: "Mind Games (Evolution Documentary)",
+                        album_type: None,
+                        year: "2024",
+                        album_id: AlbumID(
+                            "MPREb_gcqGUcG15Gt",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/zSKyauwO6Te1Z5CdVKWDBWm_SWkEcvIW1kUU2MKi903jO0h0AyGcjCjCLA1WIUQCzDWAehVbPqPHoa-N=w226-h226-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/zSKyauwO6Te1Z5CdVKWDBWm_SWkEcvIW1kUU2MKi903jO0h0AyGcjCjCLA1WIUQCzDWAehVbPqPHoa-N=w544-h544-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                    AlbumResult {
+                        title: "Look at Me (Ultimate Mix)",
+                        album_type: None,
+                        year: "2021",
+                        album_id: AlbumID(
+                            "MPREb_t3376EoOS4V",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/BHNVGqJZ-kibDn573qROQJlEym5rK-hojmv2zcpXrouDuejCnJyfpZhCSfcA92cKKOzifDXegljchWrf=w226-h226-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/BHNVGqJZ-kibDn573qROQJlEym5rK-hojmv2zcpXrouDuejCnJyfpZhCSfcA92cKKOzifDXegljchWrf=w544-h544-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                    AlbumResult {
+                        title: "Instant Karma! (We All Shine On) (Ultimate Mix)",
+                        album_type: None,
+                        year: "2020",
+                        album_id: AlbumID(
+                            "MPREb_AYfCt7o1QBs",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/2L8nCRAGesuZAYV_y6yaQ1kEtyfSds92O8ELsBJT0nq5XrRzv7H41SNsgTDqgsGjD37AkZWe5JHigMD3=w226-h226-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/2L8nCRAGesuZAYV_y6yaQ1kEtyfSds92O8ELsBJT0nq5XrRzv7H41SNsgTDqgsGjD37AkZWe5JHigMD3=w544-h544-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                    AlbumResult {
+                        title: "Smith Tapes: I'm Not The Beatles: John & Yoko Interviews Hawkin's Ranch Mississauga, Ontario Part 2 Reels 3-4",
+                        album_type: None,
+                        year: "2014",
+                        album_id: AlbumID(
+                            "MPREb_L4ZmGHGb6rP",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/MMTPEnLu6s0vx0Yx5HHZqJYLspo_SvPsiu9bd_5K0FD-QWs3QKvB4cKCcrpPoWS5Gf01g5XKOOfvlf2Ugw=w226-h226-s-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/MMTPEnLu6s0vx0Yx5HHZqJYLspo_SvPsiu9bd_5K0FD-QWs3QKvB4cKCcrpPoWS5Gf01g5XKOOfvlf2Ugw=w544-h544-s-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                    AlbumResult {
+                        title: "Smith Tapes: I'm Not The Beatles: John & Yoko Interviews Hawkin's Ranch Mississauga, Ontario Part 1",
+                        album_type: None,
+                        year: "2014",
+                        album_id: AlbumID(
+                            "MPREb_wJ6vUTl7tfo",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/vy-bGHvAI64cuVqxU9O1GojMsjaTIsT5dro1kA6ah1m2mfjVsc-La-6PSW7nqzivORtr6XrNC88014U=w226-h226-s-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/vy-bGHvAI64cuVqxU9O1GojMsjaTIsT5dro1kA6ah1m2mfjVsc-La-6PSW7nqzivORtr6XrNC88014U=w544-h544-s-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                    AlbumResult {
+                        title: "Smith Tapes: I'm Not The Beatles: John & Yoko Interviews 105 Bank St. New York, Ny Part 2",
+                        album_type: None,
+                        year: "2014",
+                        album_id: AlbumID(
+                            "MPREb_2lo3j6wkBj3",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/StBwVQhdeKwjcWH3RDqARjZF_39qhfmqi6nLmLfNie_0cK9XvNylNU6soTE2Nv3stfLABnFaKGgUyMCo=w226-h226-s-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/StBwVQhdeKwjcWH3RDqARjZF_39qhfmqi6nLmLfNie_0cK9XvNylNU6soTE2Nv3stfLABnFaKGgUyMCo=w544-h544-s-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                    AlbumResult {
+                        title: "Wedding Album",
+                        album_type: None,
+                        year: "1969",
+                        album_id: AlbumID(
+                            "MPREb_fD7MTlRN69J",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/qsh_A30qQoLcnxzXBsu8NwvsfVA09egjo1vcQtTxnwtXqDDNSYG2BGQFbLHctogI1ESQ345DNwXAq00=w226-h226-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/qsh_A30qQoLcnxzXBsu8NwvsfVA09egjo1vcQtTxnwtXqDDNSYG2BGQFbLHctogI1ESQ345DNwXAq00=w544-h544-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                    AlbumResult {
+                        title: "Unfinished Music No. 1: Two Virgins",
+                        album_type: None,
+                        year: "1968",
+                        album_id: AlbumID(
+                            "MPREb_suGcMqdjuxS",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/JSCcJ1X8Y89xn_yvavfCnbTBcWPq5Cop3BJTOV__nuKBA8u_gHj2twRyEbhMCm-y5DftTE7Yo-EjaiaG=w226-h226-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/JSCcJ1X8Y89xn_yvavfCnbTBcWPq5Cop3BJTOV__nuKBA8u_gHj2twRyEbhMCm-y5DftTE7Yo-EjaiaG=w544-h544-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                ],
+                browse_id: Some(
+                    ArtistChannelID(
+                        "MPADUCcSL2nYSJp_IgdzH0xBBdcg",
+                    ),
+                ),
+                params: Some(
+                    BrowseParams(
+                        "ggMIegYIAhoCAQI%3D",
+                    ),
+                ),
+            },
+        ),
         videos: None,
         related: None,
     },
