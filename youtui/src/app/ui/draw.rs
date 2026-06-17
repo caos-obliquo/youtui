@@ -65,6 +65,9 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     if let Some(popup) = &mut w.lyrics_popup {
         popup.draw(f, f.area());
     }
+    if let Some(popup) = &mut w.config_editor_popup {
+        popup.draw(f, f.area());
+    }
     if w.quit_confirm {
         use ratatui::style::{Color, Modifier, Style};
         use ratatui::widgets::Paragraph;

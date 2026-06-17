@@ -1,7 +1,9 @@
 use self::browser::Browser;
 use self::logger::Logger;
 use self::playlist::Playlist;
+use self::playlist::config_editor_popup::ConfigEditorPopup;
 use self::playlist::lyrics_popup::LyricsPopup;
+use std::path::PathBuf;
 use self::playlist::playlist_save_popup::PlaylistSavePopup;
 use self::playlist::playlist_update_popup::PlaylistUpdatePopup;
 use super::AppCallback;
@@ -55,6 +57,7 @@ pub struct YoutuiWindow {
     pub playlist_save_popup: Option<PlaylistSavePopup>,
     pub playlist_update_popup: Option<PlaylistUpdatePopup>,
     pub lyrics_popup: Option<LyricsPopup>,
+    pub config_editor_popup: Option<ConfigEditorPopup>,
     pub config: Config,
     pub key_stack: Vec<KeyEvent>,
     pub help: HelpMenu,
@@ -377,6 +380,13 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                     });
                 }
             }
+            AppAction::ConfigEditor(a) => {
+                if let Some(popup) = &mut self.config_editor_popup {
+                    return apply_action_mapped(self, a, |this: &mut Self| {
+                        this.config_editor_popup.as_mut().expect("popup exists")
+                    });
+                }
+            }
             AppAction::LyricsPopup(a) => {
                 if self.lyrics_popup.is_some() {
                     return apply_action_mapped(self, a, |this: &mut Self| {
@@ -386,6 +396,7 @@ impl ActionHandler<AppAction> for YoutuiWindow {
             }
             AppAction::TextEntry(a) => return self.handle_text_entry_action(a).into(),
             AppAction::List(a) => return self.handle_list_action(a).into(),
+            AppAction::EditConfig => self.open_config_editor(),
             AppAction::NoOp => (),
         };
         AsyncTask::new_no_op().into()
@@ -405,6 +416,7 @@ impl YoutuiWindow {
             playlist_save_popup: None,
             playlist_update_popup: None,
             lyrics_popup: None,
+            config_editor_popup: None,
             key_stack: Vec::new(),
             help: HelpMenu::new(),
             tick: 0,
@@ -449,6 +461,18 @@ impl YoutuiWindow {
         &mut self,
         event: crossterm::event::Event,
     ) -> YoutuiEffect<Self> {
+        // Config editor popup intercepts events
+        if self.config_editor_popup.is_some() {
+            if let Event::Key(k) = event {
+                let popup = self.config_editor_popup.as_mut().unwrap();
+                let (effect, callback) = popup.handle_key(k);
+                let effect = effect.map_frontend(|this: &mut Self| {
+                    this.config_editor_popup.as_mut().unwrap()
+                });
+                return YoutuiEffect { effect, callback };
+            }
+        }
+
         // Quit confirm screen intercepts all keys
         if self.quit_confirm {
             if let Event::Key(k) = event {
@@ -820,7 +844,14 @@ impl YoutuiWindow {
         self.playlist_save_popup = None;
         self.playlist_update_popup = None;
         self.lyrics_popup = None;
+        self.config_editor_popup = None;
         std::mem::swap(&mut self.context, &mut self.prev_context);
+    }
+    pub fn open_config_editor(&mut self) {
+        let config_dir = crate::get_config_dir().ok();
+        let config_path = config_dir.map(|d| d.join("config.toml")).unwrap_or_else(|| PathBuf::from("config.toml"));
+        let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+        self.config_editor_popup = Some(ConfigEditorPopup::new(config_path, content));
     }
     fn _revert_context(&mut self) {
         std::mem::swap(&mut self.context, &mut self.prev_context);
