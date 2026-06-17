@@ -838,7 +838,10 @@ impl YoutuiWindow {
             None,
         )
         .map_frontend(|this: &mut Self| {
-            this.lyrics_popup.as_mut().expect("popup exists")
+            if this.lyrics_popup.is_none() {
+                this.lyrics_popup = Some(LyricsPopup::new());
+            }
+            this.lyrics_popup.as_mut().expect("just set")
         })
     }
     pub fn close_popup(&mut self) {
