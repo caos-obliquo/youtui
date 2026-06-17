@@ -717,6 +717,10 @@ pub enum ModeNameEnum {
 fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
+            Keybind::new(crossterm::event::KeyCode::Char('e'), KeyModifiers::CONTROL),
+            KeyActionTree::new_key_with_visibility(AppAction::EditConfig, KeyActionVisibility::Global),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('+')),
             KeyActionTree::new_key(AppAction::VolUp),
         ),

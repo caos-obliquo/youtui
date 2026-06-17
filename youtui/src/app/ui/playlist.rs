@@ -47,6 +47,7 @@ use tracing::{debug, error, info, warn};
 use ytmapi_rs::common::YoutubeID;
 
 pub mod lyrics_popup;
+pub mod config_editor_popup;
 pub mod playlist_save_popup;
 pub mod playlist_update_popup;
 mod effect_handlers;

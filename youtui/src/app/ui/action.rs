@@ -6,6 +6,7 @@ use super::browser::shared_components::{BrowserSearchAction, FilterAction, SortA
 use super::browser::songsearch::BrowserSongsAction;
 use super::logger::LoggerAction;
 use super::playlist::PlaylistAction;
+use super::playlist::config_editor_popup::ConfigEditorAction;
 use super::playlist::lyrics_popup::LyricsPopupAction;
 use super::playlist::playlist_save_popup::PlaylistSavePopupAction;
 use crate::app::component::actionhandler::{Action, ActionHandler, YoutuiEffect};
@@ -36,6 +37,7 @@ pub enum AppAction {
     ViewLogs,
     PlayPause,
     NoOp,
+    EditConfig,
     Browser(BrowserAction),
     Filter(FilterAction),
     Sort(SortAction),
@@ -49,6 +51,7 @@ pub enum AppAction {
     Log(LoggerAction),
     Playlist(PlaylistAction),
     PlaylistSavePopup(PlaylistSavePopupAction),
+    ConfigEditor(ConfigEditorAction),
     LyricsPopup(LyricsPopupAction),
     TextEntry(TextEntryAction),
     List(ListAction),
@@ -124,10 +127,12 @@ impl Action for AppAction {
             | AppAction::Quit
             | AppAction::ViewLogs
             | AppAction::NoOp
+            | AppAction::EditConfig
             | AppAction::PlayPause => "Global".into(),
             AppAction::Log(a) => a.context(),
             AppAction::Playlist(a) => a.context(),
             AppAction::PlaylistSavePopup(a) => a.context(),
+            AppAction::ConfigEditor(a) => a.context(),
             AppAction::LyricsPopup(a) => a.context(),
             AppAction::Browser(a) => a.context(),
             AppAction::Filter(a) => a.context(),
@@ -156,9 +161,11 @@ impl Action for AppAction {
             AppAction::SeekForward => format!("Seek Forward {}s", SEEK_AMOUNT.as_secs()).into(),
             AppAction::SeekBack => format!("Seek Back {}s", SEEK_AMOUNT.as_secs()).into(),
             AppAction::NoOp => "No Operation".into(),
+            AppAction::EditConfig => "Edit Config".into(),
             AppAction::Log(a) => a.describe(),
             AppAction::Playlist(a) => a.describe(),
             AppAction::PlaylistSavePopup(a) => a.describe(),
+            AppAction::ConfigEditor(a) => a.describe(),
             AppAction::LyricsPopup(a) => a.describe(),
             AppAction::Browser(a) => a.describe(),
             AppAction::Filter(a) => a.describe(),
