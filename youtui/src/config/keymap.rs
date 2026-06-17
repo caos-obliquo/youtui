@@ -935,6 +935,12 @@ fn default_browser_search_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActio
                 BrowserSearchAction::PrevSearchSuggestion,
             )),
         ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Esc),
+            KeyActionTree::new_key(AppAction::BrowserSearch(
+                BrowserSearchAction::Close,
+            )),
+        ),
     ])
 }
 fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {

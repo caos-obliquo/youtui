@@ -191,6 +191,7 @@ impl ActionHandler<BrowserSearchAction> for SongSearchBrowser {
         match action {
             BrowserSearchAction::PrevSearchSuggestion => self.search.increment_list(-1),
             BrowserSearchAction::NextSearchSuggestion => self.search.increment_list(1),
+            BrowserSearchAction::Close => self.input_routing = InputRouting::List,
         }
         AsyncTask::new_no_op()
     }
