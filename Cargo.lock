@@ -456,6 +456,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
+name = "attohttpc"
+version = "0.28.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07a9b245ba0739fc90935094c29adbaee3f977218b5fb95e822e261cda7f56a3"
+dependencies = [
+ "flate2",
+ "http",
+ "log",
+ "native-tls",
+ "serde",
+ "serde_json",
+ "url",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3141,6 +3156,18 @@ name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
+
+[[package]]
+name = "listenbrainz"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd685ff956be01182a38cb22fb4ba75646caa3ae226befdb7fd31d379cebcc7"
+dependencies = [
+ "attohttpc",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "litemap"
@@ -8069,6 +8096,7 @@ dependencies = [
  "gag",
  "image",
  "itertools",
+ "listenbrainz",
  "musixmatch-inofficial",
  "pretty_assertions",
  "rand 0.9.4",

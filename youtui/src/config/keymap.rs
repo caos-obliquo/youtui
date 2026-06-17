@@ -839,6 +839,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
                     ),
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewLyrics)),
                     ),
