@@ -70,9 +70,10 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     }
     if w.quit_confirm {
         use ratatui::style::{Color, Modifier, Style};
-        use ratatui::widgets::Paragraph;
+        use ratatui::widgets::{Clear, Paragraph};
         use ratatui::layout::{Alignment, Constraint, Direction, Layout};
         let area = f.area();
+        f.render_widget(Clear, area);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
