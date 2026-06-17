@@ -112,7 +112,10 @@ y pressed -> GetLyrics(artist, title) backend task
 - [x] **Performance** — redraw only after events processed (eliminated busy-loop)
 - [x] **Rebuild filtered_cache** — category filter actually filters displayed items, not just count
 - [x] **cur_selected clamped** — after filter change, selection clamped to filtered list bounds
-- [x] **Oprimized release build** — `cargo install --path . --force` for global `youtui` command
+- [x] **Optimized release build** — `cargo install --path . --force` for global `youtui` command
+- [x] **Zero compiler warnings** — 6 warnings eliminated
+- [x] **Direct Genius scrape** — bypasses lyr exact-matching issues, uses Genius search API + page scrape
+- [x] **Merged to merge/friends-fork** — all feature branches merged
 
 ### Remaining
 
