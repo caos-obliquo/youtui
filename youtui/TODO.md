@@ -134,11 +134,15 @@ y pressed -> GetLyrics(artist, title) backend task
 - [x] **`o` key browser views** — full Enter-mode mirrored in all views
 - [x] **License review** — all deps MIT/Apache-2.0/BSD/MPL-2.0. No GPL except rescrobbled (subprocess, not library)
 - [x] **YouTube fallback** — yt-dlp search when YTMusic returns 0 results (merged to main)
-- [x] **Genius annotations** — scaffolded (needs API-based approach, scraping fragile)
-- [ ] **Parsing header error** — YTMusic API response format may have changed, investigate
+- [x] **Genius annotations** — API search + referents fetch implemented (needs UI wiring)
+- [x] **Parsing header error** — fixed with fallback client version generation
+- [x] **Vi-mode visual mode** — `v` toggle visual, `V` line visual, `d` delete selection, `D` delete to end
+- [x] **Share in menus** — `y` in both `o` and `Enter` menus copies song URL
+- [x] **`:` command** — paste YouTube Music URL to add + play, auto-switches to playlist
+- [x] **C-y copy URL** — copies current song's YouTube Music link to clipboard
+- [x] **Annotations popup** — press `a` in lyrics popup to view annotations (data fetched via Genius API)
 - [ ] **Native streaming** — stream audio instead of download-to-RAM (yt-dlp pipe mode)
 - [ ] **Kanji/romaji toggle** — switch Japanese song titles between kanji and romaji
-- [ ] **Annotations fetch** — wire Genius API annotations to display in lyrics popup
 
 ### Configs
 
