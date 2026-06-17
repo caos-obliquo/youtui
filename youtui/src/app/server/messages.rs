@@ -19,7 +19,7 @@ use futures::{Future, Stream};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use ytmapi_rs::common::{ArtistChannelID, PlaylistID, SearchSuggestion, VideoID};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, YoutubeID};
 use musixmatch_inofficial::Musixmatch;
 use reqwest;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
