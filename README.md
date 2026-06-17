@@ -135,6 +135,6 @@ API generic over `AuthToken` (Browser / OAuth / NoAuth) — enforced at compile 
 
 ## License
 
-MIT — see [LICENSE](./LICENSE) file.
+MIT — see [LICENSE](./LICENSE.txt) file.
 
 **Note:** This project incorporates code from external crates with various licenses (MIT, Apache 2.0, BSD-2-Clause, and others). Refer to each crate's license for details. This fork does not change the licensing terms of the original project.
