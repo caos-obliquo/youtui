@@ -37,6 +37,7 @@ mod media_controls;
 mod server;
 mod structures;
 pub mod queue_persistence;
+pub mod scrobbler;
 pub mod ui;
 pub mod view;
 

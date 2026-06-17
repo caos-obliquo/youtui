@@ -63,14 +63,18 @@ pub struct Config {
 #[serde(default)]
 pub struct ScrobblingConfig {
     pub enabled: bool,
-    pub token: String,
+    pub api_key: String,
+    pub api_secret: String,
+    pub session_key: String,
 }
 
 impl Default for ScrobblingConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            token: String::new(),
+            api_key: String::new(),
+            api_secret: String::new(),
+            session_key: String::new(),
         }
     }
 }
