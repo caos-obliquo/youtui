@@ -69,9 +69,16 @@
 
 ### Remaining
 
-- [ ] **Lyrics multi-provider** — Genius fallback via `lyr` CLI when Musixmatch misses
+- [ ] **Dark Souls quit screen** — `q` shows "YOU DIED" with "Are you sure?" prompt
 - [ ] **Bandcamp lyrics CLI** — new crate to fetch lyrics from Bandcamp (no source exists today)
 - [ ] **Scrobbling** — embed Rescrobbled natively (ListenBrainz / Maloja)
 - [ ] **License review** — verify all dependency licenses, add proper attribution
 - [ ] **Vi-mode search** — `i` enter insert, `Esc` normal, `dd`/`dw`/`db`/`w`/`b`/`0` etc.
 - [ ] Plain-text config for easy editing
+
+### Configs
+
+| File | Purpose |
+|---|---|
+| `~/.config/youtui/config.toml` | youtui keybinds, auth, downloader |
+| `~/.config/lyr/config.toml` | lyr fetcher order (Genius first) |
