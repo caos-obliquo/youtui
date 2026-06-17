@@ -10,12 +10,13 @@ git clone https://github.com/caos-obliquo/youtui
 cd youtui
 cargo install --path youtui --force
 
-# 2. Get cookie (YouTube Music auth)
-# Open music.youtube.com in Chrome/Firefox, logged in
-# DevTools -> Network -> reload -> click any POST request
-# Copy the "Cookie" header value, save:
+# 2. Get your YouTube Music cookie (30 seconds)
+# - Open music.youtube.com in Chrome/Firefox, logged in
+# - Press F12 (DevTools) -> Network tab -> reload page
+# - Click any POST request, find "Cookie:" in Request Headers
+# - Copy the entire long string, save:
 mkdir -p ~/.config/youtui
-echo "PASTE_COOKIE_HERE" > ~/.config/youtui/cookie.txt
+echo "COOKIE_VALUE_HERE" > ~/.config/youtui/cookie.txt
 
 # 3. Run
 youtui
@@ -27,19 +28,24 @@ Press `1` for playlist, `j`/`k` to navigate, `Enter` to play, `Space` to pause.
 
 ## Authentication
 
-### Browser (easiest, recommended)
-1. Open `music.youtube.com` logged into your Google account
-2. Open DevTools (F12) -> Network tab -> reload page
-3. Click any POST request (filter by "music.youtube.com")
-4. Scroll to Request Headers, find `Cookie:`
-5. Copy the ENTIRE cookie value (long string starting with `__Secure-...`)
-6. Save to `~/.config/youtui/cookie.txt`
+### Browser cookie (only method you need)
+This is the default. No GCP, no API keys, no OAuth. Just a cookie from your browser:
 
-### OAuth (alternative)
+1. Go to `music.youtube.com` and log into your Google account
+2. Open DevTools (F12) -> **Network** tab -> reload the page
+3. In the filter box, type "music" to filter requests
+4. Click any POST request (has `music.youtube.com` as the request URL)
+5. Scroll down in the Headers panel to find **Request Headers**
+6. Find the `Cookie:` header - it's a very long string starting with `__Secure-`
+7. Right-click → Copy value, then save to `~/.config/youtui/cookie.txt`
+
+That's it. No GCP project, no client IDs, no secrets. Just a cookie.
+
+### OAuth (if you really want to)
 ```sh
 youtui setup-oauth <client_id> <client_secret>
 ```
-Requires Google Cloud OAuth client (TVs and Limited Input devices).
+Requires setting up a Google Cloud project. Only use this if you can't use the cookie method.
 
 ---
 

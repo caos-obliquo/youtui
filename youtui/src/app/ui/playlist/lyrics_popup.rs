@@ -73,6 +73,7 @@ impl LyricsPopup {
         self.scroll_offset = 0;
     }
 
+    #[allow(dead_code)]
     pub fn set_annotations(&mut self, annotations: Vec<Annotation>) {
         self.annotations = annotations;
     }
