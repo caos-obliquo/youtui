@@ -19,7 +19,7 @@ use futures::{Future, Stream};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use ytmapi_rs::common::{ArtistChannelID, PlaylistID, SearchSuggestion, VideoID};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, YoutubeID};
 use musixmatch_inofficial::Musixmatch;
 use reqwest;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
@@ -400,8 +400,49 @@ impl BackendTask<ArcServer> for SearchSongs {
         self,
         backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let query = self.0;
         let backend = backend.clone();
-        async move { backend.api.search_songs(self.0).await }
+        async move {
+            // Try YTMusic first
+            match backend.api.search_songs(query.clone()).await {
+                Ok(results) if !results.is_empty() => return Ok(results),
+                Ok(_) => tracing::info!("YTMusic no results, trying YouTube fallback for: {}", query),
+                Err(e) => tracing::warn!("YTMusic search error: {}, trying YouTube fallback", e),
+            }
+            // Fallback: yt-dlp YouTube search
+            let output = tokio::process::Command::new("yt-dlp")
+                .args([
+                    "--flat-playlist", "--dump-json", "--no-warnings",
+                    &format!("ytsearch10:{}", query),
+                ])
+                .output()
+                .await
+                .map_err(|e| anyhow::anyhow!("yt-dlp search failed: {}", e))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let results: Vec<SearchResultSong> = stdout.lines()
+                .filter_map(|line| {
+                    let v: serde_json::Value = serde_json::from_str(line).ok()?;
+                    let title = v.get("title")?.as_str()?;
+                    let uploader = v.get("uploader").and_then(|u| u.as_str()).unwrap_or("Unknown");
+                    let id = v.get("id")?.as_str()?;
+                    let duration = v.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0) as u64;
+                    let vid: VideoID<'static> = VideoID::from_raw(id.to_string());
+                    let album_id: AlbumID<'static> = AlbumID::from_raw(id.to_string());
+                    Some(ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
+                        title.to_string(),
+                        uploader.to_string(),
+                        vid,
+                        Some(ytmapi_rs::parse::ParsedSongAlbum {
+                            name: format!("YouTube: {}", uploader),
+                            id: album_id,
+                        }),
+                        format!("{}", duration as u64),
+                    ))
+                })
+                .collect();
+            Ok(results)
+        }
     }
 }
 impl BackendTask<ArcServer> for SearchPlaylists {

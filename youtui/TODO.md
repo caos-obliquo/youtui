@@ -133,8 +133,8 @@ y pressed -> GetLyrics(artist, title) backend task
 - [x] **Scrobbler activation** — Rescrobbled embedded (spawn on start, kill on exit)
 - [x] **`o` key browser views** — full Enter-mode mirrored in all views
 - [x] **License review** — all deps MIT/Apache-2.0/BSD/MPL-2.0. No GPL except rescrobbled (subprocess, not library)
-- [ ] **YouTube fallback** — `feat/youtube-fallback` branch
-- [ ] **Genius annotations** — `feat/genius-annotations-impl` branch
+- [x] **YouTube fallback** — yt-dlp search when YTMusic returns 0 results (merged to main)
+- [ ] **Genius annotations** — `feat/genius-annotations-impl` branch (next)
 
 ### Configs
 

@@ -187,6 +187,11 @@ pub struct SearchResultSong {
     pub video_id: VideoID<'static>,
     pub thumbnails: Vec<Thumbnail>,
 }
+impl SearchResultSong {
+    pub fn from_yt_dlp(title: String, artist: String, video_id: VideoID<'static>, album: Option<ParsedSongAlbum>, duration: String) -> Self {
+        Self { title, artist, album, duration, plays: String::new(), explicit: Explicit::NotExplicit, video_id, thumbnails: vec![] }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 // A playlist search result may be a featured or community playlist or even a
