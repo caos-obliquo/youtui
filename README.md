@@ -1,36 +1,47 @@
 # youtui
 
-Vim-driven TUI for YouTube Music. Fork with custom playlist management, yt-dlp audio, lyrics, category filters, and vim-only keybinds.
+Vim-driven TUI for YouTube Music. Listen, search, manage playlists, view lyrics, scrobble - all from your terminal.
 
 ## Quick Start
 
 ```sh
-# Install
+# 1. Install
 git clone https://github.com/caos-obliquo/youtui
 cd youtui
 cargo install --path youtui --force
 
-# Get a cookie (see Authentication below)
-# Then run:
+# 2. Get cookie (YouTube Music auth)
+# Open music.youtube.com in Chrome/Firefox, logged in
+# DevTools -> Network -> reload -> click any POST request
+# Copy the "Cookie" header value, save:
+mkdir -p ~/.config/youtui
+echo "PASTE_COOKIE_HERE" > ~/.config/youtui/cookie.txt
+
+# 3. Run
 youtui
 ```
 
-Press `1` to view playlist, `2`-`6` for browser views, `j`/`k` to navigate, `Enter` to play.
+Press `1` for playlist, `j`/`k` to navigate, `Enter` to play, `Space` to pause.
+
+---
 
 ## Authentication
 
-### Browser (easiest)
-1. Open `music.youtube.com` logged into your account
-2. DevTools -> Network -> reload -> click any POST request
-3. Copy the `Cookie` header value
-4. Save to `~/.config/youtui/cookie.txt`
+### Browser (easiest, recommended)
+1. Open `music.youtube.com` logged into your Google account
+2. Open DevTools (F12) -> Network tab -> reload page
+3. Click any POST request (filter by "music.youtube.com")
+4. Scroll to Request Headers, find `Cookie:`
+5. Copy the ENTIRE cookie value (long string starting with `__Secure-...`)
+6. Save to `~/.config/youtui/cookie.txt`
 
-### OAuth
-```
+### OAuth (alternative)
+```sh
 youtui setup-oauth <client_id> <client_secret>
 ```
+Requires Google Cloud OAuth client (TVs and Limited Input devices).
 
-Requires a Google Cloud project with "TVs and Limited Input devices" OAuth client.
+---
 
 ## Config
 
@@ -48,59 +59,96 @@ api_secret = ""
 session_key = ""
 ```
 
-Press `C-e` to edit config from within the app.
+Press `C-e` to edit config from within the app. Press `?` for help.
 
-## Keybinds
+---
+
+## Default Keybinds
 
 | Key | Action |
 |---|---|
-| `1` | Now Playing |
-| `2` | Song Search |
-| `3` | Artist Search |
-| `4` | Playlist Search |
-| `5` | View Browser |
-| `6` | Change Search Type |
+| **Navigation** | |
 | `j`/`k` | Up / Down |
 | `h`/`l` | Left / Right |
 | `C-b`/`C-u` | Page up |
 | `C-f`/`C-d` | Page down |
 | `g`/`G` | First / Last |
-| `d`/`D` | Delete selected / all |
-| `y` | View lyrics (any view) |
-| `c` | Category filter (artist/playlist) |
-| `o` | Context menu (Enter->Play, d->Delete, l->Lyrics) |
-| `s` | Shuffle |
-| `A` | Set best quality |
-| `n` | Save to new playlist |
-| `e`/`E` | Add song(s) to existing playlist |
-| `/` | Search (any view) |
-| `Esc` | Close search/filter/sort |
-| `C-n`/`C-p` | Search suggestion navigation |
-| `C-e` | Edit config file |
-| `?` | Toggle help |
+| | |
+| **Playback** | |
+| `Enter` | Play selected (or Enter then Enter) |
 | `Space` | Play / Pause |
-| `q` | Quit (y/N to confirm) |
-
-Search boxes support **vi-mode**: `Esc` for normal mode, `i` for insert, `h`/`l`/`w`/`b`/`0`/`$` to move, `dd`/`dw`/`db` to delete. Use `n`/`N` to jump between search matches.
+| `s` | Shuffle |
+| `<`/`>` | Prev / Next song |
+| `[`/`]` | Seek back / forward |
+| | |
+| **Views** | |
+| `1` | Now Playing / Playlist |
+| `2` | Song Search |
+| `3` | Artist Search |
+| `4` | Playlist Search |
+| `5` | View Browser |
+| | |
+| **Actions** | |
+| `d`/`D` | Delete selected / all |
+| `y` | View lyrics |
+| `o` | Context menu (Enter->Play, d->Delete, l->Lyrics, y->Share) |
+| `c` | Category filter (Album/EP/Single) |
+| `n` | Save queue to new playlist |
+| `e`/`E` | Add song(s) to existing playlist |
+| `A` | Set best quality |
+| `:` | Open URL (paste YouTube Music link) |
+| `C-y` | Copy song URL to clipboard |
+| `C-e` | Edit config file |
+| `0` | View logs |
+| | |
+| **Search** | |
+| `/` | Search (any view) |
+| `Esc` | Close search / vim normal mode |
+| `n`/`N` | Next / previous match |
+| `C-n`/`C-p` | Search suggestions |
+| Tab/S-Tab | Search suggestions |
+| _vi-mode:_ `h`/`l`/`w`/`b`/`0`/`$` move, `i` insert, `dd`/`dw`/`db` delete |
+| | |
+| **System** | |
+| `?` | Toggle help |
+| `q` | Quit (YOU DIED confirmation) |
+| `C-c` | Force quit |
 
 Full keybinds at `~/.config/youtui/config.toml`.
 
+---
+
 ## Features
 
-- **Vim navigation** - j/k/h/l/g/G, C-b/C-u/C-f/C-d, no function keys
-- **yt-dlp audio** - streams with `android_vr` extractor-args, no PO token
-- **Lyrics** - `y` key, Musixmatch + Genius + `lyr` CLI fallback
+- **Vim navigation** - j/k/h/l/g/G, C-b/C-u/C-f/C-d, no function keys needed
+- **yt-dlp audio** - streams via `android_vr` extractor, no PO token needed
+- **Lyrics** - `y` key, fetches from Musixmatch + Genius + lyr CLI fallback
+- **Annotations** - press `a` in lyrics popup to view Genius annotations
 - **Category filters** - `c` toggles Album/EP/Single in artist and playlist views
-- **Config editor** - `C-e` to edit config.toml in-app
-- **Context menu** - `o` for Play/Delete/Lyrics
+- **Config editor** - `C-e` to edit config.toml directly in the app
+- **Context menu** - `o` for quick Play/Delete/Lyrics/Share
+- **Copy URL** - `C-y` copies current song's YouTube Music link to clipboard
+- **Open URL** - `:` to paste and play a YouTube Music link
 - **Playlist management** - create from queue (`n`), add to existing (`e`/`E`)
-- **Delete** - `d`/`D` direct, no Enter prefix
-- **Dark Souls quit** - `q` shows YOU DIED confirmation
+- **Delete** - `d`/`D` direct, no Enter prefix needed
+- **Dark Souls quit** - `q` shows YOU DIED screen with y/N confirmation
 - **EP/Single labels** - Album:/EP:/Single: prefixes in artist browser
-- **Seamless queue** - persists across restarts
-- **Scrobbling** - Rescrobbled compatible (native Last.fm module ready)
+- **Persistent queue** - survives restarts
+- **Scrobbling** - Rescrobbled embedded (spawns on start with scrobbling config)
+- **YouTube fallback** - searches YouTube when YTMusic has no results
 
-## Build
+---
+
+## Dependencies
+
+- `alsa-lib` (Linux) - audio playback
+- `yt-dlp` - audio download (install separately: `sudo pacman -S yt-dlp`)
+- Font with FontAwesome glyphs
+- `wl-copy` (Wayland) or `xclip` (X11) - for copy URL feature
+
+---
+
+## Build & Test
 
 ```sh
 cargo build --release
@@ -109,16 +157,7 @@ cargo build --release
 cargo test --bins --lib
 ```
 
-## Dependencies
-
-- `alsa-lib` (Linux) - audio playback
-- `yt-dlp` - audio download (default backend)
-- Font with FontAwesome glyphs
-
-## Known Issues
-
-- Playlist creation requires a fresh browser cookie
-- Client version scraped from YouTube Music page at startup
+---
 
 ## Architecture
 
@@ -127,6 +166,8 @@ KeyEvent -> crossterm -> Action -> Effect (AsyncTask)
 -> TaskManager -> Server (API/Player/Downloader)
 -> Response -> UI state -> Redraw
 ```
+
+---
 
 ## License
 

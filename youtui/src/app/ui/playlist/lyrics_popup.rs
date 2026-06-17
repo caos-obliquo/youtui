@@ -34,9 +34,16 @@ pub enum LyricsPopupState {
     Error(String),
 }
 
+pub struct Annotation {
+    pub fragment: String,
+    pub explanation: String,
+}
+
 pub struct LyricsPopup {
     pub state: LyricsPopupState,
     scroll_offset: usize,
+    pub annotations: Vec<Annotation>,
+    pub show_annotations: bool,
 }
 
 impl_youtui_component!(LyricsPopup);
@@ -56,12 +63,18 @@ impl LyricsPopup {
         Self {
             state: LyricsPopupState::Loading,
             scroll_offset: 0,
+            annotations: Vec::new(),
+            show_annotations: false,
         }
     }
 
     pub fn set_lyrics(&mut self, lyrics: String) {
         self.state = LyricsPopupState::Loaded(lyrics);
         self.scroll_offset = 0;
+    }
+
+    pub fn set_annotations(&mut self, annotations: Vec<Annotation>) {
+        self.annotations = annotations;
     }
 
     pub fn set_error(&mut self, error: String) {
@@ -72,6 +85,11 @@ impl LyricsPopup {
         match event.code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
+            }
+            KeyCode::Char('a') => {
+                self.show_annotations = !self.show_annotations;
+                self.scroll_offset = 0;
+                (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('j') | KeyCode::Down => {
                 self.scroll_offset = self.scroll_offset.saturating_add(1);
@@ -106,8 +124,15 @@ impl LyricsPopup {
                 frame.render_widget(spinner, vert[1]);
             }
             LyricsPopupState::Loaded(lyrics) => {
+                let title = if self.show_annotations { " Annotations " } else { " Lyrics " };
+                let ann_count = self.annotations.len();
+                let title = if !self.show_annotations && ann_count > 0 {
+                    format!(" Lyrics (a: {} annotations) ", ann_count)
+                } else {
+                    title.to_string()
+                };
                 let block = Block::default()
-                    .title(" Lyrics ")
+                    .title(title.as_str())
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(Color::Cyan));
                 let inner = block.inner(popup_area);
@@ -117,14 +142,23 @@ impl LyricsPopup {
                     .constraints([Constraint::Min(1), Constraint::Length(1)])
                     .split(inner);
 
-                let line_count = lyrics.lines().count();
+                let display_text: String = if self.show_annotations {
+                    self.annotations.iter()
+                        .flat_map(|a| vec![format!("> {}", a.fragment), a.explanation.clone(), String::new()])
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                } else {
+                    lyrics.clone()
+                };
+
+                let line_count = display_text.lines().count();
                 let visible_lines = (chunks[0].height as usize).saturating_sub(1);
                 let max_scroll = line_count.saturating_sub(visible_lines);
                 if self.scroll_offset > max_scroll {
                     self.scroll_offset = max_scroll;
                 }
 
-                let visible: String = lyrics.lines().skip(self.scroll_offset).take(visible_lines).collect::<Vec<_>>().join("\n");
+                let visible: String = display_text.lines().skip(self.scroll_offset).take(visible_lines).collect::<Vec<_>>().join("\n");
                 let has_more = self.scroll_offset + visible_lines < line_count;
                 let scroll_hint = if has_more { " j/k scroll " } else { "" };
 
@@ -133,7 +167,7 @@ impl LyricsPopup {
                     .wrap(Wrap { trim: false })
                     .alignment(Alignment::Left);
                 frame.render_widget(lyrics_widget, chunks[0]);
-                let hint = Paragraph::new(format!("Esc/q: Close{}", scroll_hint))
+                let hint = Paragraph::new(format!("Esc/q: Close | a: Toggle Annotations{}", scroll_hint))
                     .style(Style::default().fg(Color::DarkGray))
                     .alignment(Alignment::Center);
                 frame.render_widget(hint, chunks[1]);
