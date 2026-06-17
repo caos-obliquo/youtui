@@ -897,12 +897,22 @@ impl YoutuiWindow {
     pub fn play_yt_url(&mut self, url: String) -> ComponentEffect<Self> {
         use ytmapi_rs::common::YoutubeID;
         tracing::info!("Playing URL: {}", url);
-        let video_id_str = url
-            .rsplit('/').next().unwrap_or(&url)
-            .split('?').next().unwrap_or(&url)
-            .split('&').next().unwrap_or(&url)
-            .split('=').last().unwrap_or(&url)
-            .to_string();
+        // Extract video ID from YouTube URL formats:
+        // https://music.youtube.com/watch?v=TO1LKRFwbdI
+        // https://youtu.be/TO1LKRFwbdI
+        let video_id_str = if url.contains("watch?v=") {
+            url.split("watch?v=").nth(1).unwrap_or(&url)
+                .split('&').next().unwrap_or("")
+                .to_string()
+        } else if url.contains("youtu.be/") {
+            url.split("youtu.be/").nth(1).unwrap_or(&url)
+                .split('?').next().unwrap_or("")
+                .to_string()
+        } else {
+            url.rsplit('/').next().unwrap_or(&url)
+                .split('?').next().unwrap_or(&url)
+                .to_string()
+        };
         if video_id_str.len() >= 10 && video_id_str.len() <= 20 {
             let vid = ytmapi_rs::common::VideoID::from_raw(video_id_str.clone());
             self.playlist.add_yt_video(vid, &url);
