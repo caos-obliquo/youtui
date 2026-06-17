@@ -65,6 +65,7 @@ pub struct Youtui {
     /// Capabilities of the user's terminal in regards to image rendering - ie,
     /// font size / kitty protocal etc. This
     terminal_image_capabilities: Picker,
+    rescrobbled_process: Option<tokio::process::Child>,
 }
 
 #[derive(PartialEq)]
@@ -175,6 +176,7 @@ impl Youtui {
             (Some(media_controls), Some(media_control_event_stream))
         };
         let event_handler = EventHandler::new(EVENT_CHANNEL_SIZE, media_control_event_stream)?;
+        let rescrobbled_process = Self::spawn_rescrobbled(&config);
         let (window_state, effect) = YoutuiWindow::new(config);
         // Even the creation of a YoutuiWindow causes an effect. We'll spawn it straight
         // away.
@@ -188,7 +190,23 @@ impl Youtui {
             terminal,
             media_controls,
             terminal_image_capabilities,
+            rescrobbled_process,
         })
+    }
+    fn spawn_rescrobbled(config: &crate::config::Config) -> Option<tokio::process::Child> {
+        if !config.scrobbling.enabled {
+            return None;
+        }
+        match tokio::process::Command::new("rescrobbled").spawn() {
+            Ok(child) => {
+                tracing::info!("Rescrobbled spawned successfully");
+                Some(child)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to spawn rescrobbled: {}", e);
+                None
+            }
+        }
     }
     pub async fn run(&mut self) -> Result<()> {
         // Initial draw before first event
@@ -229,6 +247,10 @@ impl Youtui {
                     }
                 }
                 AppStatus::Exiting(s) => {
+                    if let Some(mut child) = self.rescrobbled_process.take() {
+                        let _ = child.start_kill();
+                        tracing::info!("Rescrobbled stopped");
+                    }
                     destruct_terminal()?;
                     println!("{s}");
                     break;
