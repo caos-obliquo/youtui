@@ -40,10 +40,20 @@ cargo install --path youtui --force
 
 ```sh
 mkdir -p ~/.config/youtui
-echo 'COOKIE_VALUE_HERE' > ~/.config/youtui/cookie.txt
+cat > ~/.config/youtui/cookie.txt
+# Paste the cookie, then press Ctrl+D to save
 ```
 
-Replace `COOKIE_VALUE_HERE` with the actual cookie you copied.
+OR
+
+```sh
+nano ~/.config/youtui/cookie.txt
+# Paste the cookie, save with Ctrl+X, Y, Enter
+```
+
+> The cookie file should be a single line containing the ENTIRE cookie string (starts with `__Secure-...`). No quotes, no extra text. Just the cookie.
+
+
 
 ### Step 3: Run
 
@@ -52,6 +62,15 @@ youtui
 ```
 
 Press `1` to see your playlist, `j`/`k` to move up/down, `Enter` to play.
+
+---
+
+## Troubleshooting
+
+- **"No results" or "Error 400"** → Your cookie expired. Get a fresh one from music.youtube.com
+- **Cookie format** → The file should contain ONLY the cookie string. No `Cookie:` prefix, no quotes. Open the file and verify it starts with `__Secure-`
+- **App crashes on startup** → Missing dependencies. Install: `sudo pacman -S yt-dlp alsa-lib` (Arch) or `sudo apt install yt-dlp libasound2-dev` (Debian)
+- **No audio** → Check `yt-dlp --version` works. Install with `sudo pacman -S yt-dlp` or `brew install yt-dlp`
 
 ---
 
