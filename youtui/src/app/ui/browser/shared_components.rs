@@ -186,7 +186,7 @@ impl TextHandler for SearchBlock {
                     crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left => { self.search_contents.move_left(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
                     crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right => { self.search_contents.move_right(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
                     crossterm::event::KeyCode::Char('0') => { self.search_contents.move_to_line_start(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('$') => { self.search_contents.move_to_line_end(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('$') | crossterm::event::KeyCode::Char('A') => { self.search_contents.move_to_line_end(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
                     crossterm::event::KeyCode::Char('w') => { self.search_contents.move_to_next_word(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
                     crossterm::event::KeyCode::Char('b') => { self.search_contents.move_to_prev_word(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
                     crossterm::event::KeyCode::Char('d') => {
