@@ -197,7 +197,10 @@ impl Youtui {
         if !config.scrobbling.enabled {
             return None;
         }
-        match tokio::process::Command::new("rescrobbled").spawn() {
+        match tokio::process::Command::new("rescrobbled")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn() {
             Ok(child) => {
                 tracing::info!("Rescrobbled spawned successfully");
                 Some(child)
