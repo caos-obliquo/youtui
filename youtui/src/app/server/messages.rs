@@ -231,14 +231,45 @@ impl BackendTask<ArcServer> for GetLyrics {
         _backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         async move {
-            let client = Musixmatch::builder()
-                .build()
-                .map_err(|e| anyhow::anyhow!("Failed to build Musixmatch client: {}", e))?;
-            let lyrics = client
-                .matcher_lyrics(&self.1, &self.0)
+            let artist = self.0;
+            let title = self.1;
+
+            // Try musixmatch-inofficial first
+            match Musixmatch::builder().build() {
+                Ok(client) => match client.matcher_lyrics(&title, &artist).await {
+                    Ok(lyrics) => return Ok(lyrics.lyrics_body),
+                    Err(musixmatch_inofficial::Error::NotFound) => {
+                        tracing::info!("Musixmatch: lyrics not found, trying lyr fallback");
+                    }
+                    Err(e) => {
+                        tracing::warn!("Musixmatch error: {}, trying lyr fallback", e);
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to build Musixmatch client: {}", e);
+                }
+            }
+
+            // Fallback: try lyr CLI (supports Genius, AZLyrics, JahLyrics, Musixmatch)
+            let output = tokio::process::Command::new("lyr")
+                .args(["--artist", &artist, "--title", &title])
+                .output()
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to fetch lyrics: {}", e))?;
-            Ok(lyrics.lyrics_body)
+                .map_err(|e| anyhow::anyhow!("lyr not found or failed: {}", e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(anyhow::anyhow!("lyr failed: {}", stderr));
+            }
+
+            let raw = String::from_utf8_lossy(&output.stdout).to_string();
+            // Strip first line (INFO log from lyr like "Using fetcher: AZLyrics")
+            let lyrics: String = raw.lines().skip(1).collect::<Vec<_>>().join("\n").trim().to_string();
+            if lyrics.is_empty() {
+                Err(anyhow::anyhow!("No lyrics found from any provider"))
+            } else {
+                Ok(lyrics)
+            }
         }
     }
 }
