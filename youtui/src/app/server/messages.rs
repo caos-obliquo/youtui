@@ -280,39 +280,40 @@ impl BackendTask<ArcServer> for GetLyrics {
                                     if let Ok(html) = page.text().await {
                                         // Extract lyrics from Genius page data-lyrics-container divs
                                         let containers: Vec<&str> = html.split("data-lyrics-container=\"true\"").collect();
-                                        if containers.len() > 1 {
-                                            let lyrics_html = containers[1];
-                                            if let Some(tag_end) = lyrics_html.find(">") {
-                                                let content = &lyrics_html[tag_end + 1..];
-                                                let mut lyrics_text = String::new();
+                                        let mut all_lyrics = String::new();
+                                        for chunk in containers.iter().skip(1) {
+                                            if let Some(tag_end) = chunk.find(">") {
+                                                let content = &chunk[tag_end + 1..];
                                                 let mut in_tag = false;
                                                 for ch in content.chars() {
                                                     match ch {
                                                         '<' => in_tag = true,
                                                         '>' if in_tag => {
                                                             in_tag = false;
-                                                            lyrics_text.push('\n');
+                                                            all_lyrics.push('\n');
                                                         }
-                                                        _ if !in_tag => lyrics_text.push(ch),
+                                                        _ if !in_tag => all_lyrics.push(ch),
                                                         _ => {}
                                                     }
                                                 }
-                                                let cleaned: String = lyrics_text.lines()
-                                                    .map(|l| l.trim())
-                                                    .filter(|l| !l.is_empty() && !l.starts_with(|c: char| c.is_ascii_digit()) && !l.contains("Contributors") && !l.contains("Lyrics"))
-                                                    .collect::<Vec<_>>()
-                                                    .join("\n")
-                                                    .replace("&quot;", "\"")
-                                                    .replace("&#x27;", "'")
-                                                    .replace("&#x2019;", "'")
-                                                    .replace("&amp;", "&")
-                                                    .replace("&lt;", "<")
-                                                    .replace("&gt;", ">");
-                                                if !cleaned.is_empty() {
-                                                    tracing::info!("Genius scrape: {} chars", cleaned.len());
-                                                    return Ok(cleaned);
-                                                }
+                                                all_lyrics.push('\n');
                                             }
+                                        }
+                                        let cleaned: String = all_lyrics
+                                            .replace("&quot;", "\"")
+                                            .replace("&#x27;", "'")
+                                            .replace("&#x2019;", "'")
+                                            .replace("&amp;", "&")
+                                            .replace("&lt;", "<")
+                                            .replace("&gt;", ">");
+                                        let cleaned: String = cleaned.lines()
+                                            .map(|l| l.trim())
+                                            .filter(|l| !l.is_empty() && !l.starts_with(|c: char| c.is_ascii_digit()) && !l.contains("Contributors") && !l.contains("Lyrics") && !l.contains("You might also like"))
+                                            .collect::<Vec<_>>()
+                                            .join("\n");
+                                        if !cleaned.is_empty() {
+                                            tracing::info!("Genius scrape: {} chars", cleaned.len());
+                                            return Ok(cleaned);
                                         }
                                     }
                                 }
