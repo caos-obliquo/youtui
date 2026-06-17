@@ -70,26 +70,39 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     }
     if w.quit_confirm {
         use ratatui::style::{Color, Modifier, Style};
-        use ratatui::widgets::Paragraph;
+        use ratatui::widgets::{Block, Borders, BorderType, Paragraph, Clear};
         use ratatui::layout::{Alignment, Constraint, Direction, Layout};
         let area = f.area();
-        let chunks = Layout::default()
+        f.render_widget(Clear, area);
+        let block = Block::default()
+            .style(Style::default().bg(Color::Black));
+        f.render_widget(block, area);
+        let vert = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(40),
-                Constraint::Length(6),
-                Constraint::Length(3),
-                Constraint::Percentage(40),
-            ])
+            .constraints([Constraint::Percentage(50), Constraint::Length(10), Constraint::Percentage(50)])
             .split(area);
+        let box_area = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(30), Constraint::Length(40), Constraint::Percentage(30)])
+            .split(vert[1])[1];
+        let border = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Thick)
+            .border_style(Style::default().fg(Color::Red));
+        let inner = border.inner(box_area);
+        f.render_widget(border, box_area);
+        let inner_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(inner);
         let you_died = Paragraph::new("YOU DIED")
             .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
             .alignment(Alignment::Center);
-        f.render_widget(you_died, chunks[1]);
+        f.render_widget(you_died, inner_chunks[0]);
         let prompt = Paragraph::new("Quit? (y/N)")
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center);
-        f.render_widget(prompt, chunks[2]);
+        f.render_widget(prompt, inner_chunks[1]);
     } else {
         footer::draw_footer(f, w, footer_chunk, terminal_image_capabilities);
     }
