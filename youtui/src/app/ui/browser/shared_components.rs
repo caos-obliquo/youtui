@@ -13,6 +13,8 @@ pub struct SearchBlock {
     pub search_contents: TextInputState,
     pub search_suggestions: Vec<SearchSuggestion>,
     pub suggestions_cur: Option<usize>,
+    pub vim_mode: bool,
+    vim_pending: Option<char>,
 }
 impl_youtui_component!(SearchBlock);
 
@@ -167,6 +169,36 @@ impl TextHandler for SearchBlock {
         &mut self,
         event: &crossterm::event::Event,
     ) -> Option<ComponentEffect<Self>> {
+        if let crossterm::event::Event::Key(key) = event {
+            if !self.vim_mode && key.code == crossterm::event::KeyCode::Esc {
+                self.vim_mode = true;
+                self.vim_pending = None;
+                return Some(AsyncTask::new_no_op());
+            }
+            if self.vim_mode {
+                match key.code {
+                    crossterm::event::KeyCode::Char('i') => { self.vim_mode = false; self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left => { self.search_contents.move_left(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right => { self.search_contents.move_right(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('0') => { self.search_contents.move_to_line_start(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('$') => { self.search_contents.move_to_line_end(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('w') => { self.search_contents.move_to_next_word(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('b') => { self.search_contents.move_to_prev_word(false); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Char('d') => {
+                        match self.vim_pending {
+                            Some('d') => { self.search_contents.clear(); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                            Some('w') => { self.search_contents.delete_next_word(); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                            Some('b') => { self.search_contents.delete_prev_word(); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                            _ => { self.vim_pending = Some('d'); return Some(AsyncTask::new_no_op()); }
+                        }
+                    }
+                    crossterm::event::KeyCode::Char('x') => { let _ = self.search_contents.delete_next_word(); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    crossterm::event::KeyCode::Esc => { self.vim_mode = false; self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
+                    _ => { self.vim_pending = None; }
+                }
+            }
+        }
+        self.vim_pending = None;
         match handle_events(&mut self.search_contents, true, event) {
             rat_text::event::TextOutcome::Continue => None,
             rat_text::event::TextOutcome::Unchanged => None,
