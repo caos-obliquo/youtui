@@ -56,6 +56,7 @@ pub enum BrowserArtistSongsAction {
     AddAlbumToPlaylist,
     AddSongToExistingPlaylist,
     AddSongsToExistingPlaylist,
+    ViewLyrics,
 }
 
 impl Action for BrowserArtistSongsAction {
@@ -74,6 +75,7 @@ impl Action for BrowserArtistSongsAction {
             BrowserArtistSongsAction::AddSongsToExistingPlaylist => "Add songs to existing playlist",
             BrowserArtistSongsAction::Sort => "Sort",
             BrowserArtistSongsAction::Filter => "Filter",
+            BrowserArtistSongsAction::ViewLyrics => "View Lyrics",
         }
         .into()
     }

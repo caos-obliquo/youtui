@@ -176,6 +176,7 @@ impl ActionHandler<BrowserArtistSongsAction> for ArtistSearchBrowser {
             }
             BrowserArtistSongsAction::Sort => self.album_songs_panel.handle_pop_sort(),
             BrowserArtistSongsAction::Filter => self.album_songs_panel.toggle_filter(),
+            BrowserArtistSongsAction::ViewLyrics => return self.view_lyrics().into(),
         }
         YoutuiEffect::new_no_op()
     }
@@ -343,6 +344,23 @@ impl ArtistSearchBrowser {
             return (
                 AsyncTask::new_no_op(),
                 Some(AppCallback::AddSongsToPlaylist(vec![cur_song.clone()])),
+            );
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn view_lyrics(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.album_songs_panel.get_selected_item();
+        if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
+            let artist = song.artists.iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::ViewLyrics {
+                    artist,
+                    title: song.title.clone(),
+                }),
             );
         }
         (AsyncTask::new_no_op(), None)
