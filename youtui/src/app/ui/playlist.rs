@@ -1182,6 +1182,16 @@ impl Playlist {
     }
 
     pub fn stop(&mut self) -> ComponentEffect<Self> {
+        if self.scrobbling_config.enabled {
+            if let Some(old) = self.scrobble_state.take() {
+                if old.should_scrobble() {
+                    let cfg = self.scrobbling_config.clone();
+                    tokio::spawn(async move {
+                        crate::app::scrobbler::submit_scrobble(&cfg, &old).await;
+                    });
+                }
+            }
+        }
         self.play_status = PlayState::Stopped;
         AsyncTask::new_future_option(
             StopAll,
