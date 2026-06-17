@@ -18,3 +18,4 @@
 /async-callback-manager/Cargo.lock
 /async-callback-manager/target/
 /async-callback-manager/target/*
+musixmatch_session.json
