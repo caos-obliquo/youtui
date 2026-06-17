@@ -115,18 +115,18 @@ y pressed -> GetLyrics(artist, title) backend task
 - [x] **Optimized release build** — `cargo install --path . --force` for global `youtui` command
 - [x] **Zero compiler warnings** — 6 warnings eliminated
 - [x] **Direct Genius scrape** — bypasses lyr exact-matching issues, uses Genius search API + page scrape
-- [x] **Merged to merge/friends-fork** — all feature branches merged
+- [x] **Merged to main** — all feature branches merged to `main`
+- [x] **Dark Souls quit screen** — `q` shows "YOU DIED" overlay with "y/N" prompt
+- [x] **Config editor** — `C-e` opens config.toml in TextArea (Ctrl+s save, Esc cancel)
+- [x] **Playlist category filter** — `c` key in playlist view (All/Albums/EPs/Singles)
+- [x] **Bandcamp lyrics CLI** — `bandcamp-lyrics` crate (suckless: ureq + scraper, no tokio)
 
-### Remaining
+### Remaining (branches scaffolded)
 
-- [x] **Dark Souls quit screen** — `q` shows "YOU DIED" with "y/N" prompt
-- [ ] **Plain-text config editor** — in-app config.toml editing
-- [ ] **Vi-mode search** — `i` enter insert, `Esc` normal, `dd`/`dw`/`db`/`w`/`b`/`0`
-- [ ] **Library/Playlist view** — category filter for playlist (filter by album type)
-- [ ] **Bandcamp lyrics CLI** — new crate to fetch lyrics from Bandcamp
-- [ ] **Genius annotations** — fetch highlighted annotations per song
-- [ ] **Scrobbling** — embed Rescrobbled natively (ListenBrainz / Maloja)
-- [ ] **License review** — verify all dependency licenses, add proper attribution
+- [ ] **Vi-mode search** — `feat/vi-mode-search` branch
+- [ ] **Genius annotations** — show highlighted annotations in lyrics popup
+- [ ] **Scrobbling** — ListenBrainz/Maloja HTTP API integration
+- [ ] **License review** — verify all dependency licenses
 
 ### Configs
 
