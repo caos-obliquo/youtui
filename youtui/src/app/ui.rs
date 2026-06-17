@@ -19,7 +19,7 @@ use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
 use crate::widgets::ScrollingTableState;
 use action::{AppAction, ListAction, PAGE_KEY_LINES, SEEK_AMOUNT, TextEntryAction};
 use async_callback_manager::{AsyncTask, Constraint};
-use crossterm::event::{Event, KeyEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent};
 use itertools::Either;
 use std::time::Duration;
 
@@ -59,6 +59,7 @@ pub struct YoutuiWindow {
     pub key_stack: Vec<KeyEvent>,
     pub help: HelpMenu,
     pub tick: u64,
+    pub quit_confirm: bool,
 }
 impl_youtui_component!(YoutuiWindow);
 
@@ -327,7 +328,10 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                 return self.handle_seek(SEEK_AMOUNT, SeekDirection::Back).into();
             }
             AppAction::ToggleHelp => self.toggle_help(),
-            AppAction::Quit => return (AsyncTask::new_no_op(), Some(AppCallback::Quit)).into(),
+            AppAction::Quit => {
+                self.quit_confirm = true;
+                return AsyncTask::new_no_op().into();
+            }
             AppAction::ViewLogs => self.handle_change_context(WindowContext::Logs),
             AppAction::PlayPause => return self.pauseplay().into(),
             AppAction::Log(a) => {
@@ -404,6 +408,7 @@ impl YoutuiWindow {
             key_stack: Vec::new(),
             help: HelpMenu::new(),
             tick: 0,
+            quit_confirm: false,
         };
         (
             this,
@@ -444,6 +449,26 @@ impl YoutuiWindow {
         &mut self,
         event: crossterm::event::Event,
     ) -> YoutuiEffect<Self> {
+        // Quit confirm screen intercepts all keys
+        if self.quit_confirm {
+            if let Event::Key(k) = event {
+                match k.code {
+                    KeyCode::Char('y') | KeyCode::Enter => {
+                        self.quit_confirm = false;
+                        return YoutuiEffect {
+                            effect: AsyncTask::new_no_op(),
+                            callback: Some(AppCallback::Quit),
+                        };
+                    }
+                    KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
+                        self.quit_confirm = false;
+                    }
+                    _ => {}
+                }
+            }
+            return AsyncTask::new_no_op().into();
+        }
+
         // Route events to popup if one is active
         if self.lyrics_popup.is_some() {
             if let Event::Key(k) = event {
