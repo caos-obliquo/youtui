@@ -51,7 +51,7 @@ Requires a Google Cloud project with "TVs and Limited Input devices" OAuth clien
 ### Keybinds
 
 | Key | Action |
-|---|---|
+|---|---|---|
 | `1` | Now Playing |
 | `2` | Song Search |
 | `3` | Artist Search |
@@ -59,12 +59,16 @@ Requires a Google Cloud project with "TVs and Limited Input devices" OAuth clien
 | `5` | View Browser |
 | `j` / `k` | Up / Down |
 | `h` / `l` | Prev / Next tab |
-| `C-b` / `C-f` | Page up / down |
+| `C-b` / `C-u` | Page up |
+| `C-f` / `C-d` | Page down |
 | `g` / `G` | First / last |
+| `d` / `D` | Delete selected / all |
+| `o` | Context menu (Enter→Play, d→Delete) |
 | `s` | Shuffle |
 | `A` | Set best quality |
 | `n` | Save queue as new playlist |
 | `e` / `E` | Add song(s) to existing playlist |
+| Tab / Shift-Tab | Search suggestion navigation |
 | `?` | Help |
 | `Space` | Play / Pause |
 | `q` | Quit |
@@ -73,9 +77,11 @@ Full keybinds at `~/.config/youtui/config.toml`.
 
 ## Features
 
-- **Vim navigation** — j/k/h/l/g/G throughout, no function keys
+- **Vim navigation** — j/k/h/l/g/G, C-b/C-u/C-f/C-d, no function keys
 - **yt-dlp audio** — streams with `android_vr` extractor-args, no PO token needed
-- **Playlist management** — create from queue, add to existing, unlisted by default
+- **Playlist management** — create from queue (`n`), add to existing (`e`/`E`), unlisted by default
+- **Delete** — `d` delete selected, `D` delete all (direct, no Enter prefix)
+- **Context menu** — `o` opens mode with Play + Delete
 - **EP / Single labels** — artist browser shows `Album:`, `EP:`, `Single:` prefix on release names
 - **Persistent queue** — survives restarts
 - **Configurable** — keybinds, downloader, auth style via `config.toml`
@@ -94,13 +100,12 @@ yt_dlp_command = "yt-dlp"
 
 - [ ] Lyrics — native Musixmatch integration (`musixmatch-cli` crate) with dedicated binding
 - [ ] Scrobbling — embed Rescrobbled natively (Rust → ListenBrainz / Maloja)
-- [ ] Context menu (`o` key, ncspot-style)
 - [ ] Plain-text config editor
 
 ## Known Issues
 
 - Playlist creation requires a fresh browser cookie (write operations need active session)
-- Client version extracted from YouTube Music page at startup — some endpoints may need updates
+- Client version scraped from YouTube Music page — canary suffix stripped automatically
 
 ## Build
 
@@ -124,4 +129,6 @@ API generic over `AuthToken` (Browser / OAuth / NoAuth) — enforced at compile 
 
 ## License
 
-MIT
+MIT — see [LICENSE](./LICENSE) file.
+
+**Note:** This project incorporates code from external crates with various licenses (MIT, Apache 2.0, BSD-2-Clause, and others). Refer to each crate's license for details. This fork does not change the licensing terms of the original project.

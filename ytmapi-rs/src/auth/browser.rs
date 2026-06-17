@@ -70,13 +70,17 @@ impl BrowserToken {
             return Err(Error::invalid_user_agent(user_agent));
         };
         // TODO: Better error.
-        let client_version = response_text
+        let client_version_raw = response_text
             .split_once("INNERTUBE_CLIENT_VERSION\":\"")
             .ok_or(Error::header())?
             .1
             .split_once('\"')
             .ok_or(Error::header())?
-            .0
+            .0;
+        let client_version = client_version_raw
+            .split_once('-')
+            .map(|(v, _)| v)
+            .unwrap_or(client_version_raw)
             .to_string();
         let sapisid = cookies
             .split_once("SAPISID=")
