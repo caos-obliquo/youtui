@@ -502,20 +502,21 @@ impl YoutuiWindow {
         // Command mode (: prompt) handles all keys
         if self.command_mode {
             if let Event::Key(k) = event {
-                match k.code {
-                    KeyCode::Esc => { self.command_mode = false; self.command_text.clear(); }
-                    KeyCode::Enter => {
-                        let url = self.command_text.trim().to_string();
-                        self.command_mode = false;
-                        self.command_text.clear();
-                        if !url.is_empty() {
-                            // Play the URL via playlist
-                            return self.play_yt_url(url).into();
+                if k.kind == crossterm::event::KeyEventKind::Press {
+                    match k.code {
+                        KeyCode::Esc => { self.command_mode = false; self.command_text.clear(); }
+                        KeyCode::Enter => {
+                            let url = self.command_text.trim().to_string();
+                            self.command_mode = false;
+                            self.command_text.clear();
+                            if !url.is_empty() {
+                                return self.play_yt_url(url).into();
+                            }
                         }
+                        KeyCode::Backspace => { self.command_text.pop(); }
+                        KeyCode::Char(c) => { self.command_text.push(c); }
+                        _ => {}
                     }
-                    KeyCode::Backspace => { self.command_text.pop(); }
-                    KeyCode::Char(c) => { self.command_text.push(c); }
-                    _ => {}
                 }
             }
             return AsyncTask::new_no_op().into();
@@ -858,8 +859,9 @@ impl YoutuiWindow {
         self.lyrics_popup = Some(LyricsPopup::new());
         self.prev_context = self.context;
         self.context = WindowContext::Lyrics;
+        let genius_token = self.config.genius_token.clone();
         AsyncTask::new_future_try(
-            GetLyrics(artist, title),
+            GetLyrics(artist, title, genius_token),
             HandleGetLyricsOk,
             HandleGetLyricsErr,
             None,
