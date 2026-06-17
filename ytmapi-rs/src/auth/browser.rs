@@ -69,19 +69,22 @@ impl BrowserToken {
         if response_text.contains("Sorry, YouTube Music is not optimised for your browser. Check for updates or try Google Chrome.") {
             return Err(Error::invalid_user_agent(user_agent));
         };
-        // TODO: Better error.
-        let client_version_raw = response_text
+        // Try to parse client version from page, fall back to generated version
+        let client_version = response_text
             .split_once("INNERTUBE_CLIENT_VERSION\":\"")
-            .ok_or(Error::header())?
-            .1
-            .split_once('\"')
-            .ok_or(Error::header())?
-            .0;
-        let client_version = client_version_raw
-            .split_once('-')
-            .map(|(v, _)| v)
-            .unwrap_or(client_version_raw)
-            .to_string();
+            .and_then(|s| s.1.split_once('\"'))
+            .map(|(v, _)| v.split_once('-').map(|(v, _)| v).unwrap_or(v))
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let ts = chrono::DateTime::from_timestamp(now as i64, 0)
+                    .map(|dt| dt.format("%Y%m%d").to_string())
+                    .unwrap_or_else(|| "20240101".to_string());
+                format!("1.{}.01.00", ts)
+            });
         let sapisid = cookies
             .split_once("SAPISID=")
             .ok_or(Error::header())?
