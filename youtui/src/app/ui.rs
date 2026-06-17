@@ -885,9 +885,11 @@ impl YoutuiWindow {
         if video_id_str.len() >= 10 && video_id_str.len() <= 20 {
             let vid = ytmapi_rs::common::VideoID::from_raw(video_id_str.clone());
             self.playlist.add_yt_video(vid, &url);
-            // Also play the song (starts download, plays when ready)
+            // Switch to playlist view to show download progress
+            self.context = WindowContext::Playlist;
             return self.playlist.play_selected().map_frontend(|this: &mut Self| &mut this.playlist);
         }
+        tracing::warn!("Invalid video URL: {}", url);
         AsyncTask::new_no_op()
     }
     pub fn close_popup(&mut self) {
