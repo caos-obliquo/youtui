@@ -172,6 +172,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
             PlaylistAction::ViewLyrics => {
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 let song = self.get_song_from_idx(actual_index);
+                info!("ViewLyrics: cur_selected={}, actual_index={}, song={:?}", self.cur_selected, actual_index, song.as_ref().map(|s| &s.title));
                 if let Some(song) = song {
                     let artist = song.artists.iter()
                         .map(|a| a.name.as_str())
