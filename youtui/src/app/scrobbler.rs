@@ -20,7 +20,9 @@ impl ScrobbleState {
     pub fn should_scrobble(&self) -> bool {
         if self.scrobbled { return false; }
         let elapsed = self.start_time.elapsed().unwrap_or(Duration::ZERO);
-        elapsed >= Duration::from_secs(30) && elapsed >= self.duration / 2
+        let result = elapsed >= Duration::from_secs(15) || elapsed >= self.duration / 3;
+        tracing::info!("Scrobble check: elapsed={:?}, duration={:?}, should={}", elapsed, self.duration, result);
+        result
     }
 }
 
