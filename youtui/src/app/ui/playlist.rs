@@ -90,6 +90,7 @@ pub struct Playlist {
     pub search_text: String,
     search_indices: Vec<usize>,
     pre_search_selected: usize,
+    category_filter: Option<&'static str>,
 }
 
 impl_youtui_component!(Playlist);
@@ -450,6 +451,7 @@ impl Playlist {
             active_downloads: Arc::new(std::sync::Mutex::new(Vec::new())),
             download_queue: VecDeque::new(),
             search_enabled: false,
+            category_filter: None,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
