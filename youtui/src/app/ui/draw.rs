@@ -65,7 +65,35 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     if let Some(popup) = &mut w.lyrics_popup {
         popup.draw(f, f.area());
     }
-    footer::draw_footer(f, w, footer_chunk, terminal_image_capabilities);
+    if w.quit_confirm {
+        use ratatui::style::{Color, Modifier, Style};
+        use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+        use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+        let area = f.area();
+        f.render_widget(Clear, area);
+        let block = Block::default()
+            .style(Style::default().bg(Color::Black));
+        f.render_widget(block, area);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(40),
+                Constraint::Length(6),
+                Constraint::Length(3),
+                Constraint::Percentage(40),
+            ])
+            .split(area);
+        let you_died = Paragraph::new("YOU DIED")
+            .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+            .alignment(Alignment::Center);
+        f.render_widget(you_died, chunks[1]);
+        let prompt = Paragraph::new("Quit? (y/N)")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center);
+        f.render_widget(prompt, chunks[2]);
+    } else {
+        footer::draw_footer(f, w, footer_chunk, terminal_image_capabilities);
+    }
 }
 
 fn draw_popup(f: &mut Frame, w: &YoutuiWindow, chunk: Rect) {
