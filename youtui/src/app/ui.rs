@@ -874,7 +874,19 @@ impl YoutuiWindow {
         })
     }
     pub fn play_yt_url(&mut self, url: String) -> ComponentEffect<Self> {
+        use ytmapi_rs::common::YoutubeID;
         tracing::info!("Playing URL: {}", url);
+        let video_id_str = url
+            .rsplit('/').next().unwrap_or(&url)
+            .split('?').next().unwrap_or(&url)
+            .split('&').next().unwrap_or(&url)
+            .split('=').last().unwrap_or(&url)
+            .to_string();
+        if video_id_str.len() >= 10 && video_id_str.len() <= 20 {
+            let vid = ytmapi_rs::common::VideoID::from_raw(video_id_str.clone());
+            // Add to playlist via the API
+            self.playlist.add_yt_video(vid, &url);
+        }
         AsyncTask::new_no_op()
     }
     pub fn close_popup(&mut self) {

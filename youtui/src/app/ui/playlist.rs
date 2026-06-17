@@ -536,6 +536,11 @@ impl Playlist {
         self.scrobbling_config = config;
     }
 
+    pub fn add_yt_video(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, url: &str) {
+        use ytmapi_rs::common::YoutubeID;
+        tracing::info!("add_yt_video: {} {}", video_id.get_raw(), url);
+    }
+
     pub fn play_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
         self.drop_unscoped_from_id(id);
 
