@@ -381,7 +381,7 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                 }
             }
             AppAction::ConfigEditor(a) => {
-                if let Some(popup) = &mut self.config_editor_popup {
+                if self.config_editor_popup.is_some() {
                     return apply_action_mapped(self, a, |this: &mut Self| {
                         this.config_editor_popup.as_mut().expect("popup exists")
                     });

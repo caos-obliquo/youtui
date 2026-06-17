@@ -111,6 +111,7 @@ pub enum PlaylistAction {
     SetBestQuality,
     SaveToNewPlaylist,
     ViewLyrics,
+    TogglePlaylistCategoryFilter,
 }
 
 impl Action for PlaylistAction {
@@ -133,6 +134,7 @@ impl Action for PlaylistAction {
             PlaylistAction::SetBestQuality => "Set Best Quality",
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
             PlaylistAction::ViewLyrics => "View Lyrics",
+            PlaylistAction::TogglePlaylistCategoryFilter => "Toggle Category Filter",
         }
         .into()
     }
@@ -170,6 +172,17 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     return (AsyncTask::new_no_op(), None);
                 }
                 (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistSavePopup(video_ids)))
+            },
+            PlaylistAction::TogglePlaylistCategoryFilter => {
+                self.category_filter = match self.category_filter {
+                    None => Some("Album:"),
+                    Some("Album:") => Some("EP:"),
+                    Some("EP:") => Some("Single:"),
+                    _ => None,
+                };
+                self.update_search_indices();
+                self.cur_selected = self.cur_selected.min(self.search_indices.len().saturating_sub(1));
+                (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ViewLyrics => {
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
@@ -408,12 +421,19 @@ impl HasTitle for Playlist {
             "".to_string()
         };
 
+        let cat_indicator = match self.category_filter {
+            Some("Album:") => " [Albums]",
+            Some("EP:") => " [EPs]",
+            Some("Single:") => " [Singles]",
+            _ => "",
+        };
         format!(
-            "Local playlist - {} songs{}{}{}",
+            "Local playlist - {} songs{}{}{}{}",
             self.list.get_list_iter().len(),
             quality_indicator,
             shuffle_indicator,
-            search_indicator
+            search_indicator,
+            cat_indicator,
         )
         .into()
     }
@@ -1283,15 +1303,18 @@ impl Playlist {
     fn update_search_indices(&mut self) {
         let search_lower = self.search_text.to_lowercase();
 
-        if search_lower.is_empty() {
-            self.search_indices = (0..self.list.get_list_iter().count()).collect();
-            return;
-        }
-
         self.search_indices = self
             .list
             .get_list_iter()
             .enumerate()
+            .filter(|(_, song)| {
+                if let Some(cat) = self.category_filter {
+                    let album_name = song.album.as_ref().map(|a| a.name.as_str()).unwrap_or("");
+                    album_name.starts_with(cat)
+                } else {
+                    true
+                }
+            })
             .filter_map(|(actual_idx, song)| {
                 let title = song
                     .get_fields([ListSongDisplayableField::Song])
