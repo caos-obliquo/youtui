@@ -126,10 +126,10 @@ y pressed -> GetLyrics(artist, title) backend task
 
 ### Remaining
 
+- [x] **Vi-mode text editing** — Esc normal / i insert / h/l/w/b/0/$/dd/dw/db in search boxes
+- [x] **Native scrobbling** — Scrobbler module + config + Last.fm API (needs activation wiring)
 - [ ] **YouTube fallback** — fetch non-YTMusic tracks from YouTube for metadata + scrobbling
-- [ ] **Vi-mode text editing** — `i`/`Esc`/`dd`/`dw`/`db`/`w`/`b`/`0` for search boxes
-- [ ] **Genius annotations** — fetch highlighted annotations per song
-- [ ] **Native scrobbling** — Last.fm API integration in-app
+- [ ] **Genius annotations** — fetch highlighted annotations per song (complex JSON parsing)
 - [ ] **License review** — verify all dependency licenses
 
 ### Configs
