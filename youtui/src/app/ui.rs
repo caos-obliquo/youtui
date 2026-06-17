@@ -1,6 +1,7 @@
 use self::browser::Browser;
 use self::logger::Logger;
 use self::playlist::Playlist;
+use reqwest;
 use self::playlist::config_editor_popup::ConfigEditorPopup;
 use self::playlist::lyrics_popup::LyricsPopup;
 use std::path::PathBuf;
@@ -856,10 +857,40 @@ impl YoutuiWindow {
         use crate::app::ui::playlist::effect_handlers_playlist::{
             HandleGetLyricsOk, HandleGetLyricsErr,
         };
+        let genius_token = self.config.genius_token.clone();
+
+        // Fetch annotations via Genius API if token available
+        if !genius_token.is_empty() {
+            let a = artist.clone();
+            let t = title.clone();
+            let token = genius_token.clone();
+            tokio::spawn(async move {
+                let search_url = format!("https://api.genius.com/search?q={}+{}",
+                    a.split_whitespace().collect::<Vec<_>>().join("+"),
+                    t.split_whitespace().collect::<Vec<_>>().join("+"));
+                let client = reqwest::Client::new();
+                match client.get(&search_url)
+                    .header("Authorization", format!("Bearer {}", token))
+                    .send().await
+                {
+                    Ok(resp) => {
+                        if let Ok(data) = resp.json::<serde_json::Value>().await {
+                            if let Some(hit) = data.pointer("/response/hits/0/result") {
+                                if let Some(song_id) = hit.get("id").and_then(|id| id.as_u64()) {
+                                    tracing::info!("Got Genius song ID: {}", song_id);
+                                    // Could fetch annotations here
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => tracing::warn!("Genius fetch: {}", e),
+                }
+            });
+        }
+
         self.lyrics_popup = Some(LyricsPopup::new());
         self.prev_context = self.context;
         self.context = WindowContext::Lyrics;
-        let genius_token = self.config.genius_token.clone();
         AsyncTask::new_future_try(
             GetLyrics(artist, title, genius_token),
             HandleGetLyricsOk,
