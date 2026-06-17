@@ -133,6 +133,8 @@ y pressed -> GetLyrics(artist, title) backend task
 - [ ] **YouTube fallback** — fetch non-YTMusic tracks from YouTube for metadata + scrobbling
 - [ ] **Genius annotations** — fetch highlighted annotations per song (complex JSON parsing)
 - [ ] **License review** — verify all dependency licenses
+- [ ] **Scrobbler activation** — wire Last.fm submission to song end/completion
+- [ ] **`o` key browser views** — add context menu to song/artist/playlist browsers
 
 ### Configs
 
