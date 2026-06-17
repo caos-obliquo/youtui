@@ -539,6 +539,22 @@ impl Playlist {
     pub fn add_yt_video(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, url: &str) {
         use ytmapi_rs::common::YoutubeID;
         tracing::info!("add_yt_video: {} {}", video_id.get_raw(), url);
+        let raw_id = video_id.get_raw().to_string();
+        let song = ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
+            raw_id.clone(),
+            "YouTube".to_string(),
+            video_id,
+            None,
+            "0".to_string(),
+        );
+        let count = self.list.get_list_iter().count();
+        self.list.append_raw_search_result_songs(vec![song]);
+        if self.list.get_list_iter().count() > count {
+            self.cur_selected = self.list.get_list_iter().count().saturating_sub(1);
+            if let Some(id) = self.get_id_from_index(self.cur_selected) {
+                self.download_upcoming_from_id(id);
+            }
+        }
     }
 
     pub fn play_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
