@@ -40,6 +40,8 @@ pub struct HandleApiError {
 pub struct GetLyrics(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
 pub struct GetAnnotations(pub String, pub String, pub String);
+#[derive(Debug, PartialEq)]
+pub struct ValidateMetadata(pub String, pub String, pub crate::app::structures::ListSongID, pub String);
 
 #[derive(Debug, PartialEq)]
 pub struct GetSearchSuggestions(pub String);
@@ -351,9 +353,12 @@ impl BackendTask<ArcServer> for GetLyrics {
                                             }
                                         }
                                         let cleaned: String = merged.join("\n");
-                                        if !cleaned.is_empty() {
+                                        // Only accept Genius result if substantial (>50 chars) and not just the song title
+                                        if cleaned.len() > 50 && cleaned.lines().count() > 2 {
                                             tracing::info!("Genius scrape: {} chars", cleaned.len());
                                             return Ok(cleaned);
+                                        } else {
+                                            tracing::info!("Genius scrape too short ({} chars), falling through", cleaned.len());
                                         }
                                     }
                                 }
@@ -362,6 +367,37 @@ impl BackendTask<ArcServer> for GetLyrics {
                     }
                 }
                 Err(e) => tracing::warn!("Genius search failed: {}", e),
+            }
+
+            // Try bandcamp with constructed URL before lyr CLI fallback
+            fn bc_slug(s: &str) -> (String, String) {
+                let with = s.to_lowercase().chars().filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-').collect::<String>()
+                    .split_whitespace().collect::<Vec<_>>().join("-");
+                let without = with.replace('-', "");
+                (with, without)
+            }
+            let (bc_artist_hyphen, bc_artist_none) = bc_slug(&artist);
+            let (bc_song_hyphen, _) = bc_slug(&title);
+            let bc_artists = [bc_artist_hyphen.as_str(), bc_artist_none.as_str()];
+            for artist_slug in &bc_artists {
+                for suffix in &["", "-2", "-3", "-4", "-5"] {
+                    let bc_url = format!("https://{}.bandcamp.com/track/{}{}", artist_slug, bc_song_hyphen, suffix);
+                    tracing::info!("Trying bandcamp URL: {}", bc_url);
+                    match tokio::process::Command::new("bandcamp-lyrics")
+                        .arg(&bc_url)
+                        .output()
+                        .await
+                    {
+                        Ok(out) if out.status.success() => {
+                            let lyrics = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                            if !lyrics.is_empty() {
+                                tracing::info!("bandcamp found lyrics ({} chars)", lyrics.len());
+                                return Ok(lyrics);
+                            }
+                        }
+                        _ => continue,
+                    }
+                }
             }
 
             // Fallback to lyr with original artist (try multiple variants)
@@ -543,6 +579,142 @@ fn extract_text_from_dom(dom: &serde_json::Value) -> Option<String> {
         _ => None,
     }
 }
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct ValidatedMetadata {
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub year: Option<String>,
+    pub track_no: Option<usize>,
+}
+
+impl BackendTask<ArcServer> for ValidateMetadata {
+    type Output = Result<ValidatedMetadata>;
+    type MetadataType = TaskMetadata;
+    fn into_future(self, _backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+        async move {
+            let artist = self.0;
+            let title = self.1;
+            let _song_id = self.2;
+            let lastfm_key = self.3;
+            let client = reqwest::Client::builder()
+                .user_agent("Youtui/0.1 (music-player)")
+                .build()?;
+
+            // Last.fm: track.getInfo first, fallback to track.search
+            if !lastfm_key.is_empty() {
+                // Try exact match first
+                let lfm_url = format!(
+                    "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={}&artist={}&track={}&format=json",
+                    lastfm_key, urlencoding(&artist), urlencoding(&title)
+                );
+                let mut found = None;
+                if let Ok(resp) = client.get(&lfm_url).send().await {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        if let Some(track) = data.get("track") {
+                            let album = track.get("album").and_then(|a| a.get("title")).and_then(|t| t.as_str()).map(|s| s.to_string());
+                            let artist_name = track.get("artist").and_then(|a| a.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
+                            let year = track.get("wiki")
+                                .and_then(|w| w.get("published"))
+                                .and_then(|p| p.as_str())
+                                .and_then(|d| d.get(..4))
+                                .map(|s| s.to_string());
+                                                        let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
+found = Some(ValidatedMetadata { artist: artist_name, album, year, track_no });
+                        }
+                    }
+                }
+                if let Some(ref meta) = found {
+                    if meta.album.is_some() || meta.year.is_some() {
+                        return Ok(meta.clone());
+                    }
+                }
+
+                // Fallback: search by track name only, then fetch best match's full info
+                let search_url = format!(
+                    "https://ws.audioscrobbler.com/2.0/?method=track.search&api_key={}&track={}&format=json&limit=5",
+                    lastfm_key, urlencoding(&title)
+                );
+                if let Ok(resp) = client.get(&search_url).send().await {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        if let Some(results) = data.get("results").and_then(|r| r.get("trackmatches")).and_then(|m| m.get("track")).and_then(|t| t.as_array()) {
+                            for result in results {
+                                let result_artist = result.get("artist").and_then(|a| a.as_str()).unwrap_or("");
+                                let result_name = result.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                                // Re-fetch with exact artist+name to get album/year
+                                let info_url = format!(
+                                    "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={}&artist={}&track={}&format=json",
+                                    lastfm_key, urlencoding(result_artist), urlencoding(result_name)
+                                );
+                                if let Ok(resp) = client.get(&info_url).send().await {
+                                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                                        if let Some(track) = data.get("track") {
+                                            let album = track.get("album").and_then(|a| a.get("title")).and_then(|t| t.as_str()).map(|s| s.to_string());
+                                            let artist_name = track.get("artist").and_then(|a| a.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
+                                            let year = track.get("wiki")
+                                                .and_then(|w| w.get("published"))
+                                                .and_then(|p| p.as_str())
+                                                .and_then(|d| d.get(..4))
+                                                .map(|s| s.to_string());
+                                            if album.is_some() || year.is_some() {
+                                                let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
+                                                return Ok(ValidatedMetadata { artist: artist_name, album, year, track_no });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // MusicBrainz fallback: 1 req/s, no auth
+            tokio::time::sleep(Duration::from_millis(1200)).await;
+            let mb_url = format!(
+                "https://musicbrainz.org/ws/2/recording?query=artist:%22{}%22+AND+recording:%22{}%22&fmt=json",
+                urlencoding(&artist), urlencoding(&title)
+            );
+            if let Ok(resp) = client.get(&mb_url).header("Accept", "application/json").send().await {
+                if let Ok(data) = resp.json::<serde_json::Value>().await {
+                    let mb_meta = {
+                        let rec = match data.get("recordings").and_then(|a| a.as_array()).and_then(|a| a.first()) {
+                            Some(r) => r,
+                            None => { return Ok(ValidatedMetadata::default()); }
+                        };
+                        let artist_name = rec.get("artist-credit").and_then(|a| a.as_array()).and_then(|a| a.first())
+                            .and_then(|c| c.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
+                        let year = rec.get("releases").and_then(|a| a.as_array()).and_then(|a| a.first())
+                            .and_then(|r| r.get("date")).and_then(|d| d.as_str()).and_then(|d| d.get(..4)).map(|s| s.to_string());
+                        let album = rec.get("releases").and_then(|a| a.as_array()).and_then(|a| a.first())
+                            .and_then(|r| r.get("title")).and_then(|t| t.as_str()).map(|s| s.to_string());
+                        ValidatedMetadata { artist: artist_name, album, year, track_no: None }
+                    };
+                    if mb_meta.album.is_some() || mb_meta.year.is_some() {
+                        return Ok(mb_meta);
+                    }
+                }
+            }
+
+            Ok(ValidatedMetadata::default())
+        }
+    }
+}
+
+fn urlencoding(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => out.push(c),
+            ' ' => out.push('+'),
+            _ => {
+                out.push('%');
+                out.push_str(&format!("{:02X}", c as u8));
+            }
+        }
+    }
+    out
+}
+
 impl BackendTask<ArcServer> for SearchPlaylists {
     type Output = Result<Vec<SearchResultPlaylist>>;
     type MetadataType = TaskMetadata;

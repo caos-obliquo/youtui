@@ -1,11 +1,14 @@
 use crate::app::component::actionhandler::ComponentEffect;
+use crate::app::server::ValidatedMetadata;
 use crate::app::server::{ArcServer, TaskMetadata};
+use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID};
 use crate::app::ui::playlist::Playlist;
 use crate::app::ui::playlist::lyrics_popup::LyricsPopup;
 use crate::app::ui::playlist::playlist_update_popup::{PlaylistUpdatePopup, PlaylistUpdatePopupState};
 use async_callback_manager::{AsyncTask, FrontendEffect};
+use std::rc::Rc;
 use tracing::{error, info};
-use ytmapi_rs::common::PlaylistID;
+use ytmapi_rs::common::{PlaylistID, YoutubeID};
 use ytmapi_rs::parse::LibraryPlaylist;
 
 #[derive(Debug, PartialEq)]
@@ -191,7 +194,9 @@ impl FrontendEffect<LyricsPopup, ArcServer, TaskMetadata> for AnnotationsEffect 
     fn apply(self, target: &mut LyricsPopup) -> impl Into<ComponentEffect<LyricsPopup>> {
         match self {
             AnnotationsEffect::FetchAnnotationsSuccess(anns) => {
+                let count = anns.len();
                 target.set_annotations(anns.into_iter().map(|(f, e)| crate::app::ui::playlist::lyrics_popup::Annotation { fragment: f, explanation: e }).collect());
+                info!("AnnotationsEffect: set {} annotations on popup", count);
             }
             AnnotationsEffect::FetchAnnotationsError(err) => {
                 tracing::warn!("Annotations fetch error: {}", err);
@@ -221,5 +226,78 @@ impl_youtui_task_handler!(
     LyricsPopup,
     |_, error: anyhow::Error| {
         AnnotationsEffect::FetchAnnotationsError(error.to_string())
+    }
+);
+
+// Metadata validation effect handlers
+
+#[derive(Debug, PartialEq)]
+pub struct HandleMetadataValidated(pub ListSongID);
+#[derive(Debug, PartialEq)]
+pub struct HandleMetadataValidationError;
+
+#[derive(Debug, PartialEq)]
+pub enum MetadataEffect {
+    Validated(ValidatedMetadata, ListSongID),
+    ValidationError,
+}
+
+impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
+    fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
+        match self {
+            MetadataEffect::Validated(data, song_id) => {
+                if let Some(idx) = target.get_index_from_id(song_id) {
+                    if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
+                        if let Some(ref album) = data.album {
+                            song.album = Some(crate::app::structures::MaybeRc::Owned(
+                                crate::app::structures::ListSongAlbum {
+                                    name: album.clone(),
+                                    id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+                                },
+                            ));
+                        }
+                        if let Some(ref year) = data.year {
+                            song.year = Some(Rc::new(year.clone()));
+                        }
+                        if let Some(ref artist) = data.artist {
+                            song.artists = crate::app::structures::MaybeRc::Owned(vec![
+                                crate::app::structures::ListSongArtist {
+                                    name: artist.clone(),
+                                    id: None,
+                                },
+                            ]);
+                        }
+                        if let Some(tn) = data.track_no {
+                            song.track_no = Some(tn);
+                        }
+                        info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?})",
+                            song_id, data.artist, data.album, data.year, data.track_no);
+                    }
+                }
+            }
+            MetadataEffect::ValidationError => {
+                info!("Metadata validation failed (non-critical)");
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+impl_youtui_task_handler!(
+    HandleMetadataValidated,
+    ValidatedMetadata,
+    Playlist,
+    |this: HandleMetadataValidated, metadata: ValidatedMetadata| {
+        MetadataEffect::Validated(metadata, this.0)
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleMetadataValidationError,
+    anyhow::Error,
+    Playlist,
+    |_, error: anyhow::Error| {
+        error!("Metadata validation error: {}", error);
+        MetadataEffect::ValidationError
     }
 );

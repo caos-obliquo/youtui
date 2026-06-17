@@ -8,7 +8,7 @@ use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::server::{
     AutoplayDecodedSong, DecodeSong, DownloadSong, GetSongThumbnail, IncreaseVolume, Pause,
     PausePlay, PlayDecodedSong, QueueDecodedSong, Resume, Seek, SeekTo, Stop, StopAll,
-    TaskMetadata,
+    TaskMetadata, ValidateMetadata,
 };
 use crate::app::structures::{
     AlbumArtState, AudioQuality, BrowserSongsList, DownloadStatus, ListSong, ListSongDisplayableField,
@@ -21,6 +21,7 @@ use crate::app::ui::playlist::effect_handlers::{
     HandlePlayUpdateOk, HandleQueueUpdateOk, HandleResumeResponse, HandleSetSongPlayProgress,
     HandleSongDownloadProgressUpdate, HandleStopped, HandleVolumeUpdate,
 };
+use crate::app::ui::playlist::effect_handlers_playlist::{HandleMetadataValidated, HandleMetadataValidationError};
 use crate::app::ui::{AppCallback, WindowContext};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
 use crate::app::view::{BasicConstraint, DrawableMut, HasTitle, Loadable, TableView};
@@ -94,6 +95,7 @@ pub struct Playlist {
     romaji_mode: bool,
     scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
     search_cur: usize,
+    romaji_originals: HashMap<ListSongID, String>,
     scrobbling_config: crate::config::ScrobblingConfig,
 }
 
@@ -225,6 +227,23 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ToggleRomaji => {
+                if self.romaji_mode {
+                    // Restore originals
+                    for song in self.list.get_list_iter_mut() {
+                        if let Some(orig) = self.romaji_originals.remove(&song.id) {
+                            song.title = orig;
+                        }
+                    }
+                } else {
+                    // Save originals and convert all song titles
+                    for song in self.list.get_list_iter_mut() {
+                        let converted = crate::app::ui::playlist::lyrics_popup::japanese_to_romaji(&song.title);
+                        if converted != song.title {
+                            self.romaji_originals.insert(song.id, song.title.clone());
+                            song.title = converted;
+                        }
+                    }
+                }
                 self.romaji_mode = !self.romaji_mode;
                 info!("Romaji mode: {}", self.romaji_mode);
                 (AsyncTask::new_no_op(), None)
@@ -525,6 +544,7 @@ impl Playlist {
             search_cur: 0,
             scrobble_state: None,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
+            romaji_originals: HashMap::new(),
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -547,14 +567,14 @@ impl Playlist {
         self.scrobbling_config = config;
     }
 
-    pub fn add_yt_video(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, url: &str) {
+    pub fn add_yt_video(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, url: &str) -> ComponentEffect<Self> {
         use ytmapi_rs::common::YoutubeID;
         let raw_id = video_id.get_raw().to_string();
         tracing::info!("add_yt_video: {} {}", raw_id, url);
 
         // Fetch metadata via yt-dlp
         let mut duration = String::from("0");
-        let (title, artist) = match std::process::Command::new("yt-dlp")
+        let (title, artist, year) = match std::process::Command::new("yt-dlp")
             .args(["--dump-json", "--no-warnings", "--flat-playlist", &format!("https://youtu.be/{}", raw_id)])
             .output()
         {
@@ -564,30 +584,61 @@ impl Playlist {
                     let t = v.get("title").and_then(|s| s.as_str()).unwrap_or(&raw_id).to_string();
                     let a = v.get("uploader").and_then(|s| s.as_str()).unwrap_or("Unknown").to_string();
                     if let Some(d) = v.get("duration").and_then(|s| s.as_f64()) {
-                        duration = format!("{}", d as u64);
+                        let secs = d as u64;
+                        duration = format!("{}:{:02}", secs / 60, secs % 60);
                     }
-                    (t, a)
-                } else { (raw_id.clone(), "YouTube".to_string()) }
+                    let year = v.get("release_year")
+                        .and_then(|s| s.as_i64())
+                        .or_else(|| {
+                            v.get("upload_date")
+                                .and_then(|s| s.as_str())
+                                .and_then(|d| d.get(..4))
+                                .and_then(|y| y.parse::<i64>().ok())
+                        })
+                        .map(|y| y.to_string());
+                    (t, a, year)
+                } else { (raw_id.clone(), "YouTube".to_string(), None) }
             }
-            _ => (raw_id.clone(), "YouTube".to_string()),
+            _ => (raw_id.clone(), "YouTube".to_string(), None),
         };
 
-        let album_name = format!("YouTube: {}", artist);
-        let album = Some(ytmapi_rs::parse::ParsedSongAlbum {
-            name: album_name,
-            id: ytmapi_rs::common::AlbumID::from_raw(raw_id.clone()),
-        });
+        // Strip "{artist} - " prefix from title (case-insensitive) for clean metadata
+        let artist_prefix = format!("{} - ", artist);
+        let title_lower = title.to_lowercase();
+        let prefix_lower = artist_prefix.to_lowercase();
+        let clean_title = if title_lower.starts_with(&prefix_lower) {
+            title[artist_prefix.len().min(title.len())..].to_string()
+        } else {
+            title.clone()
+        };
+        let album = None;
         let song = ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
-            title, artist, video_id, album, format!("{}", duration),
+            clean_title.clone(), artist.clone(), video_id, album, format!("{}", duration),
         );
         let old_count = self.list.get_list_iter().count();
-        self.list.append_raw_search_result_songs(vec![song]);
+        let id = self.list.append_raw_search_result_songs(vec![song]);
         if self.list.get_list_iter().count() > old_count {
             self.cur_selected = self.list.get_list_iter().count().saturating_sub(1);
-            if let Some(id) = self.get_id_from_index(self.cur_selected) {
-                self.download_upcoming_from_id(id);
+            if let Some(year) = year {
+                if let Some(idx) = self.get_index_from_id(id) {
+                    if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
+                        s.year = Some(std::rc::Rc::new(year));
+                    }
+                }
+            }
+            // Spawn metadata validation (Last.fm -> MusicBrainz) in parallel with download
+            let validation_task = AsyncTask::new_future_try(
+                ValidateMetadata(artist, clean_title, id, self.scrobbling_config.api_key.clone()),
+                HandleMetadataValidated(id),
+                HandleMetadataValidationError,
+                None,
+            );
+            if let Some(song_id) = self.get_id_from_index(self.cur_selected) {
+                let dl_effect = self.download_upcoming_from_id(song_id);
+                return dl_effect.push(validation_task);
             }
         }
+        AsyncTask::new_no_op()
     }
 
     pub fn play_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
@@ -727,20 +778,36 @@ impl Playlist {
 
     pub fn handle_song_downloaded(&mut self, id: ListSongID) -> ComponentEffect<Self> {
         let start = std::time::Instant::now();
-        if let PlayState::Buffering(target_id) = self.play_status {
-            if target_id == id {
-                info!("play_attempt: song_id={:?}, state=Buffering, ms_since_download={}", 
-                    id, start.elapsed().as_millis());
-                return if matches!(self.queue_status, QueueState::Queued(_)) {
-                    let effect = self.autoplay_song_id(id);
-                    info!("autoplay_started: song_id={:?}, ms_to_start={}", id, start.elapsed().as_millis());
-                    effect
-                } else {
-                    let effect = self.play_song_id(id);
-                    info!("play_started: song_id={:?}, ms_to_start={}", id, start.elapsed().as_millis());
-                    effect
-                };
+        info!("handle_song_downloaded ENTER: id={:?}, state={:?}, queue={:?}",
+            id, self.play_status, self.queue_status);
+        let should_play = match self.play_status {
+            PlayState::Buffering(target_id) => {
+                info!("  match Buffering({:?}) vs id={:?}", target_id, id);
+                target_id == id
             }
+            PlayState::NotPlaying | PlayState::Stopped => {
+                info!("  match NotPlaying/Stopped, will play");
+                true
+            }
+            PlayState::Playing(cur) => {
+                info!("  match Playing({:?}) vs id={:?}", cur, id);
+                cur == id
+            }
+            PlayState::Paused(cur) => {
+                info!("  match Paused({:?}) vs id={:?}", cur, id);
+                cur == id
+            }
+            PlayState::Error(cur) => {
+                info!("  match Error({:?}) vs id={:?}", cur, id);
+                false
+            }
+        };
+        if should_play {
+            info!("play_attempt: song_id={:?}, state={:?}, ms_since_download={}",
+                id, self.play_status, start.elapsed().as_millis());
+            let effect = self.play_song_id(id);
+            info!("play_started: song_id={:?}, ms_to_start={}", id, start.elapsed().as_millis());
+            return effect;
         }
         info!("download_handled_not_playing: song_id={:?}, state={:?}", id, self.play_status);
         AsyncTask::new_no_op()

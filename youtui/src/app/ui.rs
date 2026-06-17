@@ -857,8 +857,9 @@ impl YoutuiWindow {
             HandleGetLyricsOk, HandleGetLyricsErr,
             HandleGetAnnotationsOk, HandleGetAnnotationsErr,
         };
-        let genius_token = self.config.genius_token.clone();
+        let genius_token = self.config.scrobbling.genius_token.clone();
         let has_genius = !genius_token.is_empty();
+        tracing::info!("open_lyrics_popup: artist={}, title={}, has_genius={}, token_len={}", artist, title, has_genius, genius_token.len());
 
         self.lyrics_popup = Some(LyricsPopup::new());
         self.prev_context = self.context;
@@ -915,10 +916,10 @@ impl YoutuiWindow {
         };
         if video_id_str.len() >= 10 && video_id_str.len() <= 20 {
             let vid = ytmapi_rs::common::VideoID::from_raw(video_id_str.clone());
-            self.playlist.add_yt_video(vid, &url);
-            // Switch to playlist view to show download progress
+            // Add song, start download, switch to playlist view
             self.context = WindowContext::Playlist;
-            return self.playlist.play_selected().map_frontend(|this: &mut Self| &mut this.playlist);
+            return self.playlist.add_yt_video(vid, &url)
+                .map_frontend(|this: &mut Self| &mut this.playlist);
         }
         tracing::warn!("Invalid video URL: {}", url);
         AsyncTask::new_no_op()

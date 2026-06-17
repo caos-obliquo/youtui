@@ -57,7 +57,6 @@ pub struct Config {
     pub yt_dlp_command: String,
     pub keybinds: YoutuiKeymap,
     pub scrobbling: ScrobblingConfig,
-    pub genius_token: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -67,6 +66,7 @@ pub struct ScrobblingConfig {
     pub api_key: String,
     pub api_secret: String,
     pub session_key: String,
+    pub genius_token: String,
 }
 
 impl Default for ScrobblingConfig {
@@ -76,6 +76,7 @@ impl Default for ScrobblingConfig {
             api_key: String::new(),
             api_secret: String::new(),
             session_key: String::new(),
+            genius_token: String::new(),
         }
     }
 }
@@ -92,7 +93,6 @@ impl Default for Config {
             yt_dlp_command: default_yt_dlp_command(),
             keybinds: Default::default(),
             scrobbling: Default::default(),
-            genius_token: String::new(),
         }
     }
 }
@@ -109,7 +109,6 @@ pub struct ConfigIR {
     pub keybinds: YoutuiKeymapIR,
     pub mode_names: YoutuiModeNamesIR,
     pub scrobbling: ScrobblingConfig,
-    pub genius_token: String,
 }
 
 impl TryFrom<ConfigIR> for Config {
@@ -122,14 +121,12 @@ impl TryFrom<ConfigIR> for Config {
             mode_names,
             yt_dlp_command,
             scrobbling,
-            genius_token,
         } = value;
         Ok(Config {
             auth_type,
             downloader_type,
             keybinds: YoutuiKeymap::try_from_stringy(keybinds, mode_names)?,
             scrobbling,
-            genius_token,
             yt_dlp_command,
         })
     }

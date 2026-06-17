@@ -32,6 +32,8 @@ ytmapi-rs = { path = "../ytmapi-rs", version = "0.3.2", features = [ "reqwest", 
 reqwest = { version = "0.13", default-features = false, features = ["json", "http2", "rustls", "form"] }
 md5 = "0.7"
 ib-romaji = "0.2"
+lindera = { version = "3", default-features = false, features = ["embed-ipadic"] }
+lindera-ipadic = "3"
 tokio = { version = "1.52.1", features = ["full"] }
 gag = "1.0.0"
 async-callback-manager = { path = "../async-callback-manager", version = "0.1.1" }
