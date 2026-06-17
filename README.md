@@ -1,156 +1,101 @@
 # youtui
 
-Vim-driven TUI for YouTube Music. Listen, search, manage playlists, view lyrics, scrobble - all from your terminal.
+Vim-style YouTube Music player for your terminal.
 
-## Quick Start
+---
+
+## Requirements
+
+- **Rust** (`curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`)
+- **yt-dlp** (`sudo pacman -S yt-dlp` or `brew install yt-dlp`)
+- **alsa-lib** (Linux: `sudo pacman -S alsa-lib` or `sudo apt install libasound2-dev`)
+- A **YouTube Music account** (free Google account)
+
+---
+
+## Install & Run (5 minutes)
+
+### Step 1: Install youtui
 
 ```sh
-# 1. Install
 git clone https://github.com/caos-obliquo/youtui
 cd youtui
+cargo build --release
 cargo install --path youtui --force
+```
 
-# 2. Get your YouTube Music cookie (30 seconds)
-# - Open music.youtube.com in Chrome/Firefox, logged in
-# - Press F12 (DevTools) -> Network tab -> reload page
-# - Click any POST request, find "Cookie:" in Request Headers
-# - Copy the entire long string, save:
+### Step 2: Get your YouTube cookie
+
+1. Open **Chrome** (or Firefox) and go to `music.youtube.com`
+2. **Log in** with your Google account
+3. Press **F12** to open DevTools
+4. Click the **Network** tab
+5. **Reload the page** (F5)
+6. In the filter box, type **`music`**
+7. Click any item in the list (a POST request to `music.youtube.com`)
+8. Scroll down in the right panel to **Request Headers**
+9. Find the **`Cookie:`** line - it's a VERY long string
+10. Right-click it → **Copy value**
+11. Run these commands:
+
+```sh
 mkdir -p ~/.config/youtui
-echo "COOKIE_VALUE_HERE" > ~/.config/youtui/cookie.txt
+echo 'COOKIE_VALUE_HERE' > ~/.config/youtui/cookie.txt
+```
 
-# 3. Run
+Replace `COOKIE_VALUE_HERE` with the actual cookie you copied.
+
+### Step 3: Run
+
+```sh
 youtui
 ```
 
-Press `1` for playlist, `j`/`k` to navigate, `Enter` to play, `Space` to pause.
+Press `1` to see your playlist, `j`/`k` to move up/down, `Enter` to play.
 
 ---
 
-## Authentication
+## How to use
 
-### Browser cookie (only method you need)
-This is the default. No GCP, no API keys, no OAuth. Just a cookie from your browser:
+| Key | What it does |
+|---|---|
+| `1` | Your playlist |
+| `2` | Search songs |
+| `3` | Browse artists |
+| `4` | Browse playlists |
+| `j`/`k` | Move up/down |
+| `Enter` | Play selected song |
+| `Space` | Play/Pause |
+| `y` | Show lyrics |
+| `q` | Quit (press `y` to confirm) |
+| `?` | Show all keybinds |
 
-1. Go to `music.youtube.com` and log into your Google account
-2. Open DevTools (F12) -> **Network** tab -> reload the page
-3. In the filter box, type "music" to filter requests
-4. Click any POST request (has `music.youtube.com` as the request URL)
-5. Scroll down in the Headers panel to find **Request Headers**
-6. Find the `Cookie:` header - it's a very long string starting with `__Secure-`
-7. Right-click → Copy value, then save to `~/.config/youtui/cookie.txt`
-
-That's it. No GCP project, no client IDs, no secrets. Just a cookie.
-
-### OAuth (if you really want to)
-```sh
-youtui setup-oauth <client_id> <client_secret>
-```
-Requires setting up a Google Cloud project. Only use this if you can't use the cookie method.
+That's it. No OAuth, no API keys, no Google Cloud — just a browser cookie.
 
 ---
 
-## Config
+## Config file
 
-`~/.config/youtui/config.toml`:
+`~/.config/youtui/config.toml` (optional):
 
 ```toml
 auth_type = "Browser"
 downloader_type = "YtDlp"
 yt_dlp_command = "yt-dlp"
-
-[scrobbling]
-enabled = false
-api_key = ""
-api_secret = ""
-session_key = ""
 ```
 
-Press `C-e` to edit config from within the app. Press `?` for help.
-
----
-
-## Default Keybinds
-
-| Key | Action |
-|---|---|
-| **Navigation** | |
-| `j`/`k` | Up / Down |
-| `h`/`l` | Left / Right |
-| `C-b`/`C-u` | Page up |
-| `C-f`/`C-d` | Page down |
-| `g`/`G` | First / Last |
-| | |
-| **Playback** | |
-| `Enter` | Play selected (or Enter then Enter) |
-| `Space` | Play / Pause |
-| `s` | Shuffle |
-| `<`/`>` | Prev / Next song |
-| `[`/`]` | Seek back / forward |
-| | |
-| **Views** | |
-| `1` | Now Playing / Playlist |
-| `2` | Song Search |
-| `3` | Artist Search |
-| `4` | Playlist Search |
-| `5` | View Browser |
-| | |
-| **Actions** | |
-| `d`/`D` | Delete selected / all |
-| `y` | View lyrics |
-| `o` | Context menu (Enter->Play, d->Delete, l->Lyrics, y->Share) |
-| `c` | Category filter (Album/EP/Single) |
-| `n` | Save queue to new playlist |
-| `e`/`E` | Add song(s) to existing playlist |
-| `A` | Set best quality |
-| `:` | Open URL (paste YouTube Music link) |
-| `C-y` | Copy song URL to clipboard |
-| `C-e` | Edit config file |
-| `0` | View logs |
-| | |
-| **Search** | |
-| `/` | Search (any view) |
-| `Esc` | Close search / vim normal mode |
-| `n`/`N` | Next / previous match |
-| `C-n`/`C-p` | Search suggestions |
-| Tab/S-Tab | Search suggestions |
-| _vi-mode:_ `h`/`l`/`w`/`b`/`0`/`$` move, `i` insert, `dd`/`dw`/`db` delete |
-| | |
-| **System** | |
-| `?` | Toggle help |
-| `q` | Quit (YOU DIED confirmation) |
-| `C-c` | Force quit |
-
-Full keybinds at `~/.config/youtui/config.toml`.
+Press `C-e` (Ctrl+e) inside youtui to edit this file.
 
 ---
 
 ## Features
 
-- **Vim navigation** - j/k/h/l/g/G, C-b/C-u/C-f/C-d, no function keys needed
-- **yt-dlp audio** - streams via `android_vr` extractor, no PO token needed
-- **Lyrics** - `y` key, fetches from Musixmatch + Genius + lyr CLI fallback
-- **Annotations** - press `a` in lyrics popup to view Genius annotations
-- **Category filters** - `c` toggles Album/EP/Single in artist and playlist views
-- **Config editor** - `C-e` to edit config.toml directly in the app
-- **Context menu** - `o` for quick Play/Delete/Lyrics/Share
-- **Copy URL** - `C-y` copies current song's YouTube Music link to clipboard
-- **Open URL** - `:` to paste and play a YouTube Music link
-- **Playlist management** - create from queue (`n`), add to existing (`e`/`E`)
-- **Delete** - `d`/`D` direct, no Enter prefix needed
-- **Dark Souls quit** - `q` shows YOU DIED screen with y/N confirmation
-- **EP/Single labels** - Album:/EP:/Single: prefixes in artist browser
-- **Persistent queue** - survives restarts
-- **Scrobbling** - Rescrobbled embedded (spawns on start with scrobbling config)
-- **YouTube fallback** - searches YouTube when YTMusic has no results
-
----
-
-## Dependencies
-
-- `alsa-lib` (Linux) - audio playback
-- `yt-dlp` - audio download (install separately: `sudo pacman -S yt-dlp`)
-- Font with FontAwesome glyphs
-- `wl-copy` (Wayland) or `xclip` (X11) - for copy URL feature
+- **Vim keys** — j/k/h/l, C-b/C-f, g/G, no F-keys
+- **Lyrics** — press `y`, fetches from Genius + Musixmatch
+- **Scrobble** — add `[scrobbling]` section to config
+- **Dark Souls quit** — `q` shows YOU DIED
+- **Copy URL** — `C-y` copies song link
+- **Open URL** — `:` paste a YouTube Music link
 
 ---
 
@@ -165,16 +110,6 @@ cargo test --bins --lib
 
 ---
 
-## Architecture
-
-```
-KeyEvent -> crossterm -> Action -> Effect (AsyncTask)
--> TaskManager -> Server (API/Player/Downloader)
--> Response -> UI state -> Redraw
-```
-
----
-
 ## License
 
-MIT - see [LICENSE](./LICENSE.txt).
+MIT
