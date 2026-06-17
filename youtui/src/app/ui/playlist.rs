@@ -117,6 +117,8 @@ pub enum PlaylistAction {
     TogglePlaylistCategoryFilter,
     NextSearchResult,
     PrevSearchResult,
+    CopySongUrl,
+    OpenUrl,
 }
 
 impl Action for PlaylistAction {
@@ -142,6 +144,8 @@ impl Action for PlaylistAction {
             PlaylistAction::TogglePlaylistCategoryFilter => "Toggle Category Filter",
             PlaylistAction::NextSearchResult => "Next Match",
             PlaylistAction::PrevSearchResult => "Prev Match",
+            PlaylistAction::CopySongUrl => "Copy Song URL",
+            PlaylistAction::OpenUrl => "Open URL",
         }
         .into()
     }
@@ -202,6 +206,15 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 if !self.search_indices.is_empty() {
                     self.search_cur = self.search_cur.saturating_sub(1);
                     self.cur_selected = self.search_cur;
+                }
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::CopySongUrl => {
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                if let Some(song) = self.get_song_from_idx(actual_index) {
+                    let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                    let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                    info!("Copied URL: {}", raw_url);
                 }
                 (AsyncTask::new_no_op(), None)
             },
