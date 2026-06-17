@@ -948,6 +948,18 @@ fn default_browser_search_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActio
             )),
         ),
         (
+            Keybind::new(crossterm::event::KeyCode::Char('n'), KeyModifiers::CONTROL),
+            KeyActionTree::new_key(AppAction::BrowserSearch(
+                BrowserSearchAction::NextSearchSuggestion,
+            )),
+        ),
+        (
+            Keybind::new(crossterm::event::KeyCode::Char('p'), KeyModifiers::CONTROL),
+            KeyActionTree::new_key(AppAction::BrowserSearch(
+                BrowserSearchAction::PrevSearchSuggestion,
+            )),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Esc),
             KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::Close,
