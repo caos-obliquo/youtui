@@ -309,7 +309,7 @@ impl ListSong {
             duration_string,
             actual_duration: None,
             year: None,
-            album_art: AlbumArtState::Init,
+            album_art: AlbumArtState::None,
             artists: MaybeRc::Owned(list_artists),
             thumbnails: MaybeRc::Owned(thumb.unwrap_or_default()),
             album: list_album,
@@ -381,10 +381,12 @@ impl BrowserSongsList {
             self.add_raw_playlist_item(song);
         }
     }
-    pub fn append_raw_search_result_songs(&mut self, raw_list: Vec<SearchResultSong>) {
+    pub fn append_raw_search_result_songs(&mut self, raw_list: Vec<SearchResultSong>) -> ListSongID {
+        let mut last_id = self.create_next_id();
         for song in raw_list {
-            self.add_raw_search_result_song(song);
+            last_id = self.add_raw_search_result_song(song);
         }
+        last_id
     }
     pub fn add_raw_album_song(
         &mut self,
@@ -418,7 +420,7 @@ impl BrowserSongsList {
             explicit: Some(explicit),
             duration_string: duration,
             thumbnails: MaybeRc::Rc(thumbnails),
-            album_art: Default::default(),
+            album_art: AlbumArtState::None,
         });
         id
     }
@@ -450,9 +452,9 @@ impl BrowserSongsList {
             plays: String::new(),
             title,
             explicit: Some(explicit),
-            duration_string: duration,
             thumbnails: MaybeRc::Owned(thumbnails),
-            album_art: Default::default(),
+            duration_string: duration,
+            album_art: AlbumArtState::None,
         });
         id
     }

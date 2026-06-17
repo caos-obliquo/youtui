@@ -30,6 +30,7 @@ impl Action for LyricsPopupAction {
 
 pub enum LyricsPopupState {
     Loading,
+    #[allow(dead_code)]
     Loaded(String),
     Error(String),
 }
@@ -44,6 +45,9 @@ pub struct LyricsPopup {
     scroll_offset: usize,
     pub annotations: Vec<Annotation>,
     pub show_annotations: bool,
+    pub romaji_mode: bool,
+    romaji_cache: Option<String>,
+    original_lyrics: String,
 }
 
 impl_youtui_component!(LyricsPopup);
@@ -65,11 +69,16 @@ impl LyricsPopup {
             scroll_offset: 0,
             annotations: Vec::new(),
             show_annotations: false,
+            romaji_mode: false,
+            romaji_cache: None,
+            original_lyrics: String::new(),
         }
     }
 
     pub fn set_lyrics(&mut self, lyrics: String) {
+        self.original_lyrics = lyrics.clone();
         self.state = LyricsPopupState::Loaded(lyrics);
+        self.romaji_cache = None;
         self.scroll_offset = 0;
     }
 
@@ -89,6 +98,13 @@ impl LyricsPopup {
             }
             KeyCode::Char('a') => {
                 self.show_annotations = !self.show_annotations;
+                self.scroll_offset = 0;
+                tracing::info!("Toggle annotations: show={}, count={}", self.show_annotations, self.annotations.len());
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('R') => {
+                self.romaji_mode = !self.romaji_mode;
+                self.romaji_cache = None;
                 self.scroll_offset = 0;
                 (AsyncTask::new_no_op(), None)
             }
@@ -124,13 +140,15 @@ impl LyricsPopup {
                     .split(inner);
                 frame.render_widget(spinner, vert[1]);
             }
-            LyricsPopupState::Loaded(lyrics) => {
-                let title = if self.show_annotations { " Annotations " } else { " Lyrics " };
+            LyricsPopupState::Loaded(_) => {
                 let ann_count = self.annotations.len();
-                let title = if !self.show_annotations && ann_count > 0 {
-                    format!(" Lyrics (a: {} annotations) ", ann_count)
+                let romaji_tag = if self.romaji_mode { " [Romaji]" } else { "" };
+                let title = if self.show_annotations {
+                    format!(" Annotations{} ", romaji_tag)
+                } else if ann_count > 0 {
+                    format!(" Lyrics (a: {} annotations){} ", ann_count, romaji_tag)
                 } else {
-                    title.to_string()
+                    format!(" Lyrics{} ", romaji_tag)
                 };
                 let block = Block::default()
                     .title(title.as_str())
@@ -145,11 +163,26 @@ impl LyricsPopup {
 
                 let display_text: String = if self.show_annotations {
                     self.annotations.iter()
-                        .flat_map(|a| vec![format!("> {}", a.fragment), a.explanation.clone(), String::new()])
+                        .flat_map(|a| {
+                            let indent = "  ";
+                            let wrapped: Vec<String> = a.explanation
+                                .split('\n')
+                                .map(|l| format!("{}{}", indent, l))
+                                .collect();
+                            vec![
+                                format!(" ┌ {}", a.fragment),
+                                wrapped.join("\n"),
+                                String::new(),
+                            ]
+                        })
                         .collect::<Vec<_>>()
                         .join("\n")
+                } else if self.romaji_mode {
+                    self.romaji_cache.get_or_insert_with(|| {
+                        japanese_to_romaji(&self.original_lyrics)
+                    }).clone()
                 } else {
-                    lyrics.clone()
+                    self.original_lyrics.clone()
                 };
 
                 let line_count = display_text.lines().count();
@@ -168,7 +201,7 @@ impl LyricsPopup {
                     .wrap(Wrap { trim: false })
                     .alignment(Alignment::Left);
                 frame.render_widget(lyrics_widget, chunks[0]);
-                let hint = Paragraph::new(format!("Esc/q: Close | a: Toggle Annotations{}", scroll_hint))
+                let hint = Paragraph::new(format!("Esc/q: Close | a: Toggle Annotations | R: Romaji{}", scroll_hint))
                     .style(Style::default().fg(Color::DarkGray))
                     .alignment(Alignment::Center);
                 frame.render_widget(hint, chunks[1]);
@@ -211,5 +244,98 @@ impl LyricsPopup {
             ])
             .split(popup_layout[1])[1]
     }
-
 }
+
+/// Convert Japanese text to romaji using lindera (kanji→kana) + ib-romaji (kana→latin)
+pub fn japanese_to_romaji(text: &str) -> String {
+    use std::sync::OnceLock;
+    static TOKENIZER: OnceLock<lindera::tokenizer::Tokenizer> = OnceLock::new();
+    let tokenizer = TOKENIZER.get_or_init(|| {
+        lindera::tokenizer::TokenizerBuilder::new()
+            .ok()
+            .map(|mut b| {
+                b.set_segmenter_dictionary("embedded://ipadic");
+                b
+            })
+            .and_then(|b| b.build().ok())
+            .expect("Failed to create lindera tokenizer")
+    });
+    let romaji = ib_romaji::HepburnRomanizer::builder().kana(true).build();
+
+    // Process line by line to preserve line breaks
+    text.lines()
+        .map(|line| convert_line_to_romaji(line, tokenizer, &romaji))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn convert_line_to_romaji(
+    line: &str,
+    tokenizer: &lindera::tokenizer::Tokenizer,
+    romaji: &ib_romaji::HepburnRomanizer,
+) -> String {
+    // Split line into Japanese and non-Japanese segments
+    let mut out = String::with_capacity(line.len());
+    let mut buf = String::new();
+    let mut in_jp = false;
+
+    for c in line.chars() {
+        let is_jp = matches!(c,
+            '\u{3040}'..='\u{309F}'  // Hiragana
+            | '\u{30A0}'..='\u{30FF}' // Katakana
+            | '\u{4E00}'..='\u{9FFF}' // CJK Unified Ideographs (kanji)
+            | '\u{F900}'..='\u{FAFF}' // CJK Compatibility Ideographs
+        );
+        if is_jp != in_jp {
+            // Flush buffer
+            if !buf.is_empty() {
+                if in_jp {
+                    out.push_str(&convert_jp(&buf, tokenizer, romaji));
+                } else {
+                    out.push_str(&buf);
+                }
+                buf.clear();
+            }
+            in_jp = is_jp;
+        }
+        buf.push(c);
+    }
+    // Flush remaining buffer
+    if !buf.is_empty() {
+        if in_jp {
+            out.push_str(&convert_jp(&buf, tokenizer, romaji));
+        } else {
+            out.push_str(&buf);
+        }
+    }
+    out
+}
+
+fn convert_jp(
+    text: &str,
+    tokenizer: &lindera::tokenizer::Tokenizer,
+    romaji: &ib_romaji::HepburnRomanizer,
+) -> String {
+    let tokens = tokenizer.tokenize(text).unwrap_or_default();
+    let mut out = String::with_capacity(text.len());
+    for mut token in tokens {
+        let reading = token.get("reading").unwrap_or("").to_string();
+        if reading.is_empty() || reading == token.surface.as_ref() {
+            let surface = token.surface.as_ref();
+            if let Some(r) = romaji.romanize_kana_str_all(surface) {
+                out.push_str(&r);
+            } else {
+                out.push_str(surface);
+            }
+        } else {
+            if let Some(r) = romaji.romanize_kana_str_all(&reading) {
+                out.push_str(&r);
+            } else {
+                out.push_str(&reading);
+            }
+        }
+    }
+    out
+}
+
+// japanese_to_romaji uses lindera + ib-romaji for full conversion
