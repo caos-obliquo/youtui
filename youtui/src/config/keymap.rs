@@ -912,42 +912,6 @@ fn default_browser_playlists_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAc
 fn default_browser_search_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('j')),
-            KeyActionTree::new_key(AppAction::BrowserSearch(
-                BrowserSearchAction::NextSearchSuggestion,
-            )),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('k')),
-            KeyActionTree::new_key(AppAction::BrowserSearch(
-                BrowserSearchAction::PrevSearchSuggestion,
-            )),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Tab),
-            KeyActionTree::new_key(AppAction::BrowserSearch(
-                BrowserSearchAction::NextSearchSuggestion,
-            )),
-        ),
-        (
-            Keybind::new(crossterm::event::KeyCode::Tab, KeyModifiers::SHIFT),
-            KeyActionTree::new_key(AppAction::BrowserSearch(
-                BrowserSearchAction::PrevSearchSuggestion,
-            )),
-        ),
-        (
-            Keybind::new(crossterm::event::KeyCode::Char('j'), KeyModifiers::CONTROL),
-            KeyActionTree::new_key(AppAction::BrowserSearch(
-                BrowserSearchAction::NextSearchSuggestion,
-            )),
-        ),
-        (
-            Keybind::new(crossterm::event::KeyCode::Char('k'), KeyModifiers::CONTROL),
-            KeyActionTree::new_key(AppAction::BrowserSearch(
-                BrowserSearchAction::PrevSearchSuggestion,
-            )),
-        ),
-        (
             Keybind::new(crossterm::event::KeyCode::Char('n'), KeyModifiers::CONTROL),
             KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::NextSearchSuggestion,

@@ -528,7 +528,7 @@ mod tests {
         let b = Browser::new();
         let actual_kb = b.get_active_keybinds(&cfg);
         let expected_kb = (
-            &Keybind::new_unmodified(crossterm::event::KeyCode::Char('j')),
+            &Keybind::new(crossterm::event::KeyCode::Char('n'), crossterm::event::KeyModifiers::CONTROL),
             &KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::NextSearchSuggestion,
             )),
@@ -545,7 +545,7 @@ mod tests {
         b.apply_action(BrowserAction::ChangeSearchType);
         let actual_kb = b.get_active_keybinds(&cfg);
         let expected_kb = (
-            &Keybind::new_unmodified(crossterm::event::KeyCode::Char('j')),
+            &Keybind::new(crossterm::event::KeyCode::Char('n'), crossterm::event::KeyModifiers::CONTROL),
             &KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::NextSearchSuggestion,
             )),
