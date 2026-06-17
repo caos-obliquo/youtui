@@ -119,14 +119,14 @@ y pressed -> GetLyrics(artist, title) backend task
 
 ### Remaining
 
-- [ ] **Dark Souls quit screen** — `q` shows "YOU DIED" with "Are you sure?" prompt
-- [ ] **Bandcamp lyrics CLI** — new crate to fetch lyrics from Bandcamp (no source exists today)
-- [ ] **Scrobbling** — embed Rescrobbled natively (ListenBrainz / Maloja)
-- [ ] **Library/Playlist view** — category filter for playlist (filter by album type)
-- [ ] **Genius annotations** — fetch highlighted annotations per song
-- [ ] **License review** — verify all dependency licenses, add proper attribution
+- [x] **Dark Souls quit screen** — `q` shows "YOU DIED" with "y/N" prompt
+- [ ] **Plain-text config editor** — in-app config.toml editing
 - [ ] **Vi-mode search** — `i` enter insert, `Esc` normal, `dd`/`dw`/`db`/`w`/`b`/`0`
-- [ ] Plain-text config for easy editing
+- [ ] **Library/Playlist view** — category filter for playlist (filter by album type)
+- [ ] **Bandcamp lyrics CLI** — new crate to fetch lyrics from Bandcamp
+- [ ] **Genius annotations** — fetch highlighted annotations per song
+- [ ] **Scrobbling** — embed Rescrobbled natively (ListenBrainz / Maloja)
+- [ ] **License review** — verify all dependency licenses, add proper attribution
 
 ### Configs
 
