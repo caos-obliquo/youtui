@@ -56,6 +56,8 @@ tab = "browser_search.next_search_suggestion"
 S-tab = "browser_search.prev_search_suggestion"
 C-j = "browser_search.next_search_suggestion"
 C-k = "browser_search.prev_search_suggestion"
+C-n = "browser_search.next_search_suggestion"
+C-p = "browser_search.prev_search_suggestion"
 esc = "browser_search.close"
 
 [keybinds.browser_artist_songs]
