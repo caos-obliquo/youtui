@@ -190,13 +190,30 @@ impl Youtui {
         })
     }
     pub async fn run(&mut self) -> Result<()> {
+        // Initial draw before first event
+        self.terminal.draw(|f| {
+            ui::draw::draw_app(
+                f,
+                &mut self.window_state,
+                &self.terminal_image_capabilities,
+            );
+        })?;
+        if let Some(media_controls) = &mut self.media_controls {
+            media_controls.update_controls(
+                ui::draw_media_controls::draw_app_media_controls(&self.window_state),
+            )?;
+        }
         loop {
             match &self.status {
                 AppStatus::Running => {
-                    // Write to terminal, using UI state as the input
-                    // We draw after handling the event, as the event could be a keypress we want to
-                    // instantly react to.
-                    // Draw occurs before the first event, to ensure up loads immediately.
+                    tokio::select! {
+                        Some(event) = self.event_handler.next() => {
+                            self.handle_event(event).await;
+                        }
+                        Some(outcome) = self.task_manager.get_next_response() => {
+                            self.handle_effect(outcome);
+                        }
+                    }
                     self.terminal.draw(|f| {
                         ui::draw::draw_app(
                             f,
@@ -209,20 +226,8 @@ impl Youtui {
                             ui::draw_media_controls::draw_app_media_controls(&self.window_state),
                         )?;
                     }
-                    // When running, the app is event based, and will block until one of the
-                    // following 2 message types is received.
-                    tokio::select! {
-                        // Get the next event from the event_handler and process it.
-                        // TODO: Consider checking here if redraw is required.
-                        Some(event) = self.event_handler.next() =>
-                            self.handle_event(event).await,
-                        // Process the next manager event.
-                        Some(outcome) = self.task_manager.get_next_response() =>
-                            self.handle_effect(outcome),
-                    }
                 }
                 AppStatus::Exiting(s) => {
-                    // Once we're done running, destruct the terminal and print the exit message.
                     destruct_terminal()?;
                     println!("{s}");
                     break;
