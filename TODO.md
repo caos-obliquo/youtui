@@ -13,7 +13,7 @@
 - `genius_token` moved to `[scrobbling]` section in config (matches user's config.toml)
 
 ## Next
-- **Full album video → track splitting** — detect album-length, fetch Last.fm tracklist, split playback timeline, scrobble per track
+- **Full album video → track splitting** — `AlbumTrack`/`fetch_album_tracks` wired. TODO: scale track boundaries to video duration, scrobble at each boundary transition (silent, no UI changes)
 - **Album art from Last.fm** — fetch cover when validation finds album name
 - **Command input popup** — improve `:` UX (currently shows as cyan `:text█` in footer)
 

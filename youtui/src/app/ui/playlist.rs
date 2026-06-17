@@ -8,7 +8,7 @@ use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::server::{
     AutoplayDecodedSong, DecodeSong, DownloadSong, GetSongThumbnail, IncreaseVolume, Pause,
     PausePlay, PlayDecodedSong, QueueDecodedSong, Resume, Seek, SeekTo, Stop, StopAll,
-    TaskMetadata, ValidateMetadata,
+    TaskMetadata, ValidateMetadata, AlbumTrack,
 };
 use crate::app::structures::{
     AlbumArtState, AudioQuality, BrowserSongsList, DownloadStatus, ListSong, ListSongDisplayableField,
@@ -93,10 +93,12 @@ pub struct Playlist {
     pre_search_selected: usize,
     category_filter: Option<&'static str>,
     romaji_mode: bool,
-    scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
+    pub scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
-    scrobbling_config: crate::config::ScrobblingConfig,
+    pub album_tracks: Option<Vec<AlbumTrack>>,
+    pub album_current_track: usize,
+    pub scrobbling_config: crate::config::ScrobblingConfig,
 }
 
 impl_youtui_component!(Playlist);
@@ -545,6 +547,8 @@ impl Playlist {
             scrobble_state: None,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
             romaji_originals: HashMap::new(),
+            album_tracks: None,
+            album_current_track: 0,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
