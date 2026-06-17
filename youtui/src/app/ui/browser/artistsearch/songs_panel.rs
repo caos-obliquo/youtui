@@ -236,6 +236,7 @@ impl AlbumSongsPanel {
             _ => None,
         };
         self.rebuild_filtered_cache();
+        self.cur_selected = self.cur_selected.min(self.filtered_cache.len().saturating_sub(1));
     }
     pub fn rebuild_filtered_cache(&mut self) {
         self.filtered_cache = self.get_filtered_list_iter().cloned().collect();

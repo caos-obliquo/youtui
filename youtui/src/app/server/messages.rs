@@ -252,9 +252,13 @@ impl BackendTask<ArcServer> for GetLyrics {
 
             // Fallback: try lyr CLI (supports Genius, AZLyrics, JahLyrics, Musixmatch)
             // Try multiple artist name formats for better matching
+            let first_artist = artist.split(',').next().unwrap_or(&artist).trim().to_string();
+            let two_artists = artist.splitn(3, ',').take(2).collect::<Vec<_>>().join(" and ").trim().to_string();
             let artist_variants = [
                 artist.clone(),
-                artist.split(',').next().unwrap_or(&artist).trim().to_string(),
+                first_artist.clone(),
+                two_artists,
+                first_artist,
             ];
 
             for artist_name in &artist_variants {
