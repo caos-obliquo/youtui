@@ -472,7 +472,38 @@ GetArtist {
                 ),
             },
         ),
-        singles: None,
+        singles: Some(
+            GetArtistAlbums {
+                results: [
+                    AlbumResult {
+                        title: "Now And Then",
+                        album_type: Some(
+                            Single,
+                        ),
+                        year: "2023",
+                        album_id: AlbumID(
+                            "MPREb_oloYR7Vz0y8",
+                        ),
+                        library_status: NotInLibrary,
+                        thumbnails: [
+                            Thumbnail {
+                                height: 226,
+                                width: 226,
+                                url: "https://lh3.googleusercontent.com/lNd64sU8cAboiAZ0HVcYg-TWc5wS8TTKpqQUR3w0z3_r0nZ9uqEfJRxdJ0y1SdDdoVKXCO2arS3SuBLvng=w226-h226-l90-rj",
+                            },
+                            Thumbnail {
+                                height: 544,
+                                width: 544,
+                                url: "https://lh3.googleusercontent.com/lNd64sU8cAboiAZ0HVcYg-TWc5wS8TTKpqQUR3w0z3_r0nZ9uqEfJRxdJ0y1SdDdoVKXCO2arS3SuBLvng=w544-h544-l90-rj",
+                            },
+                        ],
+                        explicit: NotExplicit,
+                    },
+                ],
+                browse_id: None,
+                params: None,
+            },
+        ),
         videos: None,
         related: None,
     },

@@ -216,20 +216,31 @@ pub struct TableListSong {
 }
 
 // Should be at higher level in mod structure.
-#[derive(PartialEq, Debug, Clone, Deserialize, Serialize)]
+#[derive(PartialEq, Debug, Clone)]
 enum ArtistTopReleaseCategory {
-    #[serde(alias = "albums")]
     Albums,
-    #[serde(alias = "singles", alias = "eps")]
     Singles,
-    #[serde(alias = "videos")]
     Videos,
-    #[serde(alias = "playlists")]
     Playlists,
-    #[serde(alias = "fans might also like")]
     Related,
-    #[serde(other)]
     None,
+}
+
+fn categorize_top_release(title: &str) -> ArtistTopReleaseCategory {
+    let lower = title.to_lowercase();
+    if lower.contains("album") {
+        ArtistTopReleaseCategory::Albums
+    } else if lower.contains("single") || lower.contains("ep") {
+        ArtistTopReleaseCategory::Singles
+    } else if lower.contains("video") {
+        ArtistTopReleaseCategory::Videos
+    } else if lower.contains("playlist") {
+        ArtistTopReleaseCategory::Playlists
+    } else if lower.contains("fan") || lower.contains("like") {
+        ArtistTopReleaseCategory::Related
+    } else {
+        ArtistTopReleaseCategory::None
+    }
 }
 
 fn parse_artist_song(mut json: impl JsonCrawler) -> Result<ArtistSong> {
@@ -292,7 +303,8 @@ fn parse_artist_top_releases_from_section_list_contents(
         .filter_map(|r| r.navigate_pointer("/musicCarouselShelfRenderer").ok())
     {
         // XXX: Should this only be on the first result per category?
-        let category = r.take_value_pointer(concatcp!(CAROUSEL_TITLE, "/text"))?;
+        let category_title: String = r.take_value_pointer(concatcp!(CAROUSEL_TITLE, "/text"))?;
+        let category = categorize_top_release(&category_title);
         // Likely optional, need to confirm.
         // XXX: Errors here
         let browse_id: Option<ArtistChannelID> = r
