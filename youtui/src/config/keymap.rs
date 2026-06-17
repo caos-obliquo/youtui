@@ -729,6 +729,10 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key_with_visibility(AppAction::OpenUrl, KeyActionVisibility::Global),
         ),
         (
+            Keybind::new(crossterm::event::KeyCode::Char('y'), KeyModifiers::CONTROL),
+            KeyActionTree::new_key_with_visibility(AppAction::Playlist(PlaylistAction::CopySongUrl), KeyActionVisibility::Global),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('+')),
             KeyActionTree::new_key(AppAction::VolUp),
         ),
@@ -1129,6 +1133,13 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
             Keybind::new(crossterm::event::KeyCode::Char('y'), KeyModifiers::CONTROL),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::CopySongUrl),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('R')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::ToggleRomaji),
                 KeyActionVisibility::Global,
             ),
         ),

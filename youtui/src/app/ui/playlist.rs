@@ -91,6 +91,7 @@ pub struct Playlist {
     search_indices: Vec<usize>,
     pre_search_selected: usize,
     category_filter: Option<&'static str>,
+    romaji_mode: bool,
     scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
     search_cur: usize,
     scrobbling_config: crate::config::ScrobblingConfig,
@@ -119,6 +120,7 @@ pub enum PlaylistAction {
     PrevSearchResult,
     CopySongUrl,
     OpenUrl,
+    ToggleRomaji,
 }
 
 impl Action for PlaylistAction {
@@ -146,6 +148,7 @@ impl Action for PlaylistAction {
             PlaylistAction::PrevSearchResult => "Prev Match",
             PlaylistAction::CopySongUrl => "Copy Song URL",
             PlaylistAction::OpenUrl => "Open URL",
+            PlaylistAction::ToggleRomaji => "Toggle Romaji",
         }
         .into()
     }
@@ -219,6 +222,11 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::OpenUrl => {
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::ToggleRomaji => {
+                self.romaji_mode = !self.romaji_mode;
+                info!("Romaji mode: {}", self.romaji_mode);
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ViewLyrics => {
@@ -460,6 +468,7 @@ impl HasTitle for Playlist {
             "".to_string()
         };
 
+        let romaji_indicator = if self.romaji_mode { " [Romaji]" } else { "" };
         let cat_indicator = match self.category_filter {
             Some("Album:") => " [Albums]",
             Some("EP:") => " [EPs]",
@@ -467,12 +476,13 @@ impl HasTitle for Playlist {
             _ => "",
         };
         format!(
-            "Local playlist - {} songs{}{}{}{}",
+            "Local playlist - {} songs{}{}{}{}{}",
             self.list.get_list_iter().len(),
             quality_indicator,
             shuffle_indicator,
             search_indicator,
             cat_indicator,
+            romaji_indicator,
         )
         .into()
     }
@@ -511,6 +521,7 @@ impl Playlist {
             download_queue: VecDeque::new(),
             search_enabled: false,
             category_filter: None,
+            romaji_mode: false,
             search_cur: 0,
             scrobble_state: None,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
