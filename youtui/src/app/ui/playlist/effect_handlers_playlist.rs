@@ -1,6 +1,7 @@
 use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::{ArcServer, TaskMetadata};
 use crate::app::ui::playlist::Playlist;
+use crate::app::ui::playlist::lyrics_popup::{LyricsPopup, LyricsPopupState};
 use crate::app::ui::playlist::playlist_update_popup::{PlaylistUpdatePopup, PlaylistUpdatePopupState};
 use async_callback_manager::{AsyncTask, FrontendEffect};
 use tracing::{error, info};
@@ -130,5 +131,50 @@ impl_youtui_task_handler!(
     PlaylistUpdatePopup,
     |_, error: anyhow::Error| {
         PlaylistUpdateEffect::FetchPlaylistsError(error.to_string())
+    }
+);
+
+// LyricsPopup effect handlers
+
+#[derive(PartialEq, Debug)]
+pub struct HandleGetLyricsOk;
+#[derive(PartialEq, Debug)]
+pub struct HandleGetLyricsErr;
+
+#[derive(Debug, PartialEq)]
+pub enum LyricsEffect {
+    FetchLyricsSuccess(String),
+    FetchLyricsError(String),
+}
+
+impl FrontendEffect<LyricsPopup, ArcServer, TaskMetadata> for LyricsEffect {
+    fn apply(self, target: &mut LyricsPopup) -> impl Into<ComponentEffect<LyricsPopup>> {
+        match self {
+            LyricsEffect::FetchLyricsSuccess(lyrics) => {
+                target.set_lyrics(lyrics);
+            }
+            LyricsEffect::FetchLyricsError(err) => {
+                target.set_error(err);
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+impl_youtui_task_handler!(
+    HandleGetLyricsOk,
+    String,
+    LyricsPopup,
+    |_, lyrics: String| {
+        LyricsEffect::FetchLyricsSuccess(lyrics)
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleGetLyricsErr,
+    anyhow::Error,
+    LyricsPopup,
+    |_, error: anyhow::Error| {
+        LyricsEffect::FetchLyricsError(error.to_string())
     }
 );

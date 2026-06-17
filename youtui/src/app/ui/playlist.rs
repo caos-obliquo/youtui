@@ -46,6 +46,7 @@ use std::time::{Duration, SystemTime};
 use tracing::{debug, error, info, warn};
 use ytmapi_rs::common::YoutubeID;
 
+pub mod lyrics_popup;
 pub mod playlist_save_popup;
 pub mod playlist_update_popup;
 mod effect_handlers;
@@ -107,6 +108,7 @@ pub enum PlaylistAction {
     ClearSearch,
     SetBestQuality,
     SaveToNewPlaylist,
+    ViewLyrics,
 }
 
 impl Action for PlaylistAction {
@@ -128,6 +130,7 @@ impl Action for PlaylistAction {
             PlaylistAction::DeleteQueue => "Delete Queue",
             PlaylistAction::SetBestQuality => "Set Best Quality",
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
+            PlaylistAction::ViewLyrics => "View Lyrics",
         }
         .into()
     }
@@ -165,6 +168,22 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     return (AsyncTask::new_no_op(), None);
                 }
                 (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistSavePopup(video_ids)))
+            },
+            PlaylistAction::ViewLyrics => {
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                let song = self.get_song_from_idx(actual_index);
+                if let Some(song) = song {
+                    let artist = song.artists.iter()
+                        .map(|a| a.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    (AsyncTask::new_no_op(), Some(AppCallback::ViewLyrics {
+                        artist,
+                        title: song.title.clone(),
+                    }))
+                } else {
+                    (AsyncTask::new_no_op(), None)
+                }
             },
         }
     }

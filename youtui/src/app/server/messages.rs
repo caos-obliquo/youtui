@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use ytmapi_rs::common::{ArtistChannelID, PlaylistID, SearchSuggestion, VideoID};
+use musixmatch_inofficial::Musixmatch;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
 
 #[derive(PartialEq, Debug)]
@@ -33,6 +34,9 @@ pub struct HandleApiError {
     pub error: Error,
     pub message: String,
 }
+
+#[derive(Debug, PartialEq)]
+pub struct GetLyrics(pub String, pub String);
 
 #[derive(Debug, PartialEq)]
 pub struct GetSearchSuggestions(pub String);
@@ -215,6 +219,26 @@ impl BackendTask<ArcServer> for HandleApiError {
         let backend = backend.clone();
         async move {
             backend.api_error_handler.handle_error(error, message).await;
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for GetLyrics {
+    type Output = Result<String>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        _backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        async move {
+            let client = Musixmatch::builder()
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to build Musixmatch client: {}", e))?;
+            let lyrics = client
+                .matcher_lyrics(&self.1, &self.0)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to fetch lyrics: {}", e))?;
+            Ok(lyrics.lyrics_body)
         }
     }
 }

@@ -89,6 +89,10 @@ pub enum AppCallback {
         playlist_id: PlaylistID<'static>,
         video_ids: Vec<VideoID<'static>>,
     },
+    ViewLyrics {
+        artist: String,
+        title: String,
+    },
     ClosePopup,
     CreatePlaylistFromPopup {
         title: String,
@@ -324,6 +328,10 @@ impl Youtui {
                     None,
                 )
                 .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::ViewLyrics { artist, title } => {
+                let effect = self.window_state.open_lyrics_popup(artist, title);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ClosePopup => {

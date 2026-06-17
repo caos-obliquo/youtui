@@ -6,6 +6,7 @@ use super::browser::shared_components::{BrowserSearchAction, FilterAction, SortA
 use super::browser::songsearch::BrowserSongsAction;
 use super::logger::LoggerAction;
 use super::playlist::PlaylistAction;
+use super::playlist::lyrics_popup::LyricsPopupAction;
 use super::playlist::playlist_save_popup::PlaylistSavePopupAction;
 use crate::app::component::actionhandler::{Action, ActionHandler, YoutuiEffect};
 use crate::app::ui::browser::playlistsearch::search_panel::BrowserPlaylistsAction;
@@ -48,6 +49,7 @@ pub enum AppAction {
     Log(LoggerAction),
     Playlist(PlaylistAction),
     PlaylistSavePopup(PlaylistSavePopupAction),
+    LyricsPopup(LyricsPopupAction),
     TextEntry(TextEntryAction),
     List(ListAction),
 }
@@ -126,6 +128,7 @@ impl Action for AppAction {
             AppAction::Log(a) => a.context(),
             AppAction::Playlist(a) => a.context(),
             AppAction::PlaylistSavePopup(a) => a.context(),
+            AppAction::LyricsPopup(a) => a.context(),
             AppAction::Browser(a) => a.context(),
             AppAction::Filter(a) => a.context(),
             AppAction::Sort(a) => a.context(),
@@ -156,6 +159,7 @@ impl Action for AppAction {
             AppAction::Log(a) => a.describe(),
             AppAction::Playlist(a) => a.describe(),
             AppAction::PlaylistSavePopup(a) => a.describe(),
+            AppAction::LyricsPopup(a) => a.describe(),
             AppAction::Browser(a) => a.describe(),
             AppAction::Filter(a) => a.describe(),
             AppAction::Sort(a) => a.describe(),
