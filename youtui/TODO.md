@@ -17,18 +17,58 @@
 
 ### Keybindings (Vim/k9s-style)
 
-- `?` help toggle, `l` logs, `q` quit
-- `1-6` for view switching (playlist, search, sort, filter, etc.)
-- `j/k` up/down, `h/l` left/right
-- `C-b`/`C-u` page up, `C-f`/`C-d` page down, `g`/`G` first/last
-- `y` lyrics popup (any view with songs)
-- `c` category filter in artist album view (All/Album/EP/Single)
-- `o` context menu (mode: Enter->Play, d->Delete, l->Lyrics)
-- `d` delete selected, `D` delete all (direct, no Enter prefix)
-- `e`/`E` add song(s) to existing playlist, `n` save new playlist
-- `Esc` close search/filter/sort panes
-- `C-n`/`C-p` navigate search suggestions
-- Config file at `~/.config/youtui/config.toml`
+| Key | Action |
+|---|---|
+| `1` | Playlist view |
+| `2` | Song search |
+| `3` | Artist search |
+| `4` | Playlist search |
+| `5` | Browser view |
+| `6` | Change search type |
+| `j`/`k` | Up / Down |
+| `h`/`l` | Left / Right |
+| `C-b`/`C-u` | Page up |
+| `C-f`/`C-d` | Page down |
+| `g`/`G` | First / Last |
+| `d`/`D` | Delete selected / all |
+| `y` | Lyrics popup (any view) |
+| `c` | Category filter (artist albums) |
+| `o` | Context menu |
+| `s` | Shuffle |
+| `A` | Set best quality |
+| `n` | Save to new playlist |
+| `e`/`E` | Add song(s) to existing playlist |
+| `C-n`/`C-p` | Search suggestion navigation |
+| `Esc` | Close search/filter/sort |
+| `?` | Toggle help |
+| `Space` | Play / Pause |
+| `q` | Quit |
+
+### Lyrics Architecture
+
+```
+y pressed -> GetLyrics(artist, title) backend task
+  |
+  +-> Musixmatch API (musixmatch-inofficial crate, no API key)
+  |     |
+  |     +-> success -> return lyrics
+  |     |
+  |     +-> Error::NotFound or error -> try lyr CLI
+  |
+  +-> lyr CLI (supports Genius, AZLyrics, JahLyrics, Musixmatch)
+  |     |
+  |     +-> tries 6 artist/title variants for fuzzy matching:
+  |     |     - original (full artist string)
+  |     |     - first artist only
+  |     |     - first 2 artists joined with " and "
+  |     |     - normalized title (lowercase, collapse spaces)
+  |     |     - normalized artist
+  |     |     - normalized both
+  |     |
+  |     +-> configured via ~/.config/lyr/config.toml (Genius first)
+  |
+  +-> results returned to LyricsPopup -> display with j/k scroll
+```
 
 ### Playlist & API
 
@@ -39,6 +79,7 @@
 - **Category filter**: `c` key to cycle All/Albums/EPs/Singles in artist album view
 - Popups use direct key routing in `handle_crossterm_event` before standard KeyRouter pipeline
 - **Client version**: scraped from YouTube Music page, canary suffix stripped automatically
+- **Performance**: redraw only after events processed (no busy-loop rendering)
 
 ### Branches
 
@@ -50,35 +91,44 @@
 
 ### Done (this session)
 
-- [x] Playlist creation 400/400 — fixed (canary version suffix stripped + `"user":{}` placement fix)
+- [x] Playlist creation 400 — canary version suffix stripped, `"user":{}` placement fixed
 - [x] `d`/`D` delete direct — moved out of Enter mode to top-level playlist keybinds
 - [x] `C-d` page down — added to list keybinds
 - [x] `C-u` page up — added to list keybinds
 - [x] `o` context menu — mode with Enter->Play, d->Delete (consistent with Enter's mode UX)
 - [x] Tab/Shift-Tab search suggestion navigation
 - [x] Debug logging removed from auth.rs
-- [x] **Lyrics popup** — `y` key, async fetch via musixmatch-inofficial (no API key)
-- [x] **Lyrics from all views** — added to Playlist, SongSearch, ArtistAlbums, PlaylistSearch
+- [x] **Lyrics popup** — `y` key, async fetch via musixmatch-inofficial (no API key), scrollable
+- [x] **Lyrics from all views** — Playlist, SongSearch, ArtistAlbums, PlaylistSearch
+- [x] **Multi-provider lyrics** — Musixmatch -> lyr (Genius/AZLyrics/JahLyrics) fallback
+- [x] **Fuzzy matching** — 6 artist/title variants including normalization
+- [x] **lyr configured** — `~/.config/lyr/config.toml` with Genius priority
+- [x] **Scrollable lyrics popup** — j/k/Up/Down navigation with indicator
 - [x] **Esc closes browser search** — BrowserSearchAction::Close + Esc keybind
-- [x] **C-n/C-p search nav** — emacs-style, more reliable than C-j/C-k
+- [x] **C-n/C-p search nav** — emacs-style, replaces j/k/Tab for suggestions
 - [x] **Category filter** — `c` key, cycle All/Albums/EPs/Singles in artist album view
-- [x] **Singles/EPs parsing fix** — `ArtistTopReleaseCategory::Singles => ()` was discarding data
-- [x] **Keyword-based section matching** — handles localized headers ("Singles e EPs", etc.)
-- [x] **Performance** — redraw only after events processed
-- [x] **Rebuild filtered_cache** — category filter actually filters displayed items
+- [x] **Singles/EPs parsing fix** — `ArtistTopReleaseCategory::Singles => ()` was silently discarding data
+- [x] **Keyword-based section matching** — replaces serde enum with contains() matching (handles localized headers like "Singles e EPs")
+- [x] **Performance** — redraw only after events processed (eliminated busy-loop)
+- [x] **Rebuild filtered_cache** — category filter actually filters displayed items, not just count
+- [x] **cur_selected clamped** — after filter change, selection clamped to filtered list bounds
+- [x] **Oprimized release build** — `cargo install --path . --force` for global `youtui` command
 
 ### Remaining
 
 - [ ] **Dark Souls quit screen** — `q` shows "YOU DIED" with "Are you sure?" prompt
 - [ ] **Bandcamp lyrics CLI** — new crate to fetch lyrics from Bandcamp (no source exists today)
 - [ ] **Scrobbling** — embed Rescrobbled natively (ListenBrainz / Maloja)
+- [ ] **Library/Playlist view** — category filter for playlist (filter by album type)
+- [ ] **Genius annotations** — fetch highlighted annotations per song
 - [ ] **License review** — verify all dependency licenses, add proper attribution
-- [ ] **Vi-mode search** — `i` enter insert, `Esc` normal, `dd`/`dw`/`db`/`w`/`b`/`0` etc.
+- [ ] **Vi-mode search** — `i` enter insert, `Esc` normal, `dd`/`dw`/`db`/`w`/`b`/`0`
 - [ ] Plain-text config for easy editing
 
 ### Configs
 
 | File | Purpose |
 |---|---|
-| `~/.config/youtui/config.toml` | youtui keybinds, auth, downloader |
+| `~/.config/youtui/config.toml` | youtui keybinds, auth type, downloader |
 | `~/.config/lyr/config.toml` | lyr fetcher order (Genius first) |
+| `~/.config/youtui/cookie.txt` | Browser auth cookie |
