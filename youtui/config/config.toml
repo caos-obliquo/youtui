@@ -13,7 +13,7 @@ yt_dlp_command = "yt-dlp"
 "[" = "seek_back"
 "?" = {action = "toggle_help", visibility = "global"}
 q = {action = "quit", visibility = "global"}
-l = {action = "view_logs", visibility = "global"}
+0 = {action = "view_logs", visibility = "global"}
 space = {action = "play_pause", visibility = "global"}
 C-c = "quit"
 C-e = {action = "edit_config", visibility = "global"}

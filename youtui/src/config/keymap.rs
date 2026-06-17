@@ -756,7 +756,7 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key_with_visibility(AppAction::Quit, KeyActionVisibility::Global),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('0')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::ViewLogs,
                 KeyActionVisibility::Global,
