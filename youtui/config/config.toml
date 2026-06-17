@@ -166,4 +166,6 @@ esc = {action = "playlist_save_popup.cancel", visibility = "global"}
 
 [scrobbling]
 enabled = false
-token = ""
+api_key = ""
+api_secret = ""
+session_key = ""
