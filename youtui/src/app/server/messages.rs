@@ -282,7 +282,8 @@ impl BackendTask<ArcServer> for GetLyrics {
                 match output {
                     Ok(out) if out.status.success() => {
                         let raw = String::from_utf8_lossy(&out.stdout).to_string();
-                        let lyrics: String = raw.lines().skip(1).collect::<Vec<_>>().join("\n").trim().to_string();
+                        let lyrics: String = raw.lines().skip(1).collect::<Vec<_>>().join("\n");
+                        let lyrics = lyrics.splitn(2, "Lyrics").nth(1).unwrap_or(&lyrics).trim().to_string();
                         if !lyrics.is_empty() {
                             return Ok(lyrics);
                         }
