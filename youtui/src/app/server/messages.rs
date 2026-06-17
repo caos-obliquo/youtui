@@ -299,9 +299,15 @@ impl BackendTask<ArcServer> for GetLyrics {
                                                 }
                                                 let cleaned: String = lyrics_text.lines()
                                                     .map(|l| l.trim())
-                                                    .filter(|l| !l.is_empty())
+                                                    .filter(|l| !l.is_empty() && !l.starts_with(|c: char| c.is_ascii_digit()) && !l.contains("Contributors") && !l.contains("Lyrics"))
                                                     .collect::<Vec<_>>()
-                                                    .join("\n");
+                                                    .join("\n")
+                                                    .replace("&quot;", "\"")
+                                                    .replace("&#x27;", "'")
+                                                    .replace("&#x2019;", "'")
+                                                    .replace("&amp;", "&")
+                                                    .replace("&lt;", "<")
+                                                    .replace("&gt;", ">");
                                                 if !cleaned.is_empty() {
                                                     tracing::info!("Genius scrape: {} chars", cleaned.len());
                                                     return Ok(cleaned);
