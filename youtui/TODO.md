@@ -120,12 +120,16 @@ y pressed -> GetLyrics(artist, title) backend task
 - [x] **Config editor** — `C-e` opens config.toml in TextArea (Ctrl+s save, Esc cancel)
 - [x] **Playlist category filter** — `c` key in playlist view (All/Albums/EPs/Singles)
 - [x] **Bandcamp lyrics CLI** — `bandcamp-lyrics` crate (suckless: ureq + scraper, no tokio)
+- [x] **Dark Souls quit screen** — full red-bordered "YOU DIED" panel with y/N
+- [x] **Genius lyrics fix** — multi-container scrape, HTML entity decode, paren merging
+- [x] **Vim search** — `n`/`N` navigate search matches, match counter in title
 
-### Remaining (branches scaffolded)
+### Remaining
 
-- [ ] **Vi-mode search** — `feat/vi-mode-search` branch
-- [ ] **Genius annotations** — show highlighted annotations in lyrics popup
-- [ ] **Scrobbling** — ListenBrainz/Maloja HTTP API integration
+- [ ] **YouTube fallback** — fetch non-YTMusic tracks from YouTube for metadata + scrobbling
+- [ ] **Vi-mode text editing** — `i`/`Esc`/`dd`/`dw`/`db`/`w`/`b`/`0` for search boxes
+- [ ] **Genius annotations** — fetch highlighted annotations per song
+- [ ] **Native scrobbling** — Last.fm API integration in-app
 - [ ] **License review** — verify all dependency licenses
 
 ### Configs

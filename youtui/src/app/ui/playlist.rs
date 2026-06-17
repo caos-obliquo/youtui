@@ -91,6 +91,7 @@ pub struct Playlist {
     search_indices: Vec<usize>,
     pre_search_selected: usize,
     category_filter: Option<&'static str>,
+    search_cur: usize,
 }
 
 impl_youtui_component!(Playlist);
@@ -112,6 +113,8 @@ pub enum PlaylistAction {
     SaveToNewPlaylist,
     ViewLyrics,
     TogglePlaylistCategoryFilter,
+    NextSearchResult,
+    PrevSearchResult,
 }
 
 impl Action for PlaylistAction {
@@ -135,6 +138,8 @@ impl Action for PlaylistAction {
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
             PlaylistAction::ViewLyrics => "View Lyrics",
             PlaylistAction::TogglePlaylistCategoryFilter => "Toggle Category Filter",
+            PlaylistAction::NextSearchResult => "Next Match",
+            PlaylistAction::PrevSearchResult => "Prev Match",
         }
         .into()
     }
@@ -182,6 +187,20 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 };
                 self.update_search_indices();
                 self.cur_selected = self.cur_selected.min(self.search_indices.len().saturating_sub(1));
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::NextSearchResult => {
+                if !self.search_indices.is_empty() {
+                    self.search_cur = (self.search_cur + 1) % self.search_indices.len();
+                    self.cur_selected = self.search_cur.min(self.search_indices.len().saturating_sub(1));
+                }
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::PrevSearchResult => {
+                if !self.search_indices.is_empty() {
+                    self.search_cur = self.search_cur.saturating_sub(1);
+                    self.cur_selected = self.search_cur;
+                }
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ViewLyrics => {
@@ -414,7 +433,9 @@ impl HasTitle for Playlist {
         };
 
         let search_indicator = if !self.search_text.is_empty() {
-            format!(" [SEARCH: {}]", self.search_text)
+            let total = self.search_indices.len();
+            let cur = self.search_cur + 1;
+            format!(" [SEARCH: {} ({}/{})]", self.search_text, cur.min(total), total)
         } else if self.search_enabled {
             " [SEARCH]".to_string()
         } else {
@@ -472,6 +493,7 @@ impl Playlist {
             download_queue: VecDeque::new(),
             search_enabled: false,
             category_filter: None,
+            search_cur: 0,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -1301,6 +1323,7 @@ impl Playlist {
     }
 
     fn update_search_indices(&mut self) {
+        self.search_cur = 0;
         let search_lower = self.search_text.to_lowercase();
 
         self.search_indices = self
