@@ -1,96 +1,36 @@
-# youtui — caos-obliquo fork
+# youtui
 
-Vim-driven TUI for YouTube Music. Fork of [nick42d/youtui](https://github.com/nick42d/youtui) / [Icedwolf/youtui](https://github.com/Icedwolf/youtui) with custom playlist management, yt-dlp audio, zero F-keys.
+Vim-driven TUI for YouTube Music. Fork with custom playlist management, yt-dlp audio, lyrics, category filters, and vim-only keybinds.
 
-**Upstream diff**: this fork adds playlist creation/update popups, EP/single labels in artist browser, yt-dlp audio backend by default, vim-only keybinds with minimal header, queue persistence, and effect-driven playlist management. Drifted significantly — we own the feature set now.
-
-## Workspace
-
-| Crate | Description |
-|---|---|
-| `youtui` | TUI binary — ratatui, crossterm, rodio |
-| `ytmapi-rs` | Async YouTube Music API (generic over auth) |
-| `json-crawler` | JSON traversal utilities |
-| `async-callback-manager` | Task/effect framework connecting UI to backend |
-
-## Install
+## Quick Start
 
 ```sh
+# Install
 git clone https://github.com/caos-obliquo/youtui
 cd youtui
 cargo install --path youtui --force
+
+# Get a cookie (see Authentication below)
+# Then run:
+youtui
 ```
 
-No AUR. Local compilation only.
-
-### Dependencies
-
-- `alsa-lib` (Linux) — audio playback
-- `yt-dlp` — audio download (default backend)
-- Font with FontAwesome glyphs
+Press `1` to view playlist, `2`-`6` for browser views, `j`/`k` to navigate, `Enter` to play.
 
 ## Authentication
 
-Any of the three methods:
-
-### Browser (default)
-
+### Browser (easiest)
 1. Open `music.youtube.com` logged into your account
-2. DevTools → Network → reload → click any POST request
+2. DevTools -> Network -> reload -> click any POST request
 3. Copy the `Cookie` header value
 4. Save to `~/.config/youtui/cookie.txt`
 
 ### OAuth
-
-```sh
+```
 youtui setup-oauth <client_id> <client_secret>
 ```
 
 Requires a Google Cloud project with "TVs and Limited Input devices" OAuth client.
-
-### Keybinds
-
-| Key | Action |
-|---|---|---|
-| `1` | Now Playing |
-| `2` | Song Search |
-| `3` | Artist Search |
-| `4` | Playlist Search |
-| `5` | View Browser |
-| `j` / `k` | Up / Down |
-| `h` / `l` | Prev / Next tab |
-| `C-b` / `C-u` | Page up |
-| `C-f` / `C-d` | Page down |
-| `g` / `G` | First / last |
-| `d` / `D` | Delete selected / all |
-| `y` | View lyrics (any song view) |
-| `c` | Cycle category filter (artist albums) |
-| `o` | Context menu (Enter→Play, d→Delete, l→Lyrics) |
-| `s` | Shuffle |
-| `A` | Set best quality |
-| `n` | Save queue as new playlist |
-| `e` / `E` | Add song(s) to existing playlist |
-| `Tab` / `S-Tab` | Search suggestion navigation |
-| `C-n` / `C-p` | Search suggestion navigation |
-| `Esc` | Close search/sort/filter pane |
-| `?` | Help |
-| `Space` | Play / Pause |
-| `q` | Quit |
-
-Full keybinds at `~/.config/youtui/config.toml`.
-
-## Features
-
-- **Vim navigation** — j/k/h/l/g/G, C-b/C-u/C-f/C-d, no function keys
-- **yt-dlp audio** — streams with `android_vr` extractor-args, no PO token needed
-- **Playlist management** — create from queue (`n`), add to existing (`e`/`E`), unlisted by default
-- **Delete** — `d` delete selected, `D` delete all (direct, no Enter prefix)
-- **Lyrics** — `y` key, Musixmatch (no API key needed)
-- **Category filter** — `c` key in artist album view (All/Album/EP/Single)
-- **Context menu** — `o` opens mode with Play + Delete + Lyrics
-- **EP / Single labels** — artist browser shows `Album:`, `EP:`, `Single:` prefix on release names
-- **Persistent queue** — survives restarts
-- **Configurable** — keybinds, downloader, auth style via `config.toml`
 
 ## Config
 
@@ -100,18 +40,65 @@ Full keybinds at `~/.config/youtui/config.toml`.
 auth_type = "Browser"
 downloader_type = "YtDlp"
 yt_dlp_command = "yt-dlp"
+
+[scrobbling]
+enabled = false
+api_key = ""
+api_secret = ""
+session_key = ""
 ```
 
-## Upcoming
+Press `C-e` to edit config from within the app.
 
-- [ ] Lyrics — native Musixmatch integration (`musixmatch-cli` crate) with dedicated binding
-- [ ] Scrobbling — embed Rescrobbled natively (Rust → ListenBrainz / Maloja)
-- [ ] Plain-text config editor
+## Keybinds
 
-## Known Issues
+| Key | Action |
+|---|---|
+| `1` | Now Playing |
+| `2` | Song Search |
+| `3` | Artist Search |
+| `4` | Playlist Search |
+| `5` | View Browser |
+| `6` | Change Search Type |
+| `j`/`k` | Up / Down |
+| `h`/`l` | Left / Right |
+| `C-b`/`C-u` | Page up |
+| `C-f`/`C-d` | Page down |
+| `g`/`G` | First / Last |
+| `d`/`D` | Delete selected / all |
+| `y` | View lyrics (any view) |
+| `c` | Category filter (artist/playlist) |
+| `o` | Context menu (Enter->Play, d->Delete, l->Lyrics) |
+| `s` | Shuffle |
+| `A` | Set best quality |
+| `n` | Save to new playlist |
+| `e`/`E` | Add song(s) to existing playlist |
+| `/` | Search (any view) |
+| `Esc` | Close search/filter/sort |
+| `C-n`/`C-p` | Search suggestion navigation |
+| `C-e` | Edit config file |
+| `?` | Toggle help |
+| `Space` | Play / Pause |
+| `q` | Quit (y/N to confirm) |
 
-- Playlist creation requires a fresh browser cookie (write operations need active session)
-- Client version scraped from YouTube Music page — canary suffix stripped automatically
+Search boxes support **vi-mode**: `Esc` for normal mode, `i` for insert, `h`/`l`/`w`/`b`/`0`/`$` to move, `dd`/`dw`/`db` to delete. Use `n`/`N` to jump between search matches.
+
+Full keybinds at `~/.config/youtui/config.toml`.
+
+## Features
+
+- **Vim navigation** - j/k/h/l/g/G, C-b/C-u/C-f/C-d, no function keys
+- **yt-dlp audio** - streams with `android_vr` extractor-args, no PO token
+- **Lyrics** - `y` key, Musixmatch + Genius + `lyr` CLI fallback
+- **Category filters** - `c` toggles Album/EP/Single in artist and playlist views
+- **Config editor** - `C-e` to edit config.toml in-app
+- **Context menu** - `o` for Play/Delete/Lyrics
+- **Playlist management** - create from queue (`n`), add to existing (`e`/`E`)
+- **Delete** - `d`/`D` direct, no Enter prefix
+- **Dark Souls quit** - `q` shows YOU DIED confirmation
+- **EP/Single labels** - Album:/EP:/Single: prefixes in artist browser
+- **Seamless queue** - persists across restarts
+- **Scrobbling** - Rescrobbled compatible (native Last.fm module ready)
 
 ## Build
 
@@ -119,22 +106,28 @@ yt_dlp_command = "yt-dlp"
 cargo build --release
 ./target/release/youtui
 
-cargo test --bins --lib        # unit tests
-cargo clippy                   # lint
+cargo test --bins --lib
 ```
+
+## Dependencies
+
+- `alsa-lib` (Linux) - audio playback
+- `yt-dlp` - audio download (default backend)
+- Font with FontAwesome glyphs
+
+## Known Issues
+
+- Playlist creation requires a fresh browser cookie
+- Client version scraped from YouTube Music page at startup
 
 ## Architecture
 
 ```
-User KeyEvent → crossterm → Action → Effect (AsyncTask)
-→ TaskManager → Server (API/Player/Downloader)
-→ Response mutation → UI state → Redraw
+KeyEvent -> crossterm -> Action -> Effect (AsyncTask)
+-> TaskManager -> Server (API/Player/Downloader)
+-> Response -> UI state -> Redraw
 ```
-
-API generic over `AuthToken` (Browser / OAuth / NoAuth) — enforced at compile time. Runtime dispatch via `DynamicYtMusic` enum.
 
 ## License
 
-MIT — see [LICENSE](./LICENSE.txt) file.
-
-**Note:** This project incorporates code from external crates with various licenses (MIT, Apache 2.0, BSD-2-Clause, and others). Refer to each crate's license for details. This fork does not change the licensing terms of the original project.
+MIT - see [LICENSE](./LICENSE.txt).
