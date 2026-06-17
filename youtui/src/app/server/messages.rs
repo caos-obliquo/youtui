@@ -251,25 +251,31 @@ impl BackendTask<ArcServer> for GetLyrics {
             }
 
             // Fallback: try lyr CLI (supports Genius, AZLyrics, JahLyrics, Musixmatch)
-            let output = tokio::process::Command::new("lyr")
-                .args(["--artist", &artist, "--title", &title])
-                .output()
-                .await
-                .map_err(|e| anyhow::anyhow!("lyr not found or failed: {}", e))?;
+            // Try multiple artist name formats for better matching
+            let artist_variants = [
+                artist.clone(),
+                artist.split(',').next().unwrap_or(&artist).trim().to_string(),
+            ];
 
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(anyhow::anyhow!("lyr failed: {}", stderr));
+            for artist_name in &artist_variants {
+                let output = tokio::process::Command::new("lyr")
+                    .args(["--artist", artist_name, "--title", &title])
+                    .output()
+                    .await;
+
+                match output {
+                    Ok(out) if out.status.success() => {
+                        let raw = String::from_utf8_lossy(&out.stdout).to_string();
+                        let lyrics: String = raw.lines().skip(1).collect::<Vec<_>>().join("\n").trim().to_string();
+                        if !lyrics.is_empty() {
+                            return Ok(lyrics);
+                        }
+                    }
+                    _ => continue,
+                }
             }
 
-            let raw = String::from_utf8_lossy(&output.stdout).to_string();
-            // Strip first line (INFO log from lyr like "Using fetcher: AZLyrics")
-            let lyrics: String = raw.lines().skip(1).collect::<Vec<_>>().join("\n").trim().to_string();
-            if lyrics.is_empty() {
-                Err(anyhow::anyhow!("No lyrics found from any provider"))
-            } else {
-                Ok(lyrics)
-            }
+            Err(anyhow::anyhow!("No lyrics found from any provider"))
         }
     }
 }
