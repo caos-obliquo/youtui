@@ -3,7 +3,7 @@ use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::KeyCode;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use serde::{Deserialize, Serialize};
