@@ -960,6 +960,13 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserArtistSongs(BrowserArtistSongsAction::ViewLyrics),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
             KeyActionTree::new_mode(
                 [
@@ -1034,6 +1041,13 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserPlaylistSongs(BrowserPlaylistSongsAction::ViewLyrics),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
             KeyActionTree::new_mode(
                 [
@@ -1092,6 +1106,13 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('4')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserSongs(BrowserSongsAction::Sort),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserSongs(BrowserSongsAction::ViewLyrics),
                 KeyActionVisibility::Global,
             ),
         ),

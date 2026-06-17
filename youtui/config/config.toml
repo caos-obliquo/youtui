@@ -59,6 +59,7 @@ esc = "browser_search.close"
 [keybinds.browser_artist_songs]
 3 = {action = "browser_artist_songs.filter", visibility = "global"}
 4 = {action = "browser_artist_songs.sort", visibility = "global"}
+y = {action = "browser_artist_songs.view_lyrics", visibility = "global"}
 enter.enter = "browser_artist_songs.play_song"
 enter.p = "browser_artist_songs.play_songs"
 enter.a = "browser_artist_songs.play_album"
@@ -77,6 +78,7 @@ enter = "browser_playlists.display_selected_playlist"
 [keybinds.browser_playlist_songs]
 3 = {action = "browser_playlist_songs.filter", visibility = "global"}
 4 = {action = "browser_playlist_songs.sort", visibility = "global"}
+y = {action = "browser_playlist_songs.view_lyrics", visibility = "global"}
 enter.enter = "browser_playlist_songs.play_song"
 enter.p = "browser_playlist_songs.play_songs"
 enter.space = "browser_playlist_songs.add_song_to_playlist"
@@ -90,6 +92,7 @@ enter = "Play"
 [keybinds.browser_songs]
 3 = {action = "browser_songs.filter", visibility = "global"}
 4 = {action = "browser_songs.sort", visibility = "global"}
+y = {action = "browser_songs.view_lyrics", visibility = "global"}
 enter.enter = "browser_songs.play_song"
 enter.p = "browser_songs.play_songs"
 enter.space = "browser_songs.add_song_to_playlist"

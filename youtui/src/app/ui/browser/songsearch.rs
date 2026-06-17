@@ -53,6 +53,7 @@ pub enum BrowserSongsAction {
     AddSongsToPlaylist,
     AddSongToExistingPlaylist,
     AddSongsToExistingPlaylist,
+    ViewLyrics,
 }
 
 impl Action for BrowserSongsAction {
@@ -69,6 +70,7 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::AddSongsToPlaylist => "Add songs to playlist",
             BrowserSongsAction::AddSongToExistingPlaylist => "Add song to existing playlist",
             BrowserSongsAction::AddSongsToExistingPlaylist => "Add songs to existing playlist",
+            BrowserSongsAction::ViewLyrics => "View Lyrics",
         }
         .into()
     }
@@ -211,6 +213,7 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::AddSongsToExistingPlaylist => {
                 return self.add_songs_to_existing_playlist().into();
             }
+            BrowserSongsAction::ViewLyrics => return self.view_lyrics().into(),
         }
         YoutuiEffect::new_no_op()
     }
@@ -623,6 +626,23 @@ impl SongSearchBrowser {
             AsyncTask::new_no_op(),
             Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
         )
+    }
+    pub fn view_lyrics(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        if let Some(song) = self.get_song_from_idx(cur_idx) {
+            let artist = song.artists.iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::ViewLyrics {
+                    artist,
+                    title: song.title.clone(),
+                }),
+            );
+        }
+        (AsyncTask::new_no_op(), None)
     }
     pub fn replace_song_list(&mut self, song_list: Vec<SearchResultSong>) {
         self.song_list.clear();
