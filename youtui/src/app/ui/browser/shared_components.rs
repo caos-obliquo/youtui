@@ -169,7 +169,7 @@ impl TextHandler for SearchBlock {
     ) -> Option<ComponentEffect<Self>> {
         match handle_events(&mut self.search_contents, true, event) {
             rat_text::event::TextOutcome::Continue => None,
-            rat_text::event::TextOutcome::Unchanged => Some(AsyncTask::new_no_op()),
+            rat_text::event::TextOutcome::Unchanged => None,
             rat_text::event::TextOutcome::Changed => Some(AsyncTask::new_no_op()),
             rat_text::event::TextOutcome::TextChanged => Some(self.fetch_search_suggestions()),
         }
