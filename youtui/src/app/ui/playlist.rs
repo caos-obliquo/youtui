@@ -118,7 +118,6 @@ pub enum PlaylistAction {
     NextSearchResult,
     PrevSearchResult,
     CopySongUrl,
-    OpenUrl,
 }
 
 impl Action for PlaylistAction {
@@ -145,7 +144,6 @@ impl Action for PlaylistAction {
             PlaylistAction::NextSearchResult => "Next Match",
             PlaylistAction::PrevSearchResult => "Prev Match",
             PlaylistAction::CopySongUrl => "Copy Song URL",
-            PlaylistAction::OpenUrl => "Open URL",
         }
         .into()
     }
