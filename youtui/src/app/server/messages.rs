@@ -486,25 +486,39 @@ impl BackendTask<ArcServer> for SearchSongs {
                 .await
                 .map_err(|e| anyhow::anyhow!("yt-dlp search failed: {}", e))?;
 
+            fn extract_artist_from_title(title: &str, fallback: &str) -> String {
+                // Title is often "Artist - Song Title" — extract artist before " - "
+                if let Some(idx) = title.find(" - ") {
+                    let candidate = title[..idx].trim();
+                    if !candidate.is_empty() && candidate.len() < 80 {
+                        return candidate.to_string();
+                    }
+                }
+                fallback.to_string()
+            }
+
             let stdout = String::from_utf8_lossy(&output.stdout);
             let results: Vec<SearchResultSong> = stdout.lines()
                 .filter_map(|line| {
                     let v: serde_json::Value = serde_json::from_str(line).ok()?;
                     let title = v.get("title")?.as_str()?;
                     let uploader = v.get("uploader").and_then(|u| u.as_str()).unwrap_or("Unknown");
+                    let artist = extract_artist_from_title(title, uploader);
                     let id = v.get("id")?.as_str()?;
-                    let duration = v.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0) as u64;
+                    let d = v.get("duration").and_then(|s| s.as_f64()).unwrap_or(0.0) as u64;
+                    let duration = format!("{}:{:02}", d / 60, d % 60);
                     let vid: VideoID<'static> = VideoID::from_raw(id.to_string());
                     let album_id: AlbumID<'static> = AlbumID::from_raw(id.to_string());
+                    let artist_name = artist.clone();
                     Some(ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
                         title.to_string(),
-                        uploader.to_string(),
+                        artist,
                         vid,
                         Some(ytmapi_rs::parse::ParsedSongAlbum {
-                            name: format!("YouTube: {}", uploader),
+                            name: format!("YouTube: {}", artist_name),
                             id: album_id,
                         }),
-                        format!("{}", duration as u64),
+                        duration,
                     ))
                 })
                 .collect();
@@ -585,6 +599,57 @@ pub struct ValidatedMetadata {
     pub album: Option<String>,
     pub year: Option<String>,
     pub track_no: Option<usize>,
+    pub album_tracks: Vec<AlbumTrack>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlbumTrack {
+    pub title: String,
+    pub duration_secs: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GetAlbumTracks(pub String, pub String, pub String);
+
+impl BackendTask<ArcServer> for GetAlbumTracks {
+    type Output = Result<Vec<AlbumTrack>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(self, _backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+        async move {
+            let artist = self.0;
+            let album = self.1;
+            let lastfm_key = self.2;
+            let client = reqwest::Client::builder()
+                .user_agent("Youtui/0.1 (music-player)")
+                .build()?;
+
+            if lastfm_key.is_empty() {
+                return Ok(Vec::new());
+            }
+
+            let url = format!(
+                "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
+                lastfm_key, urlencoding(&artist), urlencoding(&album)
+            );
+            let mut tracks = Vec::new();
+            if let Ok(resp) = client.get(&url).send().await {
+                if let Ok(data) = resp.json::<serde_json::Value>().await {
+                    if let Some(tracklist) = data.get("album").and_then(|a| a.get("tracks")).and_then(|t| t.get("track")).and_then(|t| t.as_array()) {
+                        for entry in tracklist {
+                            let title = entry.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                            let dur_str = entry.get("duration").and_then(|d| d.as_str()).unwrap_or("0");
+                            let duration_secs = dur_str.parse::<f64>().unwrap_or(0.0);
+                            if !title.is_empty() {
+                                tracks.push(AlbumTrack { title, duration_secs });
+                            }
+                        }
+                    }
+                }
+            }
+            tracing::info!("GetAlbumTracks: {} tracks for {} - {}", tracks.len(), artist, album);
+            Ok(tracks)
+        }
+    }
 }
 
 impl BackendTask<ArcServer> for ValidateMetadata {
@@ -619,13 +684,21 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                                 .and_then(|d| d.get(..4))
                                 .map(|s| s.to_string());
                                                         let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
-found = Some(ValidatedMetadata { artist: artist_name, album, year, track_no });
+found = Some(ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new() });
                         }
                     }
                 }
                 if let Some(ref meta) = found {
                     if meta.album.is_some() || meta.year.is_some() {
-                        return Ok(meta.clone());
+                        let mut meta = meta.clone();
+                        // If album is known, also fetch tracklist for potential full-album video
+                        if let Some(ref album_name) = meta.album {
+                            let tracks = fetch_album_tracks(&client, &lastfm_key, &artist, album_name).await;
+                            if !tracks.is_empty() {
+                                meta.album_tracks = tracks;
+                            }
+                        }
+                        return Ok(meta);
                     }
                 }
 
@@ -657,7 +730,7 @@ found = Some(ValidatedMetadata { artist: artist_name, album, year, track_no });
                                                 .map(|s| s.to_string());
                                             if album.is_some() || year.is_some() {
                                                 let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
-                                                return Ok(ValidatedMetadata { artist: artist_name, album, year, track_no });
+                                                return Ok(ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new() });
                                             }
                                         }
                                     }
@@ -687,7 +760,7 @@ found = Some(ValidatedMetadata { artist: artist_name, album, year, track_no });
                             .and_then(|r| r.get("date")).and_then(|d| d.as_str()).and_then(|d| d.get(..4)).map(|s| s.to_string());
                         let album = rec.get("releases").and_then(|a| a.as_array()).and_then(|a| a.first())
                             .and_then(|r| r.get("title")).and_then(|t| t.as_str()).map(|s| s.to_string());
-                        ValidatedMetadata { artist: artist_name, album, year, track_no: None }
+                        ValidatedMetadata { artist: artist_name, album, year, track_no: None, album_tracks: Vec::new() }
                     };
                     if mb_meta.album.is_some() || mb_meta.year.is_some() {
                         return Ok(mb_meta);
@@ -698,6 +771,32 @@ found = Some(ValidatedMetadata { artist: artist_name, album, year, track_no });
             Ok(ValidatedMetadata::default())
         }
     }
+}
+
+async fn fetch_album_tracks(client: &reqwest::Client, lastfm_key: &str, artist: &str, album: &str) -> Vec<AlbumTrack> {
+    if lastfm_key.is_empty() { return Vec::new(); }
+    let url = format!(
+        "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
+        lastfm_key, urlencoding(artist), urlencoding(album)
+    );
+    if let Ok(resp) = client.get(&url).send().await {
+        if let Ok(data) = resp.json::<serde_json::Value>().await {
+            if let Some(tracklist) = data.get("album").and_then(|a| a.get("tracks")).and_then(|t| t.get("track")).and_then(|t| t.as_array()) {
+                let tracks: Vec<AlbumTrack> = tracklist.iter().filter_map(|entry| {
+                    let title = entry.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+                    if title.is_empty() { return None; }
+                    let dur_str = entry.get("duration").and_then(|d| d.as_str()).unwrap_or("0");
+                    let duration_secs = dur_str.parse::<f64>().unwrap_or(0.0);
+                    Some(AlbumTrack { title, duration_secs })
+                }).collect();
+                if tracks.len() >= 2 {
+                    tracing::info!("fetch_album_tracks: {} tracks for {} - {}", tracks.len(), artist, album);
+                    return tracks;
+                }
+            }
+        }
+    }
+    Vec::new()
 }
 
 fn urlencoding(s: &str) -> String {

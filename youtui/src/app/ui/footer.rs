@@ -83,10 +83,13 @@ pub fn draw_footer(
         .and_then(|s| s.album.as_ref())
         .map(|s| s.name.as_str())
         .unwrap_or_default();
+    let scrobble_indicator = if w.playlist.scrobbling_config.enabled {
+        if w.playlist.scrobble_state.is_some() { " [Scrobble]" } else { " [s]" }
+    } else { "" };
     let album_art = cur_active_song.map(|s| &s.album_art);
     let footer = Paragraph::new(vec![
         Line::from(song_and_artists_string),
-        Line::from(album_title),
+        Line::from(format!("{}{}", album_title, scrobble_indicator)),
     ]);
     let bar = Gauge::default()
         .label(bar_str)

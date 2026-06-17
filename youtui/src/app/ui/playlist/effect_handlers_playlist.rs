@@ -1,6 +1,6 @@
 use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::ValidatedMetadata;
-use crate::app::server::{ArcServer, TaskMetadata};
+use crate::app::server::{ArcServer, TaskMetadata, AlbumTrack};
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID};
 use crate::app::ui::playlist::Playlist;
 use crate::app::ui::playlist::lyrics_popup::LyricsPopup;
@@ -272,6 +272,12 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                         }
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no);
+                        if !data.album_tracks.is_empty() {
+                            target.album_tracks = Some(data.album_tracks.clone());
+                            target.album_current_track = 0;
+                            info!("Album mode: {} tracks loaded for song {:?}",
+                                target.album_tracks.as_ref().map_or(0, |t| t.len()), song_id);
+                        }
                     }
                 }
             }
@@ -299,5 +305,54 @@ impl_youtui_task_handler!(
     |_, error: anyhow::Error| {
         error!("Metadata validation error: {}", error);
         MetadataEffect::ValidationError
+    }
+);
+
+// Album tracks (full album video splitting) effect handlers
+
+#[derive(Debug, PartialEq)]
+pub struct HandleAlbumTracksOk(pub ListSongID);
+#[derive(Debug, PartialEq)]
+pub struct HandleAlbumTracksError;
+
+#[derive(Debug, PartialEq)]
+pub enum AlbumTracksEffect {
+    TracksFetched(Vec<AlbumTrack>, ListSongID),
+    TrackFetchError,
+}
+
+impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for AlbumTracksEffect {
+    fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
+        match self {
+            AlbumTracksEffect::TracksFetched(tracks, song_id) => {
+                if tracks.len() >= 2 {
+                    info!("AlbumTracksEffect: {} tracks for song {:?}", tracks.len(), song_id);
+                    target.album_tracks = Some(tracks);
+                    target.album_current_track = 0;
+                }
+            }
+            AlbumTracksEffect::TrackFetchError => {
+                info!("AlbumTracksEffect: failed to fetch tracks");
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+impl_youtui_task_handler!(
+    HandleAlbumTracksOk,
+    Vec<AlbumTrack>,
+    Playlist,
+    |this: HandleAlbumTracksOk, tracks: Vec<AlbumTrack>| {
+        AlbumTracksEffect::TracksFetched(tracks, this.0)
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleAlbumTracksError,
+    anyhow::Error,
+    Playlist,
+    |_, _error: anyhow::Error| {
+        AlbumTracksEffect::TrackFetchError
     }
 );
