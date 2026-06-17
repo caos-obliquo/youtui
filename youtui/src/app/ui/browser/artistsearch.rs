@@ -177,6 +177,9 @@ impl ActionHandler<BrowserArtistSongsAction> for ArtistSearchBrowser {
             BrowserArtistSongsAction::Sort => self.album_songs_panel.handle_pop_sort(),
             BrowserArtistSongsAction::Filter => self.album_songs_panel.toggle_filter(),
             BrowserArtistSongsAction::ViewLyrics => return self.view_lyrics().into(),
+            BrowserArtistSongsAction::ToggleCategoryFilter => {
+                self.album_songs_panel.handle_toggle_category_filter();
+            }
         }
         YoutuiEffect::new_no_op()
     }
