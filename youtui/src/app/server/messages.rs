@@ -279,19 +279,18 @@ impl BackendTask<ArcServer> for GetLyrics {
                                 if let Ok(page) = reqwest::get(url).await {
                                     if let Ok(html) = page.text().await {
                                         // Extract lyrics from Genius page data-lyrics-container divs
-                                        let containers: Vec<&str> = html.split("data-lyrics-container=\"true\"").collect();
                                         let mut all_lyrics = String::new();
-                                        for chunk in containers.iter().skip(1) {
-                                            if let Some(tag_end) = chunk.find(">") {
-                                                let content = &chunk[tag_end + 1..];
+                                        for part in html.split("data-lyrics-container=\"true\"").skip(1) {
+                                            if let Some(start) = part.find(">") {
+                                                let inside = &part[start + 1..];
+                                                // Find closing </div> of this container
+                                                let content = inside.split("</div>").next().unwrap_or(inside);
+                                                // Strip HTML tags, decode entities
                                                 let mut in_tag = false;
                                                 for ch in content.chars() {
                                                     match ch {
                                                         '<' => in_tag = true,
-                                                        '>' if in_tag => {
-                                                            in_tag = false;
-                                                            all_lyrics.push('\n');
-                                                        }
+                                                        '>' if in_tag => { in_tag = false; all_lyrics.push('\n'); }
                                                         _ if !in_tag => all_lyrics.push(ch),
                                                         _ => {}
                                                     }
@@ -300,15 +299,13 @@ impl BackendTask<ArcServer> for GetLyrics {
                                             }
                                         }
                                         let cleaned: String = all_lyrics
-                                            .replace("&quot;", "\"")
-                                            .replace("&#x27;", "'")
-                                            .replace("&#x2019;", "'")
-                                            .replace("&amp;", "&")
-                                            .replace("&lt;", "<")
-                                            .replace("&gt;", ">");
+                                            .replace("&quot;", "\"").replace("&#x27;", "'")
+                                            .replace("&#x2019;", "'").replace("&amp;", "&")
+                                            .replace("&lt;", "<").replace("&gt;", ">")
+                                            .replace("&#x2014;", "--").replace("&#x2013;", "-");
                                         let cleaned: String = cleaned.lines()
-                                            .map(|l| l.trim())
-                                            .filter(|l| !l.is_empty() && !l.starts_with(|c: char| c.is_ascii_digit()) && !l.contains("Contributors") && !l.contains("Lyrics") && !l.contains("You might also like"))
+                                            .map(|l| l.trim()).filter(|l| !l.is_empty())
+                                            .filter(|l| !l.contains("Contributors") && !l.contains("You might also like"))
                                             .collect::<Vec<_>>()
                                             .join("\n");
                                         if !cleaned.is_empty() {
