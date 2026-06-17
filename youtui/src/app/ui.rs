@@ -884,8 +884,9 @@ impl YoutuiWindow {
             .to_string();
         if video_id_str.len() >= 10 && video_id_str.len() <= 20 {
             let vid = ytmapi_rs::common::VideoID::from_raw(video_id_str.clone());
-            // Add to playlist via the API
             self.playlist.add_yt_video(vid, &url);
+            // Also play the song (starts download, plays when ready)
+            return self.playlist.play_selected().map_frontend(|this: &mut Self| &mut this.playlist);
         }
         AsyncTask::new_no_op()
     }
