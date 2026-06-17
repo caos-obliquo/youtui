@@ -834,6 +834,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewLyrics)),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
@@ -1626,5 +1630,17 @@ mod tests {
         remove_action_from_keymap(&mut keys, &AppAction::Quit);
         let expected = Keymap::from_iter([]);
         pretty_assertions::assert_eq!(keys, expected);
+    }
+}
+
+#[cfg(test)]
+mod lyrics_test {
+    use crate::app::ui::action::AppAction;
+    use crate::app::ui::playlist::PlaylistAction;
+
+    #[test]
+    fn test_view_lyrics_parse() {
+        let action: AppAction = "playlist.view_lyrics".to_string().try_into().unwrap();
+        assert_eq!(action, AppAction::Playlist(PlaylistAction::ViewLyrics));
     }
 }

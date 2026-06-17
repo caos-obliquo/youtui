@@ -26,12 +26,12 @@ s = {action = "playlist.toggle_shuffle", visibility = "global"}
 "/" = {action = "playlist.toggle_search", visibility = "global"}
 A = {action = "playlist.set_best_quality", visibility = "global"}
 d = {action = "playlist.delete_selected", visibility = "global"}
-L = {action = "playlist.view_lyrics", visibility = "global"}
 D = {action = "playlist.delete_all", visibility = "global"}
 enter.enter = "playlist.play_selected"
 enter.n = "playlist.save_to_new_playlist"
 o.enter = "playlist.play_selected"
 o.d = "playlist.delete_selected"
+o.l = "playlist.view_lyrics"
 
 [mode_names.playlist]
 enter = "Playlist Action"
