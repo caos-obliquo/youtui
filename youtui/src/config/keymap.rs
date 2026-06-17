@@ -850,6 +850,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewLyrics)),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::CopySongUrl)),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
