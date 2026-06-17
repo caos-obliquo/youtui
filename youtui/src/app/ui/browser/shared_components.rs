@@ -170,10 +170,10 @@ impl TextHandler for SearchBlock {
         event: &crossterm::event::Event,
     ) -> Option<ComponentEffect<Self>> {
         if let crossterm::event::Event::Key(key) = event {
-            if !self.vim_mode && key.code == crossterm::event::KeyCode::Esc {
-                self.vim_mode = true;
+            if key.code == crossterm::event::KeyCode::Esc {
+                self.vim_mode = false;
                 self.vim_pending = None;
-                return Some(AsyncTask::new_no_op());
+                return None; // Let Esc reach keybinding system to close search
             }
             if self.vim_mode {
                 match key.code {
@@ -193,7 +193,6 @@ impl TextHandler for SearchBlock {
                         }
                     }
                     crossterm::event::KeyCode::Char('x') => { let _ = self.search_contents.delete_next_word(); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Esc => { self.vim_mode = false; self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
                     _ => { self.vim_pending = None; }
                 }
             }
