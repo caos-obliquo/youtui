@@ -948,6 +948,13 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('c')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserArtistSongs(BrowserArtistSongsAction::ToggleCategoryFilter),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserArtistSongs(BrowserArtistSongsAction::ViewLyrics),

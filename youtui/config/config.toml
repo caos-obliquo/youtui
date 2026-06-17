@@ -57,6 +57,7 @@ esc = "browser_search.close"
 [keybinds.browser_artist_songs]
 3 = {action = "browser_artist_songs.filter", visibility = "global"}
 4 = {action = "browser_artist_songs.sort", visibility = "global"}
+c = {action = "browser_artist_songs.toggle_category_filter", visibility = "global"}
 y = {action = "browser_artist_songs.view_lyrics", visibility = "global"}
 enter.enter = "browser_artist_songs.play_song"
 enter.p = "browser_artist_songs.play_songs"

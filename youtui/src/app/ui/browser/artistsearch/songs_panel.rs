@@ -40,6 +40,7 @@ pub struct AlbumSongsPanel {
     pub filter: FilterManager,
     cur_selected: usize,
     pub widget_state: ScrollingTableState,
+    pub category_filter: Option<&'static str>,
 }
 impl_youtui_component!(AlbumSongsPanel);
 
@@ -57,6 +58,7 @@ pub enum BrowserArtistSongsAction {
     AddSongToExistingPlaylist,
     AddSongsToExistingPlaylist,
     ViewLyrics,
+    ToggleCategoryFilter,
 }
 
 impl Action for BrowserArtistSongsAction {
@@ -76,6 +78,7 @@ impl Action for BrowserArtistSongsAction {
             BrowserArtistSongsAction::Sort => "Sort",
             BrowserArtistSongsAction::Filter => "Filter",
             BrowserArtistSongsAction::ViewLyrics => "View Lyrics",
+            BrowserArtistSongsAction::ToggleCategoryFilter => "Toggle Category Filter",
         }
         .into()
     }
@@ -89,6 +92,7 @@ impl AlbumSongsPanel {
             sort: SortManager::new(),
             filter: FilterManager::new(),
             widget_state: Default::default(),
+            category_filter: None,
         }
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
@@ -115,8 +119,12 @@ impl AlbumSongsPanel {
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
         self.list.get_list_iter().filter(move |ls| {
-            // Naive implementation.
-            // TODO: Do this in a single pass and optimise.
+            if let Some(cat) = self.category_filter {
+                let album_name = ls.album.as_ref().map(|a| a.name.as_str()).unwrap_or("");
+                if !album_name.starts_with(cat) {
+                    return false;
+                }
+            }
             self.get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
@@ -124,7 +132,7 @@ impl AlbumSongsPanel {
                         ls,
                         Self::subcolumns_of_vec(),
                         self.get_filterable_columns(),
-                    ); // If we find a match for each filter, can display the row.
+                    );
                     acc && match_found
                 })
         })
@@ -217,6 +225,14 @@ impl AlbumSongsPanel {
             warn!("Tried to sort a column that is not sortable - error {e}")
         };
         self.close_sort();
+    }
+    pub fn handle_toggle_category_filter(&mut self) {
+        self.category_filter = match self.category_filter {
+            None => Some("Album:"),
+            Some("Album:") => Some("EP:"),
+            Some("EP:") => Some("Single:"),
+            _ => None,
+        };
     }
     pub fn handle_songs_found(&mut self) {
         self.list.clear();
@@ -444,7 +460,13 @@ impl HasTitle for AlbumSongsPanel {
             )
             .into(),
             ListStatus::Loaded => {
-                format!("Songs - {} results", self.list.get_list_iter().len()).into()
+                let cat_indicator = match self.category_filter {
+                    Some("Album:") => " [Albums]",
+                    Some("EP:") => " [EPs]",
+                    Some("Single:") => " [Singles]",
+                    _ => "",
+                };
+                format!("Songs - {} results{}", self.list.get_list_iter().len(), cat_indicator).into()
             }
             ListStatus::Error => "Songs - Error receieved".into(),
         }
