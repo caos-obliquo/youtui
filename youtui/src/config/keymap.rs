@@ -977,6 +977,20 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('o')),
+            KeyActionTree::new_mode(
+                [
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::PlaySong,
+                        )),
+                    ),
+                ],
+                "Context Menu".into(),
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
             KeyActionTree::new_mode(
                 [
@@ -1079,6 +1093,20 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('o')),
+            KeyActionTree::new_mode(
+                [
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
+                            BrowserPlaylistSongsAction::PlaySong,
+                        )),
+                    ),
+                ],
+                "Context Menu".into(),
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
             KeyActionTree::new_mode(
                 [
@@ -1145,6 +1173,20 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserSongs(BrowserSongsAction::ViewLyrics),
                 KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('o')),
+            KeyActionTree::new_mode(
+                [
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(
+                            BrowserSongsAction::PlaySong,
+                        )),
+                    ),
+                ],
+                "Context Menu".into(),
             ),
         ),
         (
