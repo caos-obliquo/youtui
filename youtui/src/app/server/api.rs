@@ -301,6 +301,7 @@ fn get_artist_songs(
             api: &ConcurrentApi,
             tx: &tokio::sync::mpsc::Sender<GetArtistSongsProgressUpdate>,
             section: Option<GetArtistAlbums>,
+            section_type: Option<&str>,
         ) -> Option<Vec<(AlbumID<'static>, Option<String>)>> {
             let GetArtistAlbums {
                 browse_id: section_browse_id,
@@ -308,11 +309,15 @@ fn get_artist_songs(
                 results: section_results,
                 ..
             } = section?;
+            let category_fallback = || section_type.map(|s| s.to_string());
             if section_browse_id.is_none()
                 && section_params.is_none()
                 && !section_results.is_empty()
             {
-                return Some(section_results.into_iter().map(|r| (r.album_id, None)).collect());
+                return Some(section_results.into_iter().map(|r| {
+                    let cat = r.album_type.map(|t| format!("{t:?}")).or_else(category_fallback);
+                    (r.album_id, cat)
+                }).collect());
             }
             if section_params.is_none() || section_browse_id.is_none() {
                 return None;
@@ -321,7 +326,7 @@ fn get_artist_songs(
             let temp_params = section_params?;
             let query = GetArtistAlbumsQuery::new(temp_browse_id, temp_params);
             match query_api_with_retry(&api, query).await {
-                Ok(albums) => Some(albums.into_iter().map(|a| (a.browse_id, a.category)).collect()),
+                Ok(albums) => Some(albums.into_iter().map(|a| (a.browse_id, a.category.or_else(category_fallback))).collect()),
                 Err(e) => {
                     error!("Received error on get_artist_albums query \"{}\"", e);
                     send_or_error(tx, GetArtistSongsProgressUpdate::GetArtistAlbumsError(e)).await;
@@ -331,10 +336,10 @@ fn get_artist_songs(
         }
 
         let mut browse_id_list: Vec<(AlbumID<'static>, Option<String>)> = Vec::new();
-        if let Some(albums) = process_section(&api, &tx, artist.top_releases.albums).await {
+        if let Some(albums) = process_section(&api, &tx, artist.top_releases.albums, Some("Album")).await {
             browse_id_list.extend(albums);
         }
-        if let Some(singles) = process_section(&api, &tx, artist.top_releases.singles).await {
+        if let Some(singles) = process_section(&api, &tx, artist.top_releases.singles, Some("Single")).await {
             browse_id_list.extend(singles);
         }
         if browse_id_list.is_empty() {
