@@ -171,9 +171,14 @@ impl TextHandler for SearchBlock {
     ) -> Option<ComponentEffect<Self>> {
         if let crossterm::event::Event::Key(key) = event {
             if key.code == crossterm::event::KeyCode::Esc {
+                if !self.vim_mode {
+                    self.vim_mode = true;
+                    self.vim_pending = None;
+                    return Some(AsyncTask::new_no_op());
+                }
                 self.vim_mode = false;
                 self.vim_pending = None;
-                return None; // Let Esc reach keybinding system to close search
+                return None; // Second Esc closes search
             }
             if self.vim_mode {
                 match key.code {
