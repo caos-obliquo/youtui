@@ -374,7 +374,7 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                 }
             }
             AppAction::LyricsPopup(a) => {
-                if let Some(popup) = &mut self.lyrics_popup {
+                if self.lyrics_popup.is_some() {
                     return apply_action_mapped(self, a, |this: &mut Self| {
                         this.lyrics_popup.as_mut().expect("popup exists")
                     });

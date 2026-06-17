@@ -1,7 +1,7 @@
 use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::{ArcServer, TaskMetadata};
 use crate::app::ui::playlist::Playlist;
-use crate::app::ui::playlist::lyrics_popup::{LyricsPopup, LyricsPopupState};
+use crate::app::ui::playlist::lyrics_popup::LyricsPopup;
 use crate::app::ui::playlist::playlist_update_popup::{PlaylistUpdatePopup, PlaylistUpdatePopupState};
 use async_callback_manager::{AsyncTask, FrontendEffect};
 use tracing::{error, info};

@@ -88,7 +88,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
     async fn stream_song(
         &self,
         song_video_id: impl AsRef<str> + Send,
-        audio_quality: AudioQuality,
+        _audio_quality: AudioQuality,
     ) -> Result<
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
         Self::Error,
@@ -106,7 +106,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             // Always use best audio quality with m4a container for rodio compatibility
             let format_string = "bestaudio[ext=m4a]/bestaudio/best".to_string();
             
-            let mut stream_args = vec![
+            let stream_args = vec![
                 "--extractor-args",
                 "youtube:player_client=android_vr",
                 "--no-simulate",
