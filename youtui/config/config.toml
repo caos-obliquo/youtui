@@ -25,13 +25,16 @@ C-c = "quit"
 s = {action = "playlist.toggle_shuffle", visibility = "global"}
 "/" = {action = "playlist.toggle_search", visibility = "global"}
 A = {action = "playlist.set_best_quality", visibility = "global"}
+d = {action = "playlist.delete_selected", visibility = "global"}
+D = {action = "playlist.delete_all", visibility = "global"}
 enter.enter = "playlist.play_selected"
-enter.d = "playlist.delete_selected"
-enter.D = "playlist.delete_all"
 enter.n = "playlist.save_to_new_playlist"
+o.enter = "playlist.play_selected"
+o.d = "playlist.delete_selected"
 
 [mode_names.playlist]
 enter = "Playlist Action"
+o = "Context Menu"
 
 [keybinds.browser]
 5 = {action = "browser.view_playlist", visibility = "global"}
@@ -46,6 +49,8 @@ enter = "browser_artists.display_selected_artist_albums"
 [keybinds.browser_search]
 j = "browser_search.next_search_suggestion"
 k = "browser_search.prev_search_suggestion"
+tab = "browser_search.next_search_suggestion"
+S-tab = "browser_search.prev_search_suggestion"
 
 [keybinds.browser_artist_songs]
 3 = {action = "browser_artist_songs.filter", visibility = "global"}
@@ -139,7 +144,9 @@ j = {action = "list.down", visibility = "hidden"}
 pageup = "list.page_up"
 pagedown = "list.page_down"
 C-b = "list.page_up"
+C-u = "list.page_up"
 C-f = "list.page_down"
+C-d = "list.page_down"
 g = "list.first"
 G = "list.last"
 

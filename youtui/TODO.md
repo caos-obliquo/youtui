@@ -20,15 +20,20 @@
 - `?` help toggle, `l` logs, `q` quit
 - `1-6` for view switching (playlist, search, sort, filter, etc.)
 - `j/k` up/down, `h/l` left/right
-- `C-b`/`C-f` page up/down, `g`/`G` first/last
+- `C-b`/`C-u` page up, `C-f`/`C-d` page down, `g`/`G` first/last
+- `o` context menu (mode: Enter→Play, d→Delete)
+- `d` delete selected, `D` delete all (direct, no Enter prefix)
 - `e`/`E` add song(s) to existing playlist, `n` save new playlist
+- Tab/Shift-Tab navigate search suggestions
 - Config file at `~/.config/youtui/config.toml`
 
-### Playlist Features
+### Playlist & API
 
 - **Save to new playlist**: `n` key, opens form popup for name/description
 - **Add to existing playlist**: `e` (single song) / `E` (all songs), opens list popup
+- **Context menu**: `o` key opens mode (bottom bar) with Play / Delete
 - Popups use direct key routing in `handle_crossterm_event` before standard KeyRouter pipeline
+- **Client version**: scraped from YouTube Music page, canary suffix stripped automatically
 
 ### Branches
 
@@ -38,11 +43,19 @@
 | `fix/audio-ytdlp` | yt-dlp + vim keybinds (stable) |
 | `fix/playlist-update-popup` | Cookie fix + popup improvements (current) |
 
+### Done (this session)
+
+- [x] Playlist creation 400 — fixed (canary version `-canary_control_` suffix stripped from scraped client version)
+- [x] `d`/`D` delete direct — moved out of Enter mode to top-level playlist keybinds
+- [x] `C-d` page down — added to list keybinds
+- [x] `C-u` page up — added to list keybinds
+- [x] `o` context menu — mode with Enter→Play, d→Delete (consistent with Enter's mode UX)
+- [x] Tab/Shift-Tab search suggestion navigation
+- [x] Debug logging removed from auth.rs
+
 ### Remaining
 
-- [ ] Context menu (`o` key, ncspot-style)
-- [x] Search: show EPs and singles in artist browser (category prepended to album name)
-- [x] Playlist creation 401 — fixed with fresh cookie + client version bump
+- [ ] **Lyrics** — native Musixmatch integration (`musixmatch-cli` crate) with dedicated keybind
+- [ ] **Scrobbling** — embed Rescrobbled natively (ListenBrainz / Maloja)
+- [ ] **License review** — verify all dependency licenses, add proper attribution
 - [ ] Plain-text config for easy editing
-- [ ] Lyrics — native Musixmatch integration (`musixmatch-cli` crate) with dedicated keybind
-- [ ] Scrobbling — embed Rescrobbled natively (ListenBrainz / Maloja)

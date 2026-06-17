@@ -802,7 +802,21 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::DeleteSelected),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('D')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::DeleteAll),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('o')),
             KeyActionTree::new_mode(
                 [
                     (
@@ -813,9 +827,17 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
                     ),
+                ],
+                "Context Menu".into(),
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+            KeyActionTree::new_mode(
+                [
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('D')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteAll)),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::PlaySelected)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('n')),
@@ -886,6 +908,18 @@ fn default_browser_search_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActio
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('k')),
+            KeyActionTree::new_key(AppAction::BrowserSearch(
+                BrowserSearchAction::PrevSearchSuggestion,
+            )),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Tab),
+            KeyActionTree::new_key(AppAction::BrowserSearch(
+                BrowserSearchAction::NextSearchSuggestion,
+            )),
+        ),
+        (
+            Keybind::new(crossterm::event::KeyCode::Tab, KeyModifiers::SHIFT),
             KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::PrevSearchSuggestion,
             )),
@@ -1327,7 +1361,15 @@ fn default_list_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key(AppAction::List(ListAction::PageUp)),
         ),
         (
+            Keybind::new(crossterm::event::KeyCode::Char('u'), KeyModifiers::CONTROL),
+            KeyActionTree::new_key(AppAction::List(ListAction::PageUp)),
+        ),
+        (
             Keybind::new(crossterm::event::KeyCode::Char('f'), KeyModifiers::CONTROL),
+            KeyActionTree::new_key(AppAction::List(ListAction::PageDown)),
+        ),
+        (
+            Keybind::new(crossterm::event::KeyCode::Char('d'), KeyModifiers::CONTROL),
             KeyActionTree::new_key(AppAction::List(ListAction::PageDown)),
         ),
         (

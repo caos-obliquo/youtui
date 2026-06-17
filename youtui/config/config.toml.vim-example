@@ -14,4 +14,6 @@ pagedown = "no_op"
 k = {action = "list.up", visibility = "hidden"}
 j = {action = "list.down", visibility = "hidden"}
 C-b = "list.page_up"
+C-u = "list.page_up"
 C-f = "list.page_down"
+C-d = "list.page_down"

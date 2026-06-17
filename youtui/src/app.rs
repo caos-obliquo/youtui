@@ -95,6 +95,7 @@ pub enum AppCallback {
         description: Option<String>,
         video_ids: Vec<VideoID<'static>>,
     },
+
 }
 
 impl Youtui {
