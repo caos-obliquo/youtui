@@ -38,6 +38,7 @@ pub enum AppAction {
     PlayPause,
     NoOp,
     EditConfig,
+    OpenUrl,
     Browser(BrowserAction),
     Filter(FilterAction),
     Sort(SortAction),
@@ -128,6 +129,7 @@ impl Action for AppAction {
             | AppAction::ViewLogs
             | AppAction::NoOp
             | AppAction::EditConfig
+            | AppAction::OpenUrl
             | AppAction::PlayPause => "Global".into(),
             AppAction::Log(a) => a.context(),
             AppAction::Playlist(a) => a.context(),
@@ -162,6 +164,7 @@ impl Action for AppAction {
             AppAction::SeekBack => format!("Seek Back {}s", SEEK_AMOUNT.as_secs()).into(),
             AppAction::NoOp => "No Operation".into(),
             AppAction::EditConfig => "Edit Config".into(),
+            AppAction::OpenUrl => "Open URL".into(),
             AppAction::Log(a) => a.describe(),
             AppAction::Playlist(a) => a.describe(),
             AppAction::PlaylistSavePopup(a) => a.describe(),

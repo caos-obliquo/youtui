@@ -135,6 +135,7 @@ y pressed -> GetLyrics(artist, title) backend task
 - [x] **License review** — all deps MIT/Apache-2.0/BSD/MPL-2.0. No GPL except rescrobbled (subprocess, not library)
 - [x] **YouTube fallback** — yt-dlp search when YTMusic returns 0 results (merged to main)
 - [x] **Genius annotations** — scaffolded (needs API-based approach, scraping fragile)
+- [ ] **Native streaming** — stream audio instead of download-to-RAM (yt-dlp pipe mode)
 
 ### Configs
 

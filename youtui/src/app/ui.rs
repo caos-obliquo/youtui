@@ -63,6 +63,8 @@ pub struct YoutuiWindow {
     pub help: HelpMenu,
     pub tick: u64,
     pub quit_confirm: bool,
+    pub command_mode: bool,
+    pub command_text: String,
 }
 impl_youtui_component!(YoutuiWindow);
 
@@ -397,6 +399,7 @@ impl ActionHandler<AppAction> for YoutuiWindow {
             AppAction::TextEntry(a) => return self.handle_text_entry_action(a).into(),
             AppAction::List(a) => return self.handle_list_action(a).into(),
             AppAction::EditConfig => self.open_config_editor(),
+            AppAction::OpenUrl => { self.command_mode = true; self.command_text.clear(); },
             AppAction::NoOp => (),
         };
         AsyncTask::new_no_op().into()
@@ -422,6 +425,8 @@ impl YoutuiWindow {
             help: HelpMenu::new(),
             tick: 0,
             quit_confirm: false,
+            command_mode: false,
+            command_text: String::new(),
         };
         (
             this,
@@ -488,6 +493,28 @@ impl YoutuiWindow {
                     KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
                         self.quit_confirm = false;
                     }
+                    _ => {}
+                }
+            }
+            return AsyncTask::new_no_op().into();
+        }
+
+        // Command mode (: prompt) handles all keys
+        if self.command_mode {
+            if let Event::Key(k) = event {
+                match k.code {
+                    KeyCode::Esc => { self.command_mode = false; self.command_text.clear(); }
+                    KeyCode::Enter => {
+                        let url = self.command_text.trim().to_string();
+                        self.command_mode = false;
+                        self.command_text.clear();
+                        if !url.is_empty() {
+                            // Play the URL via playlist
+                            return self.play_yt_url(url).into();
+                        }
+                    }
+                    KeyCode::Backspace => { self.command_text.pop(); }
+                    KeyCode::Char(c) => { self.command_text.push(c); }
                     _ => {}
                 }
             }
@@ -843,6 +870,10 @@ impl YoutuiWindow {
             }
             this.lyrics_popup.as_mut().expect("just set")
         })
+    }
+    pub fn play_yt_url(&mut self, url: String) -> ComponentEffect<Self> {
+        tracing::info!("Playing URL: {}", url);
+        AsyncTask::new_no_op()
     }
     pub fn close_popup(&mut self) {
         self.playlist_save_popup = None;
