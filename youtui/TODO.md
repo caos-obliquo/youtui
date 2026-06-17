@@ -55,7 +55,8 @@
 
 ### Remaining
 
-- [ ] **Lyrics** — native Musixmatch integration (`musixmatch-cli` crate) with dedicated keybind
+- [ ] **Lyrics multi-provider** — Genius fallback via `lyr` CLI when Musixmatch misses
+- [ ] **Bandcamp lyrics CLI** — new crate to fetch lyrics from Bandcamp (no source exists today)
 - [ ] **Scrobbling** — embed Rescrobbled natively (ListenBrainz / Maloja)
 - [ ] **License review** — verify all dependency licenses, add proper attribution
 - [ ] Plain-text config for easy editing
