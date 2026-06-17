@@ -545,6 +545,22 @@ impl Playlist {
                 ));
                 self.play_status = PlayState::Playing(id);
                 self.queue_status = QueueState::NotQueued;
+                if self.scrobbling_config.enabled {
+                    if let Some(old) = self.scrobble_state.take() {
+                        if old.should_scrobble() {
+                            let cfg = self.scrobbling_config.clone();
+                            tokio::spawn(async move {
+                                crate::app::scrobbler::submit_scrobble(&cfg, &old).await;
+                            });
+                        }
+                    }
+                    if let Some(song) = self.get_song_from_idx(song_index) {
+                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        let album = song.album.as_ref().map(|a| a.name.clone());
+                        let dur = song.actual_duration.unwrap_or(std::time::Duration::from_secs(240));
+                        self.scrobble_state = Some(crate::app::scrobbler::ScrobbleState::new(artist, song.title.clone(), album, dur));
+                    }
+                }
                 return effect;
             } else {
                 let maybe_effect = self
