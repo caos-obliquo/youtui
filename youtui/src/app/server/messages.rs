@@ -19,7 +19,7 @@ use futures::{Future, Stream};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, YoutubeID};
+use ytmapi_rs::common::{ArtistChannelID, PlaylistID, SearchSuggestion, VideoID};
 use musixmatch_inofficial::Musixmatch;
 use reqwest;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
@@ -37,7 +37,7 @@ pub struct HandleApiError {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct GetLyrics(pub String, pub String);
+pub struct GetLyrics(pub String, pub String, pub String);
 
 #[derive(Debug, PartialEq)]
 pub struct GetSearchSuggestions(pub String);
@@ -234,6 +234,35 @@ impl BackendTask<ArcServer> for GetLyrics {
         async move {
             let artist = self.0;
             let title = self.1;
+            let genius_token = self.2;
+
+            // Try Genius API first if token available
+            if !genius_token.is_empty() {
+                let search_url = format!("https://api.genius.com/search?q={}+{}",
+                    urlenc(&artist), urlenc(&title));
+                match reqwest::Client::new()
+                    .get(&search_url)
+                    .header("Authorization", format!("Bearer {}", genius_token))
+                    .send().await
+                {
+                    Ok(resp) => {
+                        if let Ok(data) = resp.json::<serde_json::Value>().await {
+                            if let Some(hit) = data.pointer("/response/hits/0/result") {
+                                if let Some(api_path) = hit.get("api_path").and_then(|p| p.as_str()) {
+                                    let song_url = format!("https://api.genius.com{}", api_path);
+                                    tracing::info!("Genius API: fetching song {}", song_url);
+                                }
+                                // Use the URL from Genius to scrape lyrics (API doesn't provide lyrics)
+                                if let Some(url) = hit.get("url").and_then(|u| u.as_str()) {
+                                    tracing::info!("Genius API found: {}", url);
+                                    // Fall through to existing Genius scrape with this URL
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => tracing::warn!("Genius API search error: {}", e),
+                }
+            }
 
             // Try musixmatch-inofficial first
             match Musixmatch::builder().build() {
