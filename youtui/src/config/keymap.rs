@@ -981,9 +981,51 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
             KeyActionTree::new_mode(
                 [
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char(' ')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::AddSongToPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::PlaySongs,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('a')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::PlayAlbum,
+                        )),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
                         KeyActionTree::new_key(AppAction::BrowserArtistSongs(
                             BrowserArtistSongsAction::PlaySong,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('P')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::AddSongsToPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('A')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::AddAlbumToPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('e')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::AddSongToExistingPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('E')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::AddSongsToExistingPlaylist,
                         )),
                     ),
                 ],
@@ -1097,9 +1139,39 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
             KeyActionTree::new_mode(
                 [
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char(' ')),
+                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
+                            BrowserPlaylistSongsAction::AddSongToPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
+                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
+                            BrowserPlaylistSongsAction::PlaySongs,
+                        )),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
                         KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
                             BrowserPlaylistSongsAction::PlaySong,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('P')),
+                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
+                            BrowserPlaylistSongsAction::AddSongsToPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('e')),
+                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
+                            BrowserPlaylistSongsAction::AddSongToExistingPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('E')),
+                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
+                            BrowserPlaylistSongsAction::AddSongsToExistingPlaylist,
                         )),
                     ),
                 ],
@@ -1180,9 +1252,39 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
             KeyActionTree::new_mode(
                 [
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char(' ')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(
+                            BrowserSongsAction::AddSongToPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(
+                            BrowserSongsAction::PlaySongs,
+                        )),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
                         KeyActionTree::new_key(AppAction::BrowserSongs(
                             BrowserSongsAction::PlaySong,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('P')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(
+                            BrowserSongsAction::AddSongsToPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('e')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(
+                            BrowserSongsAction::AddSongToExistingPlaylist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('E')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(
+                            BrowserSongsAction::AddSongsToExistingPlaylist,
                         )),
                     ),
                 ],

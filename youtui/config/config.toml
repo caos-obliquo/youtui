@@ -64,6 +64,13 @@ esc = "browser_search.close"
 y = {action = "browser_artist_songs.view_lyrics", visibility = "global"}
 c = {action = "browser_artist_songs.toggle_category_filter", visibility = "global"}
 o.enter = "browser_artist_songs.play_song"
+o.p = "browser_artist_songs.play_songs"
+o.a = "browser_artist_songs.play_album"
+o.P = "browser_artist_songs.add_songs_to_playlist"
+o.A = "browser_artist_songs.add_album_to_playlist"
+o.e = "browser_artist_songs.add_song_to_existing_playlist"
+o.E = "browser_artist_songs.add_songs_to_existing_playlist"
+o." " = "browser_artist_songs.add_song_to_playlist"
 enter.enter = "browser_artist_songs.play_song"
 enter.p = "browser_artist_songs.play_songs"
 enter.a = "browser_artist_songs.play_album"
@@ -84,6 +91,12 @@ enter = "browser_playlists.display_selected_playlist"
 3 = {action = "browser_playlist_songs.filter", visibility = "global"}
 4 = {action = "browser_playlist_songs.sort", visibility = "global"}
 y = {action = "browser_playlist_songs.view_lyrics", visibility = "global"}
+o.enter = "browser_playlist_songs.play_song"
+o.p = "browser_playlist_songs.play_songs"
+o.P = "browser_playlist_songs.add_songs_to_playlist"
+o.e = "browser_playlist_songs.add_song_to_existing_playlist"
+o.E = "browser_playlist_songs.add_songs_to_existing_playlist"
+o." " = "browser_playlist_songs.add_song_to_playlist"
 enter.enter = "browser_playlist_songs.play_song"
 enter.p = "browser_playlist_songs.play_songs"
 enter.space = "browser_playlist_songs.add_song_to_playlist"
@@ -100,6 +113,11 @@ o = "Context Menu"
 4 = {action = "browser_songs.sort", visibility = "global"}
 y = {action = "browser_songs.view_lyrics", visibility = "global"}
 o.enter = "browser_songs.play_song"
+o.p = "browser_songs.play_songs"
+o.P = "browser_songs.add_songs_to_playlist"
+o.e = "browser_songs.add_song_to_existing_playlist"
+o.E = "browser_songs.add_songs_to_existing_playlist"
+o." " = "browser_songs.add_song_to_playlist"
 enter.enter = "browser_songs.play_song"
 enter.p = "browser_songs.play_songs"
 enter.space = "browser_songs.add_song_to_playlist"
