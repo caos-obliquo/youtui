@@ -41,6 +41,7 @@ pub struct AlbumSongsPanel {
     cur_selected: usize,
     pub widget_state: ScrollingTableState,
     pub category_filter: Option<&'static str>,
+    filtered_cache: Vec<ListSong>,
 }
 impl_youtui_component!(AlbumSongsPanel);
 
@@ -93,6 +94,7 @@ impl AlbumSongsPanel {
             filter: FilterManager::new(),
             widget_state: Default::default(),
             category_filter: None,
+            filtered_cache: Vec::new(),
         }
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
@@ -233,6 +235,10 @@ impl AlbumSongsPanel {
             Some("EP:") => Some("Single:"),
             _ => None,
         };
+        self.rebuild_filtered_cache();
+    }
+    pub fn rebuild_filtered_cache(&mut self) {
+        self.filtered_cache = self.get_filtered_list_iter().cloned().collect();
     }
     pub fn handle_songs_found(&mut self) {
         self.list.clear();
@@ -241,6 +247,7 @@ impl AlbumSongsPanel {
         // clearing filter params here.
         self.cur_selected = 0;
         self.list.state = ListStatus::InProgress;
+        self.rebuild_filtered_cache();
     }
     pub fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
         self.list.get_song_from_idx(idx)
@@ -369,8 +376,8 @@ impl TableView for AlbumSongsPanel {
         ]
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
-        self.list
-            .get_list_iter()
+        self.filtered_cache
+            .iter()
             .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {

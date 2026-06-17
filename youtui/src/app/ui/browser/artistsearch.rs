@@ -491,6 +491,7 @@ impl ArtistSearchBrowser {
     }
     pub fn handle_song_list_loaded(&mut self) {
         self.album_songs_panel.list.state = ListStatus::Loaded;
+        self.album_songs_panel.rebuild_filtered_cache();
     }
     pub fn handle_song_list_loading(&mut self) {
         self.album_songs_panel.list.state = ListStatus::Loading;
@@ -521,6 +522,7 @@ impl ArtistSearchBrowser {
             error!("Error <{e}> sorting album songs panel");
         }
         self.album_songs_panel.list.state = ListStatus::InProgress;
+        self.album_songs_panel.rebuild_filtered_cache();
     }
     pub fn handle_songs_found(&mut self) {
         self.album_songs_panel.handle_songs_found()
