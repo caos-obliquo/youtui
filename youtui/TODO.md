@@ -130,11 +130,11 @@ y pressed -> GetLyrics(artist, title) backend task
 - [x] **Native scrobbling** — Scrobbler module + config + Last.fm API (needs activation wiring)
 - [x] **Global `/` search** — `/` works in all views (playlist + browser)
 - [x] **Dark Souls quit** — transparent overlay, no box, no grey bg
-- [ ] **YouTube fallback** — fetch non-YTMusic tracks from YouTube for metadata + scrobbling
-- [ ] **Genius annotations** — fetch highlighted annotations per song (complex JSON parsing)
-- [ ] **License review** — verify all dependency licenses
-- [ ] **Scrobbler activation** — wire Last.fm submission to song end/completion
-- [ ] **`o` key browser views** — add context menu to song/artist/playlist browsers
+- [x] **Scrobbler activation** — Rescrobbled embedded (spawn on start, kill on exit)
+- [x] **`o` key browser views** — full Enter-mode mirrored in all views
+- [x] **License review** — all deps MIT/Apache-2.0/BSD/MPL-2.0. No GPL except rescrobbled (subprocess, not library)
+- [ ] **YouTube fallback** — `feat/youtube-fallback` branch
+- [ ] **Genius annotations** — `feat/genius-annotations-impl` branch
 
 ### Configs
 
