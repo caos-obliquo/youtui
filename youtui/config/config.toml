@@ -16,6 +16,7 @@ q = {action = "quit", visibility = "global"}
 l = {action = "view_logs", visibility = "global"}
 space = {action = "play_pause", visibility = "global"}
 C-c = "quit"
+C-e = {action = "edit_config", visibility = "global"}
 
 # Global keybind mode names
 [mode_names.global]
@@ -27,6 +28,7 @@ s = {action = "playlist.toggle_shuffle", visibility = "global"}
 A = {action = "playlist.set_best_quality", visibility = "global"}
 d = {action = "playlist.delete_selected", visibility = "global"}
 y = {action = "playlist.view_lyrics", visibility = "global"}
+c = {action = "playlist.toggle_playlist_category_filter", visibility = "global"}
 D = {action = "playlist.delete_all", visibility = "global"}
 enter.enter = "playlist.play_selected"
 enter.n = "playlist.save_to_new_playlist"
@@ -161,3 +163,7 @@ k = "playlist_save_popup.move_up"
 j = "playlist_save_popup.move_down"
 enter = "playlist_save_popup.save"
 esc = {action = "playlist_save_popup.cancel", visibility = "global"}
+
+[scrobbling]
+enabled = false
+token = ""

@@ -56,6 +56,23 @@ pub struct Config {
     pub downloader_type: DownloaderType,
     pub yt_dlp_command: String,
     pub keybinds: YoutuiKeymap,
+    pub scrobbling: ScrobblingConfig,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ScrobblingConfig {
+    pub enabled: bool,
+    pub token: String,
+}
+
+impl Default for ScrobblingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            token: String::new(),
+        }
+    }
 }
 
 fn default_yt_dlp_command() -> String {
@@ -69,6 +86,7 @@ impl Default for Config {
             downloader_type: Default::default(),
             yt_dlp_command: default_yt_dlp_command(),
             keybinds: Default::default(),
+            scrobbling: Default::default(),
         }
     }
 }
@@ -83,6 +101,7 @@ pub struct ConfigIR {
     pub yt_dlp_command: String,
     pub keybinds: YoutuiKeymapIR,
     pub mode_names: YoutuiModeNamesIR,
+    pub scrobbling: ScrobblingConfig,
 }
 
 impl TryFrom<ConfigIR> for Config {
@@ -94,11 +113,13 @@ impl TryFrom<ConfigIR> for Config {
             keybinds,
             mode_names,
             yt_dlp_command,
+            scrobbling,
         } = value;
         Ok(Config {
             auth_type,
             downloader_type,
             keybinds: YoutuiKeymap::try_from_stringy(keybinds, mode_names)?,
+            scrobbling,
             yt_dlp_command,
         })
     }
@@ -187,6 +208,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             mode_names,
             downloader_type,
             yt_dlp_command,
+            scrobbling: _, ..
         } = toml::from_str(&config_file).unwrap();
         let keybinds = YoutuiKeymap::try_from_stringy_exact(keybinds, mode_names).unwrap();
         let YoutuiKeymap {
@@ -211,7 +233,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             auth_type: def_auth_type,
             keybinds: def_keybinds,
             downloader_type: def_downloader_type,
-            yt_dlp_command: def_yt_dlp_command,
+            yt_dlp_command: def_yt_dlp_command, .. 
         } = Config::default();
         let YoutuiKeymap {
             global: def_global,
@@ -289,7 +311,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             auth_type,
             keybinds,
             downloader_type,
-            yt_dlp_command,
+            yt_dlp_command, ..
         } = Config::try_from(ir).unwrap();
         let YoutuiKeymap {
             global,
@@ -313,7 +335,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             auth_type: def_auth_type,
             keybinds: def_keybinds,
             downloader_type: def_downloader_type,
-            yt_dlp_command: def_yt_dlp_command,
+            yt_dlp_command: def_yt_dlp_command, .. 
         } = Config::default();
         let YoutuiKeymap {
             global: def_global,
