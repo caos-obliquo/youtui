@@ -337,11 +337,14 @@ fn get_artist_songs(
 
         let mut browse_id_list: Vec<(AlbumID<'static>, Option<String>)> = Vec::new();
         if let Some(albums) = process_section(&api, &tx, artist.top_releases.albums, Some("Album")).await {
+            tracing::info!("get_artist_albums: found {} albums", albums.len());
             browse_id_list.extend(albums);
         }
         if let Some(singles) = process_section(&api, &tx, artist.top_releases.singles, Some("Single")).await {
+            tracing::info!("get_artist_albums: found {} singles", singles.len());
             browse_id_list.extend(singles);
         }
+        tracing::info!("get_artist_albums: total {} albums+singles", browse_id_list.len());
         if browse_id_list.is_empty() {
             tracing::info!("Telling caller no songs found (no albums or singles)");
             send_or_error(&tx, GetArtistSongsProgressUpdate::NoSongsFound).await;
