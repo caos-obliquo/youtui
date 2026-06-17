@@ -250,20 +250,32 @@ impl BackendTask<ArcServer> for GetLyrics {
                 }
             }
 
+            // Normalize title: lowercase, collapse whitespace, strip non-alphanumeric
+            fn normalize(s: &str) -> String {
+                s.to_lowercase()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+            let norm_artist = normalize(&artist);
+            let norm_title = normalize(&title);
+
             // Fallback: try lyr CLI (supports Genius, AZLyrics, JahLyrics, Musixmatch)
-            // Try multiple artist name formats for better matching
+            // Try multiple artist/title variants for better fuzzy matching
             let first_artist = artist.split(',').next().unwrap_or(&artist).trim().to_string();
             let two_artists = artist.splitn(3, ',').take(2).collect::<Vec<_>>().join(" and ").trim().to_string();
-            let artist_variants = [
-                artist.clone(),
-                first_artist.clone(),
-                two_artists,
-                first_artist,
+            let variants: Vec<(&str, &str)> = vec![
+                (&artist, &title),
+                (&first_artist, &title),
+                (&two_artists, &title),
+                (&first_artist, &norm_title),
+                (&norm_artist, &title),
+                (&norm_artist, &norm_title),
             ];
 
-            for artist_name in &artist_variants {
+            for (artist_name, song_title) in &variants {
                 let output = tokio::process::Command::new("lyr")
-                    .args(["--artist", artist_name, "--title", &title])
+                    .args(["--artist", artist_name, "--title", song_title])
                     .output()
                     .await;
 
