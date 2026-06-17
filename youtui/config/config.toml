@@ -28,6 +28,8 @@ s = {action = "playlist.toggle_shuffle", visibility = "global"}
 A = {action = "playlist.set_best_quality", visibility = "global"}
 d = {action = "playlist.delete_selected", visibility = "global"}
 y = {action = "playlist.view_lyrics", visibility = "global"}
+n = {action = "playlist.next_search_result", visibility = "global"}
+N = {action = "playlist.prev_search_result", visibility = "global"}
 c = {action = "playlist.toggle_playlist_category_filter", visibility = "global"}
 D = {action = "playlist.delete_all", visibility = "global"}
 enter.enter = "playlist.play_selected"
@@ -59,8 +61,9 @@ esc = "browser_search.close"
 [keybinds.browser_artist_songs]
 3 = {action = "browser_artist_songs.filter", visibility = "global"}
 4 = {action = "browser_artist_songs.sort", visibility = "global"}
-c = {action = "browser_artist_songs.toggle_category_filter", visibility = "global"}
 y = {action = "browser_artist_songs.view_lyrics", visibility = "global"}
+c = {action = "browser_artist_songs.toggle_category_filter", visibility = "global"}
+o.enter = "browser_artist_songs.play_song"
 enter.enter = "browser_artist_songs.play_song"
 enter.p = "browser_artist_songs.play_songs"
 enter.a = "browser_artist_songs.play_album"
@@ -72,6 +75,7 @@ enter.E = "browser_artist_songs.add_songs_to_existing_playlist"
 
 [mode_names.browser_artist_songs]
 enter = "Play"
+o = "Context Menu"
 
 [keybinds.browser_playlists]
 enter = "browser_playlists.display_selected_playlist"
@@ -89,11 +93,13 @@ enter.E = "browser_playlist_songs.add_songs_to_existing_playlist"
 
 [mode_names.browser_playlist_songs]
 enter = "Play"
+o = "Context Menu"
 
 [keybinds.browser_songs]
 3 = {action = "browser_songs.filter", visibility = "global"}
 4 = {action = "browser_songs.sort", visibility = "global"}
 y = {action = "browser_songs.view_lyrics", visibility = "global"}
+o.enter = "browser_songs.play_song"
 enter.enter = "browser_songs.play_song"
 enter.p = "browser_songs.play_songs"
 enter.space = "browser_songs.add_song_to_playlist"
@@ -103,6 +109,7 @@ enter.E = "browser_songs.add_songs_to_existing_playlist"
 
 [mode_names.browser_songs]
 enter = "Play"
+o = "Context Menu"
 
 [keybinds.help]
 "?" = {action = "help.close", visibility = "global"}
