@@ -885,6 +885,13 @@ fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Browser(BrowserAction::Search),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
             KeyActionTree::new_key(AppAction::Browser(BrowserAction::Left)),
         ),
