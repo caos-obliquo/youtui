@@ -145,6 +145,10 @@ impl ActionHandler<BrowserSearchAction> for ArtistSearchBrowser {
             BrowserSearchAction::NextSearchSuggestion => {
                 self.artist_search_panel.search.increment_list(1)
             }
+            BrowserSearchAction::Close => {
+                self.artist_search_panel.close_search();
+                self.revert_routing();
+            }
         }
         AsyncTask::new_no_op()
     }

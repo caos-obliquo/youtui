@@ -151,6 +151,10 @@ impl ActionHandler<BrowserSearchAction> for PlaylistSearchBrowser {
             BrowserSearchAction::NextSearchSuggestion => {
                 self.playlist_search_panel.search.increment_list(1)
             }
+            BrowserSearchAction::Close => {
+                self.playlist_search_panel.close_search();
+                self.revert_routing();
+            }
         }
         AsyncTask::new_no_op()
     }

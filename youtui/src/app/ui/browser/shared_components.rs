@@ -57,6 +57,7 @@ pub enum SortAction {
 pub enum BrowserSearchAction {
     PrevSearchSuggestion,
     NextSearchSuggestion,
+    Close,
 }
 
 impl Action for FilterAction {
@@ -96,6 +97,7 @@ impl Action for BrowserSearchAction {
         match self {
             BrowserSearchAction::PrevSearchSuggestion => "Prev Search Suggestion",
             BrowserSearchAction::NextSearchSuggestion => "Next Search Suggestion",
+            BrowserSearchAction::Close => "Close Search",
         }
         .into()
     }
