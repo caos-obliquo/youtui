@@ -91,7 +91,9 @@ pub struct Playlist {
     search_indices: Vec<usize>,
     pre_search_selected: usize,
     category_filter: Option<&'static str>,
+    scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
     search_cur: usize,
+    scrobbling_config: crate::config::ScrobblingConfig,
 }
 
 impl_youtui_component!(Playlist);
@@ -494,6 +496,8 @@ impl Playlist {
             search_enabled: false,
             category_filter: None,
             search_cur: 0,
+            scrobble_state: None,
+            scrobbling_config: crate::config::ScrobblingConfig::default(),
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -510,6 +514,10 @@ impl Playlist {
                 TaskMetadata::PlayPause,
             )),
         )
+    }
+
+    pub fn set_scrobbling_config(&mut self, config: crate::config::ScrobblingConfig) {
+        self.scrobbling_config = config;
     }
 
     pub fn play_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {

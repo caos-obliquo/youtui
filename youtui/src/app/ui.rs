@@ -405,7 +405,8 @@ impl ActionHandler<AppAction> for YoutuiWindow {
 
 impl YoutuiWindow {
     pub fn new(config: Config) -> (YoutuiWindow, ComponentEffect<YoutuiWindow>) {
-        let (playlist, task) = Playlist::new();
+        let (mut playlist, task) = Playlist::new();
+        playlist.set_scrobbling_config(config.scrobbling.clone());
         let this = YoutuiWindow {
             context: WindowContext::Browser,
             prev_context: WindowContext::Browser,
