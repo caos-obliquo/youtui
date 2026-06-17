@@ -91,6 +91,12 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center);
         f.render_widget(prompt, chunks[2]);
+    } else if w.command_mode {
+        use ratatui::style::{Color, Style};
+        use ratatui::widgets::Paragraph;
+        let cmd_text = format!(":{}█", w.command_text);
+        let cmd = Paragraph::new(cmd_text).style(Style::default().fg(Color::Cyan));
+        f.render_widget(cmd, footer_chunk);
     } else {
         footer::draw_footer(f, w, footer_chunk, terminal_image_capabilities);
     }
