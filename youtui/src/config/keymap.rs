@@ -847,10 +847,6 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
-                    ),
-                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewLyrics)),
                     ),
@@ -873,6 +869,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('n')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SaveToNewPlaylist)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::CopySongUrl)),
                     ),
                 ],
                 "Playlist Action".into(),

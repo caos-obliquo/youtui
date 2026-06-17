@@ -178,3 +178,48 @@ impl_youtui_task_handler!(
         LyricsEffect::FetchLyricsError(error.to_string())
     }
 );
+
+// GetAnnotations effect handlers
+
+#[derive(Debug, PartialEq)]
+pub enum AnnotationsEffect {
+    FetchAnnotationsSuccess(Vec<(String, String)>),
+    FetchAnnotationsError(String),
+}
+
+impl FrontendEffect<LyricsPopup, ArcServer, TaskMetadata> for AnnotationsEffect {
+    fn apply(self, target: &mut LyricsPopup) -> impl Into<ComponentEffect<LyricsPopup>> {
+        match self {
+            AnnotationsEffect::FetchAnnotationsSuccess(anns) => {
+                target.set_annotations(anns.into_iter().map(|(f, e)| crate::app::ui::playlist::lyrics_popup::Annotation { fragment: f, explanation: e }).collect());
+            }
+            AnnotationsEffect::FetchAnnotationsError(err) => {
+                tracing::warn!("Annotations fetch error: {}", err);
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub struct HandleGetAnnotationsOk;
+#[derive(PartialEq, Debug)]
+pub struct HandleGetAnnotationsErr;
+
+impl_youtui_task_handler!(
+    HandleGetAnnotationsOk,
+    Vec<(String, String)>,
+    LyricsPopup,
+    |_, annotations: Vec<(String, String)>| {
+        AnnotationsEffect::FetchAnnotationsSuccess(annotations)
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleGetAnnotationsErr,
+    anyhow::Error,
+    LyricsPopup,
+    |_, error: anyhow::Error| {
+        AnnotationsEffect::FetchAnnotationsError(error.to_string())
+    }
+);

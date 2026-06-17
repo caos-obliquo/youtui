@@ -38,6 +38,8 @@ pub struct HandleApiError {
 
 #[derive(Debug, PartialEq)]
 pub struct GetLyrics(pub String, pub String, pub String);
+#[derive(Debug, PartialEq)]
+pub struct GetAnnotations(pub String, pub String, pub String);
 
 #[derive(Debug, PartialEq)]
 pub struct GetSearchSuggestions(pub String);
@@ -472,6 +474,73 @@ impl BackendTask<ArcServer> for SearchSongs {
                 .collect();
             Ok(results)
         }
+    }
+}
+impl BackendTask<ArcServer> for GetAnnotations {
+    type Output = Result<Vec<(String, String)>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        _backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        async move {
+            let artist = self.0;
+            let title = self.1;
+            let token = self.2;
+
+            // Search Genius API for song
+            let search_url = format!("https://api.genius.com/search?q={}+{}",
+                artist.split_whitespace().collect::<Vec<_>>().join("+"),
+                title.split_whitespace().collect::<Vec<_>>().join("+"));
+            let client = reqwest::Client::new();
+            let resp = client.get(&search_url)
+                .header("Authorization", format!("Bearer {}", token))
+                .send().await.map_err(|e| anyhow::anyhow!("Genius API error: {}", e))?;
+            let data: serde_json::Value = resp.json().await.map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+            let song_id = data.pointer("/response/hits/0/result/id")
+                .and_then(|id| id.as_u64())
+                .ok_or_else(|| anyhow::anyhow!("No Genius results"))?;
+
+            // Fetch referents (annotations) for this song
+            let ref_url = format!("https://api.genius.com/referents?song_id={}", song_id);
+            let ref_resp = client.get(&ref_url)
+                .header("Authorization", format!("Bearer {}", token))
+                .send().await.map_err(|e| anyhow::anyhow!("Referents error: {}", e))?;
+            let ref_data: serde_json::Value = ref_resp.json().await.map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+
+            let mut annotations = Vec::new();
+            if let Some(refs) = ref_data.pointer("/response/referents").and_then(|r| r.as_array()) {
+                for referent in refs {
+                    let fragment = referent.get("fragment").and_then(|f| f.as_str()).unwrap_or("").to_string();
+                    let body = referent.pointer("/annotations/0/body/dom")
+                        .and_then(|d| extract_text_from_dom(d));
+                    if !fragment.is_empty() && !body.as_deref().unwrap_or("").is_empty() {
+                        annotations.push((fragment, body.unwrap_or_default()));
+                    }
+                }
+            }
+            tracing::info!("Fetched {} annotations for song {}", annotations.len(), song_id);
+            Ok(annotations)
+        }
+    }
+}
+fn extract_text_from_dom(dom: &serde_json::Value) -> Option<String> {
+    match dom {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Object(m) => {
+            if let Some(children) = m.get("children").and_then(|c| c.as_array()) {
+                let mut texts = Vec::new();
+                for child in children {
+                    if let Some(t) = extract_text_from_dom(child) {
+                        texts.push(t);
+                    }
+                }
+                if texts.is_empty() { None } else { Some(texts.join(" ")) }
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
 impl BackendTask<ArcServer> for SearchPlaylists {
