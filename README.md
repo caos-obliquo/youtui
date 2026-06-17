@@ -63,12 +63,16 @@ Requires a Google Cloud project with "TVs and Limited Input devices" OAuth clien
 | `C-f` / `C-d` | Page down |
 | `g` / `G` | First / last |
 | `d` / `D` | Delete selected / all |
-| `o` | Context menu (Enter→Play, d→Delete) |
+| `y` | View lyrics (any song view) |
+| `c` | Cycle category filter (artist albums) |
+| `o` | Context menu (Enter→Play, d→Delete, l→Lyrics) |
 | `s` | Shuffle |
 | `A` | Set best quality |
 | `n` | Save queue as new playlist |
 | `e` / `E` | Add song(s) to existing playlist |
-| Tab / Shift-Tab | Search suggestion navigation |
+| `Tab` / `S-Tab` | Search suggestion navigation |
+| `C-n` / `C-p` | Search suggestion navigation |
+| `Esc` | Close search/sort/filter pane |
 | `?` | Help |
 | `Space` | Play / Pause |
 | `q` | Quit |
@@ -81,7 +85,9 @@ Full keybinds at `~/.config/youtui/config.toml`.
 - **yt-dlp audio** — streams with `android_vr` extractor-args, no PO token needed
 - **Playlist management** — create from queue (`n`), add to existing (`e`/`E`), unlisted by default
 - **Delete** — `d` delete selected, `D` delete all (direct, no Enter prefix)
-- **Context menu** — `o` opens mode with Play + Delete
+- **Lyrics** — `y` key, Musixmatch (no API key needed)
+- **Category filter** — `c` key in artist album view (All/Album/EP/Single)
+- **Context menu** — `o` opens mode with Play + Delete + Lyrics
 - **EP / Single labels** — artist browser shows `Album:`, `EP:`, `Single:` prefix on release names
 - **Persistent queue** — survives restarts
 - **Configurable** — keybinds, downloader, auth style via `config.toml`
