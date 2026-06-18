@@ -20,3 +20,4 @@
 /async-callback-manager/target/*
 musixmatch_session.json
 ytmapi-rs/examples/gen_artist_output.rs
+test_section.m4a

@@ -10,6 +10,7 @@ pub mod api_error_handler;
 pub mod player;
 pub mod song_downloader;
 pub mod song_thumbnail_downloader;
+// pub mod metallum; // TODO: Metal Archives CLI integration (blocked by Cloudflare)
 
 const DL_CALLBACK_CHUNK_SIZE: u64 = 100000; // How often song download will pause to execute code.
 const MAX_RETRIES: usize = 5;

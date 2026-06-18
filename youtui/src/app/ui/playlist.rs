@@ -99,6 +99,7 @@ pub struct Playlist {
     pub album_tracks: Option<Vec<AlbumTrack>>,
     pub album_current_track: usize,
     pub scrobbling_config: crate::config::ScrobblingConfig,
+    pub yt_dlp_cookie_path: Option<String>,
 }
 
 impl_youtui_component!(Playlist);
@@ -549,6 +550,7 @@ impl Playlist {
             romaji_originals: HashMap::new(),
             album_tracks: None,
             album_current_track: 0,
+            yt_dlp_cookie_path: None,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -567,6 +569,123 @@ impl Playlist {
         )
     }
 
+    /// Create track entries from an album tracklist.
+    /// Each track gets: track_no, start_offset (accumulated) for ffmpeg seeking,
+    /// actual_duration for gapless/scrobble, year from validation or yt-dlp fallback.
+    /// If original is already downloaded (src_arc.is_some()): shares Arc, removes original, plays track 1.
+    /// Returns Option<ComponentEffect> for auto-play when download is ready.
+    pub fn insert_album_tracks(
+        &mut self,
+        song_id: ListSongID,
+        tracks: &[AlbumTrack],
+        artist: &Option<String>,
+        album: &Option<String>,
+        year: &Option<String>,
+    ) -> Option<ComponentEffect<Self>> {
+        let Some(src_idx) = self.get_index_from_id(song_id) else { return None; };
+
+        // Extract all data from src_song before any mutable borrows
+        let (video_raw, album_artist, album_year, src_arc) = {
+            let Some(src_song) = self.get_song_from_idx(src_idx) else { return None; };
+            let video_raw = src_song.video_id.get_raw().to_string();
+            let album_artist = artist.clone().unwrap_or_else(|| {
+                src_song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
+            });
+            // Use validated year, fallback to yt-dlp year on original entry
+            let album_year = year.clone().or_else(|| {
+                src_song.year.as_ref().map(|y| y.to_string())
+            }).map(std::rc::Rc::new);
+            let src_arc = match &src_song.download_status {
+                DownloadStatus::Downloaded(arc) => Some(arc.clone()),
+                _ => None,
+            };
+            (video_raw, album_artist, album_year, src_arc)
+        };
+        let album_name = album.clone();
+
+        // Guard: skip if tracks already exist for this video_id (cascade prevention)
+        let existing_tracks = self.list.get_list_iter()
+            .filter(|s| s.video_id.get_raw() == video_raw)
+            .filter(|s| s.track_no.is_some())
+            .count();
+        if existing_tracks >= tracks.len() {
+            info!("insert_album_tracks: {} tracks already exist, skipping insert", existing_tracks);
+            if let Some(arc) = src_arc {
+                for i in 0..tracks.len() {
+                    let track_idx = src_idx + i + 1;
+                    if let Some(song) = self.list.get_list_iter_mut().nth(track_idx) {
+                        if song.video_id.get_raw() == video_raw && matches!(song.download_status, DownloadStatus::None) {
+                            song.download_status = DownloadStatus::Downloaded(arc.clone());
+                        }
+                    }
+                }
+            }
+            return None;
+        }
+
+        let mut accum = 0.0;
+        for (i, track) in tracks.iter().enumerate() {
+            let dur_secs = track.duration_secs as u64;
+            let dur_str = format!("{}:{:02}", dur_secs / 60, dur_secs % 60);
+            let list_artists = vec![crate::app::structures::ListSongArtist {
+                name: album_artist.clone(),
+                id: None,
+            }];
+            let list_album = album_name.as_ref().map(|n| {
+                crate::app::structures::MaybeRc::Owned(crate::app::structures::ListSongAlbum {
+                    name: n.clone(),
+                    id: crate::app::structures::AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+                })
+            });
+            use ytmapi_rs::common::YoutubeID;
+            let video_id: ytmapi_rs::common::VideoID<'static> = ytmapi_rs::common::VideoID::from_raw(video_raw.clone());
+            let list_song = crate::app::structures::ListSong {
+                video_id,
+                track_no: Some(i + 1),
+                plays: String::new(),
+                title: track.title.clone(),
+                explicit: None,
+                download_status: DownloadStatus::None,
+                id: self.list.create_next_id(),
+                duration_string: dur_str,
+                actual_duration: Some(std::time::Duration::from_secs_f64(track.duration_secs)),
+                start_offset: Some(std::time::Duration::from_secs_f64(accum)),
+                year: album_year.clone(),
+                album_art: crate::app::structures::AlbumArtState::None,
+                artists: crate::app::structures::MaybeRc::Owned(list_artists),
+                thumbnails: crate::app::structures::MaybeRc::Owned(Vec::new()),
+                album: list_album,
+            };
+            self.list.insert_after(src_idx + i, list_song);
+            accum += track.duration_secs;
+        }
+        info!("insert_album_tracks: inserted {} tracks after index {}", tracks.len(), src_idx);
+
+        // If original is already downloaded, share Arc with new track entries
+        if let Some(arc) = src_arc {
+            for i in 0..tracks.len() {
+                let track_idx = src_idx + i + 1;
+                if let Some(song) = self.list.get_list_iter_mut().nth(track_idx) {
+                    if song.video_id.get_raw() == video_raw && matches!(song.download_status, DownloadStatus::None) {
+                        song.download_status = DownloadStatus::Downloaded(arc.clone());
+                    }
+                }
+            }
+            info!("insert_album_tracks: shared downloaded audio, removing original");
+            // Remove original entry (Arc stays alive via track clones)
+            self.list.remove_at(src_idx);
+            // Auto-play track 1 since everything is ready
+            if let Some(track1_id) = self.list.get_list_iter()
+                .find(|s| s.track_no == Some(1) && s.video_id.get_raw() == video_raw)
+                .map(|s| s.id)
+            {
+                let play_effect = self.play_song_id(track1_id);
+                return Some(play_effect);
+            }
+        }
+        None
+    }
+
     pub fn set_scrobbling_config(&mut self, config: crate::config::ScrobblingConfig) {
         self.scrobbling_config = config;
     }
@@ -578,15 +697,27 @@ impl Playlist {
 
         // Fetch metadata via yt-dlp
         let mut duration = String::from("0");
-        let (title, artist, year) = match std::process::Command::new("yt-dlp")
-            .args(["--dump-json", "--no-warnings", "--flat-playlist", &format!("https://youtu.be/{}", raw_id)])
-            .output()
+        let mut meta_cmd = std::process::Command::new("yt-dlp");
+        meta_cmd.args(["--dump-json", "--no-warnings", "--flat-playlist"]);
+        if self.yt_dlp_cookie_path.is_some() {
+            meta_cmd.args(["--cookies-from-browser", "chromium"]);
+        }
+        meta_cmd.arg(&format!("https://youtu.be/{}", raw_id));
+        let (title, artist, year) = match meta_cmd.output()
         {
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
                     let t = v.get("title").and_then(|s| s.as_str()).unwrap_or(&raw_id).to_string();
-                    let a = v.get("uploader").and_then(|s| s.as_str()).unwrap_or("Unknown").to_string();
+                    let uploader = v.get("uploader").and_then(|s| s.as_str()).unwrap_or("Unknown").to_string();
+                    // Try to extract real artist from title ("Artist - Song"), fallback to uploader
+                    let a = if t.contains(" - ") {
+                        t.splitn(2, " - ").next().map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty() && s.len() < 80)
+                            .unwrap_or_else(|| uploader.clone())
+                    } else {
+                        uploader.clone()
+                    };
                     if let Some(d) = v.get("duration").and_then(|s| s.as_f64()) {
                         let secs = d as u64;
                         duration = format!("{}:{:02}", secs / 60, secs % 60);
@@ -614,6 +745,18 @@ impl Playlist {
             title[artist_prefix.len().min(title.len())..].to_string()
         } else {
             title.clone()
+        };
+        // Further clean album-related suffixes from title for metadata validation
+        let clean_title = {
+            let s = clean_title.as_str();
+            // Strip "FULL ALBUM" or "Full Album" (case-insensitive)
+            if let Some(pos) = s.to_lowercase().find("full album") {
+                s[..pos].trim().to_string()
+            } else if let Some(pos) = s.find("  (") {
+                s[..pos].trim().to_string()
+            } else {
+                s.trim().to_string()
+            }
         };
         let album = None;
         let song = ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
@@ -653,50 +796,57 @@ impl Playlist {
         self.cur_played_dur = None;
 
         if let Some(song_index) = self.get_index_from_id(id) {
-            if let DownloadStatus::Downloaded(pointer) = &self
-                .get_song_from_idx(song_index)
-                .expect("Checked previously")
-                .download_status
-            {
-                let task = DecodeSong(pointer.clone()).map_stream(PlayDecodedSong(id));
-                let constraint = Some(Constraint::new_block_matching_metadata(
-                    TaskMetadata::PlayingSong,
-                ));
-                let effect = effect.push(AsyncTask::new_stream_try(
-                    task,
-                    HandlePlayUpdateOk,
-                    HandlePlayUpdateError(id),
-                    constraint,
-                ));
-                self.play_status = PlayState::Playing(id);
-                self.queue_status = QueueState::NotQueued;
-                if self.scrobbling_config.enabled {
-                    if let Some(old) = self.scrobble_state.take() {
-                        if old.should_scrobble() {
-                            let cfg = self.scrobbling_config.clone();
-                            tokio::spawn(async move {
-                                crate::app::scrobbler::submit_scrobble(&cfg, &old).await;
-                            });
+            let (pointer, offset, actual_dur) = {
+                let song = self.get_song_from_idx(song_index).expect("Checked previously");
+                match &song.download_status {
+                    DownloadStatus::Downloaded(p) => (p.clone(), song.start_offset, song.actual_duration),
+                    _ => {
+                        let maybe_effect = self.get_cur_playing_id().map(|cur_id| self.stop_song_id(cur_id));
+                        self.play_status = PlayState::Buffering(id);
+                        self.queue_status = QueueState::NotQueued;
+                        if let Some(stop_effect) = maybe_effect {
+                            effect = effect.push(stop_effect);
                         }
+                        return effect;
                     }
+                }
+            };
+            let task = DecodeSong(pointer, offset, actual_dur).map_stream(PlayDecodedSong(id));
+            let constraint = Some(Constraint::new_block_matching_metadata(
+                TaskMetadata::PlayingSong,
+            ));
+            let effect = effect.push(AsyncTask::new_stream_try(
+                task,
+                HandlePlayUpdateOk,
+                HandlePlayUpdateError(id),
+                constraint,
+            ));
+            self.play_status = PlayState::Playing(id);
+            self.queue_status = QueueState::NotQueued;
+            if self.scrobbling_config.enabled {
+                if let Some(old) = self.scrobble_state.take() {
+                    if old.should_scrobble() {
+                        let cfg = self.scrobbling_config.clone();
+                        tokio::spawn(async move {
+                            crate::app::scrobbler::submit_scrobble(&cfg, &old).await;
+                        });
+                    }
+                }
+                let is_track_entry = self.get_song_from_idx(song_index).and_then(|s| s.track_no).is_some();
+                if self.album_tracks.is_none() || is_track_entry {
                     if let Some(song) = self.get_song_from_idx(song_index) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                         let album = song.album.as_ref().map(|a| a.name.clone());
                         let dur = song.actual_duration.unwrap_or(std::time::Duration::from_secs(240));
                         self.scrobble_state = Some(crate::app::scrobbler::ScrobbleState::new(artist, song.title.clone(), album, dur));
                     }
-                }
-                return effect;
-            } else {
-                let maybe_effect = self
-                    .get_cur_playing_id()
-                    .map(|cur_id| self.stop_song_id(cur_id));
-                self.play_status = PlayState::Buffering(id);
-                self.queue_status = QueueState::NotQueued;
-                if let Some(stop_effect) = maybe_effect {
-                    effect = effect.push(stop_effect);
+                } else {
+                    // Album mode: boundary checker handles per-track scrobbling
+                    self.album_current_track = 0;
+                    info!("Album mode: started playback, will scrobble {} tracks", self.album_tracks.as_ref().map_or(0, |t| t.len()));
                 }
             }
+            return effect;
         }
         effect
     }
@@ -709,32 +859,32 @@ impl Playlist {
         self.cur_played_dur = None;
 
         if let Some(song_index) = self.get_index_from_id(id) {
-            if let DownloadStatus::Downloaded(pointer) = &self
-                .get_song_from_idx(song_index)
-                .expect("Checked previously")
-                .download_status
-            {
-                let task = DecodeSong(pointer.clone()).map_stream(AutoplayDecodedSong(id));
-                let effect = effect.push(AsyncTask::new_stream_try(
-                    task,
-                    HandleAutoplayUpdateOk,
-                    HandlePlayUpdateError(id),
-                    None,
-                ));
-                self.play_status = PlayState::Playing(id);
-                self.queue_status = QueueState::NotQueued;
-                return effect;
-            } else {
-                let maybe_effect = self
-                    .get_cur_playing_id()
-                    .map(|cur_id| self.stop_song_id(cur_id));
-                self.play_status = PlayState::Buffering(id);
-                self.queue_status = QueueState::NotQueued;
-                if let Some(stop_effect) = maybe_effect {
-                    effect = effect.push(stop_effect);
+            let (pointer, offset, actual_dur) = {
+                let song = self.get_song_from_idx(song_index).expect("Checked previously");
+                match &song.download_status {
+                    DownloadStatus::Downloaded(p) => (p.clone(), song.start_offset, song.actual_duration),
+                    _ => {
+                        let maybe_effect = self.get_cur_playing_id().map(|cur_id| self.stop_song_id(cur_id));
+                        self.play_status = PlayState::Buffering(id);
+                        self.queue_status = QueueState::NotQueued;
+                        if let Some(stop_effect) = maybe_effect {
+                            effect = effect.push(stop_effect);
+                        }
+                        return effect;
+                    }
                 }
-            }
-        };
+            };
+            let task = DecodeSong(pointer, offset, actual_dur).map_stream(AutoplayDecodedSong(id));
+            let effect = effect.push(AsyncTask::new_stream_try(
+                task,
+                HandleAutoplayUpdateOk,
+                HandlePlayUpdateError(id),
+                None,
+            ));
+            self.play_status = PlayState::Playing(id);
+            self.queue_status = QueueState::NotQueued;
+            return effect;
+        }
         effect
     }
 
@@ -780,31 +930,94 @@ impl Playlist {
         }
     }
 
+    /// Called when a song finishes downloading.
+    /// If this is the original album entry (track_no.is_none()) and album_tracks exist:
+    /// shares the Arc<InMemSong> with all track entries, waits for ALL tracks to have Downloaded
+    /// status, then auto-plays track 1 and removes the original entry from the list.
+    /// If tracks aren't ready yet (validation hasn't completed): returns without playing.
     pub fn handle_song_downloaded(&mut self, id: ListSongID) -> ComponentEffect<Self> {
         let start = std::time::Instant::now();
         info!("handle_song_downloaded ENTER: id={:?}, state={:?}, queue={:?}",
             id, self.play_status, self.queue_status);
+
+        // If album tracks are present and this is the ORIGINAL entry (not a track), share Arc with track entries
+        if let Some(ref tracks) = self.album_tracks.clone() {
+            let mut effect = AsyncTask::new_no_op();
+            let is_original = self.get_song_from_id(id).map(|s| s.track_no.is_none()).unwrap_or(false);
+            if tracks.len() >= 2 && is_original {
+                let original_arc = self.get_song_from_id(id)
+                    .and_then(|s| match &s.download_status {
+                        DownloadStatus::Downloaded(arc) => Some(arc.clone()),
+                        _ => None,
+                    });
+                if let Some(arc) = original_arc {
+                    let video_raw = self.get_song_from_id(id)
+                        .map(|s| s.video_id.get_raw().to_string())
+                        .unwrap_or_default();
+                    let indices: Vec<usize> = self.list.get_list_iter().enumerate()
+                        .filter(|(_, s)| s.track_no.is_some() && s.video_id.get_raw() == video_raw)
+                        .filter(|(_, s)| matches!(s.download_status, DownloadStatus::None))
+                        .map(|(i, _)| i)
+                        .collect();
+                    let count = indices.len();
+                    for idx in &indices {
+                        if let Some(song) = self.list.get_list_iter_mut().nth(*idx) {
+                            song.download_status = DownloadStatus::Downloaded(arc.clone());
+                        }
+                    }
+                    info!("handle_song_downloaded: shared album audio with {} track entries", count);
+                }
+            }
+
+            // For albums: don't play original, instead auto-play track 1 when all ready
+            if is_original && tracks.len() >= 2 {
+                // Check if all track entries exist and have downloaded audio
+                let video_raw = self.get_song_from_id(id)
+                    .map(|s| s.video_id.get_raw().to_string())
+                    .unwrap_or_default();
+                let all_ready = self.list.get_list_iter()
+                    .filter(|s| s.track_no.is_some() && s.video_id.get_raw() == video_raw)
+                    .all(|s| matches!(s.download_status, DownloadStatus::Downloaded(_)));
+                if all_ready {
+                    if let Some(track1_id) = self.list.get_list_iter()
+                        .find(|s| s.track_no == Some(1) && s.video_id.get_raw() == video_raw)
+                        .map(|s| s.id)
+                    {
+                        info!("Album tracks ready, playing track 1");
+                        let play_effect = self.play_song_id(track1_id);
+                        effect = effect.push(play_effect);
+                    }
+                    // Remove original entry (audio stays alive via track Arc clones)
+                    if let Some(idx) = self.get_index_from_id(id) {
+                        self.list.remove_at(idx);
+                        info!("handle_song_downloaded: removed original album entry");
+                    }
+                } else {
+                    info!("Album download complete but waiting for validation (tracks not ready)");
+                }
+                return effect;
+            }
+
+            let should_play = match self.play_status {
+                PlayState::Buffering(target_id) => { target_id == id }
+                PlayState::NotPlaying | PlayState::Stopped => true,
+                PlayState::Playing(cur) => cur == id,
+                PlayState::Paused(cur) => cur == id,
+                PlayState::Error(_) => false,
+            };
+            if should_play {
+                let play_effect = self.play_song_id(id);
+                effect = effect.push(play_effect);
+            }
+            return effect;
+        }
+
         let should_play = match self.play_status {
-            PlayState::Buffering(target_id) => {
-                info!("  match Buffering({:?}) vs id={:?}", target_id, id);
-                target_id == id
-            }
-            PlayState::NotPlaying | PlayState::Stopped => {
-                info!("  match NotPlaying/Stopped, will play");
-                true
-            }
-            PlayState::Playing(cur) => {
-                info!("  match Playing({:?}) vs id={:?}", cur, id);
-                cur == id
-            }
-            PlayState::Paused(cur) => {
-                info!("  match Paused({:?}) vs id={:?}", cur, id);
-                cur == id
-            }
-            PlayState::Error(cur) => {
-                info!("  match Error({:?}) vs id={:?}", cur, id);
-                false
-            }
+            PlayState::Buffering(target_id) => { target_id == id }
+            PlayState::NotPlaying | PlayState::Stopped => true,
+            PlayState::Playing(cur) => cur == id,
+            PlayState::Paused(cur) => cur == id,
+            PlayState::Error(_) => false,
         };
         if should_play {
             info!("play_attempt: song_id={:?}, state={:?}, ms_since_download={}",
@@ -1692,12 +1905,19 @@ impl Playlist {
                     warn!("download_started: song {} not found by id {:?}", video_id, id);
                 }
             }
+            // Mark 0-byte downloads as Failed (prevents sharing empty Arc with album tracks)
             DownloadProgressUpdateType::Completed(song_buf) => {
-                info!("download_done: song_id={}, size={}", video_id, song_buf.0.len());
+                let size = song_buf.0.len();
+                info!("download_done: song_id={}, size={}", video_id, size);
                 if let Some(idx) = self.get_index_from_id(id) {
                     if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
-                        s.download_status = DownloadStatus::Downloaded(Arc::new(song_buf));
-                        info!("download_status_updated: song_id={} -> Downloaded", video_id);
+                        if size == 0 {
+                            error!("download_done: song {} has 0 bytes, marking as Failed", video_id);
+                            s.download_status = DownloadStatus::Failed;
+                        } else {
+                            s.download_status = DownloadStatus::Downloaded(Arc::new(song_buf));
+                            info!("download_status_updated: song_id={} -> Downloaded", video_id);
+                        }
                     }
                 } else {
                     error!("download_done: song {} not found by id {:?}", video_id, id);
@@ -1799,8 +2019,96 @@ impl Playlist {
             return AsyncTask::new_no_op();
         }
 
-        self.cur_played_dur = Some(d);
+        let (start_offset, is_album_track) = self.get_song_from_id(id).map(|s| {
+            (s.start_offset, s.track_no.is_some())
+        }).unwrap_or((None, false));
 
+        // Convert absolute progress to track-relative for album tracks
+        // When ffmpeg extraction was used, d is already track-relative
+        let track_rel = match start_offset {
+            Some(_) if is_album_track => d,
+            Some(offset) => d.saturating_sub(offset),
+            None => d,
+        };
+        // Cap at actual_duration so progress never exceeds track boundary
+        let capped = match self.get_cur_playing_song().and_then(|s| s.actual_duration) {
+            Some(max) => track_rel.min(max),
+            None => track_rel,
+        };
+        self.cur_played_dur = Some(capped);
+
+        // Persistent scrobble: check on every progress update regardless of context
+        if self.scrobbling_config.enabled {
+            if let Some(ref state) = self.scrobble_state.clone() {
+                if state.should_scrobble() {
+                    let cfg = self.scrobbling_config.clone();
+                    let s = state.clone();
+                    tokio::spawn(async move {
+                        crate::app::scrobbler::submit_scrobble(&cfg, &s).await;
+                    });
+                    if let Some(s) = self.scrobble_state.as_mut() {
+                        s.scrobbled = true;
+                    }
+                }
+            }
+        }
+
+        // Album boundary scrobbling: only when playing the ORIGINAL entry (full album)
+        if !is_album_track {
+            if let Some(ref tracks) = self.album_tracks.clone() {
+                if tracks.len() >= 2 {
+                    let total_album_dur: f64 = tracks.iter().map(|t| t.duration_secs).sum();
+                    let video_dur = self.get_cur_playing_song()
+                        .and_then(|s| s.actual_duration)
+                        .unwrap_or(d)
+                        .as_secs_f64();
+                    let elapsed = d.as_secs_f64();
+                    let mut accum = 0.0;
+                    let mut new_index = 0;
+                    for (i, track) in tracks.iter().enumerate() {
+                        let track_end = if total_album_dur > 0.0 {
+                            (accum + track.duration_secs) / total_album_dur * video_dur
+                        } else {
+                            accum + track.duration_secs
+                        };
+                        if elapsed < track_end {
+                            new_index = i;
+                            break;
+                        }
+                        accum += track.duration_secs;
+                    }
+                    if new_index >= tracks.len() { new_index = tracks.len() - 1; }
+                    if new_index != self.album_current_track {
+                        if new_index > self.album_current_track {
+                            for scrobbled_idx in self.album_current_track..new_index {
+                                if let Some(track) = tracks.get(scrobbled_idx) {
+                                    let cfg = self.scrobbling_config.clone();
+                                    let artist = self.get_cur_playing_song()
+                                        .map(|s| s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "))
+                                        .unwrap_or_default();
+                                    let state = crate::app::scrobbler::ScrobbleState::new(
+                                        artist,
+                                        track.title.clone(),
+                                        None,
+                                        Duration::from_secs_f64(track.duration_secs),
+                                    );
+                                    if state.should_scrobble() {
+                                        let cfg2 = cfg.clone();
+                                        tokio::spawn(async move {
+                                            crate::app::scrobbler::submit_scrobble(&cfg2, &state).await;
+                                        });
+                                    }
+                                    info!("Album track scrobbled: #{} {} ({})", scrobbled_idx + 1, track.title, track.duration_secs);
+                                }
+                            }
+                        }
+                        self.album_current_track = new_index;
+                    }
+                }
+            }
+        }
+
+        // Gapless auto-advance: uses track-relative progress vs actual_duration
         if let Some(duration_dif) = {
             let cur_dur = self
                 .get_cur_playing_song()
@@ -1817,7 +2125,9 @@ impl Playlist {
                 && let Some(next_song) = self.get_next_song()
                 && let DownloadStatus::Downloaded(song) = &next_song.download_status
             {
-                let task = DecodeSong(song.clone()).map_stream(QueueDecodedSong(id));
+                let offset = next_song.start_offset;
+                let actual_dur = next_song.actual_duration;
+                let task = DecodeSong(song.clone(), offset, actual_dur).map_stream(QueueDecodedSong(id));
                 info!("Queuing up song!");
                 let effect = AsyncTask::new_stream_try(
                     task,
@@ -1848,7 +2158,9 @@ impl Playlist {
 
     pub fn handle_queued(&mut self, duration: Option<Duration>, id: ListSongID) {
         if let Some(song) = self.get_mut_song_from_id(id) {
-            song.actual_duration = duration;
+            if song.start_offset.is_none() || song.actual_duration.is_none() {
+                song.actual_duration = duration;
+            }
         }
     }
 
@@ -1862,7 +2174,9 @@ impl Playlist {
 
     pub fn handle_playing(&mut self, duration: Option<Duration>, id: ListSongID) {
         if let Some(song) = self.get_mut_song_from_id(id) {
-            song.actual_duration = duration;
+            if song.start_offset.is_none() || song.actual_duration.is_none() {
+                song.actual_duration = duration;
+            }
         }
 
         if let PlayState::Paused(p_id) = self.play_status

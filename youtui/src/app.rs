@@ -158,7 +158,7 @@ impl Youtui {
                     task.type_debug, task.type_id, task.constraint
                 )
             });
-        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path, &config));
+        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config));
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
         // The docs for this function state that it must be run after entering alternate
@@ -177,7 +177,7 @@ impl Youtui {
         };
         let event_handler = EventHandler::new(EVENT_CHANNEL_SIZE, media_control_event_stream)?;
         let rescrobbled_process = Self::spawn_rescrobbled(&config);
-        let (window_state, effect) = YoutuiWindow::new(config);
+        let (window_state, effect) = YoutuiWindow::new(config, cookie_path);
         // Even the creation of a YoutuiWindow causes an effect. We'll spawn it straight
         // away.
         task_manager.spawn_task(&server, effect);

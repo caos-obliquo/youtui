@@ -3,77 +3,138 @@
 ## Build
 - Workspace root: `/home/caos/builds/youtui/`
 - Rust nightly (1.97.0)
-- Binary: `cargo build --release` → `/home/caos/builds/youtui/target/release/youtui`
-- Release not debug. Target dir at workspace root, not `youtui/` subdir.
+- Binary: `cargo build --release` → `target/release/youtui`
+- Dependencies: yt-dlp, ffmpeg, alsa-lib
+- Tests: `cargo test --release -p youtui --bin youtui` (95 pass, 2 pre-existing config failures)
 
-## `:` URL Playback
-- `play_yt_url` → `add_yt_video` only (no `play_selected` call — it interfered with download stream spawning)
-- `add_yt_video` returns effect directly, mapped via `map_frontend` to YoutuiWindow
-- Download effect must be RETURNED from event handler — dropped effects = no download
-- `handle_song_downloaded` auto-plays on `NotPlaying`/`Stopped`/`Buffering(id)` state (modified from only Buffering)
-- Bug found: `play_selected` → `play_song_id` called `download_upcoming_from_id` twice (once in `add_yt_video`, once in `play_song_id`). First status=None, second status=Queued → no_op. But the first call's effect was DROPPED because `add_yt_video` original didn't return it.
-- Fix: `add_yt_video` returns `ComponentEffect<Self>`, `play_yt_url` only returns `add_yt_video().map_frontend(...)`
+## Architecture
 
-## Metadata Validation
-- `ValidateMetadata` backend task queries **Last.fm first** (track.getInfo), then **MusicBrainz** (recording search) as fallback
-- Last.fm API key from `scrobbling_config.api_key` (same as scrobbler)
-- Rate-limited: MusicBrainz 1 req/s via `tokio::time::sleep(1200ms)`
-- Result updates song album/year/artist via `MetadataEffect::Validated`
-- Handler updates `ListSong` fields: `album`, `year`, `artists` directly (all pub fields)
-- Track number (`@attr.rank`) extracted from Last.fm when available, stored in `ListSong.track_no`
+3-layer async callback:
+```
+Frontend (UI) → TaskManager → Backend (Server)
+```
 
-## Title Cleaning
-- yt-dlp returns `title: "Artist - Song"` format (artist prefix baked in)
-- Case-insensitive strip of `"{artist} - "` prefix needed for clean metadata queries
-- Example: "Flowers Taped To Pens - Well I Guess" → "Well I Guess" (note "To" ≠ "to", need case-insensitive)
+- **Frontend**: Ratatui TUI components in `app/ui/`. State mutations happen via `FrontendEffect` handlers.
+- **Backend**: Server at `app/server/`. Handles downloads, API calls, audio decoding.
+- **Tasks**: `ValidateMetadata`, `GetLyrics`, `DecodeSong`, etc. defined in `messages.rs` as `BackendTask` impls.
+- **Effects**: Frontend reactions to backend results. `impl FrontendEffect<Playlist, ArcServer, TaskMetadata>`.
+
+## Metadata Validation Pipeline
+
+`messages.rs:730` — `ValidateMetadata::into_future`. Progressive search order:
+
+```
+1.  album.search(norm_for_lfm(clean_title))          # ← takes priority
+    → album.getInfo → 17 tracks from Last.fm ✅
+2.  track.getInfo(artist, clean_title)                # exact track match
+3.  track.search(norm_for_lfm(clean_title))           # fuzzy track → re-fetch for album
+4.  Discogs API (no auth, underground metal)          # `fetch_album_tracks` Phase 2
+5.  Last.fm album.search fallback                     # `fetch_album_tracks` Phase 3
+6.  MusicBrainz recording search                      # 1 req/s rate limit
+```
+
+### `norm_for_lfm` (`messages.rs:1074`)
+Normalizes messy titles for database queries. Strips in order:
+- `"FULL ALBUM"`, `"Full Album"`, `"full album"`, `"FULL LP"`, `"FULL EP"`, `"full-length album"`
+- `" - Single"`, `" - EP"`, `" - LP"`, `" - full album"`
+- Parenthesized blocks: ` (year - genre / genre2)`, ` (2000)`
+- Bracketed blocks: ` [genre]`, ` [HD]`
+- Replaces ` & ` → ` and ` for Last.fm compatibility
+
+### `add_yt_video` title cleaning (`playlist.rs:735`)
+Before `ValidateMetadata` is spawned, the raw yt-dlp title is cleaned:
+1. Strip `"{artist} - "` prefix (case-insensitive)
+2. Strip `"FULL ALBUM"` suffix (case-insensitive)
+3. Strip `"  ("` suffix (parenthetical metadata)
+
+### `fetch_album_tracks` (`messages.rs:926`)
+Three-phase fallback for getting full tracklists:
+- **Phase 1**: Last.fm `album.getInfo` (requires API key)
+- **Phase 2**: Discogs API (no auth, works for underground extreme metal)
+- **Phase 3**: Last.fm `album.search` → re-fetch `album.getInfo`
+
+## Album Splitting
+
+### Track creation
+`insert_album_tracks` (`playlist.rs:575`): each track becomes a `ListSong` with:
+- `track_no: Some(i+1)`, `start_offset: Some(accum)`, `actual_duration`
+- `year` from validation result, falls back to original entry's yt-dlp year
+- `duration_string`: `"M:SS"` format
+- `download_status: None` initially → shared via `Arc::clone` from original when download completes
+
+### Arc sharing
+`handle_song_downloaded` (`playlist.rs:893`): when original album entry finishes downloading, its `Arc<InMemSong>` is cheaply cloned to all track entries with `DownloadStatus::None`.
+
+### DecodeSong (`messages.rs` → `player.rs:112`)
+Three fields: `(Arc<InMemSong>, Option<Duration> offset, Option<Duration> actual_duration)`.
+- When both offset AND actual_duration are `Some`: ffmpeg extracts `-ss {offset} -t {actual_duration}` from the full audio → each track gets its own file of exact length.
+- When only offset is `Some`: ffmpeg extracts from offset to end (no `-t` boundary).
+- When offset is 0 and actual_duration is `None`: uses full audio without extraction.
+
+### Progress (`handle_set_song_play_progress`, `playlist.rs:2000`)
+- Track entries (`track_no.is_some()`): `d` is directly used as track-relative progress (ffmpeg already extracted the correct section).
+- Non-album entries with offset: `d.saturating_sub(offset)`
+- Progress is capped at `actual_duration` so display never exceeds track boundary.
+- `>` key crash guard: `draw_media_controls.rs` checks `duration == 0` before division.
+
+### Gapless auto-advance
+- Gapless threshold: 1s before track end.
+- When track-relative progress ≈ `actual_duration - 1s`, `QueueDecodedSong` queues next track.
+- Next track is pre-decoded via `DecodeSong(next_arc, next_offset, next_actual_dur)`, played seamlessly.
+
+### Scrobble fixes (`playlist.rs:818,2009`)
+- Track entries scrobble individually: `self.album_tracks.is_none() || song.track_no.is_some()` creates `ScrobbleState` for each track.
+- Persistent scrobble: `handle_set_song_play_progress` checks `should_scrobble()` on every progress update (~10Hz), not just at song change. Works in any context (lyrics, browser, playlist).
+
+### Original entry removal
+- After all tracks are ready (Arc shared + all `Downloaded`), the original full-album entry is removed from the playlist list. `Arc<InMemSong>` stays alive via track clones.
+- Path A (validation first): `handle_song_downloaded` → remove original + play track 1.
+- Path B (download first): `insert_album_tracks` → share Arc → remove original → play track 1.
+
+### Cascade guard (`effect_handlers_playlist.rs:276`, `playlist.rs:606`)
+- `target.album_tracks.is_none()` prevents per-track validation results from re-triggering `insert_album_tracks`.
+- `existing_tracks >= tracks.len()` in `insert_album_tracks` itself prevents double-insertion.
+
+### Album art from Last.fm
+- `FetchAlbumArt(artist, album, api_key)` backend task queries `album.getInfo` → extracts largest image URL → downloads via `song_thumbnail_downloader`.
+- `FetchAlbumArtEffect::Fetched` handler stores art on all playlist entries with matching `artist:album` string.
+- Wired in `MetadataEffect::Validated` handler after album tracks are inserted.
+
+## yt-dlp Integration
+
+- Downloader uses `web_creator` extractor client (`android_vr` blocks audio-only formats for some videos).
+- Passes `--cookies-from-browser chromium` when cookie file path is configured (stored on `Playlist.yt_dlp_cookie_path`).
+- `add_yt_video` metadata fetch (`--dump-json`) also passes `--cookies-from-browser chromium`.
+- Empty download (0 bytes) → marked as `Failed` instead of `Downloaded`.
+- Cookie path flows: `main.rs → app.rs → YoutuiWindow::new → Playlist`.
 
 ## Lyrics Pipeline
-Order: Musixmatch → Genius scrape (quality gate: reject < 50 chars or < 3 lines) → Bandcamp URL construction → lyr CLI → error
-
-## Bandcamp Lyrics
-- `~/builds/bandcamp-lyrics/` — standalone Rust CLI (`bandcamp-lyrics` in PATH)
-- Search (`bandcamp-lyrics <artist> <title>` or `bandcamp-lyrics search --artist ... --song ...`): tries Bandcamp search page first (often blocked), falls back to slug-based URL construction (`{slug}.bandcamp.com/track/{title}[-2..-5]`, tries both hyphenated and non-hyphenated artist slugs)
-- Direct URL: `bandcamp-lyrics https://...bandcamp.com/track/...`
-- Bandcamp track pages NOT blocked (only search page is)
-
-## Album Art
-- `AlbumArtState::Init` shows spinning icon `` — changed to `AlbumArtState::None` for songs without thumbnails
-- Footer always reserves `ALBUM_ART_WIDTH` (7) + 1 spacing = 8 chars for album art space, even when no art
-- Blank space `" "` rendered when no album art available, matching native layout
-- Default album art init changed from `Default::default()` (Init) to `AlbumArtState::None` globally in all `add_raw_*` functions + test constructor
-- **Future**: fetch album cover from Last.fm `album.getInfo` when validation finds album name
-
-## Romaji Mode
-- `R` key toggles `romaji_mode` on Playlist + LyricsPopup
-- **Playlist**: saves original titles in `romaji_originals: HashMap<ListSongID, String>`, converts on toggle ON, restores on toggle OFF
-- **Lyrics popup**: `R` toggle converts lyrics text at display time
-- Uses `lindera` (IPADIC dictionary, ~55MB embedded) for kanji→hiragana readings, then `ib-romaji` for kana→latin
-- Line-aware: preserves line breaks, only converts Japanese segments (hiragana/katakana/kanji), leaves English/ASCII/punctuation untouched
-- Cached in `romaji_cache` — recomputed only when toggle or new lyrics arrive
-
-## Annotations
-- `GetAnnotations` task queries Genius API (search → referents `/response/referents`)
-- Results stored via `AnnotationsEffect::FetchAnnotationsSuccess` → `LyricsPopup.set_annotations`
-- `a` key toggles annotations view in lyrics popup
-- Annotation display: `┌ fragment` header with indented explanation text
-- `genius_token` read from `config.scrobbling.genius_token` (inside `[scrobbling]` section of config.toml)
-
-## Footer
-- Current song: `{play_icon} {title} - {artists}` on line 1, `{album}` on line 2
-- Album art rendered left of progress bar when `AlbumArtState::Downloaded`
-- `play_status.list_icon()` returns `''` (Buffering), `''` (Playing), `''` (Paused), `''` (Stopped/NotPlaying), `''` (Error)
-- `DownloadStatus.list_icon_str()` returns " " (None), "↓" (Queued/Downloading), "✓" (Downloaded), "X" (Failed), "↻" (Retrying)
+Order: `Musixmatch` → `Genius scrape` (quality gate: reject < 50 chars or < 3 lines) → `Bandcamp URL construction` → `lyr CLI` → `error`
 
 ## Known Issues
-- No command input popup — `:` shows as cyan `:text█` in footer
-- Full album video → track splitting not implemented (future feature)
-- Album art from Last.fm not yet fetched for URL songs
+- No command input popup — `:` shows as cyan `:text█` in footer.
+- Album art from Last.fm `FetchAlbumArtTask` may not fire when validation returns `artist=None` (edge case for underground bands not on Last.fm at all).
+- Metallum CLI integration blocked by Cloudflare (cf_clearance cookie + TLS fingerprint mismatch).
 
-## Key Dependencies
-- `ytmapi-rs` — YouTube Music API client (local workspace member)
-- `tui-logger` — log viewer with j/k scroll (Logs view via `0`)
-- `ib-romaji` — kana/kanji → romaji conversion (builder API, not direct constructor)
-- `lindera` + `lindera-ipadic` — Japanese morphological analysis for kanji→hiragana readings
-- `async-callback-manager` — task/effect framework (local workspace member)
-- `musixmatch-inofficial` — lyrics source
-- `reqwest` — HTTP client for Genius/Last.fm/MusicBrainz API calls
+## Key Files
+
+| File | Lines | Purpose |
+|---|---|---|
+| `app/server/messages.rs` | ~1420 | All backend tasks: ValidateMetadata, GetLyrics, DecodeSong, FetchAlbumArt |
+| `app/server/player.rs` | ~190 | Audio decode + ffmpeg extraction (`try_decode`) |
+| `app/ui/playlist.rs` | ~2200 | Main playlist: track management, playback, scrobbling |
+| `app/ui/playlist/effect_handlers_playlist.rs` | ~390 | Frontend effect handlers for metadata/lyrics/album art results |
+| `app/scrobbler.rs` | 70 | ScrobbleState + submit_scrobble to Last.fm |
+| `app/ui/footer.rs` | ~210 | Current song display + progress bar |
+| `app/ui/draw_media_controls.rs` | ~80 | MPRIS media controls integration |
+| `app/structures.rs` | ~610 | ListSong, DownloadStatus, BrowserSongsList |
+| `youtube_downloader/yt_dlp.rs` | ~210 | yt-dlp command builder |
+| `config/keymap.rs` | | All keybindings by context |
+| `main.rs` | ~600 | Entry point, cookie loading, app init |
+
+## Tests
+- `insert_album_tracks_sets_correct_metadata` — start_offset accumulation, duration_string, year fallback
+- `album_download_shares_arc_with_tracks` — Arc sharing via handle_song_downloaded
+- `play_song_id_uses_start_offset_in_decode` — DecodeSong includes offset in effect chain
+- `progress_is_relative_to_start_offset` — handle_set_song_play_progress subtracts start_offset (album tracks use d directly)
+- `non_album_progress_subtracts_offset` — non-album entries with start_offset still subtract

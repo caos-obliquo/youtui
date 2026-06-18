@@ -104,11 +104,12 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             info!(%video_id, %total_size_bytes, "Using estimated size for progress");
             
             // Always use best audio quality with m4a container for rodio compatibility
+            // web_creator client (not android_vr) — android_vr blocks audio-only formats for some videos
             let format_string = "bestaudio[ext=m4a]/bestaudio/best".to_string();
             
-            let stream_args = vec![
+            let mut stream_args = vec![
                 "--extractor-args",
-                "youtube:player_client=android_vr",
+                "youtube:player_client=web_creator",
                 "--no-simulate",
                 "-q",
                 "--no-warnings",
@@ -116,8 +117,12 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                 format_string.as_str(),
                 "-o",
                 "-",
-                song_video_id.as_ref(),
             ];
+            if self.cookie_path.is_some() {
+                stream_args.push("--cookies-from-browser");
+                stream_args.push("chromium");
+            }
+            stream_args.push(song_video_id.as_ref());
             
             debug!(%video_id, ?stream_args, "yt-dlp stream args");
             

@@ -1,10 +1,10 @@
 use crate::app::queue_persistence::{CompactSongRef, CompactSavedQueue};
 use crate::app::server::song_downloader::InMemSong;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
-use crate::app::server::{DecodeSong, GetSongThumbnail, PlayDecodedSong, Stop, TaskMetadata};
+use crate::app::server::{AlbumTrack, DecodeSong, GetSongThumbnail, PlayDecodedSong, Stop, TaskMetadata};
 use crate::app::structures::{
-    AlbumArtState, DownloadStatus, ListSong, ListSongDisplayableField, ListSongID, ListStatus,
-    MaybeRc, PlayState,
+    AlbumArtState, DownloadStatus, ListSong, ListSongArtist, ListSongDisplayableField,
+    ListSongID, ListStatus, MaybeRc, PlayState,
 };
 use crate::app::ui::playlist::{
     DownloadTask, HandleGetSongThumbnailError, HandleGetSongThumbnailOk,
@@ -13,6 +13,7 @@ use crate::app::ui::playlist::{
 use crate::async_rodio_sink::{AllStopped, Stopped};
 use async_callback_manager::{AsyncTask, Constraint, TryBackendTaskExt};
 use pretty_assertions::assert_eq;
+use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use ytmapi_rs::auth::BrowserToken;
@@ -96,7 +97,7 @@ fn downloaded_song_plays_if_buffered() {
     let effect = p.handle_song_downloaded(ListSongID(1));
     assert_eq!(p.play_status, PlayState::Playing(ListSongID(1)));
     let expected_effect = AsyncTask::new_stream_try(
-        DecodeSong(dummy_song.clone()).map_stream(PlayDecodedSong(ListSongID(1))),
+        DecodeSong(dummy_song.clone(), None, None).map_stream(PlayDecodedSong(ListSongID(1))),
         HandlePlayUpdateOk,
         HandlePlayUpdateError(ListSongID(1)),
         Some(Constraint::new_block_matching_metadata(
@@ -251,6 +252,195 @@ fn songs_ahead_buffer_is_2() {
 #[test]
 fn songs_behind_save_is_1() {
     assert_eq!(crate::app::ui::playlist::SONGS_BEHIND_TO_SAVE, 1);
+}
+
+fn make_album_original(video: &'static str, year: Option<&str>) -> ListSong {
+    ListSong {
+        video_id: VideoID::from_raw(video),
+        track_no: None,
+        plays: String::new(),
+        title: "Album Title".into(),
+        explicit: None,
+        download_status: DownloadStatus::None,
+        id: ListSongID(0),
+        duration_string: "36:49".into(),
+        actual_duration: None,
+        start_offset: None,
+        year: year.map(|y| Rc::new(y.to_string())),
+        album_art: AlbumArtState::None,
+        artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
+        thumbnails: MaybeRc::Owned(Vec::new()),
+        album: None,
+    }
+}
+
+fn make_track_entry(video: &'static str, track_no: usize, title: &'static str, duration_secs: f64, start_secs: f64) -> ListSong {
+    let dur_secs = duration_secs as u64;
+    let dur_str = format!("{}:{:02}", dur_secs / 60, dur_secs % 60);
+    ListSong {
+        video_id: VideoID::from_raw(video),
+        track_no: Some(track_no),
+        plays: String::new(),
+        title: title.into(),
+        explicit: None,
+        download_status: DownloadStatus::None,
+        id: ListSongID(0),
+        duration_string: dur_str,
+        actual_duration: Some(Duration::from_secs_f64(duration_secs)),
+        start_offset: Some(Duration::from_secs_f64(start_secs)),
+        year: None,
+        album_art: AlbumArtState::None,
+        artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
+        thumbnails: MaybeRc::Owned(Vec::new()),
+        album: None,
+    }
+}
+
+fn dummy_tracks() -> Vec<AlbumTrack> {
+    vec![
+        AlbumTrack { title: "Track 1".into(), duration_secs: 203.0 },
+        AlbumTrack { title: "Track 2".into(), duration_secs: 148.0 },
+        AlbumTrack { title: "Track 3".into(), duration_secs: 194.0 },
+    ]
+}
+
+// --- Album partitioning tests ---
+
+#[test]
+fn insert_album_tracks_sets_correct_metadata() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let orig_id = p.list.push_song_list(vec![make_album_original("vx1", Some("2021"))]);
+    let tracks = dummy_tracks();
+
+    p.insert_album_tracks(
+        orig_id, &tracks,
+        &Some("Artist".into()), &Some("Album".into()), &None,
+    );
+
+    // original + 3 tracks
+    assert_eq!(p.list.get_list_iter().count(), 4);
+
+    // Track 1: offset 0, year from original fallback
+    let t1 = p.list.get_list_iter().nth(1).unwrap();
+    assert_eq!(t1.track_no, Some(1));
+    assert_eq!(t1.start_offset, Some(Duration::from_secs_f64(0.0)));
+    assert_eq!(t1.actual_duration, Some(Duration::from_secs_f64(203.0)));
+    assert_eq!(t1.title, "Track 1");
+    assert_eq!(t1.year, Some(Rc::new("2021".into()))); // fallback from original
+    assert_eq!(t1.duration_string, "3:23");
+
+    // Track 2: offset 203
+    let t2 = p.list.get_list_iter().nth(2).unwrap();
+    assert_eq!(t2.track_no, Some(2));
+    assert_eq!(t2.start_offset, Some(Duration::from_secs_f64(203.0)));
+    assert_eq!(t2.actual_duration, Some(Duration::from_secs_f64(148.0)));
+    assert_eq!(t2.title, "Track 2");
+
+    // Track 3: offset 203+148 = 351
+    let t3 = p.list.get_list_iter().nth(3).unwrap();
+    assert_eq!(t3.track_no, Some(3));
+    assert_eq!(t3.start_offset, Some(Duration::from_secs_f64(351.0)));
+    assert_eq!(t3.actual_duration, Some(Duration::from_secs_f64(194.0)));
+    assert_eq!(t3.title, "Track 3");
+}
+
+#[test]
+fn album_download_shares_arc_with_tracks() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let orig_id = p.list.push_song_list(vec![make_album_original("vx1", None)]);
+
+    // Real flow: MetadataEffect::Validated sets album_tracks BEFORE insert_album_tracks
+    let tracks = vec![
+        AlbumTrack { title: "T1".into(), duration_secs: 100.0 },
+        AlbumTrack { title: "T2".into(), duration_secs: 100.0 },
+    ];
+    p.album_tracks = Some(tracks.clone());
+    p.insert_album_tracks(orig_id, &tracks, &Some("Artist".into()), &Some("Album".into()), &None);
+
+    // Set original's download to Valid data and verify Arc sharing
+    let shared = Arc::new(InMemSong(vec![1, 2, 3, 4, 5]));
+    p.list.get_list_iter_mut().nth(0).unwrap().download_status = DownloadStatus::Downloaded(shared.clone());
+
+    let _ = p.handle_song_downloaded(orig_id);
+
+    // Both tracks should share the same Arc (original removed, tracks at 0, 1)
+    for i in 0..=1 {
+        let song = p.list.get_list_iter().nth(i).unwrap();
+        match &song.download_status {
+            DownloadStatus::Downloaded(a) => assert!(Arc::ptr_eq(a, &shared)),
+            _ => panic!("Track {} not Downloaded", i + 1),
+        }
+    }
+}
+
+#[test]
+fn play_song_id_uses_start_offset_in_decode() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+
+    let data = Arc::new(InMemSong(vec![1, 2, 3]));
+    let mut song = make_track_entry("vx1", 2, "Backyards", 148.0, 203.0);
+    let offset = song.start_offset;
+    let actual_dur = song.actual_duration;
+    song.download_status = DownloadStatus::Downloaded(data.clone());
+    let id = p.list.push_song_list(vec![song]);
+
+    let effect = p.play_song_id(id);
+
+    let expected = AsyncTask::new_stream_try(
+        DecodeSong(data, offset, actual_dur).map_stream(PlayDecodedSong(id)),
+        HandlePlayUpdateOk,
+        HandlePlayUpdateError(id),
+        Some(Constraint::new_block_matching_metadata(TaskMetadata::PlayingSong)),
+    );
+    assert!(
+        effect.contains(&expected),
+        "play_song_id should emit DecodeSong with start_offset"
+    );
+}
+
+#[test]
+fn progress_is_relative_to_start_offset() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut song = make_track_entry("vx1", 2, "Backyards", 148.0, 203.0);
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+
+    // Simulate playing this track
+    p.play_status = PlayState::Playing(id);
+
+    // Album tracks use ffmpeg extraction → d is already track-relative
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(0), id);
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(0)));
+
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(100), id);
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(100)));
+
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(148), id);
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(148)));
+}
+
+#[test]
+fn non_album_progress_subtracts_offset() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+
+    let data = Arc::new(InMemSong(vec![1]));
+    // Non-album entry (track_no=None) with start_offset
+    let mut song = make_album_original("vx1", None);
+    song.download_status = DownloadStatus::Downloaded(data);
+    song.start_offset = Some(Duration::from_secs_f64(203.0));
+    let id = p.list.push_song_list(vec![song]);
+
+    p.play_status = PlayState::Playing(id);
+    // Non-album: d - offset = 250 - 203 = 47
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(250), id);
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(47)));
 }
 
 #[test]

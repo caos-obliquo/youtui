@@ -52,7 +52,8 @@ pub fn draw_footer(
                 .map(parse_simple_time_to_secs)
                 .unwrap_or(0);
             progress = w.playlist.cur_played_dur.unwrap_or_default();
-            (progress.as_secs_f64() / duration as f64).clamp(0.0, 1.0)
+            if duration == 0 { 0.0 }
+            else { (progress.as_secs_f64() / duration as f64).clamp(0.0, 1.0) }
         }
         _ => 0.0,
     };
