@@ -407,9 +407,10 @@ impl ActionHandler<AppAction> for YoutuiWindow {
 }
 
 impl YoutuiWindow {
-    pub fn new(config: Config) -> (YoutuiWindow, ComponentEffect<YoutuiWindow>) {
+    pub fn new(config: Config, cookie_path: Option<String>) -> (YoutuiWindow, ComponentEffect<YoutuiWindow>) {
         let (mut playlist, task) = Playlist::new();
         playlist.set_scrobbling_config(config.scrobbling.clone());
+        playlist.yt_dlp_cookie_path = cookie_path;
         let this = YoutuiWindow {
             context: WindowContext::Browser,
             prev_context: WindowContext::Browser,

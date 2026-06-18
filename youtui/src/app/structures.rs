@@ -82,6 +82,7 @@ pub struct ListSong {
     pub id: ListSongID,
     pub duration_string: String,
     pub actual_duration: Option<Duration>,
+    pub start_offset: Option<Duration>,
     pub year: Option<Rc<String>>,
     pub album_art: AlbumArtState,
     pub artists: MaybeRc<Vec<ListSongArtist>>,
@@ -310,6 +311,7 @@ impl ListSong {
             actual_duration: None,
             year: None,
             album_art: AlbumArtState::None,
+            start_offset: None,
             artists: MaybeRc::Owned(list_artists),
             thumbnails: MaybeRc::Owned(thumb.unwrap_or_default()),
             album: list_album,
@@ -421,6 +423,7 @@ impl BrowserSongsList {
             duration_string: duration,
             thumbnails: MaybeRc::Rc(thumbnails),
             album_art: AlbumArtState::None,
+            start_offset: None,
         });
         id
     }
@@ -455,6 +458,7 @@ impl BrowserSongsList {
             thumbnails: MaybeRc::Owned(thumbnails),
             duration_string: duration,
             album_art: AlbumArtState::None,
+            start_offset: None,
         });
         id
     }
@@ -537,7 +541,8 @@ impl BrowserSongsList {
             explicit,
             duration_string: duration,
             thumbnails: MaybeRc::Owned(thumbnails),
-            album_art: Default::default(),
+            album_art: AlbumArtState::None,
+            start_offset: None,
         });
         id
     }
@@ -566,6 +571,15 @@ impl BrowserSongsList {
         let id = self.next_id;
         self.next_id.0 += 1;
         id
+    }
+    pub fn insert_after(&mut self, idx: usize, song: ListSong) {
+        let pos = (idx + 1).min(self.list.len());
+        self.list.insert(pos, song);
+    }
+    pub fn remove_at(&mut self, idx: usize) {
+        if idx < self.list.len() {
+            self.list.remove(idx);
+        }
     }
     pub fn add_song_thumbnail(&mut self, song_thumbnail: SongThumbnail) {
         // Thumbnail is refcounted since it could be shared by multiple songs on the

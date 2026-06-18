@@ -1,5 +1,6 @@
 use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::ValidatedMetadata;
+use crate::app::server::ValidateMetadata;
 use crate::app::server::{ArcServer, TaskMetadata, AlbumTrack};
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID};
 use crate::app::ui::playlist::Playlist;
@@ -245,6 +246,7 @@ pub enum MetadataEffect {
 impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
     fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
         match self {
+            // Album metadata found: update song fields, split into tracks, spawn per-track validation + album art
             MetadataEffect::Validated(data, song_id) => {
                 if let Some(idx) = target.get_index_from_id(song_id) {
                     if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
@@ -272,11 +274,53 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                         }
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no);
-                        if !data.album_tracks.is_empty() {
+                        if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
                             target.album_tracks = Some(data.album_tracks.clone());
                             target.album_current_track = 0;
+                            let play_effect = target.insert_album_tracks(song_id, &data.album_tracks, &data.artist, &data.album, &data.year);
                             info!("Album mode: {} tracks loaded for song {:?}",
                                 target.album_tracks.as_ref().map_or(0, |t| t.len()), song_id);
+
+                            // Spawn per-track metadata validation (year/album/artist from Last.fm)
+                            let video_raw = target.get_song_from_id(song_id).map(|s| s.video_id.get_raw().to_string()).unwrap_or_default();
+                            let api_key = target.scrobbling_config.api_key.clone();
+                            let mut effect = AsyncTask::new_no_op();
+                            for (i, track) in data.album_tracks.iter().enumerate() {
+                                if let Some(track_id) = target.list.get_list_iter()
+                                    .find(|s| s.video_id.get_raw() == video_raw && s.track_no == Some(i + 1))
+                                    .map(|s| s.id)
+                                {
+                                    if !api_key.is_empty() {
+                                        let artist = data.artist.clone().unwrap_or_default();
+                                        let vt = AsyncTask::new_future_try(
+                                            ValidateMetadata(artist.clone(), track.title.clone(), track_id, api_key.clone()),
+                                            HandleMetadataValidated(track_id),
+                                            HandleMetadataValidationError,
+                                            None,
+                                        );
+                                        effect = effect.push(vt);
+                                    }
+                                }
+                            }
+
+                            // Fetch album art from Last.fm
+                            if !api_key.is_empty() {
+                                if let (Some(ref art_artist), Some(ref art_album)) = (data.artist, data.album) {
+                                    use crate::app::server::FetchAlbumArt;
+                                    let art_task = AsyncTask::new_future_try(
+                                        FetchAlbumArt(art_artist.clone(), art_album.clone(), api_key.clone()),
+                                        HandleFetchAlbumArtOk,
+                                        HandleFetchAlbumArtErr,
+                                        None,
+                                    );
+                                    effect = effect.push(art_task);
+                                }
+                            }
+
+                            if let Some(e) = play_effect {
+                                effect = effect.push(e);
+                            }
+                            return effect;
                         }
                     }
                 }
@@ -356,3 +400,70 @@ impl_youtui_task_handler!(
         AlbumTracksEffect::TrackFetchError
     }
 );
+
+// Album art from Last.fm effect handlers
+
+use crate::app::server::song_thumbnail_downloader::SongThumbnail;
+use crate::app::structures::AlbumArtState;
+
+#[derive(Debug, PartialEq)]
+pub struct HandleFetchAlbumArtOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleFetchAlbumArtErr;
+
+#[derive(Debug, PartialEq)]
+pub enum FetchAlbumArtEffect {
+    Fetched(SongThumbnail),
+    FetchError,
+}
+
+impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for FetchAlbumArtEffect {
+    fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
+        match self {
+            FetchAlbumArtEffect::Fetched(thumbnail) => {
+                let thumb_rc = std::rc::Rc::new(thumbnail);
+                // Find all songs with matching album and set album art
+                for song in target.list.get_list_iter_mut() {
+                    let song_artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                    let song_album = song.album.as_ref().map(|a| a.name.as_str()).unwrap_or("");
+                    let expected_id = format!("lastfm:{}:{}", song_artist, song_album);
+                    use ytmapi_rs::common::YoutubeID;
+                    let matches = match thumb_rc.song_thumbnail_id {
+                        crate::app::server::song_thumbnail_downloader::SongThumbnailID::Album(ref aid) => {
+                            aid.get_raw() == expected_id
+                        }
+                        _ => false,
+                    };
+                    if matches {
+                        song.album_art = AlbumArtState::Downloaded(thumb_rc.clone());
+                    }
+                }
+                info!("FetchAlbumArtEffect: applied art to matching songs");
+            }
+            FetchAlbumArtEffect::FetchError => {
+                error!("FetchAlbumArtEffect: failed to fetch album art");
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+impl_youtui_task_handler!(
+    HandleFetchAlbumArtOk,
+    SongThumbnail,
+    Playlist,
+    |_, thumbnail: SongThumbnail| {
+        FetchAlbumArtEffect::Fetched(thumbnail)
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleFetchAlbumArtErr,
+    anyhow::Error,
+    Playlist,
+    |_, _error: anyhow::Error| {
+        FetchAlbumArtEffect::FetchError
+    }
+);
+
+
