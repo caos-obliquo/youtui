@@ -20,7 +20,7 @@ use futures::{Future, Stream};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, YoutubeID};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, YoutubeID, LikeStatus};
 use musixmatch_inofficial::Musixmatch;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
 
@@ -70,6 +70,23 @@ pub struct CreatePlaylistWithVideos {
 pub struct AddSongsToPlaylist {
     pub playlist_id: PlaylistID<'static>,
     pub video_ids: Vec<VideoID<'static>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct RateSong(pub VideoID<'static>, pub LikeStatus);
+
+impl BackendTask<ArcServer> for RateSong {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            backend.api.rate_song(self.0, self.1).await
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]

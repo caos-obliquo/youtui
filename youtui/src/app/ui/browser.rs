@@ -541,7 +541,13 @@ impl Browser {
                 self.variant = BrowserVariant::Song;
                 self.song_search_browser.search.replace_text(format!("{artist} {album}"));
                 self.song_search_browser.handle_toggle_search();
-                None // search is triggered on enter
+                None
+            }
+            NavTarget::ArtistChannel(channel_id) => {
+                self.variant = BrowserVariant::Artist;
+                self.artist_search_browser.artist_search_panel.search_popped = false;
+                self.artist_search_browser.input_routing = artistsearch::InputRouting::Song;
+                Some(self.artist_search_browser.load_artist_by_id(channel_id).map_frontend(|b: &mut Self| &mut b.artist_search_browser))
             }
             NavTarget::SongSearch(query) => {
                 self.variant = BrowserVariant::Song;

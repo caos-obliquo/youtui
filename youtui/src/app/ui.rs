@@ -664,9 +664,10 @@ impl YoutuiWindow {
     }
     pub fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
         use crossterm::event::KeyCode;
-        // Count prefix: accumulate digits before non-digit keys
+        // Count prefix: only active in scrollable list contexts
+        let count_prefix_active = matches!(self.context, WindowContext::Playlist | WindowContext::Browser);
         if let KeyCode::Char(c) = key_event.code {
-            if c.is_ascii_digit() {
+            if c.is_ascii_digit() && count_prefix_active {
                 if !self.key_stack.is_empty() {
                     // A digit after already having keys — not a count (part of mode)
                     self.key_stack.push(key_event);

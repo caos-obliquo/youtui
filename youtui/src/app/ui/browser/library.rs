@@ -227,6 +227,7 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
             }).collect()),
             thumbnails: MaybeRc::Owned(ts.thumbnails),
             album: None,
+            like_status: ts.like_status,
         }
     }).collect();
     LibraryEffect::SongsLoaded(songs)
@@ -276,6 +277,7 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             artists,
             thumbnails: MaybeRc::Owned(s.thumbnails),
             album,
+            like_status: s.like_status,
         }
     }).collect();
     LibraryEffect::PlaylistTracksLoaded(list_songs)
@@ -806,7 +808,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::PlaySong => {
                     if let Some(artist) = self.artist_data.get(self.artist_selected) {
                         debug!(name = %artist.artist, "Library: opening artist page");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist.artist.clone()))));
+                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::ArtistChannel(artist.channel_id.clone()))));
                     }
                 }
                 _ => warn!("Unsupported song action for artists: {:?}", action),

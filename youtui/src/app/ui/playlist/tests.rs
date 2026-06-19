@@ -6,6 +6,7 @@ use crate::app::structures::{
     AlbumArtState, DownloadStatus, ListSong, ListSongArtist, ListSongDisplayableField,
     ListSongID, ListStatus, MaybeRc, PlayState,
 };
+use ytmapi_rs::common::LikeStatus;
 use crate::app::ui::playlist::{
     DownloadTask, HandleGetSongThumbnailError, HandleGetSongThumbnailOk,
     HandlePlayUpdateError, HandlePlayUpdateOk, Playlist, QueueState,
@@ -273,6 +274,7 @@ fn make_album_original(video: &'static str, year: Option<&str>) -> ListSong {
         artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
         thumbnails: MaybeRc::Owned(Vec::new()),
         album: None,
+        like_status: LikeStatus::Indifferent,
     }
 }
 
@@ -297,6 +299,7 @@ fn make_track_entry(video: &'static str, track_no: usize, title: &'static str, d
         artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
         thumbnails: MaybeRc::Owned(Vec::new()),
         album: None,
+        like_status: LikeStatus::Indifferent,
     }
 }
 

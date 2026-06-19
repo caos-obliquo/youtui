@@ -21,7 +21,10 @@ use crate::app::ui::playlist::effect_handlers::{
     HandlePlayUpdateOk, HandleQueueUpdateOk, HandleResumeResponse, HandleSetSongPlayProgress,
     HandleSongDownloadProgressUpdate, HandleStopped, HandleVolumeUpdate,
 };
-use crate::app::ui::playlist::effect_handlers_playlist::{HandleMetadataValidated, HandleMetadataValidationError};
+use crate::app::ui::playlist::effect_handlers_playlist::{
+    HandleMetadataValidated, HandleMetadataValidationError,
+    HandleRateSongOk, HandleRateSongErr,
+};
 use crate::app::ui::{AppCallback, WindowContext};
 use crate::app::{NavTarget};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
@@ -149,6 +152,7 @@ pub enum PlaylistAction {
     ToggleVisualMode,
     GoToArtist,
     GoToAlbum,
+    ToggleLike,
 }
 
 impl Action for PlaylistAction {
@@ -188,6 +192,7 @@ impl Action for PlaylistAction {
             PlaylistAction::ToggleVisualMode => "Toggle Visual Mode",
             PlaylistAction::GoToArtist => "Go to Artist",
             PlaylistAction::GoToAlbum => "Go to Album",
+            PlaylistAction::ToggleLike => "Like / Unlike",
         }
         .into()
     }
@@ -321,6 +326,35 @@ impl ActionHandler<PlaylistAction> for Playlist {
                         })));
                     }
                     warn!("Song has no album data, cannot navigate to album");
+                }
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::ToggleLike => {
+                // Guard: splitted album tracks cannot be liked
+                if self.album_tracks.is_some() {
+                    if let Some(song) = self.list.get_list_iter().nth(self.cur_selected) {
+                        if song.track_no.is_some() {
+                            self.last_error = Some("Cannot like splitted album tracks yet".to_string());
+                            return (AsyncTask::new_no_op(), None);
+                        }
+                    }
+                }
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                if let Some(song) = self.list.get_list_iter_mut().nth(actual_index) {
+                    use ytmapi_rs::common::LikeStatus;
+                    let new_status = match song.like_status {
+                        LikeStatus::Liked => LikeStatus::Indifferent,
+                        _ => LikeStatus::Liked,
+                    };
+                    song.like_status = new_status.clone();
+                    let video_id = song.video_id.clone();
+                    let effect = AsyncTask::new_future_try(
+                        crate::app::server::RateSong(video_id, new_status),
+                        HandleRateSongOk,
+                        HandleRateSongErr,
+                        None,
+                    ).map_frontend(|this: &mut Self| this);
+                    return (effect, None);
                 }
                 (AsyncTask::new_no_op(), None)
             },
@@ -576,6 +610,16 @@ impl TableView for Playlist {
         .into_iter()
     }
 
+    fn get_visual_range(&self) -> Option<(usize, usize)> {
+        if self.visual_mode {
+            let start = self.visual_start.min(self.cur_selected);
+            let end = self.visual_start.max(self.cur_selected);
+            Some((start, end))
+        } else {
+            None
+        }
+    }
+
     fn get_highlighted_row(&self) -> Option<usize> {
         if self.visual_mode {
             Some(self.visual_start)
@@ -792,6 +836,7 @@ impl Playlist {
                 artists: crate::app::structures::MaybeRc::Owned(list_artists),
                 thumbnails: crate::app::structures::MaybeRc::Owned(Vec::new()),
                 album: list_album,
+                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
             };
             self.list.insert_after(src_idx + i, list_song);
             accum += track.duration_secs;

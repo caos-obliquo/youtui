@@ -904,6 +904,13 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char(';')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::ToggleLike),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('D')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::DeleteAll),
@@ -935,12 +942,12 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::CopySongUrl)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('E')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SaveToExistingPlaylist)),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleLike)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('L')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::LoadFromYTM)),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('E')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SaveToExistingPlaylist)),
                     ),
                 ],
                 "Context Menu".into(),
@@ -987,12 +994,24 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToTop)),
-                    ),
-                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToBottom)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+                        KeyActionTree::new_mode(
+                            [
+                                (
+                                    Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+                                    KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToTop)),
+                                ),
+                                (
+                                    Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),
+                                    KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToBottom)),
+                                ),
+                            ],
+                            "Delete To".into(),
+                        ),
                     ),
                 ],
                 "Delete Mode".into(),
@@ -1247,7 +1266,7 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
                         )),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
                         KeyActionTree::new_key(AppAction::BrowserArtistSongs(
                             BrowserArtistSongsAction::ViewLyrics,
                         )),

@@ -234,6 +234,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
                 chunk,
                 t.help.cur,
                 None,
+                None,
                 &t.help.widget_state,
                 commands_table,
                 items,

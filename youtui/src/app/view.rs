@@ -129,6 +129,9 @@ pub trait TableView {
     fn get_highlighted_row(&self) -> Option<usize>;
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_>;
     fn get_headings(&self) -> impl Iterator<Item = &'static str>;
+    /// Visual selection range for vim-style visual mode: (start, end) inclusive.
+    /// Rows in this range get visual_range_style applied.
+    fn get_visual_range(&self) -> Option<(usize, usize)> { None }
 }
 /// TableView with built in filtering and sorting.
 pub trait AdvancedTableView: TableView {

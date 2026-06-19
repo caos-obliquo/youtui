@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use ytmapi_rs::auth::noauth::NoAuthToken;
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID, LikeStatus};
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,
     SearchResultArtist, SearchResultPlaylist, SearchResultSong,
@@ -84,6 +84,14 @@ impl Api {
         video_ids: Vec<VideoID<'static>>,
     ) -> Result<()> {
         add_playlist_items(self.get_api().await?, playlist_id, video_ids).await
+    }
+    pub async fn rate_song(
+        &self,
+        video_id: VideoID<'static>,
+        rating: LikeStatus,
+    ) -> Result<()> {
+        let api = self.get_api().await?;
+        api.read().await.rate_song(video_id, rating).await
     }
     pub fn get_playlist_songs(
         &self,
