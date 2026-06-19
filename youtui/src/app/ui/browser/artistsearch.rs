@@ -302,6 +302,16 @@ impl ArtistSearchBrowser {
             Some(Constraint::new_kill_same_type()),
         )
     }
+    pub fn load_artist_by_id(&mut self, channel_id: ArtistChannelID<'static>) -> ComponentEffect<Self> {
+        self.change_routing(InputRouting::Song);
+        self.artist_search_panel.search_popped = false;
+        self.album_songs_panel.list.clear();
+        AsyncTask::new_stream(
+            GetArtistSongs(channel_id.clone()),
+            HandleGetArtistSongsProgressUpdate(channel_id),
+            Some(Constraint::new_kill_same_type()),
+        )
+    }
     pub fn play_song(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         // Consider how resource intensive this is as it runs in the main thread.
         let cur_song_idx = self.album_songs_panel.get_selected_item();

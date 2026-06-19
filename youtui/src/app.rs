@@ -17,11 +17,12 @@ use ratatui_image::picker::Picker;
 use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, CreatePlaylistWithVideos};
 use std::borrow::Cow;
 use std::time::Duration;
-use ytmapi_rs::common::{PlaylistID, VideoID};
+use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID};
 
 #[derive(Debug)]
 pub enum NavTarget {
     Artist(String),
+    ArtistChannel(ArtistChannelID<'static>),
     Album { artist: String, album: String },
     SongSearch(String),
 }

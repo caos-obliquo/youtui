@@ -178,7 +178,8 @@ pub fn draw_table_impl<'a>(
     f: &mut Frame,
     chunk: Rect,
     cur: usize,
-    secondary_highlighted_row: Option<usize>,
+    highlighted_row: Option<usize>,
+    visual_range: Option<(usize, usize)>,
     state: &ScrollingTableState,
     items: impl Iterator<Item = impl Iterator<Item = Cow<'a, str>> + 'a> + 'a,
     len: usize,
@@ -195,10 +196,10 @@ pub fn draw_table_impl<'a>(
     let table_widths = basic_constraints_to_table_constraints(layout, chunk.width, 1);
     let table_widget = ScrollingTable::new(items, headings, table_widths, cur_tick)
         .style(Style::new().fg(TEXT_COLOUR))
-        .secondary_row_highlight_style(Style::default().bold().italic())
+        .visual_range_style(Style::default().bold().italic())
         .row_highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
         .headings_style(Style::default().bold().fg(TABLE_HEADINGS_COLOUR))
-        .secondary_highlight_row(secondary_highlighted_row)
+        .visual_range(visual_range)
         .min_ticker_gap(6)
         .max_times_to_scroll(Some(MAX_TIMES_TO_SCROLL_LIST))
         .column_spacing(1);
@@ -236,6 +237,7 @@ where
         chunk,
         table.get_selected_item(),
         table.get_highlighted_row(),
+        table.get_visual_range(),
         table.get_state(),
         items,
         len,
@@ -299,6 +301,7 @@ pub fn draw_advanced_table(
         chunk,
         table.get_selected_item(),
         table.get_highlighted_row(),
+        table.get_visual_range(),
         &new_table_state,
         table.get_filtered_items(),
         number_items,

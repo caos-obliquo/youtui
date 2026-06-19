@@ -1,6 +1,7 @@
 use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::ValidatedMetadata;
 use crate::app::server::ValidateMetadata;
+use crate::app::server::RateSong;
 use crate::app::server::{ArcServer, TaskMetadata};
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
@@ -14,6 +15,10 @@ use ytmapi_rs::common::{PlaylistID, YoutubeID};
 use ytmapi_rs::parse::LibraryPlaylist;
 use ytmapi_rs::parse::PlaylistSong;
 
+#[derive(Debug, PartialEq)]
+pub struct HandleRateSongOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleRateSongErr;
 #[derive(Debug, PartialEq)]
 pub struct HandleCreatePlaylistOk;
 #[derive(Debug, PartialEq)]
@@ -61,6 +66,31 @@ impl_youtui_task_handler!(
     |_, _| {
         info!("Successfully added songs to playlist!");
         PlaylistEffect::AddSongsSuccess
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRateSongOk,
+    (),
+    Playlist,
+    |_, _: ()| {
+        |this: &mut Playlist| {
+            info!("Song rated successfully");
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRateSongErr,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("Failed to rate song: {}", msg);
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
     }
 );
 
@@ -522,6 +552,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
                         artists: list_artists,
                         thumbnails: MaybeRc::Owned(s.thumbnails),
                         album: list_album,
+                        like_status: s.like_status,
                     });
                 }
                 // Replace playlist
@@ -570,6 +601,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
                         artists: list_artists,
                         thumbnails: MaybeRc::Owned(s.thumbnails),
                         album: list_album,
+                        like_status: s.like_status,
                     });
                 }
                 // Append to existing queue

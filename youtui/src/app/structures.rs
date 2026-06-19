@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 use ytmapi_rs::common::{
-    AlbumID, ArtistChannelID, Explicit, UploadAlbumID, UploadArtistID, VideoID, YoutubeID,
+    AlbumID, ArtistChannelID, Explicit, LikeStatus, UploadAlbumID, UploadArtistID, VideoID, YoutubeID,
 };
 pub use ytmapi_rs::common::Thumbnail;
 use ytmapi_rs::parse::{
@@ -98,6 +98,7 @@ pub struct ListSong {
     pub artists: MaybeRc<Vec<ListSongArtist>>,
     pub thumbnails: MaybeRc<Vec<Thumbnail>>,
     pub album: Option<MaybeRc<ListSongAlbum>>,
+    pub like_status: LikeStatus,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -327,6 +328,7 @@ impl ListSong {
             artists: MaybeRc::Owned(list_artists),
             thumbnails: MaybeRc::Owned(thumb.unwrap_or_default()),
             album: list_album,
+            like_status: LikeStatus::Indifferent,
         }
     }
 }
@@ -418,6 +420,7 @@ impl BrowserSongsList {
             plays,
             title,
             explicit,
+            like_status,
             ..
         } = song;
         self.list.push(ListSong {
@@ -438,6 +441,7 @@ impl BrowserSongsList {
             genres: Vec::new(),
             styles: Vec::new(),
             start_offset: None,
+            like_status,
         });
         id
     }
@@ -476,12 +480,13 @@ impl BrowserSongsList {
             genres: Vec::new(),
             styles: Vec::new(),
             start_offset: None,
+            like_status: LikeStatus::Indifferent,
         });
         id
     }
     fn add_raw_playlist_item(&mut self, item: PlaylistItem) -> ListSongID {
         let id = self.create_next_id();
-        let (track_no, title, video_id, duration, artists, album, thumbnails, explicit, year) = match item
+        let (track_no, title, video_id, duration, artists, album, thumbnails, explicit, year, like_status) = match item
         {
             PlaylistItem::Song(PlaylistSong {
                 video_id,
@@ -493,6 +498,7 @@ impl BrowserSongsList {
                 track_no,
                 explicit,
                 year,
+                like_status,
                 ..
             }) => (
                 track_no,
@@ -504,6 +510,7 @@ impl BrowserSongsList {
                 thumbnails,
                 Some(explicit),
                 year,
+                like_status,
             ),
             PlaylistItem::Video(PlaylistVideo {
                 video_id,
@@ -522,6 +529,7 @@ impl BrowserSongsList {
                 thumbnails,
                 None,
                 None,
+                LikeStatus::Indifferent,
             ),
             // Episode has no video id, so we can't currently handle it as a ListSong...
             PlaylistItem::Episode(PlaylistEpisode { .. }) => unimplemented!(
@@ -546,6 +554,7 @@ impl BrowserSongsList {
                 thumbnails,
                 None,
                 None,
+                LikeStatus::Indifferent,
             ),
         };
         self.list.push(ListSong {
@@ -566,6 +575,7 @@ impl BrowserSongsList {
             genres: Vec::new(),
             styles: Vec::new(),
             start_offset: None,
+            like_status,
         });
         id
     }

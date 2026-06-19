@@ -9,6 +9,7 @@ use ytmapi_rs::auth::noauth::NoAuthToken;
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use ytmapi_rs::continuations::ParseFromContinuable;
 use ytmapi_rs::parse::ParseFrom;
+use ytmapi_rs::common::{LikeStatus, VideoID};
 use ytmapi_rs::query::{PostQuery, Query};
 use ytmapi_rs::{YtMusic, YtMusicBuilder};
 mod error;
@@ -226,6 +227,13 @@ impl DynamicYtMusic {
                     .try_collect()
                     .await?
             }
+        })
+    }
+    pub async fn rate_song<'a, T: Into<VideoID<'a>>>(&self, video_id: T, rating: LikeStatus) -> Result<()> {
+        Ok(match self {
+            DynamicYtMusic::Browser(yt) => yt.rate_song(video_id, rating).await?,
+            DynamicYtMusic::OAuth(yt) => yt.rate_song(video_id, rating).await?,
+            DynamicYtMusic::NoAuth(_) => bail!("Cannot rate songs without authentication"),
         })
     }
 }
