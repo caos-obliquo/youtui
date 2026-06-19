@@ -230,24 +230,31 @@ impl LyricsPopup {
                         .constraints([Constraint::Min(1), Constraint::Length(1)])
                         .split(horiz[1]);
 
-                    // Annotation text with padding
-                    let ann_text: String = self.annotations.iter()
+                    use ratatui::text::{Line, Span};
+                    use ratatui::style::Modifier;
+
+                    // Annotation text with italic fragments and spacing
+                    let ann_lines: Vec<Line<'static>> = self.annotations.iter()
                         .flat_map(|a| {
-                            let mut lines = vec![format!("  ── {}", a.fragment)];
+                            let mut lines = vec![
+                                Line::from(vec![
+                                    Span::raw("  ── "),
+                                    Span::styled(a.fragment.clone(), Style::default().add_modifier(Modifier::ITALIC)),
+                                ]),
+                            ];
                             for line in a.explanation.split('\n') {
-                                lines.push(format!("     {}", line));
+                                lines.push(Line::from(Span::raw(format!("     {}", line))));
                             }
-                            lines.push(String::new());
+                            lines.push(Line::from(""));
                             lines
                         })
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                        .collect();
 
-                    let a_line_count = ann_text.lines().count();
+                    let a_line_count = ann_lines.len();
                     let a_visible = r_chunks[0].height as usize;
                     let a_max = a_line_count.saturating_sub(a_visible);
                     if self.ann_scroll_offset > a_max { self.ann_scroll_offset = a_max; }
-                    let a_visible_text: String = ann_text.lines().skip(self.ann_scroll_offset).take(a_visible).collect::<Vec<_>>().join("\n");
+                    let a_visible_lines: Vec<Line<'static>> = ann_lines.into_iter().skip(self.ann_scroll_offset).take(a_visible).collect();
 
                     let r_style = if self.focus == Focus::Annotations {
                         Style::default().fg(Color::White)
@@ -260,7 +267,7 @@ impl LyricsPopup {
                         .border_style(Style::default().fg(Color::DarkGray));
                     let ann_inner = ann_block.inner(r_chunks[0]);
                     frame.render_widget(ann_block, r_chunks[0]);
-                    frame.render_widget(Paragraph::new(a_visible_text).style(r_style).wrap(Wrap { trim: false }), ann_inner);
+                    frame.render_widget(Paragraph::new(a_visible_lines).style(r_style).wrap(Wrap { trim: false }), ann_inner);
 
                     // Single footer below annotations panel
                     let l_scroll = if self.scroll_offset + l_visible < l_line_count { " j/k scroll" } else { "" };

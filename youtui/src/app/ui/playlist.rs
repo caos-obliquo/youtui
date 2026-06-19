@@ -24,6 +24,7 @@ use crate::app::ui::playlist::effect_handlers::{
 use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleMetadataValidated, HandleMetadataValidationError,
     HandleRateSongOk, HandleRateSongErr,
+    HandleFetchAlbumArtOk, HandleFetchAlbumArtErr,
 };
 use crate::app::ui::{AppCallback, WindowContext};
 use crate::app::{NavTarget};
@@ -163,36 +164,36 @@ impl Action for PlaylistAction {
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match self {
             PlaylistAction::ViewBrowser => "View Browser",
-            PlaylistAction::PlaySelected => "Play Selected",
-            PlaylistAction::DeleteSelected => "Delete Selected",
-            PlaylistAction::DeleteAll => "Delete All",
-            PlaylistAction::ToggleShuffle => "Toggle Shuffle",
-            PlaylistAction::ToggleSearch => "Toggle Search",
-            PlaylistAction::ClearSearch => "Clear Search",
-            PlaylistAction::SaveQueue => "Save Queue",
-            PlaylistAction::LoadQueue => "Load Queue",
-            PlaylistAction::DeleteQueue => "Delete Queue",
-            PlaylistAction::SetBestQuality => "Set Best Quality",
-            PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
-            PlaylistAction::LoadFromYTM => "Load YouTube Music Playlist",
-            PlaylistAction::ViewLyrics => "View Lyrics",
-            PlaylistAction::TogglePlaylistCategoryFilter => "Toggle Category Filter",
-            PlaylistAction::NextSearchResult => "Next Match",
-            PlaylistAction::PrevSearchResult => "Prev Match",
-            PlaylistAction::CopySongUrl => "Copy Song URL",
-            PlaylistAction::OpenUrl => "Open URL",
-            PlaylistAction::ToggleRomaji => "Toggle Romaji",
-            PlaylistAction::ToggleRepeat => "Toggle Repeat Mode",
-            PlaylistAction::ToggleRadio => "Toggle Radio Mode",
-            PlaylistAction::ViewSongInfo => "View Song Info",
-            PlaylistAction::SaveToExistingPlaylist => "Save Queue to Existing Playlist",
-            PlaylistAction::UndoDelete => "Undo Delete",
-            PlaylistAction::DeleteToTop => "Delete to Top",
-            PlaylistAction::DeleteToBottom => "Delete to Bottom",
-            PlaylistAction::ToggleVisualMode => "Toggle Visual Mode",
-            PlaylistAction::GoToArtist => "Go to Artist",
-            PlaylistAction::GoToAlbum => "Go to Album",
-            PlaylistAction::ToggleLike => "Like / Unlike",
+            PlaylistAction::PlaySelected => "󰐊 Play Selected",
+            PlaylistAction::DeleteSelected => " Delete Selected",
+            PlaylistAction::DeleteAll => " Delete All",
+            PlaylistAction::ToggleShuffle => "󰒝 Toggle Shuffle",
+            PlaylistAction::ToggleSearch => "󰍉 Toggle Search",
+            PlaylistAction::ClearSearch => "󰍉 Clear Search",
+            PlaylistAction::SaveQueue => " Save Queue",
+            PlaylistAction::LoadQueue => "󰑐 Load Queue",
+            PlaylistAction::DeleteQueue => " Delete Queue",
+            PlaylistAction::SetBestQuality => "󰋲 Set Best Quality",
+            PlaylistAction::SaveToNewPlaylist => " Save Queue to New Playlist",
+            PlaylistAction::LoadFromYTM => "󰑐 Load YouTube Music Playlist",
+            PlaylistAction::ViewLyrics => "󰋼 View Lyrics",
+            PlaylistAction::TogglePlaylistCategoryFilter => "󰇵 Toggle Category Filter",
+            PlaylistAction::NextSearchResult => "󰄸 Next Match",
+            PlaylistAction::PrevSearchResult => "󰄷 Prev Match",
+            PlaylistAction::CopySongUrl => "󰖟 Copy Song URL",
+            PlaylistAction::OpenUrl => "󰖟 Open URL",
+            PlaylistAction::ToggleRomaji => "󰘐 Toggle Romaji",
+            PlaylistAction::ToggleRepeat => "󰑩 Toggle Repeat Mode",
+            PlaylistAction::ToggleRadio => "󰓻 Toggle Radio Mode",
+            PlaylistAction::ViewSongInfo => "󰋲 View Song Info",
+            PlaylistAction::SaveToExistingPlaylist => " Save Queue to Existing Playlist",
+            PlaylistAction::UndoDelete => "󰩍 Undo Delete",
+            PlaylistAction::DeleteToTop => " Delete to Top",
+            PlaylistAction::DeleteToBottom => " Delete to Bottom",
+            PlaylistAction::ToggleVisualMode => "󰂭 Toggle Visual Mode",
+            PlaylistAction::GoToArtist => "󰓇 Go to Artist",
+            PlaylistAction::GoToAlbum => "󰀥 Go to Album",
+            PlaylistAction::ToggleLike => "󰋑 Like / Unlike",
         }
         .into()
     }
@@ -1033,7 +1034,7 @@ impl Playlist {
             let constraint = Some(Constraint::new_block_matching_metadata(
                 TaskMetadata::PlayingSong,
             ));
-            let effect = effect.push(AsyncTask::new_stream_try(
+            let mut effect = effect.push(AsyncTask::new_stream_try(
                 task,
                 HandlePlayUpdateOk,
                 HandlePlayUpdateError(id),
@@ -1051,6 +1052,24 @@ impl Playlist {
                     }
                 }
                 let is_track_entry = self.get_song_from_idx(song_index).and_then(|s| s.track_no).is_some();
+                // Trigger FetchAlbumArt if not already downloaded
+                if let Some(song) = self.get_song_from_idx(song_index) {
+                    if matches!(song.album_art, crate::app::structures::AlbumArtState::None | AlbumArtState::Init) {
+                        if let Some(ref album) = song.album {
+                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                            let album_name = album.name.clone();
+                            let api_key = self.scrobbling_config.api_key.clone();
+                            if !api_key.is_empty() {
+                                effect = effect.push(AsyncTask::new_future_try(
+                                    crate::app::server::FetchAlbumArt(artist, album_name, api_key),
+                                    HandleFetchAlbumArtOk,
+                                    HandleFetchAlbumArtErr,
+                                    None,
+                                ).map_frontend(|this: &mut Self| this));
+                            }
+                        }
+                    }
+                }
                 if self.album_tracks.is_none() || is_track_entry {
                     if let Some(song) = self.get_song_from_idx(song_index) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");

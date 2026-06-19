@@ -168,6 +168,7 @@ impl FrontendEffect<PlaylistUpdatePopup, ArcServer, TaskMetadata> for PlaylistUp
                 );
                 target.state = PlaylistUpdatePopupState::Loaded(playlists);
                 target.selected_idx = 0;
+                target.refresh_filter();
             }
             PlaylistUpdateEffect::FetchPlaylistsError(msg) => {
                 error!("Failed to fetch library playlists: {}", msg);

@@ -69,19 +69,19 @@ impl Action for BrowserArtistSongsAction {
     }
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match &self {
-            BrowserArtistSongsAction::PlaySong => "Play song",
-            BrowserArtistSongsAction::PlaySongs => "Play songs",
-            BrowserArtistSongsAction::PlayAlbum => "Play album",
-            BrowserArtistSongsAction::AddSongToPlaylist => "Add song to playlist",
-            BrowserArtistSongsAction::AddSongsToPlaylist => "Add songs to playlist",
-            BrowserArtistSongsAction::AddAlbumToPlaylist => "Add album to playlist",
-            BrowserArtistSongsAction::Sort => "Sort",
-            BrowserArtistSongsAction::Filter => "Filter",
-            BrowserArtistSongsAction::ViewLyrics => "View Lyrics",
-            BrowserArtistSongsAction::CopySongUrl => "Copy Song URL",
-            BrowserArtistSongsAction::ToggleCategoryFilter => "Toggle Category Filter",
-            BrowserArtistSongsAction::GoToArtist => "Go to Artist",
-            BrowserArtistSongsAction::GoToAlbum => "Go to Album",
+            BrowserArtistSongsAction::PlaySong => "󰐊 Play song",
+            BrowserArtistSongsAction::PlaySongs => "󰐊 Play songs",
+            BrowserArtistSongsAction::PlayAlbum => "󰐊 Play album",
+            BrowserArtistSongsAction::AddSongToPlaylist => " Add song to playlist",
+            BrowserArtistSongsAction::AddSongsToPlaylist => " Add songs to playlist",
+            BrowserArtistSongsAction::AddAlbumToPlaylist => " Add album to playlist",
+            BrowserArtistSongsAction::Sort => "󰇵 Sort",
+            BrowserArtistSongsAction::Filter => "󰇵 Filter",
+            BrowserArtistSongsAction::ViewLyrics => "󰋼 View Lyrics",
+            BrowserArtistSongsAction::CopySongUrl => "󰖟 Copy Song URL",
+            BrowserArtistSongsAction::ToggleCategoryFilter => "󰇵 Toggle Category Filter",
+            BrowserArtistSongsAction::GoToArtist => "󰓇 Go to Artist",
+            BrowserArtistSongsAction::GoToAlbum => "󰀥 Go to Album",
         }
         .into()
     }

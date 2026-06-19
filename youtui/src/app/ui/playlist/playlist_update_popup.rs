@@ -48,9 +48,35 @@ pub struct PlaylistUpdatePopup {
     pub state: PlaylistUpdatePopupState,
     pub selected_idx: usize,
     list_state: ListState,
+    search_text: String,
+    search_active: bool,
+    filtered_indices: Vec<usize>,
 }
 
 impl_youtui_component!(PlaylistUpdatePopup);
+
+impl PlaylistUpdatePopup {
+    pub fn refresh_filter(&mut self) {
+        match &self.state {
+            PlaylistUpdatePopupState::Loaded(playlists) => {
+                if self.search_text.is_empty() || !self.search_active {
+                    self.filtered_indices = (0..playlists.len()).collect();
+                } else {
+                    let lower = self.search_text.to_lowercase();
+                    self.filtered_indices = playlists.iter().enumerate()
+                        .filter(|(_, p)| p.title.to_lowercase().contains(&lower))
+                        .map(|(i, _)| i)
+                        .collect();
+                }
+            }
+            _ => self.filtered_indices = Vec::new(),
+        }
+    }
+
+    fn selected_playlist<'a>(&self, playlists: &'a [LibraryPlaylist]) -> Option<&'a LibraryPlaylist> {
+        self.filtered_indices.get(self.selected_idx).and_then(|&i| playlists.get(i))
+    }
+}
 
 impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
     fn apply_action(
@@ -68,10 +94,9 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
                 (AsyncTask::new_no_op(), None)
             }
             MoveDown => {
-                if let PlaylistUpdatePopupState::Loaded(playlists) = &self.state {
-                    if self.selected_idx < playlists.len().saturating_sub(1) {
-                        self.selected_idx += 1;
-                    }
+                let max = self.filtered_indices.len().saturating_sub(1);
+                if self.selected_idx < max {
+                    self.selected_idx += 1;
                 }
                 self.list_state.select(Some(self.selected_idx));
                 (AsyncTask::new_no_op(), None)
@@ -79,7 +104,7 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
             Select => {
                 if let PlaylistUpdatePopupState::Loaded(playlists) = &self.state {
                     self.list_state.select(Some(self.selected_idx));
-                    if let Some(playlist) = playlists.get(self.selected_idx) {
+                    if let Some(playlist) = self.selected_playlist(playlists) {
                         let playlist_id = playlist.playlist_id.clone();
                         if self.video_ids.is_empty() {
                             // Load mode: fetch playlist tracks into player
@@ -121,18 +146,67 @@ impl PlaylistUpdatePopup {
             state: PlaylistUpdatePopupState::Loading,
             selected_idx: 0,
             list_state,
+            search_text: String::new(),
+            search_active: false,
+            filtered_indices: Vec::new(),
+        }
+    }
+
+    fn filtered_playlists(&self) -> Vec<&LibraryPlaylist> {
+        match &self.state {
+            PlaylistUpdatePopupState::Loaded(playlists) => {
+                if self.search_text.is_empty() || !self.search_active {
+                    playlists.iter().collect()
+                } else {
+                    let lower = self.search_text.to_lowercase();
+                    playlists.iter().filter(|p| p.title.to_lowercase().contains(&lower)).collect()
+                }
+            }
+            _ => Vec::new(),
         }
     }
 
     pub fn handle_key(&mut self, event: KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        use crossterm::event::KeyCode;
+        if self.search_active {
+            match event.code {
+                KeyCode::Esc => {
+                    self.search_active = false;
+                    self.search_text.clear();
+                    self.refresh_filter();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Enter => {
+                    self.search_active = false;
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char(c) => {
+                    self.search_text.push(c);
+                    self.refresh_filter();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Backspace => {
+                    self.search_text.pop();
+                    self.refresh_filter();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                _ => {}
+            }
+        }
         match event.code {
-            crossterm::event::KeyCode::Esc => {
+            KeyCode::Esc => {
                 return (
                     AsyncTask::new_no_op(),
                     Some(AppCallback::ClosePopup),
                 );
             }
-            crossterm::event::KeyCode::Enter => {
+            KeyCode::Char('/') => {
+                self.search_active = true;
+                self.search_text.clear();
+                self.refresh_filter();
+                return (AsyncTask::new_no_op(), None);
+            }
+            KeyCode::Enter => {
                 let effect: YoutuiEffect<Self> =
                     self.apply_action(PlaylistUpdatePopupAction::Select).into();
                 return (effect.effect, effect.callback);
@@ -181,8 +255,10 @@ impl PlaylistUpdatePopup {
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
         let title = if self.video_ids.is_empty() {
             " Load YouTube Music Playlist ".to_string()
+        } else if self.search_active {
+            format!(" Search Playlists [{}] ", self.search_text)
         } else {
-            format!(" Select Playlist ({} songs) ", self.video_ids.len())
+            format!(" Select Playlist ({} songs) /:Search ", self.video_ids.len())
         };
         let block = Block::default()
             .title(title)
@@ -204,7 +280,13 @@ impl PlaylistUpdatePopup {
                 frame.render_widget(loading, chunks[0]);
             }
             PlaylistUpdatePopupState::Loaded(playlists) => {
-                let items: Vec<ListItem> = playlists
+                let filtered: Vec<&LibraryPlaylist> = if self.search_active || !self.search_text.is_empty() {
+                    let lower = self.search_text.to_lowercase();
+                    playlists.iter().filter(|p| p.title.to_lowercase().contains(&lower)).collect()
+                } else {
+                    playlists.iter().collect()
+                };
+                let items: Vec<ListItem> = filtered
                     .iter()
                     .map(|p| {
                         let content = format!(" {} ", p.title);
@@ -219,7 +301,7 @@ impl PlaylistUpdatePopup {
                             .bg(Color::Cyan)
                             .add_modifier(Modifier::BOLD),
                     )
-                    .highlight_symbol("> ");
+                    .highlight_symbol(" ");
                 frame.render_stateful_widget(list, chunks[0], &mut self.list_state);
             }
             PlaylistUpdatePopupState::Error(msg) => {
@@ -230,7 +312,7 @@ impl PlaylistUpdatePopup {
             }
         }
 
-        let instructions = Paragraph::new("j/k: Navigate | Enter: Select | Esc: Cancel")
+        let instructions = Paragraph::new("/: Search | j/k: Navigate | Enter: Select | Esc: Cancel")
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(instructions, chunks[1]);
