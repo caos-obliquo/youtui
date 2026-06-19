@@ -273,6 +273,24 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::CopySongUrl => {
+                if self.visual_mode {
+                    let (start, end) = if self.visual_start <= self.cur_selected {
+                        (self.visual_start, self.cur_selected)
+                    } else {
+                        (self.cur_selected, self.visual_start)
+                    };
+                    let lines: Vec<String> = self.list.get_list_iter()
+                        .skip(start).take(end - start + 1)
+                        .map(|s| {
+                            let artists = s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                            format!("{} — {}", artists, s.title)
+                        })
+                        .collect();
+                    let _ = std::process::Command::new("wl-copy").arg(lines.join("\n")).spawn();
+                    info!("Yanked {} lines from visual selection to clipboard", lines.len());
+                    self.visual_mode = false;
+                    return (AsyncTask::new_no_op(), None);
+                }
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 if let Some(song) = self.get_song_from_idx(actual_index) {
                     let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
@@ -559,8 +577,12 @@ impl TableView for Playlist {
     }
 
     fn get_highlighted_row(&self) -> Option<usize> {
-        self.get_cur_playing_index()
-            .and_then(|idx| self.actual_to_visual_index(idx))
+        if self.visual_mode {
+            Some(self.visual_start)
+        } else {
+            self.get_cur_playing_index()
+                .and_then(|idx| self.actual_to_visual_index(idx))
+        }
     }
 
     fn get_mut_state(&mut self) -> &mut ScrollingTableState {

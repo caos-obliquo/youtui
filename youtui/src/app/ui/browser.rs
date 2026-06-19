@@ -744,9 +744,9 @@ mod tests {
         b.apply_action(BrowserAction::Right);
         let actual_kb = b.get_active_keybinds(&cfg);
         let expected_kb = (
-            &Keybind::new_unmodified(crossterm::event::KeyCode::Char('3')),
+            &Keybind::new_unmodified(crossterm::event::KeyCode::Char('c')),
             &KeyActionTree::new_key_with_visibility(
-                AppAction::BrowserArtistSongs(BrowserArtistSongsAction::Filter),
+                AppAction::BrowserArtistSongs(BrowserArtistSongsAction::ToggleCategoryFilter),
                 KeyActionVisibility::Global,
             ),
         );

@@ -69,6 +69,7 @@ pub struct YoutuiWindow {
     pub quit_confirm: bool,
     pub command_mode: bool,
     pub command_editor: ViTextEditor,
+    pub count_prefix: usize,
 }
 impl_youtui_component!(YoutuiWindow);
 
@@ -452,6 +453,7 @@ impl YoutuiWindow {
             quit_confirm: false,
             command_mode: false,
             command_editor: ViTextEditor::new(),
+            count_prefix: 0,
         };
         let initial_effect = url.map(|u| this.play_yt_url(u));
         let mut combined = task.map_frontend(|this: &mut Self| &mut this.playlist);
@@ -660,8 +662,36 @@ impl YoutuiWindow {
         self.tick = self.tick.wrapping_add(1);
         self.playlist.handle_tick().await;
     }
-    fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
-        self.key_stack.push(key_event);
+    pub fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
+        use crossterm::event::KeyCode;
+        // Count prefix: accumulate digits before non-digit keys
+        if let KeyCode::Char(c) = key_event.code {
+            if c.is_ascii_digit() {
+                if !self.key_stack.is_empty() {
+                    // A digit after already having keys — not a count (part of mode)
+                    self.key_stack.push(key_event);
+                } else {
+                    // First key is a digit — accumulate as count
+                    let digit = c.to_digit(10).unwrap_or(0) as usize;
+                    self.count_prefix = self.count_prefix * 10 + digit;
+                    tracing::debug!("Count prefix: {}", self.count_prefix);
+                    return YoutuiEffect::new_no_op();
+                }
+            } else {
+                // Non-digit key: apply accumulated count
+                if self.count_prefix > 0 && !key_event.modifiers.intersects(crossterm::event::KeyModifiers::SHIFT | crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::ALT) {
+                    self.key_stack.push(key_event);
+                    let effect = self.global_handle_key_stack();
+                    self.count_prefix = 0;
+                    return effect;
+                }
+                self.count_prefix = 0;
+                self.key_stack.push(key_event);
+            }
+        } else {
+            self.count_prefix = 0;
+            self.key_stack.push(key_event);
+        }
         self.global_handle_key_stack()
     }
     fn handle_mouse_event(
@@ -674,8 +704,16 @@ impl YoutuiWindow {
     pub fn handle_list_action(&mut self, action: ListAction) -> ComponentEffect<Self> {
         if self.is_scrollable() {
             match action {
-                ListAction::Up => self.increment_list(-1),
-                ListAction::Down => self.increment_list(1),
+                ListAction::Up => {
+                    let count = self.count_prefix.max(1) as isize;
+                    self.count_prefix = 0;
+                    self.increment_list(-count)
+                },
+                ListAction::Down => {
+                    let count = self.count_prefix.max(1) as isize;
+                    self.count_prefix = 0;
+                    self.increment_list(count)
+                },
                 ListAction::PageUp => self.increment_list(-PAGE_KEY_LINES),
                 ListAction::PageDown => self.increment_list(PAGE_KEY_LINES),
                 ListAction::First => {
