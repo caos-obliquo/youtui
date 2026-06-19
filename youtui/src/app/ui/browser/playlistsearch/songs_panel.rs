@@ -54,6 +54,8 @@ pub enum BrowserPlaylistSongsAction {
     AddSongsToPlaylist,
     ViewLyrics,
     CopySongUrl,
+    GoToArtist,
+    GoToAlbum,
 }
 
 impl Action for BrowserPlaylistSongsAction {
@@ -70,6 +72,8 @@ impl Action for BrowserPlaylistSongsAction {
             BrowserPlaylistSongsAction::Filter => "Filter",
             BrowserPlaylistSongsAction::ViewLyrics => "View Lyrics",
             BrowserPlaylistSongsAction::CopySongUrl => "Copy Song URL",
+            BrowserPlaylistSongsAction::GoToArtist => "Go to Artist",
+            BrowserPlaylistSongsAction::GoToAlbum => "Go to Album",
         }
         .into()
     }

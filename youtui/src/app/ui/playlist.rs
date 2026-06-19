@@ -23,6 +23,7 @@ use crate::app::ui::playlist::effect_handlers::{
 };
 use crate::app::ui::playlist::effect_handlers_playlist::{HandleMetadataValidated, HandleMetadataValidationError};
 use crate::app::ui::{AppCallback, WindowContext};
+use crate::app::{NavTarget};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
 use crate::app::view::{BasicConstraint, DrawableMut, HasTitle, Loadable, TableView};
 use crate::async_rodio_sink::{
@@ -146,6 +147,8 @@ pub enum PlaylistAction {
     DeleteToTop,
     DeleteToBottom,
     ToggleVisualMode,
+    GoToArtist,
+    GoToAlbum,
 }
 
 impl Action for PlaylistAction {
@@ -183,6 +186,8 @@ impl Action for PlaylistAction {
             PlaylistAction::DeleteToTop => "Delete to Top",
             PlaylistAction::DeleteToBottom => "Delete to Bottom",
             PlaylistAction::ToggleVisualMode => "Toggle Visual Mode",
+            PlaylistAction::GoToArtist => "Go to Artist",
+            PlaylistAction::GoToAlbum => "Go to Album",
         }
         .into()
     }
@@ -227,9 +232,12 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistSavePopup(video_ids)))
             },
             PlaylistAction::SaveToExistingPlaylist => {
-                let video_ids: Vec<VideoID<'static>> = self.list.get_list_iter()
-                    .map(|song| song.video_id.clone())
-                    .collect();
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                let video_ids = if let Some(song) = self.get_song_from_idx(actual_index) {
+                    vec![song.video_id.clone()]
+                } else {
+                    Vec::new()
+                };
                 if video_ids.is_empty() {
                     return (AsyncTask::new_no_op(), None);
                 }
@@ -274,6 +282,28 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::OpenUrl => {
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::GoToArtist => {
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                if let Some(song) = self.get_song_from_idx(actual_index) {
+                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                    return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist))));
+                }
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::GoToAlbum => {
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                if let Some(song) = self.get_song_from_idx(actual_index) {
+                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                    if let Some(album) = &song.album {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Album {
+                            artist,
+                            album: album.name.clone(),
+                        })));
+                    }
+                    warn!("Song has no album data, cannot navigate to album");
+                }
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ToggleRomaji => {

@@ -297,6 +297,17 @@ pub fn draw_library_browser(
         return;
     }
 
+    let content_chunk = if browser.input_routing == InputRouting::Search {
+        let [search_chunk, rest] = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .areas(right_chunk);
+        draw_text_box(f, "Search", &mut browser.search_editor, search_chunk);
+        rest
+    } else {
+        right_chunk
+    };
+
     match browser.category {
         LibraryCategory::LikedSongs => {
             let border_style = if right_selected {
@@ -308,8 +319,8 @@ pub fn draw_library_browser(
                 .borders(Borders::ALL)
                 .border_style(border_style)
                 .title(browser.category.label());
-            let inner = block.inner(right_chunk);
-            f.render_widget(block, right_chunk);
+            let inner = block.inner(content_chunk);
+            f.render_widget(block, content_chunk);
 
             let songs: Vec<_> = browser.song_list.get_list_iter().collect();
             let items: Vec<ListItem> = songs
@@ -342,8 +353,8 @@ pub fn draw_library_browser(
                 .borders(Borders::ALL)
                 .border_style(border_style)
                 .title("Playlists");
-            let inner = block.inner(right_chunk);
-            f.render_widget(block, right_chunk);
+            let inner = block.inner(content_chunk);
+            f.render_widget(block, content_chunk);
 
             let items: Vec<ListItem> = browser
                 .playlist_data
@@ -375,8 +386,8 @@ pub fn draw_library_browser(
                 .borders(Borders::ALL)
                 .border_style(border_style)
                 .title("Artists");
-            let inner = block.inner(right_chunk);
-            f.render_widget(block, right_chunk);
+            let inner = block.inner(content_chunk);
+            f.render_widget(block, content_chunk);
 
             let items: Vec<ListItem> = browser
                 .artist_data
@@ -408,8 +419,8 @@ pub fn draw_library_browser(
                 .borders(Borders::ALL)
                 .border_style(border_style)
                 .title("Albums");
-            let inner = block.inner(right_chunk);
-            f.render_widget(block, right_chunk);
+            let inner = block.inner(content_chunk);
+            f.render_widget(block, content_chunk);
 
             let items: Vec<ListItem> = browser
                 .album_data

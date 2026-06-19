@@ -293,7 +293,7 @@ async fn add_playlist_items(
 ) -> Result<()> {
     tracing::info!("Adding {} videos to playlist", video_ids.len());
     let query =
-        AddPlaylistItemsQuery::new_from_videos(playlist_id, video_ids, DuplicateHandlingMode::ReturnError);
+        AddPlaylistItemsQuery::new_from_videos(playlist_id, video_ids, DuplicateHandlingMode::Unhandled);
     query_api_with_retry(&api, query).await.map(|_: Vec<ytmapi_rs::parse::AddPlaylistItem>| ())
 }
 

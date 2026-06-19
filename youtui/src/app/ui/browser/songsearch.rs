@@ -3,7 +3,7 @@ use super::shared_components::{
     BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager,
     get_adjusted_list_column,
 };
-use crate::app::AppCallback;
+use crate::app::{AppCallback, NavTarget};
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, Suggestable, TextHandler,
     YoutuiEffect,
@@ -54,6 +54,8 @@ pub enum BrowserSongsAction {
     AddSongsToPlaylist,
     ViewLyrics,
     CopySongUrl,
+    GoToArtist,
+    GoToAlbum,
 }
 
 impl Action for BrowserSongsAction {
@@ -70,6 +72,8 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::AddSongsToPlaylist => "Add songs to playlist",
             BrowserSongsAction::ViewLyrics => "View Lyrics",
             BrowserSongsAction::CopySongUrl => "Copy Song URL",
+            BrowserSongsAction::GoToArtist => "Go to Artist",
+            BrowserSongsAction::GoToAlbum => "Go to Album",
         }
         .into()
     }
@@ -208,6 +212,8 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::AddSongsToPlaylist => return self.add_songs_to_playlist().into(),
             BrowserSongsAction::ViewLyrics => return self.view_lyrics().into(),
             BrowserSongsAction::CopySongUrl => return self.copy_song_url().into(),
+            BrowserSongsAction::GoToArtist => return self.go_to_artist().into(),
+            BrowserSongsAction::GoToAlbum => return self.go_to_album().into(),
         }
         YoutuiEffect::new_no_op()
     }
@@ -632,6 +638,40 @@ impl SongSearchBrowser {
             let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
             let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
             tracing::info!("Copied URL: {}", raw_url);
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn go_to_artist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        if let Some(song) = self.get_song_from_idx(cur_idx) {
+            let artist = song.artists.iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::Navigate(NavTarget::Artist(artist))),
+            );
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn go_to_album(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        if let Some(song) = self.get_song_from_idx(cur_idx) {
+            let artist = song.artists.iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            if let Some(album) = &song.album {
+                return (
+                    AsyncTask::new_no_op(),
+                    Some(AppCallback::Navigate(NavTarget::Album {
+                        artist,
+                        album: album.name.clone(),
+                    })),
+                );
+            }
+            warn!("Song has no album data, cannot navigate to album");
         }
         (AsyncTask::new_no_op(), None)
     }

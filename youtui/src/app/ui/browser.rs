@@ -1,6 +1,7 @@
 use self::draw::draw_browser;
 use super::action::{AppAction, TextEntryAction};
 use super::{AppCallback, WindowContext};
+use crate::app::{NavTarget};
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, DelegateScrollable, DominantKeyRouter, KeyRouter,
     Scrollable, TextHandler, YoutuiEffect, apply_action_mapped,
@@ -32,7 +33,7 @@ pub mod playlistsearch;
 pub mod shared_components;
 pub mod songsearch;
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, PartialEq)]
 enum BrowserVariant {
     #[default]
     Artist,
@@ -47,6 +48,13 @@ pub struct Browser {
     song_search_browser: SongSearchBrowser,
     playlist_search_browser: PlaylistSearchBrowser,
     library_browser: LibraryBrowser,
+    state_stack: Vec<BrowserSnapshot>,
+}
+
+#[derive(Clone)]
+struct BrowserSnapshot {
+    variant: BrowserVariant,
+    library_category: Option<library::LibraryCategory>,
 }
 impl_youtui_component!(Browser);
 
@@ -58,6 +66,7 @@ pub enum BrowserAction {
     Left,
     Right,
     ChangeSearchType,
+    Back,
 }
 
 impl Action for BrowserAction {
@@ -71,6 +80,7 @@ impl Action for BrowserAction {
             BrowserAction::Left => "Left",
             BrowserAction::Right => "Right",
             BrowserAction::ChangeSearchType => "Change Search Type",
+            BrowserAction::Back => "Go Back",
         }
         .into()
     }
@@ -106,10 +116,9 @@ impl ActionHandler<BrowserSearchAction> for Browser {
             BrowserVariant::Playlist => apply_action_mapped(self, action, |this: &mut Self| {
                 &mut this.playlist_search_browser
             }),
-            BrowserVariant::LibraryPlaylist => {
-                warn!("Library browser does not support search");
-                YoutuiEffect::new_no_op()
-            }
+            BrowserVariant::LibraryPlaylist => apply_action_mapped(self, action, |this: &mut Self| {
+                &mut this.library_browser
+            }),
         }
     }
 }
@@ -242,6 +251,9 @@ impl ActionHandler<BrowserAction> for Browser {
                     return (task, None);
                 }
             }
+            BrowserAction::Back => {
+                self.navigate_back();
+            }
         }
         (AsyncTask::new_no_op(), None)
     }
@@ -304,7 +316,7 @@ impl TextHandler for Browser {
             BrowserVariant::Artist => self.artist_search_browser.is_text_handling(),
             BrowserVariant::Song => self.song_search_browser.is_text_handling(),
             BrowserVariant::Playlist => self.playlist_search_browser.is_text_handling(),
-            BrowserVariant::LibraryPlaylist => false,
+            BrowserVariant::LibraryPlaylist => self.library_browser.is_text_handling(),
         }
     }
     fn get_text(&self) -> std::option::Option<&str> {
@@ -312,7 +324,7 @@ impl TextHandler for Browser {
             BrowserVariant::Artist => self.artist_search_browser.get_text(),
             BrowserVariant::Song => self.song_search_browser.get_text(),
             BrowserVariant::Playlist => self.playlist_search_browser.get_text(),
-            BrowserVariant::LibraryPlaylist => None,
+            BrowserVariant::LibraryPlaylist => self.library_browser.get_text(),
         }
     }
     fn replace_text(&mut self, text: impl Into<String>) {
@@ -320,7 +332,7 @@ impl TextHandler for Browser {
             BrowserVariant::Artist => self.artist_search_browser.replace_text(text),
             BrowserVariant::Song => self.song_search_browser.replace_text(text),
             BrowserVariant::Playlist => self.playlist_search_browser.replace_text(text),
-            BrowserVariant::LibraryPlaylist => (),
+            BrowserVariant::LibraryPlaylist => self.library_browser.replace_text(text),
         }
     }
     fn clear_text(&mut self) -> bool {
@@ -328,7 +340,7 @@ impl TextHandler for Browser {
             BrowserVariant::Artist => self.artist_search_browser.clear_text(),
             BrowserVariant::Song => self.song_search_browser.clear_text(),
             BrowserVariant::Playlist => self.playlist_search_browser.clear_text(),
-            BrowserVariant::LibraryPlaylist => false,
+            BrowserVariant::LibraryPlaylist => self.library_browser.clear_text(),
         }
     }
     fn handle_text_event_impl(
@@ -352,7 +364,10 @@ impl TextHandler for Browser {
                 .map(|effect| {
                     effect.map_frontend(|this: &mut Self| &mut this.playlist_search_browser)
                 }),
-            BrowserVariant::LibraryPlaylist => None,
+            BrowserVariant::LibraryPlaylist => self
+                .library_browser
+                .handle_text_event_impl(event)
+                .map(|effect| effect.map_frontend(|this: &mut Self| &mut this.library_browser)),
         }
     }
 }
@@ -485,6 +500,9 @@ impl DominantKeyRouter<AppAction> for Browser {
                 }
             },
             BrowserVariant::LibraryPlaylist => match self.library_browser.input_routing {
+                library::InputRouting::Search => {
+                    Either::Right(std::iter::once(&config.keybinds.browser_search))
+                }
                 library::InputRouting::Category => Either::Left(std::iter::empty()),
                 library::InputRouting::Content => match self.library_browser.sort.shown {
                     true => Either::Right(std::iter::once(&config.keybinds.sort)),
@@ -506,6 +524,54 @@ impl Browser {
             song_search_browser: SongSearchBrowser::new(),
             playlist_search_browser: PlaylistSearchBrowser::new(),
             library_browser: LibraryBrowser::new(),
+            state_stack: Vec::new(),
+        }
+    }
+    pub fn navigate_to(&mut self, target: NavTarget) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
+        self.push_snapshot();
+        match target {
+            NavTarget::Artist(name) => {
+                use crate::app::server::SearchArtists;
+                self.variant = BrowserVariant::Artist;
+                self.artist_search_browser.artist_search_panel.search.replace_text(name);
+                let effect = self.artist_search_browser.search();
+                Some(effect.map_frontend(|this: &mut Self| &mut this.artist_search_browser))
+            }
+            NavTarget::Album { artist, album } => {
+                self.variant = BrowserVariant::Song;
+                self.song_search_browser.search.replace_text(format!("{artist} {album}"));
+                self.song_search_browser.handle_toggle_search();
+                None // search is triggered on enter
+            }
+            NavTarget::SongSearch(query) => {
+                self.variant = BrowserVariant::Song;
+                self.song_search_browser.search.replace_text(query);
+                self.song_search_browser.handle_toggle_search();
+                None
+            }
+        }
+    }
+    fn push_snapshot(&mut self) {
+        let snapshot = BrowserSnapshot {
+            variant: self.variant,
+            library_category: match self.variant {
+                BrowserVariant::LibraryPlaylist => {
+                    Some(self.library_browser.category)
+                }
+                _ => None,
+            },
+        };
+        self.state_stack.push(snapshot);
+    }
+    pub fn navigate_back(&mut self) {
+        if let Some(snapshot) = self.state_stack.pop() {
+            self.variant = snapshot.variant;
+            if let Some(cat) = snapshot.library_category {
+                if self.variant == BrowserVariant::LibraryPlaylist {
+                    self.library_browser.category = cat;
+                    self.library_browser.input_routing = library::InputRouting::Content;
+                }
+            }
         }
     }
     pub fn text_editor_mode(&self) -> Option<String> {
@@ -513,7 +579,7 @@ impl Browser {
             BrowserVariant::Artist => self.artist_search_browser.text_editor_mode(),
             BrowserVariant::Song => self.song_search_browser.text_editor_mode(),
             BrowserVariant::Playlist => self.playlist_search_browser.text_editor_mode(),
-            BrowserVariant::LibraryPlaylist => None,
+            BrowserVariant::LibraryPlaylist => self.library_browser.text_editor_mode(),
         }
     }
     pub fn left(&mut self) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
@@ -560,7 +626,7 @@ impl Browser {
             BrowserVariant::Artist => self.artist_search_browser.handle_toggle_search(),
             BrowserVariant::Song => self.song_search_browser.handle_toggle_search(),
             BrowserVariant::Playlist => self.playlist_search_browser.handle_toggle_search(),
-            BrowserVariant::LibraryPlaylist => (),
+            BrowserVariant::LibraryPlaylist => self.library_browser.handle_toggle_search(),
         }
     }
     pub fn handle_change_search_type(&mut self) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {

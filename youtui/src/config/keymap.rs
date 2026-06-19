@@ -913,6 +913,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewLyrics)),
                     ),
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('I')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewSongInfo)),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::CopySongUrl)),
                     ),
@@ -980,6 +984,22 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                 "Delete Mode".into(),
             ),
         ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+            KeyActionTree::new_mode(
+                [
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('a')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::GoToArtist)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('b')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::GoToAlbum)),
+                    ),
+                ],
+                "Go To".into(),
+            ),
+        ),
     ])
 }
 fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
@@ -1027,6 +1047,10 @@ fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                 KeyActionVisibility::Global,
             ),
         ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Backspace),
+            KeyActionTree::new_key(AppAction::Browser(BrowserAction::Back)),
+        ),
     ])
 }
 fn default_browser_artists_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
@@ -1045,6 +1069,10 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                 AppAction::BrowserSongs(BrowserSongsAction::CopySongUrl),
                 KeyActionVisibility::Global,
             ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
+            KeyActionTree::new_key(AppAction::Browser(BrowserAction::Search)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('3')),
@@ -1073,11 +1101,39 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::PlaySongs)),
                     ),
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char(' ')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::AddSongToPlaylist)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('P')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::AddSongsToPlaylist)),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::CopySongUrl)),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::ViewLyrics)),
+                    ),
                 ],
                 "Context Menu".into(),
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+            KeyActionTree::new_mode(
+                [
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('a')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::GoToArtist)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('b')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::GoToAlbum)),
+                    ),
+                ],
+                "Go To".into(),
             ),
         ),
     ])
@@ -1200,58 +1256,34 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
                             BrowserArtistSongsAction::CopySongUrl,
                         )),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::ViewLyrics,
+                        )),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+            KeyActionTree::new_key(AppAction::BrowserArtistSongs(BrowserArtistSongsAction::PlaySong)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
             KeyActionTree::new_mode(
                 [
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char(' ')),
-                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
-                            BrowserArtistSongsAction::AddSongToPlaylist,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
-                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
-                            BrowserArtistSongsAction::PlaySongs,
-                        )),
-                    ),
-                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('a')),
-                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
-                            BrowserArtistSongsAction::PlayAlbum,
-                        )),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(BrowserArtistSongsAction::GoToArtist)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
-                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
-                            BrowserArtistSongsAction::PlaySong,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('P')),
-                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
-                            BrowserArtistSongsAction::AddSongsToPlaylist,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('A')),
-                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
-                            BrowserArtistSongsAction::AddAlbumToPlaylist,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
-                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
-                            BrowserArtistSongsAction::CopySongUrl,
-                        )),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('b')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(BrowserArtistSongsAction::GoToAlbum)),
                     ),
                 ],
-                "Play".into(),
+                "Go To".into(),
             ),
         ),
     ])
@@ -1310,6 +1342,13 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
             KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserPlaylistSongs(BrowserPlaylistSongsAction::CopySongUrl),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+            KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::ViewLyrics),
                 KeyActionVisibility::Global,
             ),
@@ -1348,46 +1387,34 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
                             BrowserPlaylistSongsAction::CopySongUrl,
                         )),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        KeyActionTree::new_key(AppAction::Playlist(
+                            PlaylistAction::ViewLyrics,
+                        )),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+            KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(BrowserPlaylistSongsAction::PlaySong)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
             KeyActionTree::new_mode(
                 [
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char(' ')),
-                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
-                            BrowserPlaylistSongsAction::AddSongToPlaylist,
-                        )),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('a')),
+                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(BrowserPlaylistSongsAction::GoToArtist)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
-                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
-                            BrowserPlaylistSongsAction::PlaySongs,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
-                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
-                            BrowserPlaylistSongsAction::PlaySong,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('P')),
-                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
-                            BrowserPlaylistSongsAction::AddSongsToPlaylist,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
-                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
-                            BrowserPlaylistSongsAction::CopySongUrl,
-                        )),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('b')),
+                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(BrowserPlaylistSongsAction::GoToAlbum)),
                     ),
                 ],
-                "Play".into(),
+                "Go To".into(),
             ),
         ),
     ])
@@ -1449,46 +1476,34 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
                             BrowserSongsAction::CopySongUrl,
                         )),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(
+                            BrowserSongsAction::ViewLyrics,
+                        )),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+            KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::PlaySong)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
             KeyActionTree::new_mode(
                 [
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char(' ')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(
-                            BrowserSongsAction::AddSongToPlaylist,
-                        )),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('a')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::GoToArtist)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(
-                            BrowserSongsAction::PlaySongs,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(
-                            BrowserSongsAction::PlaySong,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('P')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(
-                            BrowserSongsAction::AddSongsToPlaylist,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(
-                            BrowserSongsAction::CopySongUrl,
-                        )),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('b')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::GoToAlbum)),
                     ),
                 ],
-                "Play".into(),
+                "Go To".into(),
             ),
         ),
     ])

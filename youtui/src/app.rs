@@ -16,7 +16,15 @@ use ratatui::backend::CrosstermBackend;
 use ratatui_image::picker::Picker;
 use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, CreatePlaylistWithVideos};
 use std::borrow::Cow;
+use std::time::Duration;
 use ytmapi_rs::common::{PlaylistID, VideoID};
+
+#[derive(Debug)]
+pub enum NavTarget {
+    Artist(String),
+    Album { artist: String, album: String },
+    SongSearch(String),
+}
 use std::fmt::Display;
 use std::io;
 use std::sync::Arc;
@@ -112,7 +120,10 @@ pub enum AppCallback {
         description: Option<String>,
         video_ids: Vec<VideoID<'static>>,
     },
-
+    Navigate(NavTarget),
+    SeekBack,
+    SeekForward,
+    Back,
 }
 
 impl Youtui {
@@ -456,6 +467,32 @@ impl Youtui {
                     );
                     self.task_manager.spawn_task(&self.server, effect);
                 }
+            }
+            AppCallback::SeekBack => {
+                use crate::async_rodio_sink::SeekDirection;
+                let effect = self.window_state.playlist.handle_seek(
+                    Duration::from_secs(5),
+                    SeekDirection::Back,
+                ).map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::SeekForward => {
+                use crate::async_rodio_sink::SeekDirection;
+                let effect = self.window_state.playlist.handle_seek(
+                    Duration::from_secs(5),
+                    SeekDirection::Forward,
+                ).map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::Navigate(target) => {
+                self.window_state.context = WindowContext::Browser;
+                if let Some(task) = self.window_state.browser.navigate_to(target) {
+                    let task = task.map_frontend(|window: &mut YoutuiWindow| &mut window.browser);
+                    self.task_manager.spawn_task(&self.server, task);
+                }
+            }
+            AppCallback::Back => {
+                self.window_state.browser.navigate_back();
             }
         }
     }

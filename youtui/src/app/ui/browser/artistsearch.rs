@@ -1,5 +1,5 @@
 use super::shared_components::{BrowserSearchAction, FilterAction, SortAction};
-use crate::app::AppCallback;
+use crate::app::{AppCallback, NavTarget};
 use crate::app::component::actionhandler::{
     ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
@@ -172,6 +172,8 @@ impl ActionHandler<BrowserArtistSongsAction> for ArtistSearchBrowser {
             BrowserArtistSongsAction::Filter => self.album_songs_panel.toggle_filter(),
             BrowserArtistSongsAction::ViewLyrics => return self.view_lyrics().into(),
             BrowserArtistSongsAction::CopySongUrl => return self.copy_song_url().into(),
+            BrowserArtistSongsAction::GoToArtist => return self.go_to_artist().into(),
+            BrowserArtistSongsAction::GoToAlbum => return self.go_to_album().into(),
             BrowserArtistSongsAction::ToggleCategoryFilter => {
                 self.album_songs_panel.handle_toggle_category_filter();
             }
@@ -377,6 +379,40 @@ impl ArtistSearchBrowser {
             let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
             let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
             tracing::info!("Copied URL: {}", raw_url);
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn go_to_artist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.album_songs_panel.get_selected_item();
+        if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
+            let artist = song.artists.iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::Navigate(NavTarget::Artist(artist))),
+            );
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn go_to_album(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.album_songs_panel.get_selected_item();
+        if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
+            let artist = song.artists.iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            if let Some(album) = &song.album {
+                return (
+                    AsyncTask::new_no_op(),
+                    Some(AppCallback::Navigate(NavTarget::Album {
+                        artist,
+                        album: album.name.clone(),
+                    })),
+                );
+            }
+            warn!("Song has no album data, cannot navigate to album");
         }
         (AsyncTask::new_no_op(), None)
     }

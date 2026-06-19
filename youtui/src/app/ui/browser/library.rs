@@ -1,9 +1,10 @@
 use super::songsearch::BrowserSongsAction;
-use super::shared_components::{FilterAction, FilterManager, SortAction, SortManager};
-use crate::app::AppCallback;
+use super::shared_components::{BrowserSearchAction, FilterAction, FilterManager, SortAction, SortManager};
+use crate::app::{AppCallback, NavTarget};
 use crate::app::component::actionhandler::{
-    Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, YoutuiEffect,
+    Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
+use crate::app::ui::components::vi_text_editor::ViTextEditor;
 use crate::app::server::{
     GetAllLibrarySongs, GetAllLibraryPlaylists, GetAllLibraryArtists, GetAllLibraryAlbums,
 };
@@ -72,6 +73,7 @@ pub enum InputRouting {
     #[default]
     Category,
     Content,
+    Search,
 }
 
 impl_youtui_component!(LibraryBrowser);
@@ -263,6 +265,9 @@ pub struct LibraryBrowser {
     pub playlists_fetched: bool,
     pub artists_fetched: bool,
     pub albums_fetched: bool,
+    // Local search
+    pub search_active: bool,
+    pub search_editor: ViTextEditor,
 }
 
 impl LibraryBrowser {
@@ -287,6 +292,8 @@ impl LibraryBrowser {
             playlists_fetched: false,
             artists_fetched: false,
             albums_fetched: false,
+            search_active: false,
+            search_editor: ViTextEditor::default(),
         }
     }
 
@@ -433,12 +440,40 @@ impl LibraryBrowser {
         debug!(title = %title, artist = %artist, "Library: view lyrics");
         (AsyncTask::new_no_op(), Some(AppCallback::ViewLyrics { artist, title }))
     }
+
+    pub fn handle_toggle_search(&mut self) {
+        self.search_active = !self.search_active;
+        if self.search_active {
+            self.search_editor = ViTextEditor::default();
+            self.input_routing = InputRouting::Search;
+        } else {
+            self.search_editor.clear();
+            self.input_routing = InputRouting::Content;
+        }
+    }
+
+    pub fn text_editor_mode(&self) -> Option<String> {
+        if self.search_active {
+            Some(self.search_editor.mode_char().to_string())
+        } else {
+            None
+        }
+    }
+
+    pub fn search_text(&self) -> &str {
+        self.search_editor.get_text()
+    }
+
+    pub fn is_search_active(&self) -> bool {
+        self.search_active
+    }
 }
 
 // -- Scrollable --
 impl Scrollable for LibraryBrowser {
     fn increment_list(&mut self, amount: isize) {
         match self.input_routing {
+            InputRouting::Search => {} // no scrolling in search mode
             InputRouting::Category => {
                 let idx = self.category as isize;
                 let new_idx = (idx + amount).rem_euclid(LibraryCategory::ALL.len() as isize) as usize;
@@ -590,6 +625,30 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     self.sort.shown = !self.sort.shown;
                     return (AsyncTask::new_no_op(), None);
                 }
+                BrowserSongsAction::Sort => {
+                    self.sort.shown = !self.sort.shown;
+                    return (AsyncTask::new_no_op(), None);
+                }
+                BrowserSongsAction::GoToArtist => {
+                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                    if let Some(song) = songs.get(self.cur_selected) {
+                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist))));
+                    }
+                }
+                BrowserSongsAction::GoToAlbum => {
+                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                    if let Some(song) = songs.get(self.cur_selected) {
+                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        if let Some(album) = &song.album {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Album {
+                                artist,
+                                album: album.name.clone(),
+                            })));
+                        }
+                        warn!("Song has no album data, cannot navigate to album");
+                    }
+                }
                 _ => warn!("Unsupported song action for liked songs: {:?}", action),
             },
             LibraryCategory::Playlists => match action {
@@ -613,12 +672,68 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 }
                 _ => warn!("Unsupported song action for playlists: {:?}", action),
             },
-            _ => warn!(
-                "Received songs action {:?} but library category is {:?}",
-                action, self.category
-            ),
+            LibraryCategory::Artists => match action {
+                BrowserSongsAction::PlaySong => {
+                    if let Some(artist) = self.artist_data.get(self.artist_selected) {
+                        debug!(name = %artist.artist, "Library: opening artist page");
+                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist.artist.clone()))));
+                    }
+                }
+                _ => warn!("Unsupported song action for artists: {:?}", action),
+            },
+            LibraryCategory::Albums => match action {
+                BrowserSongsAction::PlaySong => {
+                    if let Some(album) = self.album_data.get(self.album_selected) {
+                        let query = format!("{} {}", album.artist, album.title);
+                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::SongSearch(query))));
+                    }
+                }
+                _ => warn!("Unsupported song action for albums: {:?}", action),
+            },
         }
         (AsyncTask::new_no_op(), None)
+    }
+}
+
+use crossterm::event::{Event, KeyCode, KeyModifiers};
+impl TextHandler for LibraryBrowser {
+    fn is_text_handling(&self) -> bool {
+        self.input_routing == InputRouting::Search
+    }
+    fn get_text(&self) -> Option<&str> {
+        Some(self.search_editor.get_text())
+    }
+    fn replace_text(&mut self, text: impl Into<String>) {
+        self.search_editor.set_text(&text.into());
+    }
+    fn clear_text(&mut self) -> bool {
+        self.search_editor.clear();
+        true
+    }
+    fn handle_text_event_impl(&mut self, event: &Event) -> Option<ComponentEffect<Self>> {
+        if let Event::Key(key) = event {
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                return None;
+            }
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => return None,
+                _ => {}
+            }
+            self.search_editor.handle_key(key.code, false);
+        }
+        Some(AsyncTask::new_no_op())
+    }
+}
+
+impl ActionHandler<BrowserSearchAction> for LibraryBrowser {
+    fn apply_action(&mut self, action: BrowserSearchAction) -> impl Into<YoutuiEffect<Self>> {
+        match action {
+            BrowserSearchAction::Close => {
+                self.handle_toggle_search();
+            }
+            _ => warn!("Search suggestion navigation not supported in library"),
+        }
+        YoutuiEffect::new_no_op()
     }
 }
 
