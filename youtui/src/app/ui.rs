@@ -952,7 +952,27 @@ impl YoutuiWindow {
         self.prev_context = self.context;
         self.context = WindowContext::Playlist;
 
-        // Extract video ID (always add single video)
+        // Check for playlist URL FIRST — before video extraction
+        if url.contains("playlist?list=") {
+            if let Some(list_id) = url.split("list=").nth(1).and_then(|s| s.split('&').next()).map(|s| s.to_string()) {
+                if !list_id.is_empty() {
+                    let pl_id = ytmapi_rs::common::PlaylistID::from_raw(format!("VL{}", list_id));
+                    use crate::app::server::GetPlaylistTracks;
+                    use crate::app::ui::playlist::effect_handlers_playlist::{
+                        HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
+                    };
+                    return AsyncTask::new_future_try(
+                        GetPlaylistTracks(pl_id),
+                        HandleGetPlaylistTracksOk,
+                        HandleGetPlaylistTracksErr,
+                        None,
+                    )
+                    .map_frontend(|this: &mut Self| &mut this.playlist);
+                }
+            }
+        }
+
+        // Extract video ID for single video
         let video_id_str = if url.contains("watch?v=") {
             url.split("watch?v=").nth(1).unwrap_or(&url)
                 .split('&').next().unwrap_or("")
@@ -976,27 +996,6 @@ impl YoutuiWindow {
         } else {
             tracing::warn!("Invalid video URL: {}", url);
             return AsyncTask::new_no_op();
-        }
-
-        // Also try to fetch playlist tracks if URL is a playlist URL
-        if url.contains("playlist?list=") {
-            if let Some(list_id) = url.split("list=").nth(1).and_then(|s| s.split('&').next()).map(|s| s.to_string()) {
-                if !list_id.is_empty() {
-                    let pl_id = ytmapi_rs::common::PlaylistID::from_raw(format!("VL{}", list_id));
-                    use crate::app::server::GetPlaylistTracks;
-                    use crate::app::ui::playlist::effect_handlers_playlist::{
-                        HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
-                    };
-                    let playlist_effect: ComponentEffect<Self> = AsyncTask::new_future_try(
-                        GetPlaylistTracks(pl_id),
-                        HandleGetPlaylistTracksOk,
-                        HandleGetPlaylistTracksErr,
-                        None,
-                    )
-                    .map_frontend(|this: &mut Self| &mut this.playlist);
-                    effect = effect.push(playlist_effect);
-                }
-            }
         }
 
         effect

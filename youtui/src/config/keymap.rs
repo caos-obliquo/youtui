@@ -970,13 +970,7 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
-                        KeyActionTree::new_mode(
-                            [(
-                                Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
-                                KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToTop)),
-                            )],
-                            "Delete to Top".into(),
-                        ),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToTop)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),
@@ -1075,20 +1069,8 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::PlaySong)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char(' ')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::AddSongToPlaylist)),
-                    ),
-                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::PlaySongs)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('P')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::AddSongsToPlaylist)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::ViewLyrics)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
