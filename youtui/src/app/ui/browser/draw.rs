@@ -344,6 +344,7 @@ pub fn draw_library_browser(
             f.render_stateful_widget(list, inner, &mut state);
         }
         LibraryCategory::Playlists => {
+            let title = if browser.show_playlist_tracks { "Playlist Tracks" } else { "Playlists" };
             let border_style = if right_selected {
                 Style::default().fg(SELECTED_BORDER_COLOUR)
             } else {
@@ -352,29 +353,52 @@ pub fn draw_library_browser(
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
-                .title("Playlists");
+                .title(title);
             let inner = block.inner(content_chunk);
             f.render_widget(block, content_chunk);
 
-            let items: Vec<ListItem> = browser
-                .playlist_data
-                .iter()
-                .enumerate()
-                .map(|(i, pl)| {
-                    if i == browser.playlist_selected && right_selected {
-                        ListItem::new(Line::from(Span::styled(
-                            pl.title.clone(),
-                            Style::default().fg(SELECTED_BORDER_COLOUR),
-                        )))
-                    } else {
-                        ListItem::new(Line::from(Span::raw(pl.title.clone())))
-                    }
-                })
-                .collect();
-            let list = List::new(items)
-                .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
-            let mut state = ListState::default().with_selected(Some(browser.playlist_selected));
-            f.render_stateful_widget(list, inner, &mut state);
+            if browser.show_playlist_tracks {
+                let items: Vec<ListItem> = browser
+                    .playlist_tracks
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| {
+                        let label = format!("{} — {}", s.title, s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "));
+                        if i == browser.playlist_tracks_selected && right_selected {
+                            ListItem::new(Line::from(Span::styled(
+                                label,
+                                Style::default().fg(SELECTED_BORDER_COLOUR),
+                            )))
+                        } else {
+                            ListItem::new(Line::from(Span::raw(label)))
+                        }
+                    })
+                    .collect();
+                let list = List::new(items)
+                    .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
+                let mut state = ListState::default().with_selected(Some(browser.playlist_tracks_selected));
+                f.render_stateful_widget(list, inner, &mut state);
+            } else {
+                let items: Vec<ListItem> = browser
+                    .playlist_data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, pl)| {
+                        if i == browser.playlist_selected && right_selected {
+                            ListItem::new(Line::from(Span::styled(
+                                pl.title.clone(),
+                                Style::default().fg(SELECTED_BORDER_COLOUR),
+                            )))
+                        } else {
+                            ListItem::new(Line::from(Span::raw(pl.title.clone())))
+                        }
+                    })
+                    .collect();
+                let list = List::new(items)
+                    .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
+                let mut state = ListState::default().with_selected(Some(browser.playlist_selected));
+                f.render_stateful_widget(list, inner, &mut state);
+            }
         }
         LibraryCategory::Artists => {
             let border_style = if right_selected {
