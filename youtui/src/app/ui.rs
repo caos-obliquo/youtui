@@ -3,6 +3,8 @@ use self::logger::Logger;
 use self::playlist::Playlist;
 use self::playlist::config_editor_popup::ConfigEditorPopup;
 use self::playlist::lyrics_popup::LyricsPopup;
+use self::playlist::song_info_popup::SongInfoPopup;
+use crate::app::ui::components::vi_text_editor::ViTextEditor;
 use std::path::PathBuf;
 use self::playlist::playlist_save_popup::PlaylistSavePopup;
 use self::playlist::playlist_update_popup::PlaylistUpdatePopup;
@@ -46,6 +48,7 @@ pub enum WindowContext {
     PlaylistSavePopup,
     PlaylistUpdatePopup,
     Lyrics,
+    SongInfo,
 }
 
 pub struct YoutuiWindow {
@@ -57,6 +60,7 @@ pub struct YoutuiWindow {
     pub playlist_save_popup: Option<PlaylistSavePopup>,
     pub playlist_update_popup: Option<PlaylistUpdatePopup>,
     pub lyrics_popup: Option<LyricsPopup>,
+    pub song_info_popup: Option<SongInfoPopup>,
     pub config_editor_popup: Option<ConfigEditorPopup>,
     pub config: Config,
     pub key_stack: Vec<KeyEvent>,
@@ -64,7 +68,7 @@ pub struct YoutuiWindow {
     pub tick: u64,
     pub quit_confirm: bool,
     pub command_mode: bool,
-    pub command_text: String,
+    pub command_editor: ViTextEditor,
 }
 impl_youtui_component!(YoutuiWindow);
 
@@ -113,6 +117,7 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
                 WindowContext::PlaylistSavePopup => true,
                 WindowContext::PlaylistUpdatePopup => true,
                 WindowContext::Lyrics => true,
+                WindowContext::SongInfo => true,
             }
     }
 
@@ -149,6 +154,9 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
             WindowContext::Lyrics => Either::Right(Either::Right(
                 [&config.keybinds.help, &config.keybinds.list].into_iter(),
             )),
+            WindowContext::SongInfo => Either::Right(Either::Right(
+                [&config.keybinds.help, &config.keybinds.list].into_iter(),
+            )),
         }
     }
 }
@@ -165,6 +173,7 @@ impl Scrollable for YoutuiWindow {
             WindowContext::PlaylistSavePopup => (),
             WindowContext::PlaylistUpdatePopup => (),
             WindowContext::Lyrics => (),
+            WindowContext::SongInfo => (),
         }
     }
     fn is_scrollable(&self) -> bool {
@@ -176,6 +185,7 @@ impl Scrollable for YoutuiWindow {
                 WindowContext::PlaylistSavePopup => false,
                 WindowContext::PlaylistUpdatePopup => false,
                 WindowContext::Lyrics => false,
+                WindowContext::SongInfo => false,
             }
     }
 }
@@ -236,6 +246,11 @@ impl KeyRouter<AppAction> for YoutuiWindow {
                 v.extend(self.logger.get_active_keybinds(config));
                 v.into_iter()
             }
+            WindowContext::SongInfo => {
+                let mut v: Vec<&Keymap<AppAction>> = kb.collect();
+                v.extend(self.logger.get_active_keybinds(config));
+                v.into_iter()
+            }
         }
     }
     fn get_all_keybinds<'a>(
@@ -264,6 +279,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistSavePopup => false,
             WindowContext::PlaylistUpdatePopup => false,
             WindowContext::Lyrics => false,
+            WindowContext::SongInfo => false,
         }
     }
     fn get_text(&self) -> std::option::Option<&str> {
@@ -274,6 +290,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistSavePopup => None,
             WindowContext::PlaylistUpdatePopup => None,
             WindowContext::Lyrics => None,
+            WindowContext::SongInfo => None,
         }
     }
     fn replace_text(&mut self, text: impl Into<String>) {
@@ -284,6 +301,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistSavePopup => {}
             WindowContext::PlaylistUpdatePopup => {}
             WindowContext::Lyrics => {}
+            WindowContext::SongInfo => {}
         }
     }
     fn clear_text(&mut self) -> bool {
@@ -294,6 +312,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistSavePopup => false,
             WindowContext::PlaylistUpdatePopup => false,
             WindowContext::Lyrics => false,
+            WindowContext::SongInfo => false,
         }
     }
     fn handle_text_event_impl(&mut self, event: &Event) -> Option<ComponentEffect<Self>> {
@@ -313,6 +332,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistSavePopup => None,
             WindowContext::PlaylistUpdatePopup => None,
             WindowContext::Lyrics => None,
+            WindowContext::SongInfo => None,
         }
     }
 }
@@ -399,7 +419,7 @@ impl ActionHandler<AppAction> for YoutuiWindow {
             AppAction::TextEntry(a) => return self.handle_text_entry_action(a).into(),
             AppAction::List(a) => return self.handle_list_action(a).into(),
             AppAction::EditConfig => self.open_config_editor(),
-            AppAction::OpenUrl => { self.command_mode = true; self.command_text.clear(); },
+            AppAction::OpenUrl => { self.command_mode = true; self.command_editor.clear(); },
             AppAction::NoOp => (),
         };
         AsyncTask::new_no_op().into()
@@ -407,11 +427,11 @@ impl ActionHandler<AppAction> for YoutuiWindow {
 }
 
 impl YoutuiWindow {
-    pub fn new(config: Config, cookie_path: Option<String>) -> (YoutuiWindow, ComponentEffect<YoutuiWindow>) {
+    pub fn new(config: Config, cookie_path: Option<String>, url: Option<String>) -> (YoutuiWindow, ComponentEffect<YoutuiWindow>) {
         let (mut playlist, task) = Playlist::new();
         playlist.set_scrobbling_config(config.scrobbling.clone());
         playlist.yt_dlp_cookie_path = cookie_path;
-        let this = YoutuiWindow {
+        let mut this = YoutuiWindow {
             context: WindowContext::Browser,
             prev_context: WindowContext::Browser,
             playlist,
@@ -421,17 +441,23 @@ impl YoutuiWindow {
             playlist_save_popup: None,
             playlist_update_popup: None,
             lyrics_popup: None,
+            song_info_popup: None,
             config_editor_popup: None,
             key_stack: Vec::new(),
             help: HelpMenu::new(),
             tick: 0,
             quit_confirm: false,
             command_mode: false,
-            command_text: String::new(),
+            command_editor: ViTextEditor::new(),
         };
+        let initial_effect = url.map(|u| this.play_yt_url(u));
+        let mut combined = task.map_frontend(|this: &mut Self| &mut this.playlist);
+        if let Some(e) = initial_effect {
+            combined = combined.push(e);
+        }
         (
             this,
-            task.map_frontend(|this: &mut Self| &mut this.playlist),
+            combined,
         )
     }
     pub fn get_help_list_items(&self) -> Vec<DisplayableKeyAction<'_>> {
@@ -456,6 +482,7 @@ impl YoutuiWindow {
                 ).collect()
             }
             WindowContext::Lyrics => vec![],
+            WindowContext::SongInfo => vec![],
         };
         items.extend(get_visible_keybinds_as_readable_iter(
             std::iter::once(&self.config.keybinds.global)
@@ -500,27 +527,24 @@ impl YoutuiWindow {
             return AsyncTask::new_no_op().into();
         }
 
-        // Command mode (: prompt) handles all keys
+        // Command mode (: prompt) with vi-mode editor
         if self.command_mode {
             if let Event::Key(k) = event {
                 if k.kind == crossterm::event::KeyEventKind::Press {
-                    match k.code {
-                        KeyCode::Esc => { self.command_mode = false; self.command_text.clear(); }
-                        KeyCode::Enter => {
-                            let url = self.command_text.trim().to_string();
-                            self.command_mode = false;
-                            self.command_text.clear();
-                            if !url.is_empty() {
-                                return self.play_yt_url(url).into();
-                            }
+                    let submitted = self.command_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT));
+                    if submitted {
+                        let url = self.command_editor.get_text().trim().to_string();
+                        self.command_mode = false;
+                        if !url.is_empty() {
+                            self.command_editor.push_history(url.clone());
+                            self.command_editor.clear();
+                            return self.play_yt_url(url).into();
                         }
-                        KeyCode::Backspace => { self.command_text.pop(); }
-                        KeyCode::Char(c) => { self.command_text.push(c); }
-                        _ => {}
+                        self.command_editor.clear();
                     }
                 }
             }
-            return AsyncTask::new_no_op().into();
+            return Into::<YoutuiEffect<Self>>::into(AsyncTask::new_no_op());
         }
 
         // Route events to popup if one is active
@@ -530,6 +554,16 @@ impl YoutuiWindow {
                 let (effect, callback) = popup.handle_key(k);
                 let effect = effect.map_frontend(|this: &mut Self| {
                     this.lyrics_popup.as_mut().unwrap()
+                });
+                return YoutuiEffect { effect, callback };
+            }
+        }
+        if self.song_info_popup.is_some() {
+            if let Event::Key(k) = event {
+                let popup = self.song_info_popup.as_mut().unwrap();
+                let (effect, callback) = popup.handle_key(k);
+                let effect = effect.map_frontend(|this: &mut Self| {
+                    this.song_info_popup.as_mut().unwrap()
                 });
                 return YoutuiEffect { effect, callback };
             }
@@ -642,6 +676,7 @@ impl YoutuiWindow {
                             WindowContext::PlaylistSavePopup => {}
                             WindowContext::PlaylistUpdatePopup => {}
                             WindowContext::Lyrics => {}
+                            WindowContext::SongInfo => {}
                         }
                     }
                 }
@@ -656,6 +691,7 @@ impl YoutuiWindow {
                             WindowContext::PlaylistSavePopup => {}
                             WindowContext::PlaylistUpdatePopup => {}
                             WindowContext::Lyrics => {}
+                            WindowContext::SongInfo => {}
                         }
                     }
                 }
@@ -677,6 +713,7 @@ impl YoutuiWindow {
             WindowContext::PlaylistSavePopup => AsyncTask::new_no_op(),
             WindowContext::PlaylistUpdatePopup => AsyncTask::new_no_op(),
             WindowContext::Lyrics => AsyncTask::new_no_op(),
+            WindowContext::SongInfo => AsyncTask::new_no_op(),
         }
     }
     pub fn pauseplay(&mut self) -> ComponentEffect<Self> {
@@ -899,9 +936,10 @@ impl YoutuiWindow {
     pub fn play_yt_url(&mut self, url: String) -> ComponentEffect<Self> {
         use ytmapi_rs::common::YoutubeID;
         tracing::info!("Playing URL: {}", url);
-        // Extract video ID from YouTube URL formats:
-        // https://music.youtube.com/watch?v=TO1LKRFwbdI
-        // https://youtu.be/TO1LKRFwbdI
+        self.prev_context = self.context;
+        self.context = WindowContext::Playlist;
+
+        // Extract video ID (always add single video)
         let video_id_str = if url.contains("watch?v=") {
             url.split("watch?v=").nth(1).unwrap_or(&url)
                 .split('&').next().unwrap_or("")
@@ -915,20 +953,53 @@ impl YoutuiWindow {
                 .split('?').next().unwrap_or(&url)
                 .to_string()
         };
+
+        let mut effect;
+
         if video_id_str.len() >= 10 && video_id_str.len() <= 20 {
             let vid = ytmapi_rs::common::VideoID::from_raw(video_id_str.clone());
-            // Add song, start download, switch to playlist view
-            self.context = WindowContext::Playlist;
-            return self.playlist.add_yt_video(vid, &url)
+            effect = self.playlist.add_yt_video(vid, &url)
                 .map_frontend(|this: &mut Self| &mut this.playlist);
+        } else {
+            tracing::warn!("Invalid video URL: {}", url);
+            return AsyncTask::new_no_op();
         }
-        tracing::warn!("Invalid video URL: {}", url);
+
+        // Also try to fetch playlist tracks if URL contains a playlist ID
+        if url.contains("playlist?list=") || url.contains("&list=") {
+            if let Some(list_id) = url.split("list=").nth(1).and_then(|s| s.split('&').next()).map(|s| s.to_string()) {
+                if !list_id.is_empty() {
+                    let pl_id = ytmapi_rs::common::PlaylistID::from_raw(format!("VL{}", list_id));
+                    use crate::app::server::GetPlaylistTracks;
+                    use crate::app::ui::playlist::effect_handlers_playlist::{
+                        HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
+                    };
+                    let playlist_effect: ComponentEffect<Self> = AsyncTask::new_future_try(
+                        GetPlaylistTracks(pl_id),
+                        HandleGetPlaylistTracksOk,
+                        HandleGetPlaylistTracksErr,
+                        None,
+                    )
+                    .map_frontend(|this: &mut Self| &mut this.playlist);
+                    effect = effect.push(playlist_effect);
+                }
+            }
+        }
+
+        effect
+    }
+    pub fn open_song_info_popup(&mut self, song: crate::app::structures::ListSong) -> ComponentEffect<Self> {
+        self.song_info_popup = Some(SongInfoPopup::new(song));
+        self.prev_context = self.context;
+        self.context = WindowContext::SongInfo;
         AsyncTask::new_no_op()
     }
+
     pub fn close_popup(&mut self) {
         self.playlist_save_popup = None;
         self.playlist_update_popup = None;
         self.lyrics_popup = None;
+        self.song_info_popup = None;
         self.config_editor_popup = None;
         std::mem::swap(&mut self.context, &mut self.prev_context);
     }
@@ -974,3 +1045,4 @@ impl_youtui_task_handler!(
         AsyncTask::new_no_op()
     }
 );
+pub mod components;

@@ -1,17 +1,15 @@
 use crate::app::AudioQuality;
 use crate::youtube_downloader::{YoutubeMusicDownload, YoutubeMusicDownloader};
 use bytes::Bytes;
-use futures::{Stream, TryStreamExt};
+use futures::Stream;
 use std::ffi::OsString;
 use std::ops::Deref;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::Child;
+use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
-
-const ESTIMATED_AUDIO_SIZE_BYTES: usize = 4 * 1024 * 1024; // 4MB estimate
 
 #[derive(Clone)]
 #[allow(dead_code)]
@@ -96,59 +94,63 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         let command = self.yt_dlp_command.clone();
         async move {
             let video_id = song_video_id.as_ref().to_string();
-            info!(%video_id, "Starting yt-dlp stream_song");
+            info!(%video_id, "Starting yt-dlp download");
             
-            // Fixed size for progress tracking (not accurate but sufficient)
-            let total_size_bytes = ESTIMATED_AUDIO_SIZE_BYTES;
-            let stream_start = Instant::now();
-            info!(%video_id, %total_size_bytes, "Using estimated size for progress");
+            // Write to temp file so yt-dlp applies FixupM4a/container post-processing.
+            // Stdout pipe (-o -) skips post-processing, producing corrupted data on yt-dlp 2026+.
+            // Use .m4a suffix so yt-dlp matches the format container.
+            // --force-overwrites needed: yt-dlp's resume feature treats pre-existing 0-byte
+            // files as "already complete" and writes nothing.
+            let tmpfile = tempfile::Builder::new()
+                .suffix(".m4a")
+                .tempfile()
+                .map_err(|e| {
+                    YtDlpDownloaderError::IoError {
+                        message: format!("Failed to create temp file: {e}"),
+                    }
+                })?;
+            let output_path = tmpfile.path().to_owned();
             
-            // Always use best audio quality with m4a container for rodio compatibility
-            // web_creator client (not android_vr) — android_vr blocks audio-only formats for some videos
-            let format_string = "bestaudio[ext=m4a]/bestaudio/best".to_string();
+            let format_string = "bestaudio[ext=m4a][abr>=256]/bestaudio[ext=m4a]/bestaudio/best".to_string();
+            
+            // web_creator extractor needs cookies — only use it when configured
+            // Default extractor works without auth for most videos
+            let use_web_creator = self.cookie_path.is_some();
             
             let mut stream_args = vec![
-                "--extractor-args",
-                "youtube:player_client=web_creator",
                 "--no-simulate",
+                "--force-overwrites",
                 "-q",
                 "--no-warnings",
                 "-f",
                 format_string.as_str(),
                 "-o",
-                "-",
+                output_path.to_str().unwrap(),
             ];
-            if self.cookie_path.is_some() {
+            if use_web_creator {
+                stream_args.push("--extractor-args");
+                stream_args.push("youtube:player_client=web_creator");
                 stream_args.push("--cookies-from-browser");
                 stream_args.push("chromium");
             }
             stream_args.push(song_video_id.as_ref());
             
-            debug!(%video_id, ?stream_args, "yt-dlp stream args");
+            debug!(%video_id, ?stream_args, "yt-dlp args");
             
-            let proc = tokio::process::Command::new(command.deref())
+            let mut proc = tokio::process::Command::new(command.deref())
                 .args(&stream_args)
                 .stderr(Stdio::piped())
-                .stdout(Stdio::piped())
+                .stdout(Stdio::null())
                 .spawn()
                 .map_err(|e| {
-                    error!(%video_id, error = %e, "Failed to spawn yt-dlp stream process");
+                    error!(%video_id, error = %e, "Failed to spawn yt-dlp process");
                     YtDlpDownloaderError::IoError {
                         message: format!("{e}"),
                     }
                 })?;
             
-            let Child {
-                stderr: Some(stderr),
-                stdout: Some(stdout),
-                ..
-            } = proc
-            else {
-                error!(%video_id, "yt-dlp stream process missing stdout or stderr");
-                return Err(YtDlpDownloaderError::NoOutput);
-            };
-            
-            // Read stderr in background for error reporting
+            // Take stderr before spawn to avoid partial move
+            let stderr = proc.stderr.take().unwrap();
             let video_id_clone = video_id.clone();
             tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
@@ -160,18 +162,81 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                 }
             });
             
-            let video_id_for_stream = video_id.clone();
-            let stream = tokio_util::io::ReaderStream::new(stdout).map_err(move |e| {
-                error!(%video_id_for_stream, error = %e, "Stream error");
-                YtDlpDownloaderError::IoError {
-                    message: format!("{e}"),
-                }
-            });
+            // Wait for yt-dlp to complete (applies FixupM4a, decryption, etc.)
+            // 5-minute timeout prevents hung processes from blocking downloads
+            let status = timeout(Duration::from_secs(300), proc.wait()).await
+                .map_err(|_| {
+                    error!(%video_id, "yt-dlp download timed out after 300s");
+                    YtDlpDownloaderError::IoError {
+                        message: "yt-dlp download timed out".to_string(),
+                    }
+                })?  // timeout -> Result<ExitStatus, IoError>
+                .map_err(|e| {
+                    error!(%video_id, error = %e, "Failed to wait for yt-dlp");
+                    YtDlpDownloaderError::IoError {
+                        message: format!("{e}"),
+                    }
+                })?;  // wait -> ExitStatus
             
-            info!(%video_id, %total_size_bytes, stream_start_ms = %stream_start.elapsed().as_millis(), "yt-dlp stream started");
+            if !status.success() {
+                error!(%video_id, exit_code = %status, "yt-dlp failed");
+                return Err(YtDlpDownloaderError::IoError {
+                    message: format!("yt-dlp exited with {status}"),
+                });
+            }
+            
+            // Read completed file into memory
+            let file_bytes = tokio::fs::read(&output_path).await.map_err(|e| {
+                error!(%video_id, error = %e, "Failed to read yt-dlp output");
+                YtDlpDownloaderError::IoError {
+                    message: format!("Failed to read output file: {e}"),
+                }
+            })?;
+            
+            // Temp file cleaned up on drop
+            drop(tmpfile);
+            
+            let total_size_bytes = file_bytes.len();
+            
+            // Detect and log container format
+            let format_name = if file_bytes.len() >= 12 && file_bytes[4..8] == *b"ftyp" {
+                let brand = &file_bytes[8..12];
+                if brand == b"isom" { "MP4 (isom)" }
+                else if brand == b"M4A " { "M4A" }
+                else { "MP4" }
+            } else if file_bytes.starts_with(b"\x1a\x45\xdf\xa3") { "WebM" }
+            else if file_bytes.starts_with(b"RIFF") { "WAV" }
+            else if file_bytes.starts_with(b"OggS") { "Ogg" }
+            else { "unknown" };
+            
+            // Validate the file has a recognizable audio container header
+            // Guards against corrupted output (pipe bug), empty files (resume bug),
+            // and unexpected format changes from yt-dlp updates
+            let is_valid = total_size_bytes > 100
+                && format_name != "unknown";
+            
+            if !is_valid {
+                let info = if file_bytes.is_empty() {
+                    "empty file".to_string()
+                } else if total_size_bytes < 100 {
+                    format!("too small ({} bytes)", total_size_bytes)
+                } else {
+                    format!("invalid header: {:02x?}", &file_bytes[..16.min(total_size_bytes)])
+                };
+                error!(%video_id, %info, "yt-dlp download validation failed");
+                return Err(YtDlpDownloaderError::IoError {
+                    message: format!("Downloaded data has no valid audio container ({info})"),
+                });
+            }
+            
+            info!(%video_id, %total_size_bytes, %format_name, "yt-dlp download completed");
+            
+            // Return as one-shot stream (consumer already collects all chunks)
+            let song = futures::stream::once(async move { Ok(Bytes::from(file_bytes)) });
+            
             Ok(YoutubeMusicDownload {
                 total_size_bytes,
-                song: stream,
+                song,
             })
         }
         .await

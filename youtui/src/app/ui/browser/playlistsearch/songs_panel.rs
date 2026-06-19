@@ -419,7 +419,7 @@ impl AdvancedTableView for PlaylistSongsPanel {
     fn get_mut_sort_state(&mut self) -> &mut ratatui::widgets::ListState {
         &mut self.sort.state
     }
-    fn get_mut_filter_state(&mut self) -> &mut rat_text::text_input::TextInputState {
+    fn get_mut_filter_state(&mut self) -> &mut crate::app::ui::components::vi_text_editor::ViTextEditor {
         &mut self.filter.filter_text
     }
 }

@@ -7,6 +7,7 @@ use config::{ApiKey, AuthType, Config};
 use directories::ProjectDirs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use tracing::info;
 use ytmapi_rs::auth::OAuthToken;
 
 mod api;
@@ -61,6 +62,12 @@ struct Arguments {
     /// Force the use of a downloader type.
     #[arg(value_enum, short = 'D', long)]
     downloader_type: Option<DownloaderType>,
+    /// YouTube URL to play on startup (alias for `:` command)
+    #[arg(value_name = "URL")]
+    url: Option<String>,
+    /// Skip duplicate check on URL add
+    #[arg(short, long)]
+    force: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -361,6 +368,7 @@ pub struct RuntimeInfo {
     api_key: ApiKey,
     po_token: Option<String>,
     cookie_path: Option<String>,
+    pub url: Option<String>,
 }
 
 #[tokio::main]
@@ -385,6 +393,8 @@ async fn try_main() -> anyhow::Result<()> {
         generate_completions,
         downloader_type,
         disable_media_controls,
+        url,
+        force: _force,
     } = args;
     // We don't need configuration to setup oauth token or generate completions.
     if let Some(c) = auth_cmd {
@@ -436,6 +446,22 @@ async fn try_main() -> anyhow::Result<()> {
         }
         path.map(|p| p.to_string_lossy().to_string())
     };
+    // Auto-refresh cookie from browser session via yt-dlp
+    if let Some(ref cp) = cookie_path {
+        if let Ok(output) = std::process::Command::new("yt-dlp")
+            .args(["--cookies-from-browser", "firefox", "--cookies", "-"])
+            .output()
+        {
+            if output.status.success() {
+                let cookie_data = String::from_utf8_lossy(&output.stdout);
+                // Save raw Netscape-format cookies (yt-dlp can read this format with --cookies)
+                if !cookie_data.trim().is_empty() {
+                    let _ = std::fs::write(cp, cookie_data.as_bytes());
+                    info!("Auto-refreshed cookie from browser session");
+                }
+            }
+        }
+    }
     let rt = RuntimeInfo {
         debug,
         config,
@@ -443,6 +469,7 @@ async fn try_main() -> anyhow::Result<()> {
         po_token,
         cookie_path,
         disable_media_controls,
+        url,
     };
     match cli.command {
         None => run_app(rt).await?,

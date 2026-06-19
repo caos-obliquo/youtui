@@ -30,6 +30,8 @@ pub enum LoggerAction {
     IncreaseCaptured,
     ExitPageMode,
     ViewBrowser,
+    First,
+    Last,
 }
 impl Action for LoggerAction {
     fn context(&self) -> Cow<'_, str> {
@@ -50,6 +52,8 @@ impl Action for LoggerAction {
             LoggerAction::ReduceCaptured => "Reduce CAPTURED (!) Messages".into(),
             LoggerAction::IncreaseCaptured => "Increase CAPTURED (!) Messages".into(),
             LoggerAction::ExitPageMode => "Exit Page Mode".into(),
+            LoggerAction::First => "Go to First".into(),
+            LoggerAction::Last => "Go to Last".into(),
         }
     }
 }
@@ -74,6 +78,8 @@ impl ActionHandler<LoggerAction> for Logger {
             LoggerAction::IncreaseCaptured => self.handle_increase_captured(),
             LoggerAction::ExitPageMode => self.handle_exit_page_mode(),
             LoggerAction::ViewBrowser => return self.handle_view_browser(),
+            LoggerAction::First => self.handle_first(),
+            LoggerAction::Last => self.handle_last(),
         }
         AsyncTask::new_no_op().into()
     }
@@ -163,6 +169,16 @@ impl Logger {
     }
     fn handle_toggle_target_focus(&mut self) {
         self.logger_state.transition(TuiWidgetEvent::FocusKey);
+    }
+    fn handle_first(&mut self) {
+        // EscapeKey sets opt_line_pointer_center = None → scroll to top
+        self.logger_state.transition(TuiWidgetEvent::EscapeKey);
+    }
+    fn handle_last(&mut self) {
+        // Scroll to bottom by simulating multiple page-downs
+        for _ in 0..100 {
+            self.logger_state.transition(TuiWidgetEvent::NextPageKey);
+        }
     }
     fn handle_toggle_target_selector(&mut self) {
         self.logger_state.transition(TuiWidgetEvent::HideKey);

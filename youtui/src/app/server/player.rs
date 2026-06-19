@@ -105,7 +105,10 @@ impl Player {
     ) -> std::result::Result<DecodedInMemSong, DecoderError> {
         tokio::task::spawn_blocking(move || try_decode(song, start_offset, actual_duration))
             .await
-            .expect("Try decode should not panic")
+            .map_err(|e| {
+                tracing::error!("spawn_blocking for decode failed: {e}");
+                DecoderError::UnrecognizedFormat
+            })?
     }
 }
 
@@ -116,7 +119,6 @@ impl Player {
 /// enabling gapless QueueDecodedSong transitions.
 fn try_decode(song: Arc<InMemSong>, start_offset: Option<Duration>, actual_duration: Option<Duration>) -> std::result::Result<DecodedInMemSong, DecoderError> {
     let (data, len) = if let (Some(offset), Some(dur)) = (start_offset, actual_duration) {
-        // Extract section from offset with exact track duration (-ss + -t)
         match extract_section(&song, offset, Some(dur)) {
             Ok(extracted) => {
                 let len = extracted.0.len();
@@ -152,25 +154,96 @@ fn try_decode(song: Arc<InMemSong>, start_offset: Option<Duration>, actual_durat
         (song, len)
     };
 
-    let wrapper = ArcInMemSong(data);
+    // DEBUG: log audio format before decode
+    let header: Vec<u8> = data.as_ref().0.iter().take(16).copied().collect();
+    tracing::info!(
+        "try_decode: {} bytes, header={:02x?}, offset={:?}, dur={:?}",
+        len, header, start_offset, actual_duration
+    );
+
+    // Try direct decode first (fast path)
+    let wrapper = ArcInMemSong(data.clone());
     let cur = std::io::Cursor::new(wrapper);
-    Ok(DecodedInMemSong(
-        async_rodio_sink::rodio::Decoder::builder()
-            .with_data(cur)
-            .with_gapless(true)
-            .with_byte_len(
-                len.try_into()
-                    .expect("Expected usize to be smaller than or equal to u64"),
-            )
-            .with_seekable(true)
-            .build()?,
-    ))
+    let direct_result = async_rodio_sink::rodio::Decoder::builder()
+        .with_data(cur)
+        .with_gapless(true)
+        .with_byte_len(
+            len.try_into()
+                .expect("Expected usize to be smaller than or equal to u64"),
+        )
+        .with_seekable(true)
+        .build();
+
+    match direct_result {
+        Ok(decoder) => Ok(DecodedInMemSong(decoder)),
+        Err(_) => {
+            tracing::info!("direct rodio decode failed, trying WAV conversion");
+            // Fallback: convert to WAV via ffmpeg and decode that
+            let raw: &[u8] = &data.as_ref().0.as_slice()[..len];
+            let wav = match convert_to_wav_fallback(raw) {
+                Some(w) => w,
+                None => return Err(DecoderError::UnrecognizedFormat),
+            };
+            let wav_len = wav.len();
+            let wav_arc = Arc::new(InMemSong(wav));
+            let wrapper = ArcInMemSong(wav_arc);
+            let cur = std::io::Cursor::new(wrapper);
+            Ok(DecodedInMemSong(
+                async_rodio_sink::rodio::Decoder::builder()
+                    .with_data(cur)
+                    .with_gapless(true)
+                    .with_byte_len(
+                        wav_len.try_into()
+                            .expect("Expected usize to be smaller than or equal to u64"),
+                    )
+                    .with_seekable(true)
+                    .build()?,
+            ))
+        }
+    }
+}
+
+/// Fallback: convert any audio bytes to WAV via ffmpeg. Returns None on failure.
+fn convert_to_wav_fallback(data: &[u8]) -> Option<Vec<u8>> {
+    let pid = std::process::id();
+    let in_file = format!("/tmp/youtui_wav_{}.bin", pid);
+    let out_file = format!("/tmp/youtui_wav_{}.wav", pid);
+
+    let _ = std::fs::write(&in_file, data);
+    let status = std::process::Command::new("ffmpeg")
+        .args(&["-loglevel", "error", "-y", "-i", &in_file, "-vn", "-f", "wav", &out_file])
+        .status()
+        .ok()?;
+    if !status.success() {
+        let _ = std::fs::remove_file(&in_file);
+        let _ = std::fs::remove_file(&out_file);
+        return None;
+    }
+    let wav = std::fs::read(&out_file).ok()?;
+    let _ = std::fs::remove_file(&in_file);
+    let _ = std::fs::remove_file(&out_file);
+    if wav.is_empty() { None } else { Some(wav) }
+}
+
+/// Remux fragmented MP4 (YouTube's moov atom at end) to a seekable file.
+fn remux_moov(in_file: &str) -> bool {
+    let tmp = format!("{}_remuxed", in_file);
+    let ok = std::process::Command::new("ffmpeg")
+        .args(&["-loglevel", "error", "-i", in_file, "-c", "copy", "-movflags", "+faststart", &tmp])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if ok {
+        let _ = std::fs::rename(&tmp, in_file);
+    } else {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    ok
 }
 
 /// Extract a section of audio via ffmpeg.
-/// Writes the full audio to a temp file, runs `ffmpeg -ss OFFSET [-t DURATION] -c copy`,
-/// reads the output back as InMemSong. Used by try_decode when start_offset is present.
-/// Falls back gracefully on ffmpeg failure (plays full audio from beginning).
+/// Writes full audio to temp file, runs ffmpeg with fast copy-based seek first.
+/// Falls back to accurate decode-based seek if fast path produces garbage.
 fn extract_section(song: &Arc<InMemSong>, offset: Duration, duration: Option<Duration>) -> anyhow::Result<InMemSong> {
     let pid = std::process::id();
     let in_file = format!("/tmp/youtui_seek_{}.m4a", pid);
@@ -184,39 +257,109 @@ fn extract_section(song: &Arc<InMemSong>, offset: Duration, duration: Option<Dur
     let s = total_secs as u64 % 60;
     let start_fmt = format!("{}:{:02}:{:02}", h, m, s);
 
-    let dur_fmt = duration.map(|dur| {
+    let (dur_fmt, expected_secs) = duration.map(|dur| {
         let dur_secs = dur.as_secs_f64();
         let dh = dur_secs as u64 / 3600;
         let dm = (dur_secs as u64 % 3600) / 60;
         let ds = dur_secs as u64 % 60;
-        format!("{}:{:02}:{:02}", dh, dm, ds)
-    });
+        (format!("{}:{:02}:{:02}", dh, dm, ds), dur_secs)
+    }).unwrap_or_else(|| (String::new(), 0.0));
+
+    // Fast path: keyframe-seeking with stream copy
+    let run_ffmpeg = |args: &[&str]| -> anyhow::Result<Vec<u8>> {
+        let output = std::process::Command::new("ffmpeg")
+            .args(args)
+            .output()
+            .context("spawn ffmpeg")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("ffmpeg: {}", stderr.trim());
+        }
+        let data = std::fs::read(&out_file).context("read ffmpeg output")?;
+        Ok(data)
+    };
+
+    let fast_args = if !dur_fmt.is_empty() {
+        vec!["-loglevel", "error", "-ss", &start_fmt, "-i", &in_file,
+             "-c", "copy", "-avoid_negative_ts", "1",
+             "-t", &dur_fmt, &out_file]
+    } else {
+        vec!["-loglevel", "error", "-ss", &start_fmt, "-i", &in_file,
+             "-c", "copy", "-avoid_negative_ts", "1", &out_file]
+    };
+
+    let try_both = |in_file: &str| -> anyhow::Result<Vec<u8>> {
+        match extract_accurate(in_file, &out_file, &start_fmt, &dur_fmt) {
+            Ok(data) => Ok(data),
+            Err(e) => {
+                let msg = format!("{}", e);
+                if msg.contains("moov") || msg.contains("Invalid data") {
+                    info!("ffmpeg: moov issue detected, remuxing file");
+                    let _ = std::fs::remove_file(&out_file);
+                    if remux_moov(in_file) {
+                        extract_accurate(in_file, &out_file, &start_fmt, &dur_fmt)
+                    } else {
+                        Err(e)
+                    }
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    };
+
+    let data = match run_ffmpeg(&fast_args) {
+        Ok(data) => {
+            let min_expected = if expected_secs > 0.0 {
+                (expected_secs * 2000.0) as usize
+            } else {
+                1024
+            };
+            if data.len() >= min_expected.min(1024) {
+                let _ = std::fs::remove_file(&in_file);
+                let _ = std::fs::remove_file(&out_file);
+                return Ok(InMemSong(data));
+            }
+            info!("ffmpeg fast path: small output ({}b, expected >{}b), retrying accurate", data.len(), min_expected);
+            let _ = std::fs::remove_file(&out_file);
+            try_both(&in_file)?
+        }
+        Err(e) => {
+            info!("ffmpeg fast path failed: {}, trying accurate", e);
+            let _ = std::fs::remove_file(&out_file);
+            try_both(&in_file)?
+        }
+    };
+
+    let _ = std::fs::remove_file(&in_file);
+    let _ = std::fs::remove_file(&out_file);
+    Ok(InMemSong(data))
+}
+
+/// Accurate seek fallback: decode from start, cut at exact offset
+fn extract_accurate(in_file: &str, out_file: &str, start_fmt: &str, dur_fmt: &str) -> anyhow::Result<Vec<u8>> {
     let mut args: Vec<&str> = vec![
         "-loglevel", "error",
-        "-ss", &start_fmt,
-        "-i", &in_file,
-        "-c", "copy",
+        "-i", in_file,
+        "-ss", start_fmt,
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-avoid_negative_ts", "1",
     ];
-    if let Some(ref df) = dur_fmt {
+    if !dur_fmt.is_empty() {
         args.push("-t");
-        args.push(df);
+        args.push(dur_fmt);
     }
-    args.push(&out_file);
+    args.push(out_file);
 
     let output = std::process::Command::new("ffmpeg")
         .args(&args)
         .output()
         .context("spawn ffmpeg")?;
-
-    let _ = std::fs::remove_file(&in_file);
-
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let _ = std::fs::remove_file(&out_file);
-        anyhow::bail!("ffmpeg: {}", stderr.trim());
+        anyhow::bail!("ffmpeg accurate: {}", stderr.trim());
     }
-
-    let data = std::fs::read(&out_file).context("read ffmpeg output")?;
-    let _ = std::fs::remove_file(&out_file);
-    Ok(InMemSong(data))
+    let data = std::fs::read(out_file).context("read ffmpeg accurate output")?;
+    Ok(data)
 }

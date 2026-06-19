@@ -1,11 +1,15 @@
 # Youtui — Project Knowledge
 
+## GOLDEN RULE
+One feature at a time. Implement → test → commit → next. Never batch changes.
+If things break, rollback and re-apply one-by-one.
+
 ## Build
 - Workspace root: `/home/caos/builds/youtui/`
 - Rust nightly (1.97.0)
 - Binary: `cargo build --release` → `target/release/youtui`
 - Dependencies: yt-dlp, ffmpeg, alsa-lib
-- Tests: `cargo test --release -p youtui --bin youtui` (95 pass, 2 pre-existing config failures)
+- Tests: `cargo test --release -p youtui --bin youtui` (126 pass, 2 pre-existing config failures)
 
 ## Architecture
 
@@ -102,19 +106,24 @@ Three fields: `(Arc<InMemSong>, Option<Duration> offset, Option<Duration> actual
 
 ## yt-dlp Integration
 
-- Downloader uses `web_creator` extractor client (`android_vr` blocks audio-only formats for some videos).
-- Passes `--cookies-from-browser chromium` when cookie file path is configured (stored on `Playlist.yt_dlp_cookie_path`).
-- `add_yt_video` metadata fetch (`--dump-json`) also passes `--cookies-from-browser chromium`.
-- Empty download (0 bytes) → marked as `Failed` instead of `Downloaded`.
+### Audio download pipeline
+- Writes to temp file via `tempfile::Builder::new().suffix(".m4a")` (NOT `-o -` — stdout pipe produces corrupted data on yt-dlp 2026+ due to skipped FixupM4a post-processing).
+- `--force-overwrites` prevents yt-dlp's resume feature from treating pre-existing 0-byte temp files as "complete" (writes nothing).
+- `--extractor-args youtube:player_client=web_creator` only when cookie_path is configured (requires auth). Default extractor used otherwise.
+- `--cookies-from-browser chromium` passed when cookie path configured.
+- 5-minute timeout on `proc.wait()` prevents hung processes.
+- Post-download validation checks for valid audio container header (ftyp/EBML/RIFF/OggS). Rejects garbage/empty with clear error.
+- Logs detected container format (MP4 isom, M4A, WebM, WAV, Ogg).
+- `add_yt_video` metadata fetch (`--dump-json`) passes `--cookies-from-browser chromium`.
 - Cookie path flows: `main.rs → app.rs → YoutuiWindow::new → Playlist`.
 
 ## Lyrics Pipeline
 Order: `Musixmatch` → `Genius scrape` (quality gate: reject < 50 chars or < 3 lines) → `Bandcamp URL construction` → `lyr CLI` → `error`
 
 ## Known Issues
-- No command input popup — `:` shows as cyan `:text█` in footer.
-- Album art from Last.fm `FetchAlbumArtTask` may not fire when validation returns `artist=None` (edge case for underground bands not on Last.fm at all).
+- Native downloader (`rusty_ytdl::stream()`): ignores custom filter for some videos, downloads video-only MPEG-4. Workaround: `:` command uses yt-dlp (works).
 - Metallum CLI integration blocked by Cloudflare (cf_clearance cookie + TLS fingerprint mismatch).
+- 53 ytmapi-rs integration tests: 28 pass, 52 fail (missing browser auth + API format drift).
 
 ## Key Files
 

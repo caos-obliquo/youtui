@@ -5,7 +5,7 @@ use crate::drawutils::{BUTTON_BG_COLOUR, BUTTON_FG_COLOUR};
 use crate::keyaction::DisplayableKeyAction;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
@@ -25,7 +25,20 @@ pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     let keybinds = get_global_keybinds_as_readable_iter(w.get_active_keybinds(&w.config));
 
-    let help_string = Line::from_iter(keybinds.flat_map(
+    let mut spans: Vec<Span> = Vec::new();
+
+    // Prepend vi mode indicator at the very start — always visible
+    let vi_mode = if w.command_mode {
+        Some(w.command_editor.mode_char())
+    } else {
+        None
+    };
+    if let Some(mode) = vi_mode {
+        spans.push(Span::styled(mode, Style::default().fg(Color::Cyan)));
+        spans.push(Span::raw(" "));
+    }
+
+    spans.extend(keybinds.flat_map(
         |DisplayableKeyAction {
              keybinds,
              description,
@@ -48,6 +61,7 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
             ]
         },
     ));
+    let help_string = Line::from_iter(spans);
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
     let commands_widget = Paragraph::new(help_string).wrap(Wrap { trim: true });
     if !matches!(w.context, WindowContext::Browser) {

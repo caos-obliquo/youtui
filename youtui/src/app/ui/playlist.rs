@@ -48,6 +48,7 @@ use tracing::{debug, error, info, warn};
 use ytmapi_rs::common::YoutubeID;
 
 pub mod lyrics_popup;
+pub mod song_info_popup;
 pub mod config_editor_popup;
 pub mod playlist_save_popup;
 pub mod playlist_update_popup;
@@ -100,6 +101,12 @@ pub struct Playlist {
     pub album_current_track: usize,
     pub scrobbling_config: crate::config::ScrobblingConfig,
     pub yt_dlp_cookie_path: Option<String>,
+    pub repeat_mode: crate::app::structures::RepeatMode,
+    pub radio_mode: bool,
+    /// Transient error message shown in playlist header (clears on next action)
+    pub last_error: Option<String>,
+    /// Pending chunks for multi-playlist split (video_ids, title, description, next_index)
+    pub pending_playlist_chunks: Option<(Vec<Vec<ytmapi_rs::common::VideoID<'static>>>, String, Option<String>)>,
 }
 
 impl_youtui_component!(Playlist);
@@ -119,6 +126,7 @@ pub enum PlaylistAction {
     ClearSearch,
     SetBestQuality,
     SaveToNewPlaylist,
+    LoadFromYTM,
     ViewLyrics,
     TogglePlaylistCategoryFilter,
     NextSearchResult,
@@ -126,6 +134,9 @@ pub enum PlaylistAction {
     CopySongUrl,
     OpenUrl,
     ToggleRomaji,
+    ToggleRepeat,
+    ToggleRadio,
+    ViewSongInfo,
 }
 
 impl Action for PlaylistAction {
@@ -147,6 +158,7 @@ impl Action for PlaylistAction {
             PlaylistAction::DeleteQueue => "Delete Queue",
             PlaylistAction::SetBestQuality => "Set Best Quality",
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
+            PlaylistAction::LoadFromYTM => "Load YouTube Music Playlist",
             PlaylistAction::ViewLyrics => "View Lyrics",
             PlaylistAction::TogglePlaylistCategoryFilter => "Toggle Category Filter",
             PlaylistAction::NextSearchResult => "Next Match",
@@ -154,6 +166,9 @@ impl Action for PlaylistAction {
             PlaylistAction::CopySongUrl => "Copy Song URL",
             PlaylistAction::OpenUrl => "Open URL",
             PlaylistAction::ToggleRomaji => "Toggle Romaji",
+            PlaylistAction::ToggleRepeat => "Toggle Repeat Mode",
+            PlaylistAction::ToggleRadio => "Toggle Radio Mode",
+            PlaylistAction::ViewSongInfo => "View Song Info",
         }
         .into()
     }
@@ -161,6 +176,7 @@ impl Action for PlaylistAction {
 
 impl ActionHandler<PlaylistAction> for Playlist {
     fn apply_action(&mut self, action: PlaylistAction) -> impl Into<YoutuiEffect<Playlist>> {
+        self.last_error.take(); // Clear transient error on any action
         match action {
             PlaylistAction::ViewBrowser => (AsyncTask::new_no_op(), Some(self.view_browser())),
             PlaylistAction::PlaySelected => (self.play_selected(), None),
@@ -191,6 +207,10 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     return (AsyncTask::new_no_op(), None);
                 }
                 (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistSavePopup(video_ids)))
+            },
+            PlaylistAction::LoadFromYTM => {
+                let video_ids: Vec<VideoID<'static>> = Vec::new();
+                (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)))
             },
             PlaylistAction::TogglePlaylistCategoryFilter => {
                 self.category_filter = match self.category_filter {
@@ -251,6 +271,21 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 info!("Romaji mode: {}", self.romaji_mode);
                 (AsyncTask::new_no_op(), None)
             },
+            PlaylistAction::ToggleRepeat => {
+                use crate::app::structures::RepeatMode;
+                self.repeat_mode = match self.repeat_mode {
+                    RepeatMode::Off => RepeatMode::All,
+                    RepeatMode::All => RepeatMode::One,
+                    RepeatMode::One => RepeatMode::Off,
+                };
+                info!("Repeat mode: {:?}", self.repeat_mode);
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::ToggleRadio => {
+                self.radio_mode = !self.radio_mode;
+                info!("Radio mode: {}", self.radio_mode);
+                (AsyncTask::new_no_op(), None)
+            },
             PlaylistAction::ViewLyrics => {
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 let song = self.get_song_from_idx(actual_index);
@@ -262,6 +297,17 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     (AsyncTask::new_no_op(), Some(AppCallback::ViewLyrics {
                         artist,
                         title: song.title.clone(),
+                    }))
+                } else {
+                    (AsyncTask::new_no_op(), None)
+                }
+            },
+            PlaylistAction::ViewSongInfo => {
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                let song = self.get_song_from_idx(actual_index);
+                if let Some(song) = song {
+                    (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo {
+                        song: song.clone(),
                     }))
                 } else {
                     (AsyncTask::new_no_op(), None)
@@ -497,14 +543,16 @@ impl HasTitle for Playlist {
             Some("Single:") => " [Singles]",
             _ => "",
         };
+        let err_indicator = self.last_error.as_ref().map(|e| format!(" [ERR: {}]", e)).unwrap_or_default();
         format!(
-            "Local playlist - {} songs{}{}{}{}{}",
+            "Local playlist - {} songs{}{}{}{}{}{}",
             self.list.get_list_iter().len(),
             quality_indicator,
             shuffle_indicator,
             search_indicator,
             cat_indicator,
             romaji_indicator,
+            err_indicator,
         )
         .into()
     }
@@ -551,6 +599,10 @@ impl Playlist {
             album_tracks: None,
             album_current_track: 0,
             yt_dlp_cookie_path: None,
+            repeat_mode: crate::app::structures::RepeatMode::Off,
+            radio_mode: false,
+            last_error: None,
+            pending_playlist_chunks: None,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -639,6 +691,7 @@ impl Playlist {
             });
             use ytmapi_rs::common::YoutubeID;
             let video_id: ytmapi_rs::common::VideoID<'static> = ytmapi_rs::common::VideoID::from_raw(video_raw.clone());
+            let is_last = i == tracks.len() - 1;
             let list_song = crate::app::structures::ListSong {
                 video_id,
                 track_no: Some(i + 1),
@@ -648,10 +701,12 @@ impl Playlist {
                 download_status: DownloadStatus::None,
                 id: self.list.create_next_id(),
                 duration_string: dur_str,
-                actual_duration: Some(std::time::Duration::from_secs_f64(track.duration_secs)),
+                actual_duration: if is_last { None } else { Some(std::time::Duration::from_secs_f64(track.duration_secs)) },
                 start_offset: Some(std::time::Duration::from_secs_f64(accum)),
                 year: album_year.clone(),
                 album_art: crate::app::structures::AlbumArtState::None,
+                genres: Vec::new(),
+                styles: Vec::new(),
                 artists: crate::app::structures::MaybeRc::Owned(list_artists),
                 thumbnails: crate::app::structures::MaybeRc::Owned(Vec::new()),
                 album: list_album,
@@ -686,6 +741,19 @@ impl Playlist {
         None
     }
 
+    pub fn update_song_info(&mut self, id: ListSongID, song: ListSong) {
+        if let Some(idx) = self.get_index_from_id(id) {
+            if let Some(existing) = self.list.get_list_iter_mut().nth(idx) {
+                existing.title = song.title;
+                existing.artists = song.artists;
+                existing.album = song.album;
+                existing.year = song.year;
+                existing.track_no = song.track_no;
+                info!("Updated song info for {:?}", id);
+            }
+        }
+    }
+
     pub fn set_scrobbling_config(&mut self, config: crate::config::ScrobblingConfig) {
         self.scrobbling_config = config;
     }
@@ -694,6 +762,12 @@ impl Playlist {
         use ytmapi_rs::common::YoutubeID;
         let raw_id = video_id.get_raw().to_string();
         tracing::info!("add_yt_video: {} {}", raw_id, url);
+
+        // Dedup: skip if video_id already exists in playlist
+        if self.list.get_list_iter().any(|s| s.video_id.get_raw() == raw_id) {
+            info!("add_yt_video: {} already in playlist, skipping", raw_id);
+            return AsyncTask::new_no_op();
+        }
 
         // Fetch metadata via yt-dlp
         let mut duration = String::from("0");
@@ -737,6 +811,23 @@ impl Playlist {
             _ => (raw_id.clone(), "YouTube".to_string(), None),
         };
 
+        // Extract year from title parenthetical as fallback when yt-dlp has no year
+        // e.g., "Anti-Everything E.P. (2003)" → "2003", "Scat Blast FULL ALBUM (2021...)" → "2021"
+        let title_year = if year.is_none() {
+            title.split('(').nth(1).and_then(|after_paren| {
+                after_paren.split(')').next().and_then(|inner| {
+                    inner.split(|c: char| !c.is_ascii_digit())
+                        .find(|p| p.len() == 4)
+                        .and_then(|p| p.parse::<u16>().ok())
+                        .filter(|y| (1900..2100).contains(y))
+                        .map(|y| y.to_string())
+                })
+            })
+        } else {
+            None
+        };
+        let year = year.or(title_year);
+
         // Strip "{artist} - " prefix from title (case-insensitive) for clean metadata
         let artist_prefix = format!("{} - ", artist);
         let title_lower = title.to_lowercase();
@@ -775,7 +866,7 @@ impl Playlist {
             }
             // Spawn metadata validation (Last.fm -> MusicBrainz) in parallel with download
             let validation_task = AsyncTask::new_future_try(
-                ValidateMetadata(artist, clean_title, id, self.scrobbling_config.api_key.clone()),
+                ValidateMetadata(artist, clean_title, id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty())),
                 HandleMetadataValidated(id),
                 HandleMetadataValidationError,
                 None,
@@ -987,10 +1078,17 @@ impl Playlist {
                         let play_effect = self.play_song_id(track1_id);
                         effect = effect.push(play_effect);
                     }
-                    // Remove original entry (audio stays alive via track Arc clones)
-                    if let Some(idx) = self.get_index_from_id(id) {
-                        self.list.remove_at(idx);
-                        info!("handle_song_downloaded: removed original album entry");
+                    // Remove original entry ONLY if tracks were actually created
+                    let actual_tracks = self.list.get_list_iter()
+                        .filter(|s| s.track_no.is_some() && s.video_id.get_raw() == video_raw)
+                        .count();
+                    if actual_tracks > 0 {
+                        if let Some(idx) = self.get_index_from_id(id) {
+                            self.list.remove_at(idx);
+                            info!("handle_song_downloaded: removed original entry ({} tracks)", actual_tracks);
+                        }
+                    } else {
+                        info!("handle_song_downloaded: no tracks created, keeping original entry");
                     }
                 } else {
                     info!("Album download complete but waiting for validation (tracks not ready)");
@@ -1144,12 +1242,34 @@ impl Playlist {
                     return AsyncTask::new_no_op();
                 }
 
-                if let Some(next_song_id) = self.get_next_song_id(*id) {
+                if self.repeat_mode == crate::app::structures::RepeatMode::One {
+                    info!("Repeat One: replaying current track");
+                    self.play_song_id(*id)
+                } else if let Some(next_song_id) = self.get_next_song_id(*id) {
                     self.autoplay_song_id(next_song_id)
-                } else {
-                    info!("No next song - resetting play status");
+                } else if self.radio_mode {
+                    info!("Radio mode active, auto-play stopped. Fetch recommendations on next run.");
                     self.queue_status = QueueState::NotQueued;
                     self.stop_song_id(*id)
+                } else {
+                    match self.repeat_mode {
+                        crate::app::structures::RepeatMode::All => {
+                            if let Some(first_id) = self.get_id_from_index(0) {
+                                self.play_song_id(first_id)
+                            } else {
+                                self.queue_status = QueueState::NotQueued;
+                                self.stop_song_id(*id)
+                            }
+                        }
+                        crate::app::structures::RepeatMode::One => {
+                            self.play_song_id(*id)
+                        }
+                        crate::app::structures::RepeatMode::Off => {
+                            info!("No next song - resetting play status");
+                            self.queue_status = QueueState::NotQueued;
+                            self.stop_song_id(*id)
+                        }
+                    }
                 }
             }
         }
@@ -1935,6 +2055,7 @@ impl Playlist {
                 }
             }
             DownloadProgressUpdateType::Error => {
+                self.last_error = Some("Download failed — check yt-dlp".to_string());
                 error!("download_error: song_id={}", video_id);
                 if let Some(idx) = self.get_index_from_id(id) {
                     if let Some(song) = self.list.get_list_iter_mut().nth(idx) {
@@ -2118,7 +2239,9 @@ impl Playlist {
                 .zip(cur_dur)
                 .map(|(d1, d2)| d2.saturating_sub(*d1))
         } {
-            if duration_dif
+            // Repeat One: don't queue next track, replay current via autoplay_next_or_stop
+            if self.repeat_mode != crate::app::structures::RepeatMode::One
+                && duration_dif
                 .saturating_sub(GAPLESS_PLAYBACK_THRESHOLD)
                 .is_zero()
                 && !matches!(self.queue_status, QueueState::Queued(_))

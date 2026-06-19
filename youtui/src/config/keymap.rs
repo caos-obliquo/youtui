@@ -832,6 +832,34 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::ToggleRepeat),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('I')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::ViewSongInfo),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('Z')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::ToggleRadio),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('L')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::LoadFromYTM),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('D')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::DeleteAll),
@@ -952,6 +980,18 @@ fn default_browser_search_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActio
             Keybind::new(crossterm::event::KeyCode::Char('p'), KeyModifiers::CONTROL),
             KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::PrevSearchSuggestion,
+            )),
+        ),
+        (
+            Keybind::new(crossterm::event::KeyCode::Char('j'), KeyModifiers::ALT),
+            KeyActionTree::new_key(AppAction::BrowserSearch(
+                BrowserSearchAction::PrevSearchSuggestion,
+            )),
+        ),
+        (
+            Keybind::new(crossterm::event::KeyCode::Char('k'), KeyModifiers::ALT),
+            KeyActionTree::new_key(AppAction::BrowserSearch(
+                BrowserSearchAction::NextSearchSuggestion,
             )),
         ),
         (
@@ -1529,11 +1569,11 @@ fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('k')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::Up)),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::PageUp)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('j')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::Down)),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::PageDown)),
         ),
         (
             Keybind::new(crossterm::event::KeyCode::Char('u'), KeyModifiers::CONTROL),
@@ -1558,6 +1598,22 @@ fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
             KeyActionTree::new_key(AppAction::Log(LoggerAction::ToggleTargetSelector)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::First)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::ToggleTargetSelector)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::First)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::Last)),
         ),
     ])
 }

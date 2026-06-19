@@ -55,11 +55,19 @@ pub struct BrowserSongsList {
 
 // As this is a simple wrapper type we implement Copy for ease of handling
 #[derive(Clone, PartialEq, Copy, Debug, PartialOrd, Hash, Eq, Serialize, Deserialize)]
-pub struct ListSongID(#[cfg(test)] pub usize, #[cfg(not(test))] usize);
+pub struct ListSongID(pub usize);
 
 // As this is a simple wrapper type we implement Copy for ease of handling
 #[derive(Clone, PartialEq, Copy, Debug, Default, PartialOrd, Serialize, Deserialize)]
 pub struct Percentage(pub u8);
+
+#[derive(Clone, PartialEq, Copy, Debug, Default, Serialize, Deserialize)]
+pub enum RepeatMode {
+    #[default]
+    Off,
+    All,
+    One,
+}
 
 #[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub enum AlbumArtState {
@@ -84,6 +92,8 @@ pub struct ListSong {
     pub actual_duration: Option<Duration>,
     pub start_offset: Option<Duration>,
     pub year: Option<Rc<String>>,
+    pub genres: Vec<String>,
+    pub styles: Vec<String>,
     pub album_art: AlbumArtState,
     pub artists: MaybeRc<Vec<ListSongArtist>>,
     pub thumbnails: MaybeRc<Vec<Thumbnail>>,
@@ -311,6 +321,8 @@ impl ListSong {
             actual_duration: None,
             year: None,
             album_art: AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
             start_offset: None,
             artists: MaybeRc::Owned(list_artists),
             thumbnails: MaybeRc::Owned(thumb.unwrap_or_default()),
@@ -423,6 +435,8 @@ impl BrowserSongsList {
             duration_string: duration,
             thumbnails: MaybeRc::Rc(thumbnails),
             album_art: AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
             start_offset: None,
         });
         id
@@ -438,12 +452,13 @@ impl BrowserSongsList {
             explicit,
             video_id,
             thumbnails,
+            year,
             ..
         } = song;
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
-            year: None,
+            year: year.map(std::rc::Rc::new),
             artists: MaybeRc::Owned(vec![ListSongArtist {
                 name: artist,
                 id: None,
@@ -458,13 +473,15 @@ impl BrowserSongsList {
             thumbnails: MaybeRc::Owned(thumbnails),
             duration_string: duration,
             album_art: AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
             start_offset: None,
         });
         id
     }
     fn add_raw_playlist_item(&mut self, item: PlaylistItem) -> ListSongID {
         let id = self.create_next_id();
-        let (track_no, title, video_id, duration, artists, album, thumbnails, explicit) = match item
+        let (track_no, title, video_id, duration, artists, album, thumbnails, explicit, year) = match item
         {
             PlaylistItem::Song(PlaylistSong {
                 video_id,
@@ -475,6 +492,7 @@ impl BrowserSongsList {
                 thumbnails,
                 track_no,
                 explicit,
+                year,
                 ..
             }) => (
                 track_no,
@@ -485,6 +503,7 @@ impl BrowserSongsList {
                 Some(album.into()),
                 thumbnails,
                 Some(explicit),
+                year,
             ),
             PlaylistItem::Video(PlaylistVideo {
                 video_id,
@@ -501,6 +520,7 @@ impl BrowserSongsList {
                 vec![],
                 None,
                 thumbnails,
+                None,
                 None,
             ),
             // Episode has no video id, so we can't currently handle it as a ListSong...
@@ -525,12 +545,13 @@ impl BrowserSongsList {
                 album.map(Into::into),
                 thumbnails,
                 None,
+                None,
             ),
         };
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
-            year: None,
+            year: year.map(std::rc::Rc::new),
             artists: MaybeRc::Owned(artists),
             album: album.map(MaybeRc::Owned),
             actual_duration: None,
@@ -542,6 +563,8 @@ impl BrowserSongsList {
             duration_string: duration,
             thumbnails: MaybeRc::Owned(thumbnails),
             album_art: AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
             start_offset: None,
         });
         id

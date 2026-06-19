@@ -241,15 +241,27 @@ where
 
         match song {
             Some(song) => {
-                info!("Song downloaded");
-                send_or_error(
-                    &tx,
-                    DownloadProgressUpdate {
-                        kind: DownloadProgressUpdateType::Completed(song),
-                        id: song_playlist_id,
-                    },
-                )
-                .await;
+                if song.0.is_empty() {
+                    warn!("Download produced 0 bytes, marking as failed");
+                    send_or_error(
+                        &tx,
+                        DownloadProgressUpdate {
+                            kind: DownloadProgressUpdateType::Error,
+                            id: song_playlist_id,
+                        },
+                    )
+                    .await;
+                } else {
+                    info!("Song downloaded ({} bytes)", song.0.len());
+                    send_or_error(
+                        &tx,
+                        DownloadProgressUpdate {
+                            kind: DownloadProgressUpdateType::Completed(song),
+                            id: song_playlist_id,
+                        },
+                    )
+                    .await;
+                }
             }
             None => {
                 error!("Max retries exceeded");

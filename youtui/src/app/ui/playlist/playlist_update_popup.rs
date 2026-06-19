@@ -81,14 +81,23 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
                     self.list_state.select(Some(self.selected_idx));
                     if let Some(playlist) = playlists.get(self.selected_idx) {
                         let playlist_id = playlist.playlist_id.clone();
-                        let video_ids = self.video_ids.clone();
-                        (
-                            AsyncTask::new_no_op(),
-                            Some(AppCallback::AddVideosToPlaylistFromPopup {
-                                playlist_id,
-                                video_ids,
-                            }),
-                        )
+                        if self.video_ids.is_empty() {
+                            // Load mode: fetch playlist tracks into player
+                            (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::LoadPlaylistFromPopup(playlist_id)),
+                            )
+                        } else {
+                            // Add to existing playlist mode
+                            let video_ids = self.video_ids.clone();
+                            (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::AddVideosToPlaylistFromPopup {
+                                    playlist_id,
+                                    video_ids,
+                                }),
+                            )
+                        }
                     } else {
                         (AsyncTask::new_no_op(), None)
                     }
@@ -170,7 +179,11 @@ impl PlaylistUpdatePopup {
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
-        let title = format!(" Select Playlist ({} songs) ", self.video_ids.len());
+        let title = if self.video_ids.is_empty() {
+            " Load YouTube Music Playlist ".to_string()
+        } else {
+            format!(" Select Playlist ({} songs) ", self.video_ids.len())
+        };
         let block = Block::default()
             .title(title)
             .borders(Borders::ALL)

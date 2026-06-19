@@ -186,10 +186,11 @@ pub struct SearchResultSong {
     pub explicit: Explicit,
     pub video_id: VideoID<'static>,
     pub thumbnails: Vec<Thumbnail>,
+    pub year: Option<String>,
 }
 impl SearchResultSong {
     pub fn from_yt_dlp(title: String, artist: String, video_id: VideoID<'static>, album: Option<ParsedSongAlbum>, duration: String) -> Self {
-        Self { title, artist, album, duration, plays: String::new(), explicit: Explicit::NotExplicit, video_id, thumbnails: vec![] }
+        Self { title, artist, album, duration, plays: String::new(), explicit: Explicit::NotExplicit, video_id, thumbnails: vec![], year: None }
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -619,6 +620,16 @@ fn parse_song_search_result_from_music_shelf_contents(
     } else {
         Explicit::NotExplicit
     };
+    // Extract year from subtitle runs (first 4-digit number found)
+    // Extract year from subtitle runs: find first 4-digit number in column 1 text
+    let year = mrlir
+        .borrow_pointer(format!("{}/text/runs", flex_column_item_pointer(1)))
+        .ok()
+        .and_then(|mut runs| {
+            let full_text: String = runs.take_value_pointers(&["/text/simpleText", "/text/runs/0/text"]).ok()
+                .unwrap_or_default();
+            super::song::find_year_in_runs(&full_text)
+        });
     let video_id = mrlir.take_value_pointer(PLAYLIST_ITEM_VIDEO_ID)?;
     let thumbnails: Vec<Thumbnail> = mrlir.take_value_pointer(THUMBNAILS)?;
     Ok(SearchResultSong {
@@ -630,6 +641,7 @@ fn parse_song_search_result_from_music_shelf_contents(
         album,
         video_id,
         duration,
+        year,
     })
 }
 // TODO: Type safety
@@ -934,10 +946,15 @@ impl TryFrom<FilteredSearchSectionContents> for FilteredSearchMusicShelfContents
     fn try_from(
         value: FilteredSearchSectionContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
+        // Handle case where YouTube returns no results (no musicShelfRenderer)
         let music_shelf_contents = value
             .0
-            .try_into_iter()?
-            .find_path(concatcp!(MUSIC_SHELF, "/contents"))?;
+            .try_into_iter()
+            .and_then(|iter| iter.find_path(concatcp!(MUSIC_SHELF, "/contents")))
+            .unwrap_or_else(|_| {
+                // Return an empty JSON array crawler when there are no results
+                JsonCrawlerOwned::new(String::new(), serde_json::Value::Array(Vec::new()))
+            });
         Ok(FilteredSearchMusicShelfContents(music_shelf_contents))
     }
 }

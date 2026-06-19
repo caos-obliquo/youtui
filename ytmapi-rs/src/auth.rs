@@ -70,8 +70,32 @@ pub(crate) async fn raw_query_post<'a, A: AuthToken, Q: PostQuery>(
             "client" : {
                 "clientName" : "WEB_REMIX",
                 "clientVersion" : tok.client_version(),
+                "browserName" : "Firefox",
+                "browserVersion" : "140.0",
+                "osName" : "Linux",
+                "osVersion" : "",
+                "platform" : "DESKTOP",
+                "hl" : "en",
+                "gl" : "US",
+                "timeZone" : "America/Sao_Paulo",
+                "utcOffsetMinutes" : 0,
+                "originalUrl" : "https://music.youtube.com",
+                "acceptHeader" : "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "deviceMake" : "",
+                "deviceModel" : "",
+                "userAgent" : "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+                "screenWidthPoints" : 1920,
+                "screenHeightPoints" : 1080,
+                "screenPixelDensity" : 1,
+                "screenDensityFloat" : 1.0,
             },
             "user" : {},
+            "request": {
+                "useSsl": true,
+            },
+            "thirdParty": {
+                "embedUrl": "https://music.youtube.com",
+            },
         },
     });
     if let Some(body) = body.as_object_mut() {

@@ -4,6 +4,7 @@ use rusty_ytdl::reqwest;
 use std::sync::Arc;
 use std::time::Duration;
 mod messages;
+pub mod providers;
 
 pub mod api;
 pub mod api_error_handler;
@@ -26,6 +27,8 @@ pub struct Server {
     pub song_downloader: song_downloader::SongDownloader,
     pub song_thumbnail_downloader: song_thumbnail_downloader::SongThumbnailDownloader,
     pub api_error_handler: api_error_handler::ApiErrorHandler,
+    pub http_client: ::reqwest::Client,
+    pub metadata_registry: Arc<providers::MetadataRegistry>,
 }
 
 impl Server {
@@ -46,12 +49,24 @@ impl Server {
         let song_thumbnail_downloader =
             song_thumbnail_downloader::SongThumbnailDownloader::new(client);
         let api_error_handler = api_error_handler::ApiErrorHandler::new();
+        let http_client = ::reqwest::Client::builder()
+            .user_agent("Youtui/0.1 (music-player)")
+            .build()
+            .expect("Expected reqwest client build to succeed");
+        let metadata_registry = Arc::new(providers::MetadataRegistry::new(
+            http_client.clone(),
+            Some(config.scrobbling.api_key.clone()).filter(|s| !s.is_empty()),
+            Some(config.scrobbling.discogs_token.clone()).filter(|s| !s.is_empty()),
+            Some(config.scrobbling.genius_token.clone()).filter(|s| !s.is_empty()),
+        ));
         Server {
             api,
             player,
             song_downloader,
             api_error_handler,
             song_thumbnail_downloader,
+            http_client,
+            metadata_registry,
         }
     }
 }
