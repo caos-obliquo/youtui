@@ -146,6 +146,12 @@ impl LyricsPopup {
                 }
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('[') => {
+                (AsyncTask::new_no_op(), Some(AppCallback::SeekBack))
+            }
+            KeyCode::Char(']') => {
+                (AsyncTask::new_no_op(), Some(AppCallback::SeekForward))
+            }
             _ => (AsyncTask::new_no_op(), None),
         }
     }

@@ -324,8 +324,15 @@ impl BackendTask<ArcServer> for AddSongsToPlaylist {
             let playlist_id = self.playlist_id;
             let all_ids = self.video_ids;
             let total = all_ids.len();
-            tracing::info!("Adding {total} videos to playlist in batches of 100");
-            for chunk in all_ids.chunks(100) {
+            // Deduplicate: YouTube API rejects duplicates in ReturnError mode
+            let mut seen = std::collections::HashSet::new();
+            let unique_ids: Vec<_> = all_ids.into_iter().filter(|id| seen.insert(id.clone())).collect();
+            let deduped = total - unique_ids.len();
+            if deduped > 0 {
+                tracing::warn!("Removed {deduped} duplicate video IDs before adding to playlist");
+            }
+            tracing::info!("Adding {} videos to playlist in batches of 100", unique_ids.len());
+            for chunk in unique_ids.chunks(100) {
                 tracing::info!("Adding batch of {} videos", chunk.len());
                 backend.api.add_playlist_items(
                     playlist_id.clone(),
