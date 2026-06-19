@@ -1,5 +1,6 @@
 use super::ArcServer;
-use ytmapi_rs::parse::LibraryPlaylist;
+use ytmapi_rs::parse::SearchResultAlbum;
+use ytmapi_rs::parse::{TableListSong, LibraryArtist, LibraryPlaylist};
 use super::api::GetArtistSongsProgressUpdate;
 use super::player::{DecodedInMemSong, Player};
 use super::song_downloader::{DownloadProgressUpdate, InMemSong};
@@ -72,6 +73,18 @@ pub struct AddSongsToPlaylist {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct RenamePlaylist {
+    pub playlist_id: PlaylistID<'static>,
+    pub new_title: String,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct RemovePlaylistItems {
+    pub playlist_id: PlaylistID<'static>,
+    pub video_ids: Vec<VideoID<'static>>,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct GetAllLibraryPlaylists;
 
 impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
@@ -84,16 +97,122 @@ impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
         let backend = backend.clone();
         async move {
             use ytmapi_rs::query::GetLibraryPlaylistsQuery;
+            use crate::app::server::api::stream_api_with_retry_n;
 
             let api_guard = backend.api.get_api().await?;
-            let api = api_guard.read().await;
 
-            match api.stream_browser_or_oauth(GetLibraryPlaylistsQuery, 10).await {
-                Ok(pages) => Ok(pages.into_iter().flatten().collect()),
+            match stream_api_with_retry_n(&api_guard, &GetLibraryPlaylistsQuery, 10).await {
+                Ok(pages) => {
+                    let playlists: Vec<_> = pages.into_iter().flatten().collect();
+                    tracing::info!(count = %playlists.len(), "GetAllLibraryPlaylists done");
+                    Ok(playlists)
+                }
                 Err(e) => {
                     tracing::warn!("GetLibraryPlaylistsQuery failed: {}. Library playlists require browser auth (cookies) or OAuth.", e);
                     Err(anyhow::anyhow!(
                         "Library playlists unavailable. Configure cookies or OAuth in config. Error: {}", e
+                    ))
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct GetAllLibrarySongs;
+
+impl BackendTask<ArcServer> for GetAllLibrarySongs {
+    type Output = Result<Vec<TableListSong>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::GetLibrarySongsQuery;
+            use crate::app::server::api::stream_api_with_retry_n;
+
+            let api_guard = backend.api.get_api().await?;
+
+            match stream_api_with_retry_n(&api_guard, &GetLibrarySongsQuery::default(), 10).await {
+                Ok(pages) => {
+                    let songs: Vec<_> = pages.into_iter().flatten().collect();
+                    tracing::info!(count = %songs.len(), "GetAllLibrarySongs done");
+                    Ok(songs)
+                }
+                Err(e) => {
+                    tracing::warn!("GetLibrarySongsQuery failed: {}. Library songs require browser auth (cookies) or OAuth.", e);
+                    Err(anyhow::anyhow!(
+                        "Library songs unavailable. Configure cookies or OAuth in config. Error: {}", e
+                    ))
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct GetAllLibraryArtists;
+
+impl BackendTask<ArcServer> for GetAllLibraryArtists {
+    type Output = Result<Vec<LibraryArtist>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::GetLibraryArtistsQuery;
+            use crate::app::server::api::stream_api_with_retry_n;
+
+            let api_guard = backend.api.get_api().await?;
+
+            match stream_api_with_retry_n(&api_guard, &GetLibraryArtistsQuery::default(), 10).await {
+                Ok(pages) => {
+                    let artists: Vec<_> = pages.into_iter().flatten().collect();
+                    tracing::info!(count = %artists.len(), "GetAllLibraryArtists done");
+                    Ok(artists)
+                }
+                Err(e) => {
+                    tracing::warn!("GetLibraryArtistsQuery failed: {}. Library artists require browser auth (cookies) or OAuth.", e);
+                    Err(anyhow::anyhow!(
+                        "Library artists unavailable. Configure cookies or OAuth in config. Error: {}", e
+                    ))
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct GetAllLibraryAlbums;
+
+impl BackendTask<ArcServer> for GetAllLibraryAlbums {
+    type Output = Result<Vec<SearchResultAlbum>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::GetLibraryAlbumsQuery;
+            use crate::app::server::api::stream_api_with_retry_n;
+
+            let api_guard = backend.api.get_api().await?;
+
+            match stream_api_with_retry_n(&api_guard, &GetLibraryAlbumsQuery::default(), 10).await {
+                Ok(pages) => {
+                    let albums: Vec<_> = pages.into_iter().flatten().collect();
+                    tracing::info!(count = %albums.len(), "GetAllLibraryAlbums done");
+                    Ok(albums)
+                }
+                Err(e) => {
+                    tracing::warn!("GetLibraryAlbumsQuery failed: {}. Library albums require browser auth (cookies) or OAuth.", e);
+                    Err(anyhow::anyhow!(
+                        "Library albums unavailable. Configure cookies or OAuth in config. Error: {}", e
                     ))
                 }
             }
@@ -117,23 +236,28 @@ impl BackendTask<ArcServer> for GetPlaylistTracks {
         async move {
             use ytmapi_rs::query::GetPlaylistTracksQuery;
             use ytmapi_rs::parse::PlaylistItem;
+            use crate::app::server::api::stream_api_with_retry_n;
+
+            let api_guard = backend.api.get_api().await?;
             let query = GetPlaylistTracksQuery::new(self.0);
-            let items: Vec<PlaylistItem> = backend
-                .api
-                .get_api()
-                .await?
-                .read()
-                .await
-                .query(query)
-                .await
-                .map_err(|e| anyhow::anyhow!("GetPlaylistTracksQuery: {}", e))?;
-            let songs: Vec<PlaylistSong> = items.into_iter().filter_map(|item| {
-                match item {
-                    PlaylistItem::Song(s) => Some(s),
-                    _ => None,
+
+            match stream_api_with_retry_n(&api_guard, &query, 50).await {
+                Ok(pages) => {
+                    let items: Vec<PlaylistItem> = pages.into_iter().flatten().collect();
+                    tracing::info!(count = %items.len(), "GetPlaylistTracks streaming done");
+                    let songs: Vec<PlaylistSong> = items.into_iter().filter_map(|item| {
+                        match item {
+                            PlaylistItem::Song(s) => Some(s),
+                            _ => None,
+                        }
+                    }).collect();
+                    Ok(songs)
                 }
-            }).collect();
-            Ok(songs)
+                Err(e) => {
+                    tracing::warn!("GetPlaylistTracks streaming failed: {}", e);
+                    Err(anyhow::anyhow!("GetPlaylistTracks: {}", e))
+                }
+            }
         }
     }
 }
@@ -147,11 +271,43 @@ impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
-            backend.api.create_playlist_with_videos(
-                self.title,
-                self.description,
-                self.video_ids,
-            ).await
+            let title = self.title;
+            let description = self.description;
+            let all_ids = self.video_ids;
+            let total = all_ids.len();
+            tracing::info!("Creating playlist with {total} videos: {title}");
+
+            // YouTube Music: 5000 songs max per playlist, API accepts all at once
+            let max_per_playlist: usize = 5000;
+            let mut remaining: Vec<VideoID<'static>> = all_ids;
+
+            let mut first_playlist_id: Option<PlaylistID<'static>> = None;
+            let mut playlist_index = 0;
+
+            while !remaining.is_empty() {
+                let playlist_songs: Vec<VideoID<'static>> = remaining.drain(..remaining.len().min(max_per_playlist)).collect();
+
+                let playlist_title = if playlist_index == 0 {
+                    title.clone()
+                } else {
+                    format!("{} pt. {}", title, playlist_index + 1)
+                };
+                playlist_index += 1;
+
+                tracing::info!("Creating playlist #{playlist_index}: {playlist_title} ({} songs)", playlist_songs.len());
+
+                let pid = backend.api.create_playlist_with_videos(
+                    playlist_title,
+                    description.clone(),
+                    playlist_songs,
+                ).await?;
+
+                if first_playlist_id.is_none() {
+                    first_playlist_id = Some(pid);
+                }
+            }
+
+            Ok(first_playlist_id.expect("at least one playlist should have been created"))
         }
     }
 }
@@ -165,7 +321,58 @@ impl BackendTask<ArcServer> for AddSongsToPlaylist {
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
-            backend.api.add_playlist_items(self.playlist_id, self.video_ids).await
+            let playlist_id = self.playlist_id;
+            let all_ids = self.video_ids;
+            let total = all_ids.len();
+            tracing::info!("Adding {total} videos to playlist in batches of 100");
+            for chunk in all_ids.chunks(100) {
+                tracing::info!("Adding batch of {} videos", chunk.len());
+                backend.api.add_playlist_items(
+                    playlist_id.clone(),
+                    chunk.to_vec(),
+                ).await?;
+            }
+            Ok(())
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for RenamePlaylist {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::EditPlaylistQuery;
+            use ytmapi_rs::common::ApiOutcome;
+            let api_guard = backend.api.get_api().await?;
+            let query = EditPlaylistQuery::new_title(self.playlist_id, self.new_title);
+            let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+            tracing::info!("Playlist renamed");
+            Ok(())
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for RemovePlaylistItems {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::RemovePlaylistItemsQuery;
+            let api_guard = backend.api.get_api().await?;
+            let set_ids: Vec<_> = self.video_ids.iter().map(|id| ytmapi_rs::common::SetVideoID::from_raw(id.get_raw().to_string())).collect();
+            let query = RemovePlaylistItemsQuery::new(self.playlist_id, set_ids);
+            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
+            tracing::info!("Playlist items removed");
+            Ok(())
         }
     }
 }

@@ -448,17 +448,28 @@ async fn try_main() -> anyhow::Result<()> {
     };
     // Auto-refresh cookie from browser session via yt-dlp
     if let Some(ref cp) = cookie_path {
-        if let Ok(output) = std::process::Command::new("yt-dlp")
-            .args(["--cookies-from-browser", "firefox", "--cookies", "-"])
-            .output()
-        {
-            if output.status.success() {
-                let cookie_data = String::from_utf8_lossy(&output.stdout);
-                // Save raw Netscape-format cookies (yt-dlp can read this format with --cookies)
-                if !cookie_data.trim().is_empty() {
-                    let _ = std::fs::write(cp, cookie_data.as_bytes());
-                    info!("Auto-refreshed cookie from browser session");
-                }
+        // yt-dlp --cookies FILE creates the file if it doesn't exist,
+        // reads/merges if it does. Use a temp path so we always get fresh output.
+        let tmp = format!("{cp}.tmp");
+        let _ = std::fs::remove_file(&tmp);
+        let child = std::process::Command::new("yt-dlp")
+            .args([
+                "--cookies-from-browser",
+                "chromium",
+                "--cookies",
+                &tmp,
+                "--skip-download",
+                "https://youtu.be/dQw4w9WgXcQ",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        if let Ok(mut child) = child {
+            if child.wait().map_or(false, |s| s.success())
+                && std::path::Path::new(&tmp).exists()
+            {
+                let _ = std::fs::rename(&tmp, cp);
+                info!("Auto-refreshed cookie from browser session");
             }
         }
     }
@@ -487,7 +498,7 @@ async fn get_api(config: &Config) -> anyhow::Result<api::DynamicYtMusic> {
             oauth_loc.push(OAUTH_FILENAME);
             let file = tokio::fs::read_to_string(oauth_loc).await?;
             let oath_tok: OAuthToken = serde_json::from_str(&file)?;
-            let mut api = ytmapi_rs::builder::YtMusicBuilder::new_rustls_tls()
+            let mut api = ytmapi_rs::builder::YtMusicBuilder::new()
                 .with_auth_token(oath_tok)
                 .build()?;
             // For simplicity for now - refresh OAuth token every time.
@@ -497,14 +508,14 @@ async fn get_api(config: &Config) -> anyhow::Result<api::DynamicYtMusic> {
         config::AuthType::Browser => {
             let mut cookies_loc = confdir;
             cookies_loc.push(COOKIE_FILENAME);
-            let api = ytmapi_rs::builder::YtMusicBuilder::new_rustls_tls()
+            let api = ytmapi_rs::builder::YtMusicBuilder::new()
                 .with_browser_token_cookie_file(cookies_loc)
                 .build()
                 .await?;
             api::DynamicYtMusic::Browser(api)
         }
         config::AuthType::Unauthenticated => {
-            let api = ytmapi_rs::builder::YtMusicBuilder::new_rustls_tls()
+            let api = ytmapi_rs::builder::YtMusicBuilder::new()
                 .build()
                 .await?;
             api::DynamicYtMusic::NoAuth(api)

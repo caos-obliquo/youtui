@@ -17,13 +17,13 @@ static API: OnceCell<YtMusic<BrowserToken>> = OnceCell::const_new();
 async fn get_api() -> &'static YtMusic<BrowserToken> {
     API.get_or_init(|| async {
         if let Ok(cookie) = env::var("youtui_test_cookie") {
-            YtMusicBuilder::new_rustls_tls()
+            YtMusicBuilder::new()
                 .with_browser_token_cookie(cookie)
                 .build()
                 .await
                 .unwrap()
         } else {
-            YtMusicBuilder::new_rustls_tls()
+            YtMusicBuilder::new()
                 .with_browser_token_cookie_file(Path::new(COOKIE_PATH))
                 .build()
                 .await

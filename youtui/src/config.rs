@@ -226,6 +226,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             playlist,
             browser,
             browser_artists,
+            browser_library,
             browser_search,
             browser_songs,
             browser_artist_songs,
@@ -243,13 +244,14 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             auth_type: def_auth_type,
             keybinds: def_keybinds,
             downloader_type: def_downloader_type,
-            yt_dlp_command: def_yt_dlp_command, .. 
+            yt_dlp_command: def_yt_dlp_command, ..
         } = Config::default();
         let YoutuiKeymap {
             global: def_global,
             playlist: def_playlist,
             browser: def_browser,
             browser_artists: def_browser_artists,
+            browser_library: def_browser_library,
             browser_search: def_browser_search,
             browser_artist_songs: def_browser_artist_songs,
             browser_songs: def_browser_songs,
@@ -328,6 +330,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             playlist,
             browser,
             browser_artists,
+            browser_library,
             browser_artist_songs,
             browser_search,
             browser_songs,
@@ -345,13 +348,14 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             auth_type: def_auth_type,
             keybinds: def_keybinds,
             downloader_type: def_downloader_type,
-            yt_dlp_command: def_yt_dlp_command, .. 
+            yt_dlp_command: def_yt_dlp_command, ..
         } = Config::default();
         let YoutuiKeymap {
             global: def_global,
             playlist: def_playlist,
             browser: def_browser,
             browser_artists: def_browser_artists,
+            browser_library: def_browser_library,
             browser_search: def_browser_search,
             browser_songs: def_browser_songs,
             browser_artist_songs: def_browser_artist_songs,
@@ -373,6 +377,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
         assert_eq!(playlist, def_playlist);
         assert_eq!(browser, def_browser);
         assert_eq!(browser_artists, def_browser_artists);
+        assert_eq!(browser_library, def_browser_library);
         assert_eq!(browser_playlists, def_browser_playlists);
         assert_eq!(browser_search, def_browser_search);
         assert_eq!(browser_songs, def_browser_songs);

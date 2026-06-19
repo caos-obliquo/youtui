@@ -107,6 +107,10 @@ pub struct Playlist {
     pub last_error: Option<String>,
     /// Pending chunks for multi-playlist split (video_ids, title, description, next_index)
     pub pending_playlist_chunks: Option<(Vec<Vec<ytmapi_rs::common::VideoID<'static>>>, String, Option<String>)>,
+    /// Stack of deleted songs for undo (song, original_index)
+    pub undo_stack: Vec<(crate::app::structures::ListSong, usize)>,
+    pub visual_mode: bool,
+    pub visual_start: usize,
 }
 
 impl_youtui_component!(Playlist);
@@ -137,6 +141,11 @@ pub enum PlaylistAction {
     ToggleRepeat,
     ToggleRadio,
     ViewSongInfo,
+    SaveToExistingPlaylist,
+    UndoDelete,
+    DeleteToTop,
+    DeleteToBottom,
+    ToggleVisualMode,
 }
 
 impl Action for PlaylistAction {
@@ -169,6 +178,11 @@ impl Action for PlaylistAction {
             PlaylistAction::ToggleRepeat => "Toggle Repeat Mode",
             PlaylistAction::ToggleRadio => "Toggle Radio Mode",
             PlaylistAction::ViewSongInfo => "View Song Info",
+            PlaylistAction::SaveToExistingPlaylist => "Save Queue to Existing Playlist",
+            PlaylistAction::UndoDelete => "Undo Delete",
+            PlaylistAction::DeleteToTop => "Delete to Top",
+            PlaylistAction::DeleteToBottom => "Delete to Bottom",
+            PlaylistAction::ToggleVisualMode => "Toggle Visual Mode",
         }
         .into()
     }
@@ -182,6 +196,10 @@ impl ActionHandler<PlaylistAction> for Playlist {
             PlaylistAction::PlaySelected => (self.play_selected(), None),
             PlaylistAction::DeleteSelected => (self.delete_selected(), None),
             PlaylistAction::DeleteAll => (self.delete_all(), None),
+            PlaylistAction::DeleteToTop => (self.delete_to_top(), None),
+            PlaylistAction::DeleteToBottom => (self.delete_to_bottom(), None),
+            PlaylistAction::UndoDelete => (self.undo_delete(), None),
+            PlaylistAction::ToggleVisualMode => (self.toggle_visual_mode(), None),
             PlaylistAction::ToggleShuffle => (self.toggle_shuffle(), None),
             PlaylistAction::ToggleSearch => (self.toggle_search(), None),
             PlaylistAction::ClearSearch => (self.clear_search(), None),
@@ -207,6 +225,15 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     return (AsyncTask::new_no_op(), None);
                 }
                 (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistSavePopup(video_ids)))
+            },
+            PlaylistAction::SaveToExistingPlaylist => {
+                let video_ids: Vec<VideoID<'static>> = self.list.get_list_iter()
+                    .map(|song| song.video_id.clone())
+                    .collect();
+                if video_ids.is_empty() {
+                    return (AsyncTask::new_no_op(), None);
+                }
+                (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)))
             },
             PlaylistAction::LoadFromYTM => {
                 let video_ids: Vec<VideoID<'static>> = Vec::new();
@@ -603,6 +630,9 @@ impl Playlist {
             radio_mode: false,
             last_error: None,
             pending_playlist_chunks: None,
+            undo_stack: Vec::new(),
+            visual_mode: false,
+            visual_start: 0,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -1689,6 +1719,35 @@ impl Playlist {
     }
 
     pub fn delete_selected(&mut self) -> ComponentEffect<Self> {
+        if self.visual_mode {
+            // Delete visual range (visual_start to cur_selected)
+            let (start, end) = if self.visual_start <= self.cur_selected {
+                (self.visual_start, self.cur_selected)
+            } else {
+                (self.cur_selected, self.visual_start)
+            };
+            let all_songs: Vec<_> = self.list.get_list_iter().cloned().collect();
+            let total = all_songs.len();
+            let mut to_delete: Vec<(ListSong, usize)> = Vec::new();
+            for idx in start..=end {
+                let actual = self.visual_to_actual_index(idx);
+                if actual < total {
+                    to_delete.push((all_songs[actual].clone(), actual));
+                }
+            }
+            for (song, _) in to_delete.iter().rev() {
+                self.undo_stack.push((song.clone(), 0));
+            }
+            // Remove from end to start so indices stay valid
+            for (_, actual) in to_delete.iter().rev() {
+                self.list.remove_song_index(*actual);
+            }
+            self.visual_mode = false;
+            self.cur_selected = start.min(self.list.get_list_iter().count().saturating_sub(1));
+            let mut return_task = AsyncTask::new_no_op();
+            return_task = return_task.push(self.regenerate_downloads_for_current());
+            return return_task;
+        }
         // FIX: Don't delete if search is active but has no results
         if !self.search_text.is_empty() && self.search_indices.is_empty() {
             return AsyncTask::new_no_op();
@@ -1745,6 +1804,60 @@ impl Playlist {
 
     pub fn delete_all(&mut self) -> ComponentEffect<Self> {
         self.reset()
+    }
+
+    pub fn delete_to_top(&mut self) -> ComponentEffect<Self> {
+        let idx = self.cur_selected;
+        if idx == 0 { return AsyncTask::new_no_op(); }
+        let all_songs: Vec<_> = self.list.get_list_iter().cloned().collect();
+        let mut to_delete: Vec<_> = (0..idx).filter_map(|i| {
+            let actual = self.visual_to_actual_index(i);
+            if actual < all_songs.len() {
+                Some((all_songs[actual].clone(), actual))
+            } else { None }
+        }).collect();
+        for (song, actual) in to_delete.iter().rev() {
+            self.undo_stack.push((song.clone(), *actual));
+            self.list.remove_song_index(*actual);
+        }
+        self.cur_selected = 0;
+        self.regenerate_downloads_for_current()
+    }
+
+    pub fn delete_to_bottom(&mut self) -> ComponentEffect<Self> {
+        let idx = self.cur_selected;
+        let total = self.list.get_list_iter().count();
+        if idx >= total.saturating_sub(1) { return AsyncTask::new_no_op(); }
+        let all_songs: Vec<_> = self.list.get_list_iter().cloned().collect();
+        let mut to_delete: Vec<_> = (idx..total).filter_map(|i| {
+            let actual = self.visual_to_actual_index(i);
+            if actual < all_songs.len() {
+                Some((all_songs[actual].clone(), actual))
+            } else { None }
+        }).collect();
+        for (song, actual) in to_delete.iter().rev() {
+            self.undo_stack.push((song.clone(), *actual));
+            self.list.remove_song_index(*actual);
+        }
+        self.regenerate_downloads_for_current()
+    }
+
+    pub fn toggle_visual_mode(&mut self) -> ComponentEffect<Self> {
+        self.visual_mode = !self.visual_mode;
+        if self.visual_mode {
+            self.visual_start = self.cur_selected;
+        }
+        AsyncTask::new_no_op()
+    }
+
+    pub fn undo_delete(&mut self) -> ComponentEffect<Self> {
+        if let Some((song, original_idx)) = self.undo_stack.pop() {
+            // Insert song at original position
+            let before = if original_idx > 0 { original_idx - 1 } else { 0 };
+            self.list.insert_after(before, song);
+            self.cur_selected = original_idx.min(self.list.get_list_iter().len().saturating_sub(1));
+        }
+        self.regenerate_downloads_for_current()
     }
 
     pub fn view_browser(&mut self) -> AppCallback {

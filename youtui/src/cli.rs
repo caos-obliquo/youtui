@@ -83,7 +83,7 @@ pub async fn get_and_output_oauth_token(
     Ok(())
 }
 async fn get_oauth_token(client_id: String, client_secret: String) -> Result<String> {
-    let client = ytmapi_rs::client::Client::new_rustls_tls()?;
+    let client = ytmapi_rs::client::Client::new()?;
     let (code, url) = generate_oauth_code_and_url(&client, &client_id).await?;
     // Hack to wait for input
     println!("Go to {url}, finish the login flow, and press enter when done");

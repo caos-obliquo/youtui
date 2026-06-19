@@ -28,13 +28,19 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     let mut spans: Vec<Span> = Vec::new();
 
     // Prepend vi mode indicator at the very start — always visible
-    let vi_mode = if w.command_mode {
-        Some(w.command_editor.mode_char())
+    let vi_mode: Option<String> = if w.command_mode {
+        Some(w.command_editor.mode_char().to_string())
+    } else if let Some(ref popup) = w.config_editor_popup {
+        Some(popup.mode_char().to_string())
+    } else if w.playlist.visual_mode {
+        Some("[V]".to_string())
+    } else if matches!(w.context, crate::app::ui::WindowContext::Browser) {
+        w.browser.text_editor_mode()
     } else {
         None
     };
-    if let Some(mode) = vi_mode {
-        spans.push(Span::styled(mode, Style::default().fg(Color::Cyan)));
+    if let Some(ref mode) = vi_mode {
+        spans.push(Span::styled(mode.as_str(), Style::default().fg(Color::Cyan)));
         spans.push(Span::raw(" "));
     }
 

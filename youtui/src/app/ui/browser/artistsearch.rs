@@ -16,7 +16,7 @@ use search_panel::{ArtistSearchPanel, BrowserArtistsAction};
 use songs_panel::{AlbumSongsPanel, BrowserArtistSongsAction};
 use std::mem;
 use tracing::{error, warn};
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, Thumbnail};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, Thumbnail, YoutubeID};
 use ytmapi_rs::parse::{AlbumSong, ParsedSongAlbum, ParsedSongArtist, SearchResultArtist};
 
 pub mod search_panel;
@@ -168,15 +168,10 @@ impl ActionHandler<BrowserArtistSongsAction> for ArtistSearchBrowser {
             BrowserArtistSongsAction::AddSongsToPlaylist => {
                 return self.add_songs_to_playlist().into();
             }
-            BrowserArtistSongsAction::AddSongToExistingPlaylist => {
-                return self.add_song_to_existing_playlist().into();
-            }
-            BrowserArtistSongsAction::AddSongsToExistingPlaylist => {
-                return self.add_songs_to_existing_playlist().into();
-            }
             BrowserArtistSongsAction::Sort => self.album_songs_panel.handle_pop_sort(),
             BrowserArtistSongsAction::Filter => self.album_songs_panel.toggle_filter(),
             BrowserArtistSongsAction::ViewLyrics => return self.view_lyrics().into(),
+            BrowserArtistSongsAction::CopySongUrl => return self.copy_song_url().into(),
             BrowserArtistSongsAction::ToggleCategoryFilter => {
                 self.album_songs_panel.handle_toggle_category_filter();
             }
@@ -207,6 +202,14 @@ impl KeyRouter<AppAction> for ArtistSearchBrowser {
 }
 
 impl ArtistSearchBrowser {
+    pub fn text_editor_mode(&self) -> Option<String> {
+        match self.artist_search_panel.route {
+            search_panel::ArtistInputRouting::Search => {
+                Some(self.artist_search_panel.search.search_contents.mode_char().to_string())
+            }
+            _ => None,
+        }
+    }
     pub fn new() -> Self {
         Self {
             input_routing: Default::default(),
@@ -368,30 +371,14 @@ impl ArtistSearchBrowser {
         }
         (AsyncTask::new_no_op(), None)
     }
-    pub fn add_song_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+    pub fn copy_song_url(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.album_songs_panel.get_selected_item();
-        if let Some(cur_song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
-            return (
-                AsyncTask::new_no_op(),
-                Some(AppCallback::OpenPlaylistUpdatePopup(vec![
-                    cur_song.video_id.clone(),
-                ])),
-            );
+        if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
+            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+            let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+            tracing::info!("Copied URL: {}", raw_url);
         }
         (AsyncTask::new_no_op(), None)
-    }
-    pub fn add_songs_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
-        let cur_idx = self.album_songs_panel.get_selected_item();
-        let video_ids = self
-            .album_songs_panel
-            .get_filtered_list_iter()
-            .skip(cur_idx)
-            .map(|song| song.video_id.clone())
-            .collect();
-        (
-            AsyncTask::new_no_op(),
-            Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
-        )
     }
     pub fn add_album_to_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> {
         // Consider how resource intensive this is as it runs in the main thread.

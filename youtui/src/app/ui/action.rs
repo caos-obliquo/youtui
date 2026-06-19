@@ -1,4 +1,5 @@
 use super::HelpMenu;
+use super::browser::library::BrowserLibraryAction;
 use super::browser::BrowserAction;
 use super::browser::artistsearch::search_panel::BrowserArtistsAction;
 use super::browser::artistsearch::songs_panel::BrowserArtistSongsAction;
@@ -49,6 +50,7 @@ pub enum AppAction {
     BrowserArtistSongs(BrowserArtistSongsAction),
     BrowserPlaylistSongs(BrowserPlaylistSongsAction),
     BrowserSongs(BrowserSongsAction),
+    BrowserLibrary(BrowserLibraryAction),
     Log(LoggerAction),
     Playlist(PlaylistAction),
     PlaylistSavePopup(PlaylistSavePopupAction),
@@ -148,6 +150,7 @@ impl Action for AppAction {
             AppAction::BrowserSongs(a) => a.context(),
             AppAction::BrowserPlaylists(a) => a.context(),
             AppAction::BrowserPlaylistSongs(a) => a.context(),
+            AppAction::BrowserLibrary(a) => a.context(),
         }
     }
     fn describe(&self) -> std::borrow::Cow<'_, str> {
@@ -182,6 +185,7 @@ impl Action for AppAction {
             AppAction::BrowserSongs(a) => a.describe(),
             AppAction::BrowserPlaylists(a) => a.describe(),
             AppAction::BrowserPlaylistSongs(a) => a.describe(),
+            AppAction::BrowserLibrary(a) => a.describe(),
         }
     }
 }

@@ -56,14 +56,7 @@ impl QueryResponse {
 impl Client {
     /// Utilises reqwest's default tls choice for the enabled set of options.
     pub fn new() -> Result<Self> {
-        let inner = reqwest::Client::builder().build()?;
-        Ok(Self { inner })
-    }
-    #[cfg(feature = "rustls")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rustls")))]
-    /// Force the use of rustls
-    pub fn new_rustls_tls() -> Result<Self> {
-        let inner = reqwest::Client::builder().use_rustls_tls().build()?;
+        let inner = reqwest::Client::builder().http1_only().build()?;
         Ok(Self { inner })
     }
     #[cfg(feature = "native-tls")]

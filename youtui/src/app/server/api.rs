@@ -8,20 +8,21 @@ use async_callback_manager::PanickingReceiverStream;
 use async_cell::sync::AsyncCell;
 use futures::stream::FuturesOrdered;
 use futures::{Stream, StreamExt};
-use rusty_ytdl::reqwest;
 use std::borrow::Borrow;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
+use ytmapi_rs::auth::noauth::NoAuthToken;
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID};
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,
     SearchResultArtist, SearchResultPlaylist, SearchResultSong,
 };
+use ytmapi_rs::continuations::ParseFromContinuable;
 use ytmapi_rs::query::{
-    GetAlbumQuery, GetArtistAlbumsQuery,
+    GetAlbumQuery, GetArtistAlbumsQuery, PostQuery,
 };
 use ytmapi_rs::query::playlist::{
     PrivacyStatus, CreatePlaylistQuery, DuplicateHandlingMode, AddPlaylistItemsQuery,
@@ -37,11 +38,11 @@ pub struct Api {
 pub type ConcurrentApi = Arc<RwLock<DynamicYtMusic>>;
 
 impl Api {
-    pub fn new(api_key: ApiKey, client: reqwest::Client) -> Api {
+    pub fn new(api_key: ApiKey) -> Api {
         let api = AsyncCell::new().into_shared();
         let api_clone = api.clone();
         tokio::spawn(async move {
-            let api = DynamicYtMusic::new(api_key, client)
+            let api = DynamicYtMusic::new(api_key)
                 .await
                 .map(|api| Arc::new(RwLock::new(api)));
             api_clone.set(api)
@@ -122,11 +123,12 @@ pub async fn query_api_with_retry<Q, O>(api: &ConcurrentApi, query: impl Borrow<
 where
     Q: ytmapi_rs::query::Query<BrowserToken, Output = O>,
     Q: ytmapi_rs::query::Query<OAuthToken, Output = O>,
+    Q: ytmapi_rs::query::Query<NoAuthToken, Output = O>,
 {
     let res = api
         .read()
         .await
-        .query_browser_or_oauth::<Q, O>(query.borrow())
+        .query::<Q, O>(query.borrow())
         .await;
     match res {
         Ok(r) => Ok(r),
@@ -162,13 +164,13 @@ where
                     Ok(api_clone
                         .read_owned()
                         .await
-                        .query_browser_or_oauth(query)
+                        .query::<Q, O>(query)
                         .await?)
                 }
                 // Regular retry without token refresh, if token isn't expired.
                 Ok(_) => {
                     info!("Retrying once");
-                    Ok(api.read().await.query_browser_or_oauth(query).await?)
+                    Ok(api.read().await.query::<Q, O>(query).await?)
                 }
                 // If the DynamicApi didn't return a ytmapi_rs::Error, the error must be
                 // non-retryable.
@@ -178,7 +180,65 @@ where
     }
 }
 
+/// Like `query_api_with_retry` but for Browser+OAuth-only queries via stream.
+pub async fn stream_api_with_retry_n<Q, O>(
+    api: &ConcurrentApi,
+    query: &Q,
+    max_pages: usize,
+) -> Result<Vec<O>>
+where
+    Q: ytmapi_rs::query::Query<BrowserToken, Output = O>,
+    Q: ytmapi_rs::query::Query<OAuthToken, Output = O>,
+    O: ParseFromContinuable<Q>,
+    Q: PostQuery,
+{
+    let res = api
+        .read()
+        .await
+        .stream_browser_or_oauth(query, max_pages)
+        .await;
+    match res {
+        Ok(r) => Ok(r),
+        Err(e) => {
+            info!("Got error {e} from api stream");
+            match e.downcast::<ytmapi_rs::Error>().map(|e| e.into_kind()) {
+                Ok(ytmapi_rs::error::ErrorKind::OAuthTokenExpired { token_hash }) => {
+                    let api_clone = api.to_owned();
+                    let api_owned = api_clone.clone();
+                    let mut api_locked = api_owned.write_owned().await;
+                    let api_token_hash = api_locked.get_token_hash()?;
+                    if api_token_hash == Some(token_hash) {
+                        tokio::spawn(async {
+                            info!("Refreshing oauth token");
+                            let tok = api_locked.refresh_token().await?
+                                .expect("Expected to be able to refresh token");
+                            info!("Oauth token refreshed");
+                            if let Err(e) = update_oauth_token_file(tok).await {
+                                error!("Error updating locally saved oauth token: <{e}>")
+                            }
+                            Ok::<_, anyhow::Error>(api_locked)
+                        }).await??;
+                    }
+                    Ok(api_clone
+                        .read_owned()
+                        .await
+                        .stream_browser_or_oauth(query, max_pages)
+                        .await?)
+                }
+                Ok(_) => {
+                    info!("Retrying once");
+                    Ok(api.read().await.stream_browser_or_oauth(query, max_pages).await?)
+                }
+                Err(e) => Err(e),
+            }
+        }
+    }
+}
+
 async fn search_playlists(api: ConcurrentApi, text: String) -> Result<Vec<SearchResultPlaylist>> {
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
     tracing::info!("Searching playlists for {text}");
     let query = ytmapi_rs::query::SearchQuery::new_filtered(
         text,
@@ -189,6 +249,9 @@ async fn search_playlists(api: ConcurrentApi, text: String) -> Result<Vec<Search
 }
 
 async fn search_artists(api: ConcurrentApi, text: String) -> Result<Vec<SearchResultArtist>> {
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
     tracing::info!("Searching artists for {text}");
     let query = ytmapi_rs::query::SearchQuery::new_filtered(
         text,
@@ -199,6 +262,9 @@ async fn search_artists(api: ConcurrentApi, text: String) -> Result<Vec<SearchRe
 }
 
 async fn search_songs(api: ConcurrentApi, text: String) -> Result<Vec<SearchResultSong>> {
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
     tracing::info!("Searching songs for {text}");
     let query = ytmapi_rs::query::SearchQuery::new_filtered(
         text,

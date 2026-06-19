@@ -1,7 +1,7 @@
-/// Vi-mode text editor for single-line input.
+/// Vi-mode text editor. Single-line or multiline.
 /// Modes: Normal, Insert, VisualLine, OperatorPending.
-/// Motions: h/l (char), b/w (word), 0/$, x, dd, u, i/a/I/A, V (visual line).
-/// History: j/k navigates history (for `:` command).
+/// Single-line: j/k = history nav, Enter = submit.
+/// Multiline: j/k = line up/down, Enter = newline, gg/G = first/last line.
 #[derive(Clone)]
 pub struct ViTextEditor {
     pub buffer: String,
@@ -11,6 +11,7 @@ pub struct ViTextEditor {
     history: Vec<String>,
     history_pos: usize,
     undo_stack: Vec<(usize, String)>,
+    pub multiline: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -29,15 +30,43 @@ impl Default for ViTextEditor {
 
 impl ViTextEditor {
     pub fn new() -> Self {
+        Self::with_multiline(false)
+    }
+
+    pub fn new_multiline() -> Self {
+        Self::with_multiline(true)
+    }
+
+    fn with_multiline(multiline: bool) -> Self {
         Self {
             buffer: String::new(),
             cursor: 0,
-            mode: ViMode::Insert, // Start in Insert mode for backward compat
+            mode: ViMode::Insert,
             clipboard: String::new(),
             history: Vec::new(),
             history_pos: 0,
             undo_stack: Vec::new(),
+            multiline,
         }
+    }
+
+    pub fn cursor_line(&self) -> usize {
+        self.buffer[..self.cursor].matches('\n').count()
+    }
+
+    pub fn cursor_col(&self) -> usize {
+        let last_nl = self.buffer[..self.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        self.cursor - last_nl
+    }
+
+    fn line_start(&self) -> usize {
+        self.buffer[..self.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0)
+    }
+
+    fn line_end(&self) -> usize {
+        self.buffer[self.cursor..].find('\n')
+            .map(|i| self.cursor + i)
+            .unwrap_or(self.buffer.len())
     }
 
     pub fn set_text(&mut self, text: &str) {
@@ -66,21 +95,47 @@ impl ViTextEditor {
         self.history_pos = self.history.len();
     }
 
-    /// Cursor marker: block █ always (terminal handles shape)
     fn cursor_marker(&self) -> &'static str {
         "█"
     }
 
-    /// Render with given prefix, no mode indicator. Used by `:` command.
+    /// Render with cursor block. Single-line: inline cursor. Multiline: per-line.
     pub fn render_simple(&self, prefix: &str) -> String {
-        let mark = self.cursor_marker();
-        let total = format!("{}{}", prefix, self.buffer);
-        let cursor_pos = prefix.len() + self.cursor;
-        if cursor_pos < total.len() {
-            format!("{}{}", &total[..cursor_pos], mark)
+        if !self.multiline {
+            let mark = self.cursor_marker();
+            let total = format!("{}{}", prefix, self.buffer);
+            let cursor_pos = prefix.len() + self.cursor;
+            if cursor_pos < total.len() {
+                format!("{}{}", &total[..cursor_pos], mark)
+            } else {
+                format!("{}{}", total, mark)
+            }
         } else {
-            format!("{}{}", total, mark)
+            self.render_multiline()
         }
+    }
+
+    fn render_multiline(&self) -> String {
+        let mark = self.cursor_marker();
+        let cur_line = self.cursor_line();
+        let cur_col = self.cursor_col();
+        let mut result = String::new();
+        for (i, line_text) in self.buffer.split('\n').enumerate() {
+            if i > 0 { result.push('\n'); }
+            if i == cur_line {
+                if cur_col < line_text.len() {
+                    result.push_str(&line_text[..cur_col]);
+                    result.push_str(mark);
+                    result.push_str(&line_text[cur_col..]);
+                } else {
+                    result.push_str(line_text);
+                    result.push_str(mark);
+                }
+            } else {
+                result.push_str(line_text);
+            }
+        }
+        result
     }
 
     /// Get mode display string for header/footer
@@ -132,7 +187,13 @@ impl ViTextEditor {
                 if self.cursor > 0 { self.cursor -= 1; }
             }
             crossterm::event::KeyCode::Enter => {
-                return true; // submit
+                if self.multiline {
+                    self.save_undo();
+                    self.buffer.insert(self.cursor, '\n');
+                    self.cursor += 1;
+                } else {
+                    return true; // submit
+                }
             }
             crossterm::event::KeyCode::Backspace => {
                 if self.cursor > 0 {
@@ -227,7 +288,16 @@ impl ViTextEditor {
                 }
             }
             crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down => {
-                if self.history_pos < self.history.len() {
+                if self.multiline {
+                    let col = self.cursor_col();
+                    let after = &self.buffer[self.cursor..];
+                    if let Some(nl) = after.find('\n') {
+                        self.cursor += nl + 1;
+                        let line_len = self.buffer[self.cursor..].find('\n')
+                            .unwrap_or(self.buffer.len() - self.cursor);
+                        self.cursor += col.min(line_len);
+                    }
+                } else if self.history_pos < self.history.len() {
                     self.history_pos += 1;
                     if self.history_pos < self.history.len() {
                         self.buffer = self.history[self.history_pos].clone();
@@ -238,14 +308,39 @@ impl ViTextEditor {
                 }
             }
             crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up => {
-                if self.history_pos > 0 {
+                if self.multiline {
+                    let col = self.cursor_col();
+                    let before = &self.buffer[..self.cursor];
+                    if let Some(nl) = before[..before.len().saturating_sub(1)].rfind('\n') {
+                        self.cursor = nl + 1;
+                        let line_len = self.buffer[self.cursor..].find('\n')
+                            .unwrap_or(self.buffer.len() - self.cursor);
+                        self.cursor += col.min(line_len);
+                    } else {
+                        self.cursor = 0;
+                    }
+                } else if self.history_pos > 0 {
                     self.history_pos -= 1;
                     self.buffer = self.history[self.history_pos].clone();
                     self.cursor = self.buffer.len();
                 }
             }
+            crossterm::event::KeyCode::Char('g') => {
+                if self.multiline {
+                    self.mode = ViMode::OperatorPending('g');
+                }
+            }
+            crossterm::event::KeyCode::Char('G') => {
+                if self.multiline {
+                    self.cursor = self.buffer.len();
+                }
+            }
             crossterm::event::KeyCode::Enter => {
-                return true; // submit
+                if self.multiline {
+                    // no-op in normal mode for multiline
+                } else {
+                    return true; // submit
+                }
             }
             _ => {}
         }
@@ -253,16 +348,25 @@ impl ViTextEditor {
     }
 
     fn handle_operator_pending(&mut self, key: crossterm::event::KeyCode, op: char) -> bool {
-        match key {
-            crossterm::event::KeyCode::Char('d') if op == 'd' => {
+        match (key, op) {
+            (crossterm::event::KeyCode::Char('d'), 'd') => {
                 // dd: delete line
                 self.save_undo();
-                self.clipboard = self.buffer.clone();
-                self.buffer.clear();
-                self.cursor = 0;
+                if self.multiline {
+                    let start = self.line_start();
+                    let end = self.line_end();
+                    let after_nl = if end < self.buffer.len() { end + 1 } else { end };
+                    self.clipboard = self.buffer[start..end].to_string();
+                    self.buffer.drain(start..after_nl);
+                    self.cursor = start.min(self.buffer.len());
+                } else {
+                    self.clipboard = self.buffer.clone();
+                    self.buffer.clear();
+                    self.cursor = 0;
+                }
                 self.mode = ViMode::Normal;
             }
-            crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left if op == 'd' => {
+            (crossterm::event::KeyCode::Char('h'), _) | (crossterm::event::KeyCode::Left, _) if op == 'd' => {
                 if self.cursor > 0 {
                     self.save_undo();
                     self.clipboard = self.buffer[self.cursor-1..self.cursor].to_string();
@@ -271,7 +375,7 @@ impl ViTextEditor {
                 }
                 self.mode = ViMode::Normal;
             }
-            crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right if op == 'd' => {
+            (crossterm::event::KeyCode::Char('l'), _) | (crossterm::event::KeyCode::Right, _) if op == 'd' => {
                 if self.cursor < self.buffer.len() {
                     self.save_undo();
                     self.clipboard = self.buffer[self.cursor..self.cursor+1].to_string();
@@ -279,7 +383,7 @@ impl ViTextEditor {
                 }
                 self.mode = ViMode::Normal;
             }
-            crossterm::event::KeyCode::Char('w') if op == 'd' => {
+            (crossterm::event::KeyCode::Char('w'), _) if op == 'd' => {
                 let end = next_word_boundary(&self.buffer, self.cursor);
                 if end > self.cursor {
                     self.save_undo();
@@ -288,12 +392,16 @@ impl ViTextEditor {
                 }
                 self.mode = ViMode::Normal;
             }
-            crossterm::event::KeyCode::Char('$') if op == 'd' => {
+            (crossterm::event::KeyCode::Char('$'), _) if op == 'd' => {
                 if self.cursor < self.buffer.len() {
                     self.save_undo();
                     self.clipboard = self.buffer[self.cursor..].to_string();
                     self.buffer.truncate(self.cursor);
                 }
+                self.mode = ViMode::Normal;
+            }
+            (crossterm::event::KeyCode::Char('g'), 'g') => {
+                self.cursor = 0;
                 self.mode = ViMode::Normal;
             }
             _ => {
