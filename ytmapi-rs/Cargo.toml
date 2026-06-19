@@ -18,12 +18,9 @@ tokio = "1.52.1"
 # As of 26/4/24 the following are reqwest default features:
 # http2, default-tls, charset
 # stream is not a default feature. It is used explicitly - allows post queries to be streamed from a file handle.
-reqwest = { version = "0.13.3", features = [
+reqwest = { version = "0.11", features = [
   "json",
-  "http2",
-  "charset",
   "stream",
-  "query",
   "gzip",
 ], default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }

@@ -12,6 +12,7 @@ use crate::app::server::{HandleApiError, SearchSongs};
 use crate::app::structures::{
     BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent,
 };
+use ytmapi_rs::common::YoutubeID;
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{
     AdvancedTableView, BasicConstraint, FilterString, HasTitle, Loadable, SortDirection,
@@ -51,9 +52,8 @@ pub enum BrowserSongsAction {
     PlaySongs,
     AddSongToPlaylist,
     AddSongsToPlaylist,
-    AddSongToExistingPlaylist,
-    AddSongsToExistingPlaylist,
     ViewLyrics,
+    CopySongUrl,
 }
 
 impl Action for BrowserSongsAction {
@@ -68,9 +68,8 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::PlaySongs => "Play songs",
             BrowserSongsAction::AddSongToPlaylist => "Add song to playlist",
             BrowserSongsAction::AddSongsToPlaylist => "Add songs to playlist",
-            BrowserSongsAction::AddSongToExistingPlaylist => "Add song to existing playlist",
-            BrowserSongsAction::AddSongsToExistingPlaylist => "Add songs to existing playlist",
             BrowserSongsAction::ViewLyrics => "View Lyrics",
+            BrowserSongsAction::CopySongUrl => "Copy Song URL",
         }
         .into()
     }
@@ -207,13 +206,8 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::PlaySongs => return self.play_songs().into(),
             BrowserSongsAction::AddSongToPlaylist => return self.add_song_to_playlist().into(),
             BrowserSongsAction::AddSongsToPlaylist => return self.add_songs_to_playlist().into(),
-            BrowserSongsAction::AddSongToExistingPlaylist => {
-                return self.add_song_to_existing_playlist().into();
-            }
-            BrowserSongsAction::AddSongsToExistingPlaylist => {
-                return self.add_songs_to_existing_playlist().into();
-            }
             BrowserSongsAction::ViewLyrics => return self.view_lyrics().into(),
+            BrowserSongsAction::CopySongUrl => return self.copy_song_url().into(),
         }
         YoutuiEffect::new_no_op()
     }
@@ -369,6 +363,13 @@ impl HasTitle for SongSearchBrowser {
     }
 }
 impl SongSearchBrowser {
+    pub fn text_editor_mode(&self) -> Option<String> {
+        match self.input_routing {
+            InputRouting::Search => Some(self.search.search_contents.mode_char().to_string()),
+            InputRouting::Filter => Some(self.filter.filter_text.mode_char().to_string()),
+            _ => None,
+        }
+    }
     pub fn new() -> Self {
         Self {
             input_routing: Default::default(),
@@ -545,11 +546,13 @@ impl SongSearchBrowser {
     pub fn search(&mut self) -> ComponentEffect<Self> {
         self.search_popped = false;
         self.input_routing = InputRouting::List;
-        let Some(search_query) = self.search.get_text().map(|s| s.to_string()) else {
-            // Do nothing if no text
+        let search_text = self.search.get_text().map(|s| s.to_string()).unwrap_or_default();
+        if search_text.trim().is_empty() {
+            self.search.clear_text();
             return AsyncTask::new_no_op();
-        };
+        }
         self.search.clear_text();
+        let search_query = search_text;
 
         AsyncTask::new_future_try(
             SearchSongs(search_query),
@@ -606,28 +609,6 @@ impl SongSearchBrowser {
         }
         (AsyncTask::new_no_op(), None)
     }
-    pub fn add_song_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
-        let cur_idx = self.get_selected_item();
-        if let Some(cur_song) = self.get_song_from_idx(cur_idx) {
-            return (
-                AsyncTask::new_no_op(),
-                Some(AppCallback::OpenPlaylistUpdatePopup(vec![cur_song.video_id.clone()])),
-            );
-        }
-        (AsyncTask::new_no_op(), None)
-    }
-    pub fn add_songs_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
-        let cur_idx = self.get_selected_item();
-        let video_ids = self
-            .get_filtered_list_iter()
-            .skip(cur_idx)
-            .map(|song| song.video_id.clone())
-            .collect();
-        (
-            AsyncTask::new_no_op(),
-            Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
-        )
-    }
     pub fn view_lyrics(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
         if let Some(song) = self.get_song_from_idx(cur_idx) {
@@ -642,6 +623,15 @@ impl SongSearchBrowser {
                     title: song.title.clone(),
                 }),
             );
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn copy_song_url(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        if let Some(song) = self.get_song_from_idx(cur_idx) {
+            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+            let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+            tracing::info!("Copied URL: {}", raw_url);
         }
         (AsyncTask::new_no_op(), None)
     }

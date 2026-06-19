@@ -1,16 +1,16 @@
 use crate::app::queue_persistence::{CompactSongRef, CompactSavedQueue};
 use crate::app::server::song_downloader::InMemSong;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
-use crate::app::server::{AlbumTrack, DecodeSong, GetSongThumbnail, PlayDecodedSong, Stop, TaskMetadata};
+use crate::app::server::{AlbumTrack, DecodeSong, GetSongThumbnail, PlayDecodedSong, TaskMetadata};
 use crate::app::structures::{
     AlbumArtState, DownloadStatus, ListSong, ListSongArtist, ListSongDisplayableField,
     ListSongID, ListStatus, MaybeRc, PlayState,
 };
 use crate::app::ui::playlist::{
     DownloadTask, HandleGetSongThumbnailError, HandleGetSongThumbnailOk,
-    HandlePlayUpdateError, HandlePlayUpdateOk, HandleStopped, Playlist, QueueState,
+    HandlePlayUpdateError, HandlePlayUpdateOk, Playlist, QueueState,
 };
-use crate::async_rodio_sink::{AllStopped, Stopped};
+
 use async_callback_manager::{AsyncTask, Constraint, TryBackendTaskExt};
 use pretty_assertions::assert_eq;
 use std::rc::Rc;

@@ -1,3 +1,4 @@
+use super::library::{InputRouting, LibraryBrowser, LibraryCategory};
 use super::Browser;
 use super::artistsearch::search_panel::ArtistInputRouting;
 use super::artistsearch::songs_panel::AlbumSongsInputRouting;
@@ -17,7 +18,7 @@ use ratatui::Frame;
 use ratatui::prelude::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ytmapi_rs::common::{SuggestionType, TextRun};
 
 pub fn draw_browser(
@@ -45,6 +46,13 @@ pub fn draw_browser(
         super::BrowserVariant::Playlist => draw_playlist_search_browser(
             f,
             &mut browser.playlist_search_browser,
+            chunk,
+            selected,
+            cur_tick,
+        ),
+        super::BrowserVariant::LibraryPlaylist => draw_library_browser(
+            f,
+            &mut browser.library_browser,
             chunk,
             selected,
             cur_tick,
@@ -202,6 +210,229 @@ pub fn draw_playlist_search_browser(
             })
         },
     );
+}
+pub fn draw_library_browser(
+    f: &mut Frame,
+    browser: &mut LibraryBrowser,
+    chunk: Rect,
+    selected: bool,
+    _cur_tick: u64,
+) {
+    let [left_chunk, right_chunk] = Layout::new(
+        Direction::Horizontal,
+        [Constraint::Length(22), Constraint::Min(0)],
+    )
+    .areas(chunk);
+
+    let left_selected = selected && browser.input_routing == InputRouting::Category;
+    let right_selected = selected && browser.input_routing == InputRouting::Content;
+
+    // Left panel: category list
+    let cat_items: Vec<ListItem> = LibraryCategory::ALL
+        .iter()
+        .map(|cat| {
+            let label = cat.label();
+            let is_active = *cat == browser.category;
+            let style = if is_active && browser.input_routing == InputRouting::Content {
+                Style::default().fg(TEXT_COLOUR)
+            } else if is_active {
+                Style::default().fg(SELECTED_BORDER_COLOUR)
+            } else {
+                Style::default()
+            };
+            ListItem::new(Line::from(Span::styled(format!(" {label}"), style)))
+        })
+        .collect();
+    let cat_list = List::new(cat_items)
+        .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(if left_selected {
+                    Style::default().fg(SELECTED_BORDER_COLOUR)
+                } else {
+                    Style::default()
+                })
+                .title("Category"),
+        );
+    let mut cat_state = ListState::default().with_selected(Some(browser.category as usize));
+    f.render_stateful_widget(cat_list, left_chunk, &mut cat_state);
+
+    if browser.loading {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(if right_selected {
+                Style::default().fg(SELECTED_BORDER_COLOUR)
+            } else {
+                Style::default()
+            })
+            .title(browser.category.label());
+        let inner = block.inner(right_chunk);
+        f.render_widget(block, right_chunk);
+        f.render_widget(
+            Paragraph::new("Loading...")
+                .style(Style::default().fg(TEXT_COLOUR))
+                .wrap(Wrap { trim: false }),
+            inner,
+        );
+        return;
+    }
+    if let Some(ref err) = browser.error {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(if right_selected {
+                Style::default().fg(SELECTED_BORDER_COLOUR)
+            } else {
+                Style::default()
+            })
+            .title(browser.category.label());
+        let inner = block.inner(right_chunk);
+        f.render_widget(block, right_chunk);
+        f.render_widget(
+            Paragraph::new(err.as_str())
+                .style(Style::default().fg(TEXT_COLOUR))
+                .wrap(Wrap { trim: false }),
+            inner,
+        );
+        return;
+    }
+
+    match browser.category {
+        LibraryCategory::LikedSongs => {
+            let border_style = if right_selected {
+                Style::default().fg(SELECTED_BORDER_COLOUR)
+            } else {
+                Style::default()
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(browser.category.label());
+            let inner = block.inner(right_chunk);
+            f.render_widget(block, right_chunk);
+
+            let songs: Vec<_> = browser.song_list.get_list_iter().collect();
+            let items: Vec<ListItem> = songs
+                .iter()
+                .enumerate()
+                .map(|(i, s)| {
+                    let label = format!("{} — {}", s.title, s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "));
+                    if i == browser.cur_selected && right_selected {
+                        ListItem::new(Line::from(Span::styled(
+                            label,
+                            Style::default().fg(SELECTED_BORDER_COLOUR),
+                        )))
+                    } else {
+                        ListItem::new(Line::from(Span::raw(label)))
+                    }
+                })
+                .collect();
+            let list = List::new(items)
+                .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
+            let mut state = ListState::default().with_selected(Some(browser.cur_selected));
+            f.render_stateful_widget(list, inner, &mut state);
+        }
+        LibraryCategory::Playlists => {
+            let border_style = if right_selected {
+                Style::default().fg(SELECTED_BORDER_COLOUR)
+            } else {
+                Style::default()
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title("Playlists");
+            let inner = block.inner(right_chunk);
+            f.render_widget(block, right_chunk);
+
+            let items: Vec<ListItem> = browser
+                .playlist_data
+                .iter()
+                .enumerate()
+                .map(|(i, pl)| {
+                    if i == browser.playlist_selected && right_selected {
+                        ListItem::new(Line::from(Span::styled(
+                            pl.title.clone(),
+                            Style::default().fg(SELECTED_BORDER_COLOUR),
+                        )))
+                    } else {
+                        ListItem::new(Line::from(Span::raw(pl.title.clone())))
+                    }
+                })
+                .collect();
+            let list = List::new(items)
+                .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
+            let mut state = ListState::default().with_selected(Some(browser.playlist_selected));
+            f.render_stateful_widget(list, inner, &mut state);
+        }
+        LibraryCategory::Artists => {
+            let border_style = if right_selected {
+                Style::default().fg(SELECTED_BORDER_COLOUR)
+            } else {
+                Style::default()
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title("Artists");
+            let inner = block.inner(right_chunk);
+            f.render_widget(block, right_chunk);
+
+            let items: Vec<ListItem> = browser
+                .artist_data
+                .iter()
+                .enumerate()
+                .map(|(i, a)| {
+                    if i == browser.artist_selected && right_selected {
+                        ListItem::new(Line::from(Span::styled(
+                            a.artist.clone(),
+                            Style::default().fg(SELECTED_BORDER_COLOUR),
+                        )))
+                    } else {
+                        ListItem::new(Line::from(Span::raw(a.artist.clone())))
+                    }
+                })
+                .collect();
+            let list = List::new(items)
+                .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
+            let mut state = ListState::default().with_selected(Some(browser.artist_selected));
+            f.render_stateful_widget(list, inner, &mut state);
+        }
+        LibraryCategory::Albums => {
+            let border_style = if right_selected {
+                Style::default().fg(SELECTED_BORDER_COLOUR)
+            } else {
+                Style::default()
+            };
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title("Albums");
+            let inner = block.inner(right_chunk);
+            f.render_widget(block, right_chunk);
+
+            let items: Vec<ListItem> = browser
+                .album_data
+                .iter()
+                .enumerate()
+                .map(|(i, a)| {
+                    let label = format!("{} — {}", a.title, a.artist);
+                    if i == browser.album_selected && right_selected {
+                        ListItem::new(Line::from(Span::styled(
+                            label,
+                            Style::default().fg(SELECTED_BORDER_COLOUR),
+                        )))
+                    } else {
+                        ListItem::new(Line::from(Span::raw(label)))
+                    }
+                })
+                .collect();
+            let list = List::new(items)
+                .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
+            let mut state = ListState::default().with_selected(Some(browser.album_selected));
+            f.render_stateful_widget(list, inner, &mut state);
+        }
+    }
 }
 pub fn draw_song_search_browser(
     f: &mut Frame,

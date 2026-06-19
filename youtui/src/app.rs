@@ -36,7 +36,7 @@ use ui::{
 #[macro_use]
 pub mod component;
 mod media_controls;
-mod server;
+pub mod server;
 mod structures;
 pub mod queue_persistence;
 pub mod scrobbler;

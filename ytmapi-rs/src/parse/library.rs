@@ -12,7 +12,7 @@ use crate::common::{
 };
 use crate::continuations::ParseFromContinuable;
 use crate::nav_consts::{
-    GRID, ITEM_SECTION, MENU_ITEMS, MRLIR, MTRIR, MUSIC_SHELF, NAVIGATION_BROWSE_ID,
+    CAROUSEL, GRID, ITEM_SECTION, MENU_ITEMS, MRLIR, MTRIR, MUSIC_SHELF, NAVIGATION_BROWSE_ID,
     NAVIGATION_PLAYLIST_ID, PLAY_BUTTON, SECTION_LIST, SECTION_LIST_ITEM,
     SINGLE_COLUMN_TAB, SUBTITLE_BADGE_ICON, THUMBNAIL_RENDERER, TITLE, TITLE_TEXT, WATCH_VIDEO_ID,
 };
@@ -57,6 +57,26 @@ pub struct LibraryPlaylist {
     pub author: String,
     // Authoer may be YouTube Music in some cases - no ChannelID
     pub author_id: Option<ArtistChannelID<'static>>,
+}
+
+impl LibraryPlaylist {
+    pub fn new(
+        playlist_id: PlaylistID<'static>,
+        title: String,
+        thumbnails: Vec<Thumbnail>,
+        tracks: String,
+        author_id: Option<ArtistChannelID<'static>>,
+        author: String,
+    ) -> Self {
+        Self {
+            playlist_id,
+            title,
+            thumbnails,
+            tracks,
+            author_id,
+            author,
+        }
+    }
 }
 #[derive(PartialEq, Debug, Clone, Deserialize, Serialize)]
 #[non_exhaustive]
@@ -307,13 +327,24 @@ fn parse_library_playlists(
     mut grid_renderer: JsonCrawlerOwned,
 ) -> Result<(Vec<LibraryPlaylist>, Option<ContinuationParams<'static>>)> {
     let continuation_params = grid_renderer.take_value_pointer(CONTINUATION_PARAMS).ok();
-    let playlists = grid_renderer
-        .navigate_pointer("/items")?
-        .try_into_iter()?
-        // First result is just a link to create a new playlist.
-        .skip(1)
-        .filter_map(|item| parse_content_list_playlist(item).transpose())
-        .collect::<Result<_>>()?;
+    let has_carousel_items = grid_renderer.path_exists("/contents");
+    let has_items = grid_renderer.path_exists("/items");
+    let playlists = if has_carousel_items {
+        grid_renderer
+            .navigate_pointer("/contents")?
+            .try_into_iter()?
+            .filter_map(|item| parse_content_list_playlist(item).transpose())
+            .collect::<Result<_>>()?
+    } else if has_items {
+        grid_renderer
+            .navigate_pointer("/items")?
+            .try_into_iter()?
+            .skip(1)
+            .filter_map(|item| parse_content_list_playlist(item).transpose())
+            .collect::<Result<_>>()?
+    } else {
+        vec![]
+    };
     Ok((playlists, continuation_params))
 }
 fn parse_library_podcasts(
@@ -334,11 +365,14 @@ fn parse_library_podcasts(
 // TODO: Move to process
 fn process_library_contents_grid(mut json_crawler: JsonCrawlerOwned) -> Option<JsonCrawlerOwned> {
     let section = json_crawler.borrow_pointer(concatcp!(SINGLE_COLUMN_TAB, SECTION_LIST));
-    // Assume empty library in this case.
     if let Ok(section) = section {
         if section.path_exists("/itemSectionRenderer") {
             json_crawler
                 .navigate_pointer(concatcp!(ITEM_SECTION, GRID))
+                .ok()
+        } else if section.path_exists(concatcp!("/0", CAROUSEL)) {
+            json_crawler
+                .navigate_pointer(concatcp!(SINGLE_COLUMN_TAB, SECTION_LIST_ITEM, CAROUSEL))
                 .ok()
         } else {
             json_crawler

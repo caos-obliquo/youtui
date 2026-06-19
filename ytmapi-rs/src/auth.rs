@@ -65,44 +65,19 @@ pub(crate) async fn raw_query_post<'a, A: AuthToken, Q: PostQuery>(
     c: &Client,
 ) -> Result<RawResult<'a, Q, A>> {
     let url = format!("{YTM_API_URL}{}{YTM_PARAMS}{YTM_PARAMS_KEY}", q.path());
-    let mut body = json!({
-        "context" : {
+    let mut body = q.header();
+    body.insert(
+        "context".to_string(),
+        json!({
             "client" : {
                 "clientName" : "WEB_REMIX",
                 "clientVersion" : tok.client_version(),
-                "browserName" : "Firefox",
-                "browserVersion" : "140.0",
-                "osName" : "Linux",
-                "osVersion" : "",
-                "platform" : "DESKTOP",
                 "hl" : "en",
                 "gl" : "US",
-                "timeZone" : "America/Sao_Paulo",
-                "utcOffsetMinutes" : 0,
-                "originalUrl" : "https://music.youtube.com",
-                "acceptHeader" : "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "deviceMake" : "",
-                "deviceModel" : "",
-                "userAgent" : "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
-                "screenWidthPoints" : 1920,
-                "screenHeightPoints" : 1080,
-                "screenPixelDensity" : 1,
-                "screenDensityFloat" : 1.0,
             },
             "user" : {},
-            "request": {
-                "useSsl": true,
-            },
-            "thirdParty": {
-                "embedUrl": "https://music.youtube.com",
-            },
-        },
-    });
-    if let Some(body) = body.as_object_mut() {
-        body.append(&mut q.header());
-    } else {
-        unreachable!("Body created in this function as an object")
-    };
+        }),
+    );
     let QueryResponse { text, .. } = c
         .post_json_query(&url, tok.headers()?, &body, &q.params())
         .await?;

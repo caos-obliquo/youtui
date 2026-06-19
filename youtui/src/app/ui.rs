@@ -395,6 +395,9 @@ impl ActionHandler<AppAction> for YoutuiWindow {
             AppAction::BrowserPlaylistSongs(a) => {
                 return apply_action_mapped(self, a, |this: &mut Self| &mut this.browser);
             }
+            AppAction::BrowserLibrary(a) => {
+                return apply_action_mapped(self, a, |this: &mut Self| &mut this.browser);
+            }
             AppAction::PlaylistSavePopup(a) => {
                 if self.playlist_save_popup.is_some() {
                     return apply_action_mapped(self, a, |this: &mut Self| {
@@ -531,6 +534,16 @@ impl YoutuiWindow {
         if self.command_mode {
             if let Event::Key(k) = event {
                 if k.kind == crossterm::event::KeyEventKind::Press {
+                    // Esc or Ctrl+C to close command mode without submitting
+                    if k.code == crossterm::event::KeyCode::Esc
+                        || (k.code == crossterm::event::KeyCode::Char('c')
+                            && k.modifiers
+                                == crossterm::event::KeyModifiers::CONTROL)
+                    {
+                        self.command_mode = false;
+                        self.command_editor.clear();
+                        return AsyncTask::new_no_op().into();
+                    }
                     let submitted = self.command_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT));
                     if submitted {
                         let url = self.command_editor.get_text().trim().to_string();
@@ -965,8 +978,8 @@ impl YoutuiWindow {
             return AsyncTask::new_no_op();
         }
 
-        // Also try to fetch playlist tracks if URL contains a playlist ID
-        if url.contains("playlist?list=") || url.contains("&list=") {
+        // Also try to fetch playlist tracks if URL is a playlist URL
+        if url.contains("playlist?list=") {
             if let Some(list_id) = url.split("list=").nth(1).and_then(|s| s.split('&').next()).map(|s| s.to_string()) {
                 if !list_id.is_empty() {
                     let pl_id = ytmapi_rs::common::PlaylistID::from_raw(format!("VL{}", list_id));

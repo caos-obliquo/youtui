@@ -46,8 +46,6 @@ pub enum ErrorKind {
     },
     /// ytcfg didn't include visitor data.
     NoVisitorData,
-    /// InnerTube rejected the User Agent we are using.
-    InvalidUserAgent(String),
     /// OAuthToken has expired.
     /// Returns a hash of the expired token generated using the default hasher.
     OAuthTokenExpired {
@@ -83,11 +81,6 @@ impl Error {
     /// Extract the inner kind from the error for pattern matching.
     pub fn into_kind(self) -> ErrorKind {
         *self.inner
-    }
-    pub(crate) fn invalid_user_agent<S: Into<String>>(user_agent: S) -> Self {
-        Self {
-            inner: Box::new(ErrorKind::InvalidUserAgent(user_agent.into())),
-        }
     }
     pub(crate) fn oauth_token_expired(token: &crate::auth::OAuthToken) -> Self {
         let mut h = std::hash::DefaultHasher::new();
@@ -179,7 +172,6 @@ impl Display for ErrorKind {
             }
             ErrorKind::ApiStatusFailed => write!(f, "Api returned STATUS_FAILED for the query"),
             ErrorKind::OAuthTokenExpired { token_hash: _ } => write!(f, "OAuth token has expired"),
-            ErrorKind::InvalidUserAgent(u) => write!(f, "InnerTube rejected User Agent {u}"),
             ErrorKind::UnableToSerializeGoogleOAuthToken { response, err } => write!(
                 f,
                 "Unable to serialize Google auth token {response}, received error {err}"

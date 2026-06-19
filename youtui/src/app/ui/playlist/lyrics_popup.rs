@@ -238,7 +238,7 @@ impl LyricsPopup {
                         .join("\n");
 
                     let a_line_count = ann_text.lines().count();
-                    let a_visible = (r_chunks[0].height as usize).saturating_sub(1);
+                    let a_visible = r_chunks[0].height as usize;
                     let a_max = a_line_count.saturating_sub(a_visible);
                     if self.ann_scroll_offset > a_max { self.ann_scroll_offset = a_max; }
                     let a_visible_text: String = ann_text.lines().skip(self.ann_scroll_offset).take(a_visible).collect::<Vec<_>>().join("\n");

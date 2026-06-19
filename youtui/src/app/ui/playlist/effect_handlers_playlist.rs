@@ -507,7 +507,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
                         duration_string: s.duration,
                         actual_duration: None,
                         start_offset: None,
-                        year: None,
+                        year: s.year.map(Rc::new),
                         album_art: AlbumArtState::None,
                         genres: Vec::new(),
                         styles: Vec::new(),
@@ -518,9 +518,8 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
                 }
                 // Replace playlist
                 target.list.clear();
-                for song in list_songs {
-                    target.list.push_song_list(vec![song]);
-                }
+                target.list.next_id = ListSongID(0);
+                target.list.push_song_list(list_songs);
                 target.cur_selected = 0;
                 info!("Loaded {} songs from YouTube Music playlist", count);
             }
@@ -546,7 +545,8 @@ impl_youtui_task_handler!(
     HandleGetPlaylistTracksErr,
     anyhow::Error,
     Playlist,
-    |_, _error: anyhow::Error| {
+    |_, error: anyhow::Error| {
+        error!("GetPlaylistTracks failed: {:?}", error);
         LoadPlaylistEffect::FetchError
     }
 );

@@ -42,7 +42,7 @@ impl Server {
             .timeout(Duration::from_secs(30))
             .build()
             .expect("Expected reqwest client build to succeed");
-        let api = api::Api::new(api_key, client.clone());
+        let api = api::Api::new(api_key);
         let player = player::Player::new();
         let song_downloader =
             song_downloader::SongDownloader::new(po_token, client.clone(), cookie_path, config);
