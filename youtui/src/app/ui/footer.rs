@@ -179,19 +179,24 @@ pub fn draw_footer(
         .areas(album_art_and_progress_bar_chunk);
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
-            let image = terminal_image_capabilities
-                .new_protocol(
-                    album_art.in_mem_image.clone(),
-                    Rect {
-                        x: 0,
-                        y: 0,
-                        width: ALBUM_ART_WIDTH,
-                        height: ALBUM_ART_WIDTH - 1,
-                    },
-                    ratatui_image::Resize::Fit(None),
-                )
-                .unwrap();
-            f.render_widget(Image::new(&image), album_art_chunk);
+            match terminal_image_capabilities.new_protocol(
+                album_art.in_mem_image.clone(),
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: ALBUM_ART_WIDTH,
+                    height: ALBUM_ART_WIDTH - 1,
+                },
+                ratatui_image::Resize::Fit(None),
+            ) {
+                Ok(protocol) => {
+                    f.render_widget(Image::new(&protocol), album_art_chunk);
+                }
+                Err(_) => {
+                    let fallback_album_widget = Paragraph::new("").centered();
+                    f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
+                }
+            }
         }
         Some(AlbumArtState::Error) => {
             let fallback_album_widget = Paragraph::new("").centered();

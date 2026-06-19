@@ -144,12 +144,17 @@ impl TextHandler for FilterManager {
             if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
                 return None;
             }
+            // Let '3' (Close Filter), Enter (Apply Filter), Esc reach keybind dispatch
+            use crossterm::event::KeyCode;
+            if matches!(key.code, KeyCode::Char('3') | KeyCode::Enter | KeyCode::Esc) {
+                return None;
+            }
             use crate::app::ui::components::vi_text_editor::ViMode;
             if self.filter_text.mode == ViMode::Normal
-                && matches!(key.code, crossterm::event::KeyCode::Char('j')
-                    | crossterm::event::KeyCode::Char('k')
-                    | crossterm::event::KeyCode::Up
-                    | crossterm::event::KeyCode::Down)
+                && matches!(key.code, KeyCode::Char('j')
+                    | KeyCode::Char('k')
+                    | KeyCode::Up
+                    | KeyCode::Down)
             {
                 return None;
             }
