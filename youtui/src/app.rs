@@ -28,7 +28,7 @@ use ui::{
     WindowContext, YoutuiWindow,
     playlist::effect_handlers_playlist::{
         HandleAddSongsOk, HandleAddSongsError,
-        HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
+        HandleGetPlaylistTracksAppendOk, HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
         HandleCreatePlaylistOk, HandleCreatePlaylistError,
     },
 };
@@ -106,6 +106,7 @@ pub enum AppCallback {
     },
     ClosePopup,
     LoadPlaylistFromPopup(PlaylistID<'static>),
+    AppendPlaylistFromPopup(PlaylistID<'static>),
     CreatePlaylistFromPopup {
         title: String,
         description: Option<String>,
@@ -400,6 +401,16 @@ impl Youtui {
                 let effect = AsyncTask::new_future_try(
                     GetPlaylistTracks(playlist_id),
                     HandleGetPlaylistTracksOk,
+                    HandleGetPlaylistTracksErr,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::AppendPlaylistFromPopup(playlist_id) => {
+                let effect = AsyncTask::new_future_try(
+                    GetPlaylistTracks(playlist_id),
+                    HandleGetPlaylistTracksAppendOk,
                     HandleGetPlaylistTracksErr,
                     None,
                 )

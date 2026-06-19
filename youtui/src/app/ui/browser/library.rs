@@ -597,11 +597,10 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     return self.load_selected_playlist();
                 }
                 BrowserSongsAction::PlaySongs => {
-                    // Load ALL playlists into the queue
-                    let all_pids: Vec<_> = self.playlist_data.iter().map(|pl| pl.playlist_id.clone()).collect();
-                    if let Some(pid) = all_pids.first() {
-                        debug!(playlist = %all_pids.len(), "Library: loading first playlist from playlists category");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::LoadPlaylistFromPopup(pid.clone())));
+                    // Append selected playlist to existing queue
+                    if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                        debug!(playlist = %pl.title, "Library: appending playlist to queue");
+                        return (AsyncTask::new_no_op(), Some(AppCallback::AppendPlaylistFromPopup(pl.playlist_id.clone())));
                     }
                 }
                 BrowserSongsAction::CopySongUrl => {

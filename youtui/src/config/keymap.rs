@@ -965,6 +965,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_mode(
                 [
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
                         KeyActionTree::new_mode(
                             [(
