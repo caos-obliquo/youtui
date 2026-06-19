@@ -588,7 +588,12 @@ impl Browser {
             BrowserVariant::Playlist => { self.playlist_search_browser.left(); None }
             BrowserVariant::Song => None,
             BrowserVariant::LibraryPlaylist => {
-                self.library_browser.focus_category();
+                if self.library_browser.show_playlist_tracks {
+                    self.library_browser.show_playlist_tracks = false;
+                    self.library_browser.playlist_tracks.clear();
+                } else {
+                    self.library_browser.focus_category();
+                }
                 None
             }
         }

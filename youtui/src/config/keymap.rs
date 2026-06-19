@@ -787,9 +787,16 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key(AppAction::SeekBack),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('?')),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
             KeyActionTree::new_key_with_visibility(
-                AppAction::ToggleHelp,
+                AppAction::BrowserSongs(BrowserSongsAction::CopySongUrl),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserSongs(BrowserSongsAction::ViewLyrics),
                 KeyActionVisibility::Global,
             ),
         ),
@@ -857,6 +864,13 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
             KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::CopySongUrl),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
+            KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::ViewLyrics),
                 KeyActionVisibility::Global,
             ),
@@ -909,7 +923,7 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewLyrics)),
                     ),
                     (
@@ -1113,7 +1127,7 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::CopySongUrl)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::ViewLyrics)),
                     ),
                 ],
@@ -1205,6 +1219,13 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserArtistSongs(BrowserArtistSongsAction::CopySongUrl),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserArtistSongs(BrowserArtistSongsAction::ViewLyrics),
                 KeyActionVisibility::Global,
@@ -1347,7 +1368,7 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::ViewLyrics),
                 KeyActionVisibility::Global,
@@ -1388,7 +1409,7 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
                         )),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
                         KeyActionTree::new_key(AppAction::Playlist(
                             PlaylistAction::ViewLyrics,
                         )),
@@ -1438,6 +1459,13 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
             KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserSongs(BrowserSongsAction::CopySongUrl),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
+            KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserSongs(BrowserSongsAction::ViewLyrics),
                 KeyActionVisibility::Global,
             ),
@@ -1477,7 +1505,7 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
                         )),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(
                             BrowserSongsAction::ViewLyrics,
                         )),

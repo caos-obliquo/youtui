@@ -4,9 +4,11 @@ use crate::app::{AppCallback, NavTarget};
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
+use crate::app::structures::{AlbumOrUploadAlbumID, ListSongAlbum};
 use crate::app::ui::components::vi_text_editor::ViTextEditor;
 use crate::app::server::{
     GetAllLibrarySongs, GetAllLibraryPlaylists, GetAllLibraryArtists, GetAllLibraryAlbums,
+    GetPlaylistTracks,
 };
 use crate::app::structures::{
     BrowserSongsList, ListSong, ListSongArtist, ListStatus, MaybeRc,
@@ -21,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 use std::borrow::Cow;
 use ytmapi_rs::common::YoutubeID;
+use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -110,6 +113,7 @@ impl Action for BrowserLibraryAction {
 pub enum LibraryEffect {
     SongsLoaded(Vec<ListSong>),
     PlaylistsLoaded(Vec<LibraryPlaylist>),
+    PlaylistTracksLoaded(Vec<ListSong>),
     ArtistsLoaded(Vec<LibraryArtist>),
     AlbumsLoaded(Vec<SearchResultAlbum>),
     LoadError(String),
@@ -142,6 +146,16 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 target.playlists_fetched = true;
                 target.playlist_data = playlists;
                 target.playlist_selected = 0;
+                target.input_routing = InputRouting::Content;
+                target.show_playlist_tracks = false;
+            }
+            LibraryEffect::PlaylistTracksLoaded(songs) => {
+                info!(count = %songs.len(), "Playlist tracks loaded");
+                target.loading = false;
+                target.error = None;
+                target.playlist_tracks = songs;
+                target.playlist_tracks_selected = 0;
+                target.show_playlist_tracks = true;
                 target.input_routing = InputRouting::Content;
             }
             LibraryEffect::ArtistsLoaded(artists) => {
@@ -226,6 +240,50 @@ impl_youtui_task_handler!(HandleLibraryPlaylistsOk, Vec<LibraryPlaylist>, Librar
 impl_youtui_task_handler!(HandleLibraryPlaylistsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     LibraryEffect::LoadError(err.to_string())
 });
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HandleLibraryPlaylistTracksOk;
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HandleLibraryPlaylistTracksErr;
+impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, LibraryBrowser, |_, songs: Vec<PlaylistSong>| {
+    use std::rc::Rc;
+    use crate::app::structures::ListSongID;
+    let list_songs: Vec<ListSong> = songs.into_iter().map(|s| {
+        let artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist { name: a.name, id: None }).collect());
+        let album = Some(MaybeRc::Owned(ListSongAlbum {
+            name: s.album.name.clone(),
+            id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+        }));
+        let year = s.year.or_else(|| {
+            s.album.name.split('(').last().and_then(|s| s.get(..4))
+                .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                .map(|y| y.to_string())
+        });
+        ListSong {
+            video_id: s.video_id,
+            track_no: None,
+            plays: String::new(),
+            title: s.title,
+            explicit: Some(s.explicit),
+            download_status: DownloadStatus::None,
+            id: ListSongID(0),
+            duration_string: s.duration,
+            actual_duration: None,
+            start_offset: None,
+            year: year.map(Rc::new),
+            album_art: AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
+            artists,
+            thumbnails: MaybeRc::Owned(s.thumbnails),
+            album,
+        }
+    }).collect();
+    LibraryEffect::PlaylistTracksLoaded(list_songs)
+});
+impl_youtui_task_handler!(HandleLibraryPlaylistTracksErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
+    tracing::error!("Error loading playlist tracks: {}", err);
+    LibraryEffect::LoadError(err.to_string())
+});
 impl_youtui_task_handler!(HandleLibraryArtistsOk, Vec<LibraryArtist>, LibraryBrowser, |_, a: Vec<LibraryArtist>| {
     LibraryEffect::ArtistsLoaded(a)
 });
@@ -251,6 +309,9 @@ pub struct LibraryBrowser {
     // Playlists state
     pub playlist_data: Vec<LibraryPlaylist>,
     pub playlist_selected: usize,
+    pub playlist_tracks: Vec<ListSong>,
+    pub show_playlist_tracks: bool,
+    pub playlist_tracks_selected: usize,
     // Artists state
     pub artist_data: Vec<LibraryArtist>,
     pub artist_selected: usize,
@@ -282,6 +343,9 @@ impl LibraryBrowser {
             filter: Default::default(),
             playlist_data: Default::default(),
             playlist_selected: 0,
+            playlist_tracks: Vec::new(),
+            show_playlist_tracks: false,
+            playlist_tracks_selected: 0,
             artist_data: Default::default(),
             artist_selected: 0,
             album_data: Default::default(),
@@ -427,6 +491,20 @@ impl LibraryBrowser {
         (AsyncTask::new_no_op(), Some(AppCallback::LoadPlaylistFromPopup(pl.playlist_id.clone())))
     }
 
+    pub fn fetch_playlist_tracks(&mut self) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
+        let Some(pl) = self.playlist_data.get(self.playlist_selected).cloned() else {
+            return AsyncTask::new_no_op();
+        };
+        debug!(playlist = %pl.title, "Library: fetching playlist tracks");
+        self.loading = true;
+        AsyncTask::new_future_try(
+            GetPlaylistTracks(pl.playlist_id),
+            HandleLibraryPlaylistTracksOk,
+            HandleLibraryPlaylistTracksErr,
+            None,
+        ).map_frontend(|this: &mut Self| this)
+    }
+
     pub fn view_selected_lyrics(&self) -> (AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>, Option<AppCallback>) {
         if self.category != LibraryCategory::LikedSongs {
             return (AsyncTask::new_no_op(), None);
@@ -489,11 +567,19 @@ impl Scrollable for LibraryBrowser {
                         .min(max);
                 }
                 LibraryCategory::Playlists => {
-                    let max = self.playlist_data.len().saturating_sub(1);
-                    self.playlist_selected = self
-                        .playlist_selected
-                        .saturating_add_signed(amount)
-                        .min(max);
+                    if self.show_playlist_tracks {
+                        let max = self.playlist_tracks.len().saturating_sub(1);
+                        self.playlist_tracks_selected = self
+                            .playlist_tracks_selected
+                            .saturating_add_signed(amount)
+                            .min(max);
+                    } else {
+                        let max = self.playlist_data.len().saturating_sub(1);
+                        self.playlist_selected = self
+                            .playlist_selected
+                            .saturating_add_signed(amount)
+                            .min(max);
+                    }
                 }
                 LibraryCategory::Artists => {
                     let max = self.artist_data.len().saturating_sub(1);
@@ -653,22 +739,66 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
             },
             LibraryCategory::Playlists => match action {
                 BrowserSongsAction::PlaySong => {
-                    return self.load_selected_playlist();
+                    if self.show_playlist_tracks {
+                        // Playing a track from the tracks view
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])));
+                        }
+                    } else {
+                        // Show tracks in-browser
+                        return (self.fetch_playlist_tracks(), None);
+                    }
                 }
                 BrowserSongsAction::PlaySongs => {
-                    // Append selected playlist to existing queue
+                    if self.show_playlist_tracks {
+                        let songs: Vec<_> = self.playlist_tracks.clone();
+                        return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(songs)));
+                    }
                     if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
                         debug!(playlist = %pl.title, "Library: appending playlist to queue");
                         return (AsyncTask::new_no_op(), Some(AppCallback::AppendPlaylistFromPopup(pl.playlist_id.clone())));
                     }
                 }
                 BrowserSongsAction::CopySongUrl => {
-                    if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                            let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                            info!("Copied URL: {raw_url}");
+                        }
+                    } else if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
                         let raw_url = format!("https://music.youtube.com/playlist?list={}", pl.playlist_id.get_raw().strip_prefix("VL").unwrap_or(pl.playlist_id.get_raw()));
                         let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
                         info!("Copied URL: {raw_url}");
                     }
                     return (AsyncTask::new_no_op(), None);
+                }
+                BrowserSongsAction::ViewLyrics => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                            return (AsyncTask::new_no_op(), Some(AppCallback::ViewLyrics { artist, title: song.title.clone() }));
+                        }
+                    }
+                }
+                BrowserSongsAction::GoToArtist => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                            return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist))));
+                        }
+                    }
+                }
+                BrowserSongsAction::GoToAlbum => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                            if let Some(album) = &song.album {
+                                return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Album { artist, album: album.name.clone() })));
+                            }
+                            warn!("Song has no album data, cannot navigate to album");
+                        }
+                    }
                 }
                 _ => warn!("Unsupported song action for playlists: {:?}", action),
             },
@@ -761,7 +891,7 @@ impl ActionHandler<BrowserLibraryAction> for LibraryBrowser {
                         return self.play_selected_song();
                     }
                     LibraryCategory::Playlists => {
-                        return self.load_selected_playlist();
+                        return (self.fetch_playlist_tracks(), None);
                     }
                     _ => {}
                 }
