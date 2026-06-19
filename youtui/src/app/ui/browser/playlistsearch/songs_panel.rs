@@ -169,6 +169,7 @@ impl PlaylistSongsPanel {
             self.filter.filter_text.clear();
             self.route = PlaylistSongsInputRouting::Filter;
         } else {
+            self.clear_filter_commands();
             self.route = PlaylistSongsInputRouting::List;
         }
         self.filter.shown = !shown;
@@ -215,7 +216,7 @@ impl PlaylistSongsPanel {
         self.close_sort();
     }
     pub fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
-        self.list.get_song_from_idx(idx)
+        self.get_filtered_list_iter().nth(idx)
     }
 
     pub fn go_to_first(&mut self) {

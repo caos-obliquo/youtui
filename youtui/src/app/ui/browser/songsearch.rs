@@ -463,6 +463,7 @@ impl SongSearchBrowser {
             self.filter.filter_text.clear();
             self.input_routing = InputRouting::Filter;
         } else {
+            self.clear_filter_commands();
             self.input_routing = InputRouting::List;
         }
         self.filter.shown = !shown;
@@ -652,7 +653,7 @@ impl SongSearchBrowser {
         };
     }
     pub fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
-        self.song_list.get_song_from_idx(idx)
+        self.get_filtered_list_iter().nth(idx)
     }
 
     pub fn go_to_first(&mut self) {

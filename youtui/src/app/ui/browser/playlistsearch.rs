@@ -89,8 +89,8 @@ impl TextHandler for PlaylistSearchBrowser {
     }
     fn clear_text(&mut self) -> bool {
         match self.input_routing {
-            InputRouting::Playlist => self.playlist_search_panel.is_text_handling(),
-            InputRouting::Song => self.playlist_songs_panel.is_text_handling(),
+            InputRouting::Playlist => self.playlist_search_panel.clear_text(),
+            InputRouting::Song => self.playlist_songs_panel.clear_text(),
         }
     }
     fn handle_text_event_impl(

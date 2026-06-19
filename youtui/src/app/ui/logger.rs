@@ -171,14 +171,14 @@ impl Logger {
         self.logger_state.transition(TuiWidgetEvent::FocusKey);
     }
     fn handle_first(&mut self) {
-        // EscapeKey sets opt_line_pointer_center = None → scroll to top
-        self.logger_state.transition(TuiWidgetEvent::EscapeKey);
-    }
-    fn handle_last(&mut self) {
-        // Scroll to bottom by simulating multiple page-downs
-        for _ in 0..100 {
+        // Scroll to oldest entry via repeated page-up
+        for _ in 0..10000 {
             self.logger_state.transition(TuiWidgetEvent::NextPageKey);
         }
+    }
+    fn handle_last(&mut self) {
+        // EscapeKey = follow mode → newest entries at bottom
+        self.logger_state.transition(TuiWidgetEvent::EscapeKey);
     }
     fn handle_toggle_target_selector(&mut self) {
         self.logger_state.transition(TuiWidgetEvent::HideKey);
