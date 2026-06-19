@@ -268,6 +268,8 @@ fn make_album_original(video: &'static str, year: Option<&str>) -> ListSong {
         start_offset: None,
         year: year.map(|y| Rc::new(y.to_string())),
         album_art: AlbumArtState::None,
+        genres: Vec::new(),
+        styles: Vec::new(),
         artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
         thumbnails: MaybeRc::Owned(Vec::new()),
         album: None,
@@ -290,6 +292,8 @@ fn make_track_entry(video: &'static str, track_no: usize, title: &'static str, d
         start_offset: Some(Duration::from_secs_f64(start_secs)),
         year: None,
         album_art: AlbumArtState::None,
+        genres: Vec::new(),
+        styles: Vec::new(),
         artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
         thumbnails: MaybeRc::Owned(Vec::new()),
         album: None,
@@ -337,11 +341,11 @@ fn insert_album_tracks_sets_correct_metadata() {
     assert_eq!(t2.actual_duration, Some(Duration::from_secs_f64(148.0)));
     assert_eq!(t2.title, "Track 2");
 
-    // Track 3: offset 203+148 = 351
+    // Track 3: last track, offset 203+148 = 351, plays to EOF (None duration)
     let t3 = p.list.get_list_iter().nth(3).unwrap();
     assert_eq!(t3.track_no, Some(3));
     assert_eq!(t3.start_offset, Some(Duration::from_secs_f64(351.0)));
-    assert_eq!(t3.actual_duration, Some(Duration::from_secs_f64(194.0)));
+    assert_eq!(t3.actual_duration, None); // last track plays to EOF
     assert_eq!(t3.title, "Track 3");
 }
 

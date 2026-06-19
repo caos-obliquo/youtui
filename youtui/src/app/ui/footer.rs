@@ -87,10 +87,17 @@ pub fn draw_footer(
     let scrobble_indicator = if w.playlist.scrobbling_config.enabled {
         if w.playlist.scrobble_state.is_some() { " [Scrobble]" } else { " [s]" }
     } else { "" };
+    let repeat_icon = match w.playlist.repeat_mode {
+        crate::app::structures::RepeatMode::All => " ↺",
+        crate::app::structures::RepeatMode::One => " ↻₁",
+        _ => "",
+    };
+    let radio_icon = if w.playlist.radio_mode { " ↻" } else { "" };
+    let shuffle_icon = if w.playlist.shuffle_enabled { " ⇄" } else { "" };
     let album_art = cur_active_song.map(|s| &s.album_art);
     let footer = Paragraph::new(vec![
         Line::from(song_and_artists_string),
-        Line::from(format!("{}{}", album_title, scrobble_indicator)),
+        Line::from(format!("{}{}{}{}{}", album_title, repeat_icon, radio_icon, shuffle_icon, scrobble_indicator)),
     ]);
     let bar = Gauge::default()
         .label(bar_str)

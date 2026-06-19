@@ -21,7 +21,6 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, YoutubeID};
 use musixmatch_inofficial::Musixmatch;
-use reqwest;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
 
 #[derive(PartialEq, Debug)]
@@ -41,7 +40,7 @@ pub struct GetLyrics(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
 pub struct GetAnnotations(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
-pub struct ValidateMetadata(pub String, pub String, pub crate::app::structures::ListSongID, pub String);
+pub struct ValidateMetadata(pub String, pub String, pub crate::app::structures::ListSongID, pub String, pub Option<String>);
 
 #[derive(Debug, PartialEq)]
 pub struct GetSearchSuggestions(pub String);
@@ -96,6 +95,43 @@ impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
                 .await?;
 
             Ok(pages.into_iter().flatten().collect())
+        }
+    }
+}
+
+use ytmapi_rs::parse::PlaylistSong;
+
+#[derive(Debug, PartialEq)]
+pub struct GetPlaylistTracks(pub PlaylistID<'static>);
+
+impl BackendTask<ArcServer> for GetPlaylistTracks {
+    type Output = Result<Vec<PlaylistSong>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::GetPlaylistTracksQuery;
+            use ytmapi_rs::parse::PlaylistItem;
+            let query = GetPlaylistTracksQuery::new(self.0);
+            let items: Vec<PlaylistItem> = backend
+                .api
+                .get_api()
+                .await?
+                .read()
+                .await
+                .query(query)
+                .await
+                .map_err(|e| anyhow::anyhow!("GetPlaylistTracksQuery: {}", e))?;
+            let songs: Vec<PlaylistSong> = items.into_iter().filter_map(|item| {
+                match item {
+                    PlaylistItem::Song(s) => Some(s),
+                    _ => None,
+                }
+            }).collect();
+            Ok(songs)
         }
     }
 }
@@ -233,8 +269,9 @@ impl BackendTask<ArcServer> for GetLyrics {
     type MetadataType = TaskMetadata;
     fn into_future(
         self,
-        _backend: &ArcServer,
+        backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let http_client = backend.http_client.clone();
         async move {
             let artist = self.0;
             let title = self.1;
@@ -244,7 +281,7 @@ impl BackendTask<ArcServer> for GetLyrics {
             if !genius_token.is_empty() {
                 let search_url = format!("https://api.genius.com/search?q={}+{}",
                     urlenc(&artist), urlenc(&title));
-                match reqwest::Client::new()
+                match http_client
                     .get(&search_url)
                     .header("Authorization", format!("Bearer {}", genius_token))
                     .send().await
@@ -302,14 +339,14 @@ impl BackendTask<ArcServer> for GetLyrics {
                 urlenc(&title),
                 urlenc(&artist)
             );
-            match reqwest::get(&search_url).await {
+            match http_client.get(&search_url).send().await {
                 Ok(resp) => {
                     if let Ok(data) = resp.json::<serde_json::Value>().await {
                         if let Some(hit) = data.pointer("/response/sections/0/hits/0/result") {
                             if let Some(url) = hit.get("url").and_then(|u| u.as_str()) {
                                 tracing::info!("Genius found: {}", url);
                                 // Fetch the Genius page and extract lyrics
-                                if let Ok(page) = reqwest::get(url).await {
+                                if let Ok(page) = http_client.get(url).send().await {
                                     if let Ok(html) = page.text().await {
                                         // Extract lyrics from Genius page data-lyrics-container divs
                                         let mut all_lyrics = String::new();
@@ -531,8 +568,9 @@ impl BackendTask<ArcServer> for GetAnnotations {
     type MetadataType = TaskMetadata;
     fn into_future(
         self,
-        _backend: &ArcServer,
+        backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let client = backend.http_client.clone();
         async move {
             let artist = self.0;
             let title = self.1;
@@ -542,7 +580,6 @@ impl BackendTask<ArcServer> for GetAnnotations {
             let search_url = format!("https://api.genius.com/search?q={}+{}",
                 artist.split_whitespace().collect::<Vec<_>>().join("+"),
                 title.split_whitespace().collect::<Vec<_>>().join("+"));
-            let client = reqwest::Client::new();
             let resp = client.get(&search_url)
                 .header("Authorization", format!("Bearer {}", token))
                 .send().await.map_err(|e| anyhow::anyhow!("Genius API error: {}", e))?;
@@ -600,6 +637,8 @@ pub struct ValidatedMetadata {
     pub year: Option<String>,
     pub track_no: Option<usize>,
     pub album_tracks: Vec<AlbumTrack>,
+    pub genres: Vec<String>,
+    pub styles: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -607,9 +646,6 @@ pub struct AlbumTrack {
     pub title: String,
     pub duration_secs: f64,
 }
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct GetAlbumTracks(pub String, pub String, pub String);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FetchAlbumArt(pub String, pub String, pub String);
@@ -625,11 +661,8 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
         let album = self.1;
         let api_key = self.2;
         let backend = backend.clone();
+        let client = backend.http_client.clone();
         async move {
-            let client = reqwest::Client::builder()
-                .user_agent("Youtui/0.1 (music-player)")
-                .build()?;
-
             // Query Last.fm album.getInfo for image URL
             let info_url = format!(
                 "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
@@ -683,433 +716,18 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
     }
 }
 
-impl BackendTask<ArcServer> for GetAlbumTracks {
-    type Output = Result<Vec<AlbumTrack>>;
-    type MetadataType = TaskMetadata;
-    fn into_future(self, _backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
-        async move {
-            let artist = self.0;
-            let album = self.1;
-            let lastfm_key = self.2;
-            let client = reqwest::Client::builder()
-                .user_agent("Youtui/0.1 (music-player)")
-                .build()?;
-
-            if lastfm_key.is_empty() {
-                return Ok(Vec::new());
-            }
-
-            let url = format!(
-                "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
-                lastfm_key, urlencoding(&artist), urlencoding(&album)
-            );
-            let mut tracks = Vec::new();
-            if let Ok(resp) = client.get(&url).send().await {
-                if let Ok(data) = resp.json::<serde_json::Value>().await {
-                    if let Some(tracklist) = data.get("album").and_then(|a| a.get("tracks")).and_then(|t| t.get("track")).and_then(|t| t.as_array()) {
-                        for entry in tracklist {
-                            let title = entry.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                            let duration_secs = extract_duration(entry.get("duration").unwrap_or(&serde_json::Value::Null));
-                            if !title.is_empty() {
-                                tracks.push(AlbumTrack { title, duration_secs });
-                            }
-                        }
-                    }
-                }
-            }
-            tracing::info!("GetAlbumTracks: {} tracks for {} - {}", tracks.len(), artist, album);
-            Ok(tracks)
-        }
-    }
-}
-
-/// 6-layer progressive metadata search:
-/// 1. album.search(norm_for_lfm) → album.getInfo (tracks + year) ← takes priority
-/// 2. track.getInfo(artist, title) → exact track match
-/// 3. track.search(norm_for_lfm) → fuzzy track → re-fetch for album context
-/// 4. fetch_album_tracks → Discogs API (no auth, underground metal)
-/// 5. fetch_album_tracks → Last.fm album.search fallback
-/// 6. MusicBrainz recording search (1 req/s rate limit)
 impl BackendTask<ArcServer> for ValidateMetadata {
     type Output = Result<ValidatedMetadata>;
     type MetadataType = TaskMetadata;
-    fn into_future(self, _backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+    fn into_future(self, backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+        let registry = backend.metadata_registry.clone();
         async move {
             let artist = self.0;
             let title = self.1;
             let _song_id = self.2;
-            let lastfm_key = self.3;
-            let client = reqwest::Client::builder()
-                .user_agent("Youtui/0.1 (music-player)")
-                .build()?;
-
-            // Last.fm: track.getInfo first, fallback to track.search
-            if !lastfm_key.is_empty() {
-                // Try exact match first
-                let lfm_url = format!(
-                    "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={}&artist={}&track={}&format=json",
-                    lastfm_key, urlencoding(&artist), urlencoding(&title)
-                );
-                let mut found = None;
-                if let Ok(resp) = client.get(&lfm_url).send().await {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if let Some(track) = data.get("track") {
-                            let album = track.get("album").and_then(|a| a.get("title")).and_then(|t| t.as_str()).map(|s| s.to_string());
-                            let artist_name = track.get("artist").and_then(|a| a.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
-                            let year = track.get("wiki")
-                                .and_then(|w| w.get("published"))
-                                .and_then(|p| p.as_str())
-                                .and_then(|d| d.get(..4))
-                                .map(|s| s.to_string());
-                                                        let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
-found = Some(ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new() });
-                        }
-                    }
-                }
-                if let Some(ref meta) = found {
-                    if meta.album.is_some() || meta.year.is_some() {
-                        let mut meta = meta.clone();
-                        // If album is known, also fetch tracklist for potential full-album video
-                        if let Some(ref album_name) = meta.album.clone() {
-                            let correct_artist = meta.artist.as_deref().unwrap_or(&artist);
-                            let (tracks, album_year, lfm_album_name) = fetch_album_tracks(&client, &lastfm_key, correct_artist, &album_name).await;
-                            if !tracks.is_empty() {
-                                meta.album_tracks = tracks;
-                            }
-                            if meta.year.is_none() {
-                                meta.year = album_year;
-                            }
-                            if meta.album.is_none() {
-                                meta.album = lfm_album_name;
-                            }
-                        }
-                        return Ok(meta);
-                    }
-                }
-
-                // Fallback 1: search album by name first (album-level match takes priority)
-                let search_album = norm_for_lfm(&title);
-                let album_search_url = format!(
-                    "https://ws.audioscrobbler.com/2.0/?method=album.search&api_key={}&album={}&format=json&limit=5",
-                    lastfm_key, urlencoding(&search_album)
-                );
-                if let Ok(resp) = client.get(&album_search_url).send().await {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if let Some(matches) = data.get("results").and_then(|r| r.get("albummatches")).and_then(|m| m.get("album")).and_then(|a| a.as_array()) {
-                            for match_album in matches {
-                                let match_artist = match_album.get("artist").and_then(|a| a.as_str()).unwrap_or("");
-                                let match_name = match_album.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                                if !match_artist.is_empty() && !match_name.is_empty() {
-                                    let info_url = format!(
-                                        "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
-                                        lastfm_key, urlencoding(match_artist), urlencoding(match_name)
-                                    );
-                                    if let Ok(resp) = client.get(&info_url).send().await {
-                                        if let Ok(data) = resp.json::<serde_json::Value>().await {
-                                            if let Some(album_data) = data.get("album") {
-                                                let year = album_data.get("releaseDate").or_else(|| album_data.get("releasedate"))
-                                                    .and_then(|d| d.as_str()).and_then(|d| d.get(..4)).map(|s| s.to_string());
-                                                let mut album_tracks = Vec::new();
-                                                if let Some(tracklist) = album_data.get("tracks").and_then(|t| t.get("track")).and_then(|t| t.as_array()) {
-                                                    for entry in tracklist {
-                                                        let t_title = entry.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                                                        if t_title.is_empty() { continue; }
-                                                        let duration_secs = extract_duration(entry.get("duration").unwrap_or(&serde_json::Value::Null));
-                                                        album_tracks.push(AlbumTrack { title: t_title, duration_secs });
-                                                    }
-                                                }
-                                                if !album_tracks.is_empty() {
-                                                    return Ok(ValidatedMetadata {
-                                                        artist: Some(match_artist.to_string()),
-                                                        album: Some(match_name.to_string()),
-                                                        year,
-                                                        track_no: None,
-                                                        album_tracks,
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Fallback 2: search by track name only, then fetch best match's full info
-                let search_url = format!(
-                    "https://ws.audioscrobbler.com/2.0/?method=track.search&api_key={}&track={}&format=json&limit=5",
-                    lastfm_key, urlencoding(&norm_for_lfm(&title))
-                );
-                if let Ok(resp) = client.get(&search_url).send().await {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if let Some(results) = data.get("results").and_then(|r| r.get("trackmatches")).and_then(|m| m.get("track")).and_then(|t| t.as_array()) {
-                            let artist_lower = artist.to_lowercase();
-                            for result in results {
-                                let result_artist = result.get("artist").and_then(|a| a.as_str()).unwrap_or("");
-                                let result_name = result.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                                let result_lower = result_artist.to_lowercase();
-                                let artist_words: Vec<&str> = artist_lower.split_whitespace().collect();
-                                let result_words: Vec<&str> = result_lower.split_whitespace().collect();
-                                let shares_word = artist_words.iter().any(|w| result_words.contains(w))
-                                    || result_words.iter().any(|w| artist_words.contains(w));
-                                if !shares_word && !artist_lower.is_empty() {
-                                    continue;
-                                }
-                                let info_url = format!(
-                                    "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={}&artist={}&track={}&format=json",
-                                    lastfm_key, urlencoding(result_artist), urlencoding(result_name)
-                                );
-                                if let Ok(resp) = client.get(&info_url).send().await {
-                                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                                        if let Some(track) = data.get("track") {
-                                            let album = track.get("album").and_then(|a| a.get("title")).and_then(|t| t.as_str()).map(|s| s.to_string());
-                                            let artist_name = track.get("artist").and_then(|a| a.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
-                                            let year = track.get("wiki")
-                                                .and_then(|w| w.get("published"))
-                                                .and_then(|p| p.as_str())
-                                                .and_then(|d| d.get(..4))
-                                                .map(|s| s.to_string());
-                                             if album.is_some() || year.is_some() {
-                                                 let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
-                                                 let mut meta = ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new() };
-                                                  if let Some(ref album_name) = meta.album.clone() {
-                                                       let correct_artist = meta.artist.as_deref().unwrap_or(&artist);
-                                                       let (tracks, album_year, lfm_album_name) = fetch_album_tracks(&client, &lastfm_key, correct_artist, album_name).await;
-                                                       if !tracks.is_empty() {
-                                                           meta.album_tracks = tracks;
-                                                       }
-                                                       if meta.year.is_none() {
-                                                           meta.year = album_year;
-                                                       }
-                                                       if meta.album.is_none() {
-                                                           meta.album = lfm_album_name;
-                                                       }
-                                                   }
-                                                  return Ok(meta);
-                                             }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // MusicBrainz fallback: 1 req/s, no auth
-            tokio::time::sleep(Duration::from_millis(1200)).await;
-            let mb_url = format!(
-                "https://musicbrainz.org/ws/2/recording?query=artist:%22{}%22+AND+recording:%22{}%22&fmt=json",
-                urlencoding(&artist), urlencoding(&title)
-            );
-            if let Ok(resp) = client.get(&mb_url).header("Accept", "application/json").send().await {
-                if let Ok(data) = resp.json::<serde_json::Value>().await {
-                    let mb_meta = {
-                        let rec = match data.get("recordings").and_then(|a| a.as_array()).and_then(|a| a.first()) {
-                            Some(r) => r,
-                            None => { return Ok(ValidatedMetadata::default()); }
-                        };
-                        let artist_name = rec.get("artist-credit").and_then(|a| a.as_array()).and_then(|a| a.first())
-                            .and_then(|c| c.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
-                        let year = rec.get("releases").and_then(|a| a.as_array()).and_then(|a| a.first())
-                            .and_then(|r| r.get("date")).and_then(|d| d.as_str()).and_then(|d| d.get(..4)).map(|s| s.to_string());
-                        let album = rec.get("releases").and_then(|a| a.as_array()).and_then(|a| a.first())
-                            .and_then(|r| r.get("title")).and_then(|t| t.as_str()).map(|s| s.to_string());
-                        ValidatedMetadata { artist: artist_name, album, year, track_no: None, album_tracks: Vec::new() }
-                    };
-                    if mb_meta.album.is_some() || mb_meta.year.is_some() {
-                        return Ok(mb_meta);
-                    }
-                }
-            }
-
-            Ok(ValidatedMetadata::default())
+            registry.resolve(&artist, &title).await
         }
     }
-}
-
-async fn fetch_album_tracks(client: &reqwest::Client, lastfm_key: &str, artist: &str, album: &str) -> (Vec<AlbumTrack>, Option<String>, Option<String>) {
-    // Phase 1: Try Last.fm album.getInfo (requires API key)
-    if !lastfm_key.is_empty() {
-        let url = format!(
-            "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
-            lastfm_key, urlencoding(artist), urlencoding(album)
-        );
-        if let Ok(resp) = client.get(&url).send().await {
-            if let Ok(data) = resp.json::<serde_json::Value>().await {
-                let album_name = data.get("album").and_then(|a| a.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
-                let album_year = data.get("album")
-                    .and_then(|a| a.get("wiki"))
-                    .and_then(|w| w.get("published"))
-                    .and_then(|p| p.as_str())
-                    .and_then(|d| d.get(..4))
-                    .map(|s| s.to_string());
-                if let Some(tracklist) = data.get("album").and_then(|a| a.get("tracks")).and_then(|t| t.get("track")).and_then(|t| t.as_array()) {
-                    let tracks: Vec<AlbumTrack> = tracklist.iter().filter_map(|entry| {
-                        let title = entry.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                        if title.is_empty() { return None; }
-                        let duration_secs = extract_duration(entry.get("duration").unwrap_or(&serde_json::Value::Null));
-                        Some(AlbumTrack { title, duration_secs })
-                    }).collect();
-                    if tracks.len() >= 2 {
-                        tracing::info!("fetch_album_tracks (Last.fm): {} tracks for {} - {}", tracks.len(), artist, album);
-                        return (tracks, album_year, album_name);
-                    }
-                }
-            }
-        }
-    }
-    // Phase 2: Discogs API (no auth, works for underground metal)
-    if !artist.is_empty() && !album.is_empty() {
-        let discogs_url = format!(
-            "https://api.discogs.com/database/search?artist={}&album={}&type=master&format=album&format=cd",
-            urlencoding(artist), urlencoding(album)
-        );
-        if let Ok(resp) = client.get(&discogs_url)
-            .header("User-Agent", "Youtui/0.1 +https://github.com/caos-obliquo/youtui")
-            .send().await
-        {
-            if let Ok(data) = resp.json::<serde_json::Value>().await {
-                if let Some(results) = data.get("results").and_then(|r| r.as_array()) {
-                    if let Some(first) = results.first() {
-                        let year = first.get("year").and_then(|y| y.as_i64()).map(|y| y.to_string());
-                        if let Some(master_id) = first.get("master_id").and_then(|m| m.as_i64()) {
-                            tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
-                            let master_url = format!("https://api.discogs.com/masters/{}", master_id);
-                            if let Ok(mresp) = client.get(&master_url)
-                                .header("User-Agent", "Youtui/0.1 +https://github.com/caos-obliquo/youtui")
-                                .send().await
-                            {
-                                if let Ok(mdata) = mresp.json::<serde_json::Value>().await {
-                                    if let Some(tracklist) = mdata.get("tracklist").and_then(|t| t.as_array()) {
-                                        let tracks: Vec<AlbumTrack> = tracklist.iter().filter_map(|entry| {
-                                            let title = entry.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string();
-                                            if title.is_empty() { return None; }
-                                            let dur_str = entry.get("duration").and_then(|d| d.as_str()).unwrap_or("");
-                                            let duration_secs = parse_discogs_duration(dur_str);
-                                            Some(AlbumTrack { title, duration_secs })
-                                        }).collect();
-                                        if tracks.len() >= 2 {
-                                            let album_name = mdata.get("title").and_then(|t| t.as_str()).map(|s| s.to_string());
-                                            tracing::info!("fetch_album_tracks (Discogs): {} tracks for {} - {}", tracks.len(), artist, album);
-                                            return (tracks, year, album_name);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // Phase 3: Last.fm album.search fallback (requires API key)
-    if !lastfm_key.is_empty() {
-        let search_url = format!(
-            "https://ws.audioscrobbler.com/2.0/?method=album.search&api_key={}&album={}&format=json&limit=5",
-            lastfm_key, urlencoding(album)
-        );
-        if let Ok(resp) = client.get(&search_url).send().await {
-            if let Ok(data) = resp.json::<serde_json::Value>().await {
-                if let Some(matches) = data.get("results").and_then(|r| r.get("albummatches")).and_then(|m| m.get("album")).and_then(|a| a.as_array()) {
-                    for match_album in matches {
-                        let match_artist = match_album.get("artist").and_then(|a| a.as_str()).unwrap_or("");
-                        let match_name = match_album.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                        if !match_artist.is_empty() && !match_name.is_empty() {
-                            let info_url = format!(
-                                "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
-                                lastfm_key, urlencoding(match_artist), urlencoding(match_name)
-                            );
-                            if let Ok(resp) = client.get(&info_url).send().await {
-                                if let Ok(data) = resp.json::<serde_json::Value>().await {
-                                    let album_name = data.get("album").and_then(|a| a.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
-                                    let album_year = data.get("album")
-                                        .and_then(|a| a.get("wiki"))
-                                        .and_then(|w| w.get("published"))
-                                        .and_then(|p| p.as_str())
-                                        .and_then(|d| d.get(..4))
-                                        .map(|s| s.to_string());
-                                    if let Some(tracklist) = data.get("album").and_then(|a| a.get("tracks")).and_then(|t| t.get("track")).and_then(|t| t.as_array()) {
-                                        let tracks: Vec<AlbumTrack> = tracklist.iter().filter_map(|entry| {
-                                            let title = entry.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
-                                            if title.is_empty() { return None; }
-                                            let duration_secs = extract_duration(entry.get("duration").unwrap_or(&serde_json::Value::Null));
-                                            Some(AlbumTrack { title, duration_secs })
-                                        }).collect();
-                                        if tracks.len() >= 2 {
-                                            tracing::info!("fetch_album_tracks (search fallback): {} tracks for {} - {}", tracks.len(), match_artist, match_name);
-                                            return (tracks, album_year, album_name);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    (Vec::new(), None, None)
-}
-
-/// Normalize text for Last.fm API queries (replace & with "and", strip year suffixes)
-/// Extract duration from Last.fm JSON value (can be string "203" or int 203)
-fn extract_duration(v: &serde_json::Value) -> f64 {
-    v.as_str().and_then(|s| s.parse::<f64>().ok())
-        .or_else(|| v.as_f64())
-        .unwrap_or(0.0)
-}
-
-fn parse_discogs_duration(s: &str) -> f64 {
-    // Discogs durations: "M:SS" or "H:MM:SS"
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() == 2 {
-        parts[0].parse::<f64>().unwrap_or(0.0) * 60.0 + parts[1].parse::<f64>().unwrap_or(0.0)
-    } else if parts.len() == 3 {
-        parts[0].parse::<f64>().unwrap_or(0.0) * 3600.0
-            + parts[1].parse::<f64>().unwrap_or(0.0) * 60.0
-            + parts[2].parse::<f64>().unwrap_or(0.0)
-    } else {
-        0.0
-    }
-}
-
-fn norm_for_lfm(s: &str) -> String {
-    let mut out: &str = s.trim();
-    // Replace " & " with " and " for Last.fm compatibility
-    let out_owned = out.replace(" & ", " and ").replace("&", "and");
-    out = &out_owned;
-
-    // Strip common album title suffixes (case-insensitive patterns)
-    let patterns = [
-        "full album", "full lp", "full ep",
-        "full-length album", "full length",
-        "official music video", "official video", "official audio",
-        "music video", "lyric video", "audio",
-        " - single", " - ep", " - lp",
-        " - full album", " - full ep",
-        // Strip bracketed genre/quality tags
-    ];
-    let mut result = out.to_string();
-    for pat in &patterns {
-        if let Some(pos) = result.to_lowercase().find(pat) {
-            result = result[..pos].trim().to_string();
-        }
-    }
-    out = &result;
-
-    // Strip parenthesized blocks like " (2021 - Goregrind / Noisegrind)" or "(2000)"
-    if let Some(pos) = out.find(" (") {
-        out = out[..pos].trim();
-    }
-
-    // Strip bracketed suffixes like " [grind]" or "[HD]"
-    if let Some(pos) = out.find(" [") {
-        out = out[..pos].trim();
-    }
-
-    out.to_string()
 }
 
 fn urlencoding(s: &str) -> String {

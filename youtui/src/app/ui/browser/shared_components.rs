@@ -1,21 +1,18 @@
 use crate::app::component::actionhandler::{Action, ComponentEffect, Suggestable, TextHandler};
 use crate::app::server::{GetSearchSuggestions, HandleApiError};
+use crate::app::ui::components::vi_text_editor::ViTextEditor;
 use crate::app::view::{TableFilterCommand, TableSortCommand};
 use anyhow::Context;
 use async_callback_manager::{AsyncTask, Constraint, NoOpHandler};
-use rat_text::text_input::{TextInputState, handle_events};
 use ratatui::widgets::ListState;
 use serde::{Deserialize, Serialize};
 use ytmapi_rs::common::SearchSuggestion;
 
 #[derive(Default)]
 pub struct SearchBlock {
-    pub search_contents: TextInputState,
+    pub search_contents: ViTextEditor,
     pub search_suggestions: Vec<SearchSuggestion>,
     pub suggestions_cur: Option<usize>,
-    pub vim_mode: bool,
-    vim_pending: Option<char>,
-    vim_visual: bool,
 }
 impl_youtui_component!(SearchBlock);
 
@@ -23,7 +20,7 @@ impl_youtui_component!(SearchBlock);
 #[derive(Clone, Default)]
 pub struct FilterManager {
     pub filter_commands: Vec<TableFilterCommand>,
-    pub filter_text: TextInputState,
+    pub filter_text: ViTextEditor,
     pub shown: bool,
 }
 impl_youtui_component!(FilterManager);
@@ -130,24 +127,35 @@ impl TextHandler for FilterManager {
         true
     }
     fn get_text(&self) -> std::option::Option<&str> {
-        Some(self.filter_text.text())
+        Some(self.filter_text.get_text())
     }
     fn replace_text(&mut self, text: impl Into<String>) {
-        self.filter_text.set_text(text)
+        self.filter_text.set_text(&text.into())
     }
     fn clear_text(&mut self) -> bool {
-        self.filter_text.clear()
+        self.filter_text.clear();
+        true
     }
     fn handle_text_event_impl(
         &mut self,
         event: &crossterm::event::Event,
     ) -> Option<ComponentEffect<Self>> {
-        match handle_events(&mut self.filter_text, true, event) {
-            rat_text::event::TextOutcome::Continue => None,
-            rat_text::event::TextOutcome::Unchanged => Some(AsyncTask::new_no_op()),
-            rat_text::event::TextOutcome::Changed => Some(AsyncTask::new_no_op()),
-            rat_text::event::TextOutcome::TextChanged => Some(AsyncTask::new_no_op()),
+        if let crossterm::event::Event::Key(key) = event {
+            if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+                return None;
+            }
+            use crate::app::ui::components::vi_text_editor::ViMode;
+            if self.filter_text.mode == ViMode::Normal
+                && matches!(key.code, crossterm::event::KeyCode::Char('j')
+                    | crossterm::event::KeyCode::Char('k')
+                    | crossterm::event::KeyCode::Up
+                    | crossterm::event::KeyCode::Down)
+            {
+                return None;
+            }
+            self.filter_text.handle_key(key.code, false);
         }
+        Some(AsyncTask::new_no_op())
     }
 }
 
@@ -156,67 +164,41 @@ impl TextHandler for SearchBlock {
         true
     }
     fn get_text(&self) -> std::option::Option<&str> {
-        Some(self.search_contents.text())
+        Some(self.search_contents.get_text())
     }
     fn replace_text(&mut self, text: impl Into<String>) {
-        self.search_contents.set_text(text);
-        self.search_contents.move_to_line_end(false);
+        self.search_contents.set_text(&text.into());
     }
     fn clear_text(&mut self) -> bool {
         self.search_suggestions.clear();
-        self.search_contents.clear()
+        self.search_contents.clear();
+        true
     }
     fn handle_text_event_impl(
         &mut self,
         event: &crossterm::event::Event,
     ) -> Option<ComponentEffect<Self>> {
         if let crossterm::event::Event::Key(key) = event {
-            if key.code == crossterm::event::KeyCode::Esc {
-                if !self.vim_mode {
-                    self.vim_mode = true;
-                    self.vim_pending = None;
-                    return Some(AsyncTask::new_no_op());
-                }
-                self.vim_mode = false;
-                self.vim_pending = None;
-                return None; // Second Esc closes search
+            if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+                return None;
             }
-            if self.vim_mode {
-                // Check pending multi-key command first (d? + key)
-                if let Some(pending) = self.vim_pending.take() {
-                    match (pending, key.code) {
-                        ('d', crossterm::event::KeyCode::Char('d')) => { self.search_contents.clear(); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
-                        ('d', crossterm::event::KeyCode::Char('w')) => { self.search_contents.delete_next_word(); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
-                        ('d', crossterm::event::KeyCode::Char('b')) => { self.search_contents.delete_prev_word(); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
-                        _ => {}
-                    }
-                }
-                let extend = self.vim_visual;
-                match key.code {
-                    crossterm::event::KeyCode::Char('i') => { self.vim_mode = false; self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('v') => { self.vim_visual = !self.vim_visual; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('V') => { self.vim_visual = true; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left => { self.search_contents.move_left(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right => { self.search_contents.move_right(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('0') => { self.search_contents.move_to_line_start(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('$') | crossterm::event::KeyCode::Char('A') => { self.search_contents.move_to_line_end(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('w') => { self.search_contents.move_to_next_word(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('b') => { self.search_contents.move_to_prev_word(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('e') => { self.search_contents.move_to_next_word(extend); self.vim_pending = None; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('d') => { if self.vim_visual { self.search_contents.clear(); self.vim_visual = false; } else { self.vim_pending = Some('d'); } return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('D') => { self.search_contents.move_to_line_end(false); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
-                    crossterm::event::KeyCode::Char('x') => { let _ = self.search_contents.delete_next_word(); self.vim_visual = false; return Some(AsyncTask::new_no_op()); }
-                    _ => {}
-                }
+            use crate::app::ui::components::vi_text_editor::ViMode;
+            // Check mode BEFORE handling the key
+            let was_normal = self.search_contents.mode == ViMode::Normal;
+            let changed = self.search_contents.handle_key(key.code, false);
+            if changed {
+                return None;
+            }
+            // Esc in Normal mode closes search.
+            // Esc in Insert mode switches to Normal (handled by ViTextEditor).
+            if key.code == crossterm::event::KeyCode::Esc && was_normal {
+                return None;
+            }
+            if matches!(key.code, crossterm::event::KeyCode::Char(_) | crossterm::event::KeyCode::Backspace) {
+                return Some(self.fetch_search_suggestions());
             }
         }
-        self.vim_pending = None;
-        match handle_events(&mut self.search_contents, true, event) {
-            rat_text::event::TextOutcome::Continue => None,
-            rat_text::event::TextOutcome::Unchanged => None,
-            rat_text::event::TextOutcome::Changed => Some(AsyncTask::new_no_op()),
-            rat_text::event::TextOutcome::TextChanged => Some(self.fetch_search_suggestions()),
-        }
+        Some(AsyncTask::new_no_op())
     }
 }
 
@@ -231,20 +213,24 @@ impl Suggestable for SearchBlock {
 
 impl SearchBlock {
     pub fn delete_word(&mut self) {
-        if !self.search_contents.is_empty() {
-            let _ = self.search_contents.delete_prev_word();
+        let text = self.search_contents.get_text().to_string();
+        if !text.is_empty() {
+            let pos = text[..self.search_contents.cursor].rfind(' ').unwrap_or(0);
+            let new_text = text[..pos].to_string();
+            self.search_contents.set_text(&new_text);
+            self.search_contents.cursor = new_text.len();
         }
     }
 
     // Ask the UI for search suggestions for the current query
     fn fetch_search_suggestions(&mut self) -> ComponentEffect<Self> {
-        // No need to fetch search suggestions if contents is empty.
-        if self.search_contents.is_empty() {
+        let text = self.search_contents.get_text().to_owned();
+        if text.is_empty() {
             self.search_suggestions.clear();
             return AsyncTask::new_no_op();
         }
         AsyncTask::new_future_try(
-            GetSearchSuggestions(self.search_contents.text().to_owned()),
+            GetSearchSuggestions(text),
             HandleSearchSuggestionsOk,
             HandleSearchSuggestionsErr,
             Some(Constraint::new_kill_same_type()),
@@ -270,8 +256,6 @@ impl SearchBlock {
                     })
                     .unwrap_or_default(),
             );
-            // Safe - clamped above
-            // Clone is ok here as we want to duplicate the search suggestion.
             self.replace_text(
                 self.search_suggestions[self.suggestions_cur.expect("Set to non-None value above")]
                     .get_text(),

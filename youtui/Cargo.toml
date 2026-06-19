@@ -30,6 +30,7 @@ serde = "1.0.228"
 serde_json = "1.0.149"
 ytmapi-rs = { path = "../ytmapi-rs", version = "0.3.2", features = [ "reqwest", "rustls" ] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "http2", "rustls", "form"] }
+lru = "0.12"
 md5 = "0.7"
 ib-romaji = "0.2"
 lindera = { version = "3", default-features = false, features = ["embed-ipadic"] }
@@ -78,9 +79,11 @@ version = "0.22.2"
 # package = "youtui-vendored-rodio"
 features = ["symphonia-all"]
 
+[dependencies.tempfile]
+version = "3.27.0"
+
 [dev-dependencies]
 pretty_assertions = "1.4.1"
-tempfile = "3.27.0"
 async-callback-manager = { path = "../async-callback-manager", version = "0.1.1", features = ["task-equality", "task-debug"] }
 
 [lints]

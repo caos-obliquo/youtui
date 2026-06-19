@@ -641,10 +641,10 @@ mod tests {
             .search
             .search_contents
             .set_text("Search!");
-        let browser_text = browser.artist_search_panel.search.search_contents.text();
+        let browser_text = browser.artist_search_panel.search.search_contents.get_text();
         assert!(!browser_text.is_empty());
         let _ = browser.handle_text_entry_action(crate::app::ui::action::TextEntryAction::Submit);
-        let browser_text = browser.artist_search_panel.search.search_contents.text();
+        let browser_text = browser.artist_search_panel.search.search_contents.get_text();
         assert!(browser_text.is_empty());
     }
     #[test]

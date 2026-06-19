@@ -14,20 +14,22 @@ use media_controls::MediaController;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui_image::picker::Picker;
-use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist};
+use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, CreatePlaylistWithVideos};
 use std::borrow::Cow;
 use ytmapi_rs::common::{PlaylistID, VideoID};
 use std::fmt::Display;
 use std::io;
 use std::sync::Arc;
 pub use structures::AudioQuality;
-use structures::ListSong;
+use structures::{ListSong, ListSongID};
 use tracing::{debug, error, info};
 use tracing_subscriber::prelude::*;
 use ui::{
     WindowContext, YoutuiWindow,
     playlist::effect_handlers_playlist::{
         HandleAddSongsOk, HandleAddSongsError,
+        HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
+        HandleCreatePlaylistOk, HandleCreatePlaylistError,
     },
 };
 
@@ -95,7 +97,15 @@ pub enum AppCallback {
         artist: String,
         title: String,
     },
+    ViewSongInfo {
+        song: ListSong,
+    },
+    UpdateSongInfo {
+        id: ListSongID,
+        song: ListSong,
+    },
     ClosePopup,
+    LoadPlaylistFromPopup(PlaylistID<'static>),
     CreatePlaylistFromPopup {
         title: String,
         description: Option<String>,
@@ -113,6 +123,7 @@ impl Youtui {
             cookie_path,
             config,
             disable_media_controls,
+            url,
         } = rt;
         // Setup tracing and link to tui_logger.
         // NOTE: File logging is always enabled for now - I can't think of a use case
@@ -177,7 +188,7 @@ impl Youtui {
         };
         let event_handler = EventHandler::new(EVENT_CHANNEL_SIZE, media_control_event_stream)?;
         let rescrobbled_process = Self::spawn_rescrobbled(&config);
-        let (window_state, effect) = YoutuiWindow::new(config, cookie_path);
+        let (window_state, effect) = YoutuiWindow::new(config, cookie_path, url);
         // Even the creation of a YoutuiWindow causes an effect. We'll spawn it straight
         // away.
         task_manager.spawn_task(&server, effect);
@@ -365,6 +376,36 @@ impl Youtui {
                 let effect = self.window_state.open_lyrics_popup(artist, title);
                 self.task_manager.spawn_task(&self.server, effect);
             }
+            AppCallback::ViewSongInfo { song } => {
+                let effect = self.window_state.open_song_info_popup(song);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::UpdateSongInfo { id, song } => {
+                let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                let meta = crate::app::server::ValidatedMetadata {
+                    artist: Some(artist.clone()),
+                    album: song.album.as_ref().map(|a| a.name.clone()),
+                    year: song.year.as_ref().map(|y| y.as_str().to_string()),
+                    track_no: song.track_no,
+                    album_tracks: Vec::new(),
+                    genres: song.genres.clone(),
+                    styles: song.styles.clone(),
+                };
+                self.server.metadata_registry.save_override(&artist, &song.title, &meta);
+                self.window_state.playlist.update_song_info(id, song);
+                self.window_state.close_popup();
+            }
+            AppCallback::LoadPlaylistFromPopup(playlist_id) => {
+                self.window_state.close_popup();
+                let effect = AsyncTask::new_future_try(
+                    GetPlaylistTracks(playlist_id),
+                    HandleGetPlaylistTracksOk,
+                    HandleGetPlaylistTracksErr,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
             AppCallback::ClosePopup => {
                 self.window_state.close_popup();
             }
@@ -374,12 +415,36 @@ impl Youtui {
                 video_ids,
             } => {
                 self.window_state.close_popup();
-                let effect = self.window_state.handle_create_playlist_from_popup(
-                    title,
-                    description,
-                    video_ids,
-                );
-                self.task_manager.spawn_task(&self.server, effect);
+                const MAX_YTM_SONGS: usize = 5000;
+                let total = video_ids.len();
+                if total > MAX_YTM_SONGS {
+                    let chunks: Vec<Vec<VideoID<'static>>> = video_ids.chunks(MAX_YTM_SONGS).map(|c| c.to_vec()).collect();
+                    let chunks_needed = chunks.len();
+                    info!("Splitting {} songs into {} playlists", total, chunks_needed);
+                    // Store remaining chunks (skip first, it's about to be spawned)
+                    self.window_state.playlist.pending_playlist_chunks = Some((chunks[1..].to_vec(), title.clone(), description.clone()));
+                    // Spawn first chunk
+                    let first_title = format!("{} ({}/{})", title, 1, chunks_needed);
+                    let effect = AsyncTask::new_future_try(
+                        CreatePlaylistWithVideos {
+                            title: first_title,
+                            description: description.clone(),
+                            video_ids: chunks[0].clone(),
+                        },
+                        HandleCreatePlaylistOk,
+                        HandleCreatePlaylistError,
+                        None,
+                    )
+                    .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                    self.task_manager.spawn_task(&self.server, effect);
+                } else {
+                    let effect = self.window_state.handle_create_playlist_from_popup(
+                        title,
+                        description,
+                        video_ids,
+                    );
+                    self.task_manager.spawn_task(&self.server, effect);
+                }
             }
         }
     }

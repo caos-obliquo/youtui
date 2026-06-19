@@ -1,8 +1,9 @@
 use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::ValidatedMetadata;
 use crate::app::server::ValidateMetadata;
-use crate::app::server::{ArcServer, TaskMetadata, AlbumTrack};
-use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID};
+use crate::app::server::{ArcServer, TaskMetadata};
+use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
+use crate::app::structures::{AlbumArtState, DownloadStatus};
 use crate::app::ui::playlist::Playlist;
 use crate::app::ui::playlist::lyrics_popup::LyricsPopup;
 use crate::app::ui::playlist::playlist_update_popup::{PlaylistUpdatePopup, PlaylistUpdatePopupState};
@@ -11,6 +12,7 @@ use std::rc::Rc;
 use tracing::{error, info};
 use ytmapi_rs::common::{PlaylistID, YoutubeID};
 use ytmapi_rs::parse::LibraryPlaylist;
+use ytmapi_rs::parse::PlaylistSong;
 
 #[derive(Debug, PartialEq)]
 pub struct HandleCreatePlaylistOk;
@@ -73,13 +75,39 @@ impl_youtui_task_handler!(
 );
 
 impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for PlaylistEffect {
-    fn apply(self, _target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
+    fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
         match self {
             PlaylistEffect::CreatePlaylistSuccess(playlist_id) => {
                 info!("Playlist created: {:?}", playlist_id);
+                // Check if there are more chunks to create (sequential chain)
+                if let Some((chunks, ref title, ref description)) = target.pending_playlist_chunks.take() {
+                    if let Some((i, chunk)) = chunks.iter().enumerate().next() {
+                        let total = chunks.len() + 1;
+                        let chunk_title = format!("{} ({}/{})", title, i + 2, total);
+                        let remaining: Vec<Vec<_>> = chunks[i + 1..].to_vec();
+                        target.pending_playlist_chunks = if remaining.is_empty() { None } else {
+                            Some((remaining, title.clone(), description.clone()))
+                        };
+                        use crate::app::server::CreatePlaylistWithVideos;
+                        use crate::app::ui::playlist::effect_handlers_playlist::{
+                            HandleCreatePlaylistOk, HandleCreatePlaylistError,
+                        };
+                        return AsyncTask::new_future_try(
+                            CreatePlaylistWithVideos {
+                                title: chunk_title,
+                                description: description.clone(),
+                                video_ids: chunk.clone(),
+                            },
+                            HandleCreatePlaylistOk,
+                            HandleCreatePlaylistError,
+                            None,
+                        );
+                    }
+                }
             }
             PlaylistEffect::CreatePlaylistError => {
                 error!("Failed to create playlist");
+                target.pending_playlist_chunks = None;
             }
             PlaylistEffect::AddSongsSuccess => {
                 info!("Successfully added songs to playlist!");
@@ -275,6 +303,19 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no);
                         if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
+                            // Quality guard: verify tracklist before splitting
+                            let valid_tracks = data.album_tracks.iter().all(|t| t.duration_secs > 0.0);
+                            let total_dur: f64 = data.album_tracks.iter().map(|t| t.duration_secs).sum();
+                            let video_dur = song.actual_duration.map(|d| d.as_secs_f64()).unwrap_or(0.0);
+                            let duration_ok = video_dur == 0.0 || total_dur >= video_dur * 0.5;
+                            if !valid_tracks || !duration_ok {
+                                target.last_error = Some(format!(
+                                    "Album tracklist rejected: {} tracks, {:.0}s total vs video {:.0}s {}",
+                                    data.album_tracks.len(), total_dur, video_dur,
+                                    if !valid_tracks { "(zero-duration tracks)" } else { "" }
+                                ));
+                                return AsyncTask::new_no_op();
+                            }
                             target.album_tracks = Some(data.album_tracks.clone());
                             target.album_current_track = 0;
                             let play_effect = target.insert_album_tracks(song_id, &data.album_tracks, &data.artist, &data.album, &data.year);
@@ -292,8 +333,9 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                                 {
                                     if !api_key.is_empty() {
                                         let artist = data.artist.clone().unwrap_or_default();
+                                        let discogs_token = Some(target.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty());
                                         let vt = AsyncTask::new_future_try(
-                                            ValidateMetadata(artist.clone(), track.title.clone(), track_id, api_key.clone()),
+                                            ValidateMetadata(artist.clone(), track.title.clone(), track_id, api_key.clone(), discogs_token),
                                             HandleMetadataValidated(track_id),
                                             HandleMetadataValidationError,
                                             None,
@@ -304,16 +346,26 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                             }
 
                             // Fetch album art from Last.fm
+                            // Fetch album art from Last.fm (fallback to song's own artist/album)
                             if !api_key.is_empty() {
-                                if let (Some(ref art_artist), Some(ref art_album)) = (data.artist, data.album) {
-                                    use crate::app::server::FetchAlbumArt;
-                                    let art_task = AsyncTask::new_future_try(
-                                        FetchAlbumArt(art_artist.clone(), art_album.clone(), api_key.clone()),
-                                        HandleFetchAlbumArtOk,
-                                        HandleFetchAlbumArtErr,
-                                        None,
-                                    );
-                                    effect = effect.push(art_task);
+                                let art_artist = data.artist.clone()
+                                    .or_else(|| target.get_song_from_id(song_id)
+                                        .map(|s| s.artists.iter().map(|a| a.name.as_str())
+                                            .collect::<Vec<_>>().join(", ")));
+                                let art_album = data.album.clone()
+                                    .or_else(|| target.get_song_from_id(song_id)
+                                        .and_then(|s| s.album.as_ref().map(|a| a.name.clone())));
+                                if let (Some(ref aa), Some(ref ab)) = (art_artist, art_album) {
+                                    if !aa.is_empty() && !ab.is_empty() {
+                                        use crate::app::server::FetchAlbumArt;
+                                        let art_task = AsyncTask::new_future_try(
+                                            FetchAlbumArt(aa.clone(), ab.clone(), api_key.clone()),
+                                            HandleFetchAlbumArtOk,
+                                            HandleFetchAlbumArtErr,
+                                            None,
+                                        );
+                                        effect = effect.push(art_task);
+                                    }
                                 }
                             }
 
@@ -352,60 +404,9 @@ impl_youtui_task_handler!(
     }
 );
 
-// Album tracks (full album video splitting) effect handlers
-
-#[derive(Debug, PartialEq)]
-pub struct HandleAlbumTracksOk(pub ListSongID);
-#[derive(Debug, PartialEq)]
-pub struct HandleAlbumTracksError;
-
-#[derive(Debug, PartialEq)]
-pub enum AlbumTracksEffect {
-    TracksFetched(Vec<AlbumTrack>, ListSongID),
-    TrackFetchError,
-}
-
-impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for AlbumTracksEffect {
-    fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
-        match self {
-            AlbumTracksEffect::TracksFetched(tracks, song_id) => {
-                if tracks.len() >= 2 {
-                    info!("AlbumTracksEffect: {} tracks for song {:?}", tracks.len(), song_id);
-                    target.album_tracks = Some(tracks);
-                    target.album_current_track = 0;
-                }
-            }
-            AlbumTracksEffect::TrackFetchError => {
-                info!("AlbumTracksEffect: failed to fetch tracks");
-            }
-        }
-        AsyncTask::new_no_op()
-    }
-}
-
-impl_youtui_task_handler!(
-    HandleAlbumTracksOk,
-    Vec<AlbumTrack>,
-    Playlist,
-    |this: HandleAlbumTracksOk, tracks: Vec<AlbumTrack>| {
-        AlbumTracksEffect::TracksFetched(tracks, this.0)
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleAlbumTracksError,
-    anyhow::Error,
-    Playlist,
-    |_, _error: anyhow::Error| {
-        AlbumTracksEffect::TrackFetchError
-    }
-);
-
 // Album art from Last.fm effect handlers
 
 use crate::app::server::song_thumbnail_downloader::SongThumbnail;
-use crate::app::structures::AlbumArtState;
-
 #[derive(Debug, PartialEq)]
 pub struct HandleFetchAlbumArtOk;
 #[derive(Debug, PartialEq)]
@@ -463,6 +464,90 @@ impl_youtui_task_handler!(
     Playlist,
     |_, _error: anyhow::Error| {
         FetchAlbumArtEffect::FetchError
+    }
+);
+
+// Playlist load from YouTube Music effect handlers
+
+#[derive(Debug, PartialEq)]
+pub struct HandleGetPlaylistTracksOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleGetPlaylistTracksErr;
+
+#[derive(Debug, PartialEq)]
+pub enum LoadPlaylistEffect {
+    TracksFetched(Vec<PlaylistSong>),
+    FetchError,
+}
+
+impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
+    fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
+        match self {
+            LoadPlaylistEffect::TracksFetched(songs) => {
+                let count = songs.len();
+                let mut list_songs: Vec<crate::app::structures::ListSong> = Vec::new();
+                for s in songs {
+                    use ytmapi_rs::common::YoutubeID;
+                    let list_artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist {
+                        name: a.name,
+                        id: None,
+                    }).collect());
+                    let list_album = Some(MaybeRc::Owned(ListSongAlbum {
+                        name: s.album.name,
+                        id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+                    }));
+                    list_songs.push(crate::app::structures::ListSong {
+                        video_id: s.video_id,
+                        track_no: None,
+                        plays: String::new(),
+                        title: s.title,
+                        explicit: Some(s.explicit),
+                        download_status: DownloadStatus::None,
+                        id: crate::app::structures::ListSongID(0),
+                        duration_string: s.duration,
+                        actual_duration: None,
+                        start_offset: None,
+                        year: None,
+                        album_art: AlbumArtState::None,
+                        genres: Vec::new(),
+                        styles: Vec::new(),
+                        artists: list_artists,
+                        thumbnails: MaybeRc::Owned(s.thumbnails),
+                        album: list_album,
+                    });
+                }
+                // Replace playlist
+                target.list.clear();
+                for song in list_songs {
+                    target.list.push_song_list(vec![song]);
+                }
+                target.cur_selected = 0;
+                info!("Loaded {} songs from YouTube Music playlist", count);
+            }
+            LoadPlaylistEffect::FetchError => {
+                error!("Failed to load playlist tracks from YouTube Music");
+                target.last_error = Some("Failed to load YouTube Music playlist — single video added if available".to_string());
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+impl_youtui_task_handler!(
+    HandleGetPlaylistTracksOk,
+    Vec<PlaylistSong>,
+    Playlist,
+    |_, songs: Vec<PlaylistSong>| {
+        LoadPlaylistEffect::TracksFetched(songs)
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleGetPlaylistTracksErr,
+    anyhow::Error,
+    Playlist,
+    |_, _error: anyhow::Error| {
+        LoadPlaylistEffect::FetchError
     }
 );
 

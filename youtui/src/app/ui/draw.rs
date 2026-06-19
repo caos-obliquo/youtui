@@ -5,13 +5,11 @@ use crate::app::view::draw::{draw_panel_mut_impl, draw_table_impl};
 use crate::app::view::{BasicConstraint, Drawable, DrawableMut};
 use crate::drawutils::{SELECTED_BORDER_COLOUR, TEXT_COLOUR, left_bottom_corner_rect};
 use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
-use rat_text::HasScreenCursor;
-use rat_text::text_input::{TextInput, TextInputState};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::Rect;
 use ratatui::style::Style;
-use ratatui::widgets::{Block, Borders, Clear, Row, Table};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use ratatui_image::picker::Picker;
 
 // Add tests to try and draw app with oddly sized windows.
@@ -49,6 +47,10 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             w.playlist
                 .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
         }
+        WindowContext::SongInfo => {
+            w.playlist
+                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+        }
     }
     if w.help.shown {
         draw_help(f, w, window_chunk);
@@ -63,6 +65,9 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         popup.draw(f, f.area());
     }
     if let Some(popup) = &mut w.lyrics_popup {
+        popup.draw(f, f.area());
+    }
+    if let Some(popup) = &mut w.song_info_popup {
         popup.draw(f, f.area());
     }
     if let Some(popup) = &mut w.config_editor_popup {
@@ -93,10 +98,23 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         f.render_widget(prompt, chunks[2]);
     } else if w.command_mode {
         use ratatui::style::{Color, Style};
-        use ratatui::widgets::Paragraph;
-        let cmd_text = format!(":{}█", w.command_text);
-        let cmd = Paragraph::new(cmd_text).style(Style::default().fg(Color::Cyan));
-        f.render_widget(cmd, footer_chunk);
+        use ratatui::widgets::{Clear, Paragraph};
+        use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+        let area = f.area();
+        f.render_widget(Clear, area);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(45),
+                Constraint::Length(3),
+                Constraint::Percentage(45),
+            ])
+            .split(area);
+        let cmd_text = w.command_editor.render_simple(":");
+        let cmd = Paragraph::new(cmd_text)
+            .style(Style::default().fg(Color::Cyan))
+            .alignment(Alignment::Center);
+        f.render_widget(cmd, chunks[1]);
     } else {
         footer::draw_footer(f, w, footer_chunk, terminal_image_capabilities);
     }
@@ -234,7 +252,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
 pub fn draw_text_box(
     f: &mut Frame,
     title: impl AsRef<str>,
-    contents: &mut TextInputState,
+    contents: &mut crate::app::ui::components::vi_text_editor::ViTextEditor,
     chunk: Rect,
 ) {
     let block_widget = Block::default()
@@ -242,17 +260,9 @@ pub fn draw_text_box(
         .border_style(Style::default().fg(SELECTED_BORDER_COLOUR))
         .title(title.as_ref());
     let text_chunk = block_widget.inner(chunk);
-    let text_chunk = Rect {
-        x: text_chunk.x,
-        y: text_chunk.y,
-        width: text_chunk.width.saturating_sub(1),
-        height: text_chunk.height,
-    };
-    // TODO: Scrolling, if input larger than box.
-    let text_widget = TextInput::new();
+    let display = contents.render_simple("");
+    let text_widget = Paragraph::new(display)
+        .style(Style::default().fg(TEXT_COLOUR));
     f.render_widget(block_widget, chunk);
-    f.render_stateful_widget(text_widget, text_chunk, contents);
-    if let Some(cursor_pos) = contents.screen_cursor() {
-        f.set_cursor_position(cursor_pos)
-    };
+    f.render_widget(text_widget, text_chunk);
 }

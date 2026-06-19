@@ -1,7 +1,7 @@
 /// Traits related to viewable application components.
 use super::structures::{ListSong, ListSongDisplayableField, Percentage};
 use crate::widgets::{ScrollingListState, ScrollingTableState};
-use rat_text::text_input::TextInputState;
+use crate::app::ui::components::vi_text_editor::ViTextEditor;
 use ratatui::Frame;
 use ratatui::prelude::{Constraint, Rect};
 use ratatui::widgets::ListState;
@@ -132,7 +132,7 @@ pub trait TableView {
 }
 /// TableView with built in filtering and sorting.
 pub trait AdvancedTableView: TableView {
-    fn get_mut_filter_state(&mut self) -> &mut TextInputState;
+    fn get_mut_filter_state(&mut self) -> &mut ViTextEditor;
     fn filter_popup_shown(&self) -> bool;
     fn get_filterable_columns(&self) -> &[usize];
     // This can't be ExactSized as return type may be Filter<T>

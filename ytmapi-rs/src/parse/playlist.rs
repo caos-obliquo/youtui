@@ -86,8 +86,9 @@ pub struct PlaylistSong {
     pub thumbnails: Vec<Thumbnail>,
     pub explicit: Explicit,
     pub is_available: bool,
-    /// Id of the playlist that will get created when pressing 'Start Radio'.
+    /// Id of the playlist that will get created when starting 'Start Radio'.
     pub playlist_id: PlaylistID<'static>,
+    pub year: Option<String>,
 }
 
 #[derive(PartialEq, Debug, Clone, Deserialize, Serialize)]
@@ -305,6 +306,16 @@ pub(crate) fn parse_playlist_song(
         parse_library_management_items_from_menu(data.borrow_pointer(MENU_ITEMS)?)?;
     let like_status = data.take_value_pointer(MENU_LIKE_STATUS)?;
     let artists = super::parse_song_artists(&mut data, 1)?;
+    // Extract year from subtitle runs (first 4-digit number found in column 1 text)
+    let year = data
+        .borrow_pointer(super::fixed_column_item_pointer(1))
+        .ok()
+        .and_then(|mut c| {
+            let full_text: Vec<String> = c
+                .take_value_pointers(&["/text/runs/0/text", "/text/runs/1/text", "/text/runs/2/text"])
+                .ok().unwrap_or_default();
+            full_text.iter().find_map(|t| super::song::find_year_in_runs(t))
+        });
     // Some playlist types (Potentially just Featured Playlists) have a 'Plays'
     // field between Artist and Album.
     // TODO: Find a more efficient way, and potentially parse Featured Playlists
@@ -347,6 +358,7 @@ pub(crate) fn parse_playlist_song(
         album,
         playlist_id,
         is_available,
+        year,
     })
 }
 pub(crate) fn parse_playlist_upload_song(

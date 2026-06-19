@@ -67,6 +67,7 @@ pub struct ScrobblingConfig {
     pub api_secret: String,
     pub session_key: String,
     pub genius_token: String,
+    pub discogs_token: String,
 }
 
 impl Default for ScrobblingConfig {
@@ -77,6 +78,7 @@ impl Default for ScrobblingConfig {
             api_secret: String::new(),
             session_key: String::new(),
             genius_token: String::new(),
+            discogs_token: String::new(),
         }
     }
 }

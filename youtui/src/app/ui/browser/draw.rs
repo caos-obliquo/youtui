@@ -12,13 +12,12 @@ use crate::app::view::draw::{draw_advanced_table, draw_list, draw_loadable, draw
 use crate::drawutils::{
     ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TEXT_COLOUR, below_left_rect, bottom_of_rect,
 };
-use rat_text::HasScreenCursor;
-use rat_text::text_input::{TextInput, TextInputState};
+use crate::app::ui::components::vi_text_editor::ViTextEditor;
 use ratatui::Frame;
 use ratatui::prelude::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ytmapi_rs::common::{SuggestionType, TextRun};
 
 pub fn draw_browser(
@@ -241,7 +240,7 @@ pub fn draw_song_search_browser(
 pub fn draw_text_box(
     f: &mut Frame,
     title: impl AsRef<str>,
-    contents: &mut TextInputState,
+    contents: &mut ViTextEditor,
     chunk: Rect,
 ) {
     let block_widget = Block::default()
@@ -249,19 +248,11 @@ pub fn draw_text_box(
         .border_style(Style::default().fg(SELECTED_BORDER_COLOUR))
         .title(title.as_ref());
     let text_chunk = block_widget.inner(chunk);
-    let text_chunk = Rect {
-        x: text_chunk.x,
-        y: text_chunk.y,
-        width: text_chunk.width.saturating_sub(1),
-        height: text_chunk.height,
-    };
-    // TODO: Scrolling, if input larger than box.
-    let text_widget = TextInput::new();
+    let display = contents.render_simple("");
+    let text_widget = Paragraph::new(display)
+        .style(Style::default().fg(TEXT_COLOUR));
     f.render_widget(block_widget, chunk);
-    f.render_stateful_widget(text_widget, text_chunk, contents);
-    if let Some(cursor_pos) = contents.screen_cursor() {
-        f.set_cursor_position(cursor_pos)
-    };
+    f.render_widget(text_widget, text_chunk);
 }
 fn draw_search_box(f: &mut Frame, title: impl AsRef<str>, search: &mut SearchBlock, chunk: Rect) {
     draw_text_box(f, title, &mut search.search_contents, chunk);
