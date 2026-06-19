@@ -477,6 +477,7 @@ pub struct HandleGetPlaylistTracksErr;
 #[derive(Debug, PartialEq)]
 pub enum LoadPlaylistEffect {
     TracksFetched(Vec<PlaylistSong>),
+    TracksAppended(Vec<PlaylistSong>),
     FetchError,
 }
 
@@ -493,9 +494,16 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
                         id: None,
                     }).collect());
                     let list_album = Some(MaybeRc::Owned(ListSongAlbum {
-                        name: s.album.name,
+                        name: s.album.name.clone(),
                         id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
                     }));
+                    // Extract year from album name as fallback
+                    let year = s.year.clone().or_else(|| {
+                        let name = &s.album.name;
+                        name.split('(').last().and_then(|s| s.get(..4))
+                            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                            .map(|y| y.to_string())
+                    });
                     list_songs.push(crate::app::structures::ListSong {
                         video_id: s.video_id,
                         track_no: None,
@@ -507,7 +515,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
                         duration_string: s.duration,
                         actual_duration: None,
                         start_offset: None,
-                        year: s.year.map(Rc::new),
+                        year: year.map(Rc::new),
                         album_art: AlbumArtState::None,
                         genres: Vec::new(),
                         styles: Vec::new(),
@@ -522,6 +530,51 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
                 target.list.push_song_list(list_songs);
                 target.cur_selected = 0;
                 info!("Loaded {} songs from YouTube Music playlist", count);
+            }
+            LoadPlaylistEffect::TracksAppended(songs) => {
+                let count = songs.len();
+                let mut list_songs: Vec<crate::app::structures::ListSong> = Vec::new();
+                for s in songs {
+                    use ytmapi_rs::common::YoutubeID;
+                    let list_artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist {
+                        name: a.name,
+                        id: None,
+                    }).collect());
+                    let album_name = s.album.name.clone();
+                    let list_album = Some(MaybeRc::Owned(ListSongAlbum {
+                        name: album_name.clone(),
+                        id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+                    }));
+                    // Extract year from album name as fallback
+                    let year = s.year.clone().or_else(|| {
+                        let name = &album_name;
+                        name.split('(').last().and_then(|s| s.get(..4))
+                            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                            .map(|y| y.to_string())
+                    });
+                    list_songs.push(crate::app::structures::ListSong {
+                        video_id: s.video_id,
+                        track_no: None,
+                        plays: String::new(),
+                        title: s.title,
+                        explicit: Some(s.explicit),
+                        download_status: DownloadStatus::None,
+                        id: crate::app::structures::ListSongID(0),
+                        duration_string: s.duration,
+                        actual_duration: None,
+                        start_offset: None,
+                        year: year.map(Rc::new),
+                        album_art: AlbumArtState::None,
+                        genres: Vec::new(),
+                        styles: Vec::new(),
+                        artists: list_artists,
+                        thumbnails: MaybeRc::Owned(s.thumbnails),
+                        album: list_album,
+                    });
+                }
+                // Append to existing queue
+                target.list.push_song_list(list_songs);
+                info!("Appended {} songs to queue from YouTube Music playlist", count);
             }
             LoadPlaylistEffect::FetchError => {
                 error!("Failed to load playlist tracks from YouTube Music");
@@ -548,6 +601,18 @@ impl_youtui_task_handler!(
     |_, error: anyhow::Error| {
         error!("GetPlaylistTracks failed: {:?}", error);
         LoadPlaylistEffect::FetchError
+    }
+);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandleGetPlaylistTracksAppendOk;
+
+impl_youtui_task_handler!(
+    HandleGetPlaylistTracksAppendOk,
+    Vec<PlaylistSong>,
+    Playlist,
+    |_, songs: Vec<PlaylistSong>| {
+        LoadPlaylistEffect::TracksAppended(songs)
     }
 );
 
