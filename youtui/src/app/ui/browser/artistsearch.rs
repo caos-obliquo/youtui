@@ -88,8 +88,8 @@ impl TextHandler for ArtistSearchBrowser {
     }
     fn clear_text(&mut self) -> bool {
         match self.input_routing {
-            InputRouting::Artist => self.artist_search_panel.is_text_handling(),
-            InputRouting::Song => self.album_songs_panel.is_text_handling(),
+            InputRouting::Artist => self.artist_search_panel.clear_text(),
+            InputRouting::Song => self.album_songs_panel.clear_text(),
         }
     }
     fn handle_text_event_impl(

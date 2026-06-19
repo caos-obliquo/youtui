@@ -85,16 +85,18 @@ impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
         async move {
             use ytmapi_rs::query::GetLibraryPlaylistsQuery;
 
-            let pages: Vec<Vec<LibraryPlaylist>> = backend
-                .api
-                .get_api()
-                .await?
-                .read()
-                .await
-                .stream_browser_or_oauth(GetLibraryPlaylistsQuery, 10)
-                .await?;
+            let api_guard = backend.api.get_api().await?;
+            let api = api_guard.read().await;
 
-            Ok(pages.into_iter().flatten().collect())
+            match api.stream_browser_or_oauth(GetLibraryPlaylistsQuery, 10).await {
+                Ok(pages) => Ok(pages.into_iter().flatten().collect()),
+                Err(e) => {
+                    tracing::warn!("GetLibraryPlaylistsQuery failed: {}. Library playlists require browser auth (cookies) or OAuth.", e);
+                    Err(anyhow::anyhow!(
+                        "Library playlists unavailable. Configure cookies or OAuth in config. Error: {}", e
+                    ))
+                }
+            }
         }
     }
 }
@@ -753,7 +755,16 @@ impl BackendTask<ArcServer> for SearchPlaylists {
         backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
-        async move { backend.api.search_playlists(self.0).await }
+        let query = self.0;
+        async move {
+            match backend.api.search_playlists(query.clone()).await {
+                Ok(playlists) => Ok(playlists),
+                Err(e) => {
+                    tracing::warn!("Playlist search failed (YTM API): {}. Returning empty.", e);
+                    Ok(Vec::new()) // return empty instead of error
+                }
+            }
+        }
     }
 }
 impl BackendStreamingTask<ArcServer> for GetArtistSongs {

@@ -265,4 +265,9 @@ pub fn draw_text_box(
         .style(Style::default().fg(TEXT_COLOUR));
     f.render_widget(block_widget, chunk);
     f.render_widget(text_widget, text_chunk);
+    // Position hardware cursor at text cursor for terminals
+    f.set_cursor_position((
+        text_chunk.x + contents.cursor as u16,
+        text_chunk.y,
+    ));
 }
