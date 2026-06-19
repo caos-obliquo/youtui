@@ -911,6 +911,13 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Esc),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::ClearSearch),
+                KeyActionVisibility::Hidden,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('D')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::DeleteAll),

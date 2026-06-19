@@ -64,16 +64,16 @@ impl Action for BrowserPlaylistSongsAction {
     }
     fn describe(&self) -> Cow<'_, str> {
         match &self {
-            BrowserPlaylistSongsAction::PlaySong => "Play song",
-            BrowserPlaylistSongsAction::PlaySongs => "Play songs",
-            BrowserPlaylistSongsAction::AddSongToPlaylist => "Add song to playlist",
-            BrowserPlaylistSongsAction::AddSongsToPlaylist => "Add songs to playlist",
-            BrowserPlaylistSongsAction::Sort => "Sort",
-            BrowserPlaylistSongsAction::Filter => "Filter",
-            BrowserPlaylistSongsAction::ViewLyrics => "View Lyrics",
-            BrowserPlaylistSongsAction::CopySongUrl => "Copy Song URL",
-            BrowserPlaylistSongsAction::GoToArtist => "Go to Artist",
-            BrowserPlaylistSongsAction::GoToAlbum => "Go to Album",
+            BrowserPlaylistSongsAction::PlaySong => "󰐊 Play song",
+            BrowserPlaylistSongsAction::PlaySongs => "󰐊 Play songs",
+            BrowserPlaylistSongsAction::AddSongToPlaylist => " Add song to playlist",
+            BrowserPlaylistSongsAction::AddSongsToPlaylist => " Add songs to playlist",
+            BrowserPlaylistSongsAction::Sort => "󰇵 Sort",
+            BrowserPlaylistSongsAction::Filter => "󰇵 Filter",
+            BrowserPlaylistSongsAction::ViewLyrics => "󰋼 View Lyrics",
+            BrowserPlaylistSongsAction::CopySongUrl => "󰖟 Copy Song URL",
+            BrowserPlaylistSongsAction::GoToArtist => "󰓇 Go to Artist",
+            BrowserPlaylistSongsAction::GoToAlbum => "󰀥 Go to Album",
         }
         .into()
     }
