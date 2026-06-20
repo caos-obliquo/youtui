@@ -96,7 +96,10 @@ impl ViTextEditor {
     }
 
     fn cursor_marker(&self) -> &'static str {
-        "█"
+        match self.mode {
+            ViMode::Insert => "▎",
+            _ => "█",
+        }
     }
 
     /// Render with cursor block. Single-line: inline cursor. Multiline: per-line.
@@ -185,6 +188,7 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Esc => {
                 self.mode = ViMode::Normal;
                 if self.cursor > 0 { self.cursor -= 1; }
+                return true;
             }
             crossterm::event::KeyCode::Enter => {
                 if self.multiline {

@@ -51,6 +51,10 @@ pub struct ScrollingTable<I, H> {
     /// Maximum number of times to scroll text before stopping (None for
     /// unlimited).
     max_times_to_scroll: Option<u16>,
+    /// A single row to highlight with a different style (e.g. playing song)
+    secondary_highlight_row: Option<usize>,
+    /// Style used to render secondary highlighted row
+    secondary_row_highlight_style: Style,
     /// Visual selection range: all rows from start to end inclusive get highlighted
     visual_range: Option<(usize, usize)>,
     /// Style used to render visual range rows
@@ -79,11 +83,13 @@ impl<I, H> ScrollingTable<I, H> {
             table_widths,
             min_ticker_gap: DEFAULT_TICKER_GAP,
             max_times_to_scroll: None,
-            visual_range: None,
+            secondary_highlight_row: None,
             style: Default::default(),
             row_highlight_style: Default::default(),
             headings_style: Default::default(),
             column_spacing: Default::default(),
+            secondary_row_highlight_style: Default::default(),
+            visual_range: None,
             visual_range_style: Default::default(),
         }
     }
@@ -95,6 +101,11 @@ impl<I, H> ScrollingTable<I, H> {
     #[must_use = "method moves the value of self and returns the modified value"]
     pub fn visual_range_style<S: Into<Style>>(mut self, style: S) -> Self {
         self.visual_range_style = style.into();
+        self
+    }
+    #[must_use = "method moves the value of self and returns the modified value"]
+    pub fn secondary_row_highlight_style<S: Into<Style>>(mut self, style: S) -> Self {
+        self.secondary_row_highlight_style = style.into();
         self
     }
     #[must_use = "method moves the value of self and returns the modified value"]
@@ -111,6 +122,12 @@ impl<I, H> ScrollingTable<I, H> {
     /// Visual selection range: all rows from start to end get highlighted
     pub fn visual_range(mut self, visual_range: Option<(usize, usize)>) -> Self {
         self.visual_range = visual_range;
+        self
+    }
+    #[must_use = "method moves the value of self and returns the modified value"]
+    /// A single additional row to highlight with a different style
+    pub fn secondary_highlight_row(mut self, secondary_highlight_row: Option<usize>) -> Self {
+        self.secondary_highlight_row = secondary_highlight_row;
         self
     }
     #[must_use = "method moves the value of self and returns the modified value"]
@@ -159,6 +176,8 @@ where
             min_ticker_gap,
             table_widths,
             max_times_to_scroll,
+            secondary_highlight_row,
+            secondary_row_highlight_style,
             visual_range,
             visual_range_style,
         } = self;
@@ -224,12 +243,10 @@ where
         let items = items.into_iter().skip(offset).take(visible_rows).enumerate().map(|(idx, row_items)| {
             // Secondary row highlight style is not supported by ratatui's standard Table
             // widget, so it's handled manually here.
-            // Check if this row is within the visual selection range
-            let absolute_idx = offset + idx;
-            let in_visual_range = visual_range.map_or(false, |(start, end)| {
-                absolute_idx >= start && absolute_idx <= end
-            });
-            let row_style = if in_visual_range {
+            let window_abs = offset + idx;
+            let row_style = if secondary_highlight_row == Some(window_abs) {
+                secondary_row_highlight_style.clone()
+            } else if visual_range.map_or(false, |(start, end)| window_abs >= start && window_abs <= end) {
                 visual_range_style.clone()
             } else {
                 Default::default()
