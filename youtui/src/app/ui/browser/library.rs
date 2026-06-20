@@ -482,6 +482,7 @@ impl LibraryBrowser {
         (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(songs)))
     }
 
+    #[allow(dead_code)]
     pub fn load_selected_playlist(&self) -> (AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>, Option<AppCallback>) {
         if self.category != LibraryCategory::Playlists {
             return (AsyncTask::new_no_op(), None);
@@ -540,10 +541,11 @@ impl LibraryBrowser {
         }
     }
 
+    #[allow(dead_code)]
     pub fn search_text(&self) -> &str {
         self.search_editor.get_text()
     }
-
+    #[allow(dead_code)]
     pub fn is_search_active(&self) -> bool {
         self.search_active
     }
@@ -713,10 +715,6 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     self.sort.shown = !self.sort.shown;
                     return (AsyncTask::new_no_op(), None);
                 }
-                BrowserSongsAction::Sort => {
-                    self.sort.shown = !self.sort.shown;
-                    return (AsyncTask::new_no_op(), None);
-                }
                 BrowserSongsAction::GoToArtist => {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
@@ -737,8 +735,8 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         warn!("Song has no album data, cannot navigate to album");
                     }
                 }
-                _ => warn!("Unsupported song action for liked songs: {:?}", action),
             },
+            #[allow(unreachable_patterns)]
             LibraryCategory::Playlists => match action {
                 BrowserSongsAction::PlaySong => {
                     if self.show_playlist_tracks {

@@ -124,6 +124,7 @@ pub enum AppCallback {
     Navigate(NavTarget),
     SeekBack,
     SeekForward,
+    #[allow(dead_code)]
     Back,
 }
 
