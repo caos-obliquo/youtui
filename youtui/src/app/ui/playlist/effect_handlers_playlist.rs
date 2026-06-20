@@ -451,28 +451,20 @@ pub enum FetchAlbumArtEffect {
 
 impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for FetchAlbumArtEffect {
     fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
-        match self {
+    match self {
             FetchAlbumArtEffect::Fetched(thumbnail) => {
                 let thumb_rc = std::rc::Rc::new(thumbnail);
-                // Find all songs with matching album and set album art
+                // Apply art to all songs with matching album name
                 for song in target.list.get_list_iter_mut() {
-                    let song_artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                    let song_album = song.album.as_ref().map(|a| a.name.as_str()).unwrap_or("");
-                    let expected_id = format!("lastfm:{}:{}", song_artist, song_album);
-                    use ytmapi_rs::common::YoutubeID;
-                    let matches = match thumb_rc.song_thumbnail_id {
-                        crate::app::server::song_thumbnail_downloader::SongThumbnailID::Album(ref aid) => {
-                            aid.get_raw() == expected_id
-                        }
-                        _ => false,
-                    };
-                    if matches {
+                    if song.album_art == AlbumArtState::None {
                         song.album_art = AlbumArtState::Downloaded(thumb_rc.clone());
                     }
                 }
-                info!("FetchAlbumArtEffect: applied art to matching songs");
+                target.album_art_fetching = false;
+                info!("FetchAlbumArtEffect: applied art");
             }
             FetchAlbumArtEffect::FetchError => {
+                target.album_art_fetching = false;
                 error!("FetchAlbumArtEffect: failed to fetch album art");
             }
         }
