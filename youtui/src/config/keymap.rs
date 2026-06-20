@@ -1001,11 +1001,15 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
                     ),
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToTop)),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToBottom)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
                         KeyActionTree::new_mode(
                             [
                                 (
@@ -1641,7 +1645,7 @@ fn default_text_entry_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> 
 fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('5')),
+            Keybind::new_unmodified(crossterm::event::KeyCode::F(5)),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Log(LoggerAction::ViewBrowser),
                 KeyActionVisibility::Global,
