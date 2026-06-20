@@ -531,7 +531,6 @@ impl Browser {
         self.push_snapshot();
         match target {
             NavTarget::Artist(name) => {
-                use crate::app::server::SearchArtists;
                 self.variant = BrowserVariant::Artist;
                 self.artist_search_browser.artist_search_panel.search.replace_text(name);
                 let effect = self.artist_search_browser.search();

@@ -1026,7 +1026,7 @@ impl YoutuiWindow {
                 .to_string()
         };
 
-        let mut effect;
+        let effect;
 
         if video_id_str.len() >= 10 && video_id_str.len() <= 20 {
             let vid = ytmapi_rs::common::VideoID::from_raw(video_id_str.clone());

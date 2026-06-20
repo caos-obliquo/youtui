@@ -188,7 +188,6 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Esc => {
                 self.mode = ViMode::Normal;
                 if self.cursor > 0 { self.cursor -= 1; }
-                return true;
             }
             crossterm::event::KeyCode::Enter => {
                 if self.multiline {

@@ -118,8 +118,6 @@ pub struct Playlist {
     pub visual_start: usize,
     /// Guard: true when a FetchAlbumArt task is in-flight for current song
     pub album_art_fetching: bool,
-    /// Timestamp (play progress secs) when last FetchAlbumArt was triggered
-    pub album_art_fetch_throttle: u64,
 }
 
 impl_youtui_component!(Playlist);
@@ -735,7 +733,6 @@ impl Playlist {
             visual_mode: false,
             visual_start: 0,
             album_art_fetching: false,
-            album_art_fetch_throttle: 0,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -1940,7 +1937,7 @@ impl Playlist {
         let idx = self.cur_selected;
         if idx == 0 { return AsyncTask::new_no_op(); }
         let all_songs: Vec<_> = self.list.get_list_iter().cloned().collect();
-        let mut to_delete: Vec<_> = (0..idx).filter_map(|i| {
+        let to_delete: Vec<_> = (0..idx).filter_map(|i| {
             let actual = self.visual_to_actual_index(i);
             if actual < all_songs.len() {
                 Some((all_songs[actual].clone(), actual))
@@ -1959,7 +1956,7 @@ impl Playlist {
         let total = self.list.get_list_iter().count();
         if idx >= total.saturating_sub(1) { return AsyncTask::new_no_op(); }
         let all_songs: Vec<_> = self.list.get_list_iter().cloned().collect();
-        let mut to_delete: Vec<_> = (idx..total).filter_map(|i| {
+        let to_delete: Vec<_> = (idx..total).filter_map(|i| {
             let actual = self.visual_to_actual_index(i);
             if actual < all_songs.len() {
                 Some((all_songs[actual].clone(), actual))

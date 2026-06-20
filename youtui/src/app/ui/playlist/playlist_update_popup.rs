@@ -152,20 +152,6 @@ impl PlaylistUpdatePopup {
         }
     }
 
-    fn filtered_playlists(&self) -> Vec<&LibraryPlaylist> {
-        match &self.state {
-            PlaylistUpdatePopupState::Loaded(playlists) => {
-                if self.search_text.is_empty() || !self.search_active {
-                    playlists.iter().collect()
-                } else {
-                    let lower = self.search_text.to_lowercase();
-                    playlists.iter().filter(|p| p.title.to_lowercase().contains(&lower)).collect()
-                }
-            }
-            _ => Vec::new(),
-        }
-    }
-
     pub fn handle_key(&mut self, event: KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
         use crossterm::event::KeyCode;
         if self.search_active {

@@ -90,12 +90,14 @@ impl BackendTask<ArcServer> for RateSong {
 }
 
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub struct RenamePlaylist {
     pub playlist_id: PlaylistID<'static>,
     pub new_title: String,
 }
 
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub struct RemovePlaylistItems {
     pub playlist_id: PlaylistID<'static>,
     pub video_ids: Vec<VideoID<'static>>,

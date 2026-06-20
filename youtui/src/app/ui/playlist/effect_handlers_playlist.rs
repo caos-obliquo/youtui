@@ -1,7 +1,6 @@
 use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::ValidatedMetadata;
 use crate::app::server::ValidateMetadata;
-use crate::app::server::RateSong;
 use crate::app::server::{ArcServer, TaskMetadata};
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
@@ -74,7 +73,7 @@ impl_youtui_task_handler!(
     (),
     Playlist,
     |_, _: ()| {
-        |this: &mut Playlist| {
+        |_this: &mut Playlist| {
             info!("Song rated successfully");
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
@@ -87,7 +86,7 @@ impl_youtui_task_handler!(
     Playlist,
     |_, err: anyhow::Error| {
         let msg = err.to_string();
-        move |this: &mut Playlist| {
+        move |_this: &mut Playlist| {
             error!("Failed to rate song: {}", msg);
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
