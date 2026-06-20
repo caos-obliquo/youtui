@@ -55,6 +55,9 @@ pub struct LyricsPopup {
     romaji_cache: Option<String>,
     original_lyrics: String,
     focus: Focus,
+    pub visual_mode: bool,
+    pub visual_start: usize,
+    pub visual_end: usize,
 }
 
 impl_youtui_component!(LyricsPopup);
@@ -81,6 +84,9 @@ impl LyricsPopup {
             romaji_cache: None,
             original_lyrics: String::new(),
             focus: Focus::Lyrics,
+            visual_mode: false,
+            visual_start: 0,
+            visual_end: 0,
         }
     }
 
@@ -101,6 +107,50 @@ impl LyricsPopup {
     }
 
     pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        use crate::drawutils::ROW_HIGHLIGHT_COLOUR;
+        if self.visual_mode {
+            match event.code {
+                KeyCode::Esc | KeyCode::Char('V') => {
+                    self.visual_mode = false;
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.visual_end = self.visual_end.saturating_add(1);
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if self.visual_end > 0 { self.visual_end -= 1; }
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('y') => {
+                    let (start, end) = if self.visual_start <= self.visual_end {
+                        (self.visual_start, self.visual_end)
+                    } else {
+                        (self.visual_end, self.visual_start)
+                    };
+                    let lines = match self.focus {
+                        Focus::Lyrics => self.original_lyrics.lines()
+                            .skip(start).take(end - start + 1)
+                            .collect::<Vec<_>>().join("\n"),
+                        Focus::Annotations => {
+                            let ann_text: Vec<&str> = self.annotations.iter()
+                                .flat_map(|a| {
+                                    let mut l = vec![&a.fragment[..]];
+                                    l.extend(a.explanation.split('\n'));
+                                    l.push("");
+                                    l
+                                }).collect();
+                            ann_text.iter().skip(start).take(end - start + 1)
+                                .copied().collect::<Vec<_>>().join("\n")
+                        }
+                    };
+                    let _ = std::process::Command::new("wl-copy").arg(&lines).spawn();
+                    self.visual_mode = false;
+                    return (AsyncTask::new_no_op(), None);
+                }
+                _ => {}
+            }
+        }
         match event.code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
@@ -110,6 +160,15 @@ impl LyricsPopup {
                 self.ann_scroll_offset = 0;
                 self.focus = if self.show_annotations { Focus::Annotations } else { Focus::Lyrics };
                 tracing::info!("Toggle annotations: show={}, count={}", self.show_annotations, self.annotations.len());
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('V') => {
+                self.visual_mode = true;
+                self.visual_start = match self.focus {
+                    Focus::Lyrics => self.scroll_offset,
+                    Focus::Annotations => self.ann_scroll_offset,
+                };
+                self.visual_end = self.visual_start;
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('R') => {
@@ -215,14 +274,26 @@ impl LyricsPopup {
                     let l_visible = (l_chunks[0].height as usize).saturating_sub(1);
                     let l_max = l_line_count.saturating_sub(l_visible);
                     if self.scroll_offset > l_max { self.scroll_offset = l_max; }
-                    let l_visible_text: String = lyrics_text.lines().skip(self.scroll_offset).take(l_visible).collect::<Vec<_>>().join("\n");
-
-                    let l_style = if self.focus == Focus::Lyrics {
+                    let l_base_style = if self.focus == Focus::Lyrics {
                         Style::default().fg(Color::White)
                     } else {
                         Style::default().fg(Color::DarkGray)
                     };
-                    frame.render_widget(Paragraph::new(l_visible_text).style(l_style).wrap(Wrap { trim: false }), l_chunks[0]);
+                    let l_visible_lines: Vec<ratatui::text::Line> = lyrics_text.lines()
+                        .skip(self.scroll_offset).take(l_visible)
+                        .enumerate().map(|(i, line)| {
+                            let abs_line = self.scroll_offset + i;
+                            let style = if self.visual_mode && self.focus == Focus::Lyrics
+                                && abs_line >= self.visual_start.min(self.visual_end)
+                                && abs_line <= self.visual_start.max(self.visual_end)
+                            {
+                                Style::default().fg(Color::Black).bg(Color::Cyan)
+                            } else {
+                                l_base_style
+                            };
+                            ratatui::text::Line::from(ratatui::text::Span::styled(line.to_string(), style))
+                        }).collect();
+                    frame.render_widget(Paragraph::new(l_visible_lines).wrap(Wrap { trim: false }), l_chunks[0]);
 
                     // Right: annotations
                     let r_chunks = Layout::default()
@@ -254,7 +325,21 @@ impl LyricsPopup {
                     let a_visible = r_chunks[0].height as usize;
                     let a_max = a_line_count.saturating_sub(a_visible);
                     if self.ann_scroll_offset > a_max { self.ann_scroll_offset = a_max; }
-                    let a_visible_lines: Vec<Line<'static>> = ann_lines.into_iter().skip(self.ann_scroll_offset).take(a_visible).collect();
+                    let mut a_visible_lines: Vec<Line<'static>> = ann_lines.into_iter().skip(self.ann_scroll_offset).take(a_visible).collect();
+                    if self.visual_mode && self.focus == Focus::Annotations {
+                        let abs_offset = self.ann_scroll_offset;
+                        for (i, line) in a_visible_lines.iter_mut().enumerate() {
+                            let abs_line = abs_offset + i;
+                            if abs_line >= self.visual_start.min(self.visual_end)
+                                && abs_line <= self.visual_start.max(self.visual_end)
+                            {
+                                let styled: Vec<Span> = line.spans.iter().map(|s| {
+                                    Span::styled(s.content.clone(), Style::default().fg(Color::Black).bg(Color::Cyan))
+                                }).collect();
+                                *line = Line::from(styled);
+                            }
+                        }
+                    }
 
                     let r_style = if self.focus == Focus::Annotations {
                         Style::default().fg(Color::White)
@@ -305,15 +390,28 @@ impl LyricsPopup {
                     };
 
                     let line_count = display_text.lines().count();
-                    let visible_lines = (chunks[0].height as usize).saturating_sub(1);
-                    let max_scroll = line_count.saturating_sub(visible_lines);
+                    let visible_lines_count = (chunks[0].height as usize).saturating_sub(1);
+                    let max_scroll = line_count.saturating_sub(visible_lines_count);
                     if self.scroll_offset > max_scroll { self.scroll_offset = max_scroll; }
 
-                    let visible: String = display_text.lines().skip(self.scroll_offset).take(visible_lines).collect::<Vec<_>>().join("\n");
-                    let has_more = self.scroll_offset + visible_lines < line_count;
+                    let lyrics_lines: Vec<ratatui::text::Line> = display_text.lines()
+                        .skip(self.scroll_offset).take(visible_lines_count)
+                        .enumerate().map(|(i, line)| {
+                            let abs_line = self.scroll_offset + i;
+                            let style = if self.visual_mode
+                                && abs_line >= self.visual_start.min(self.visual_end)
+                                && abs_line <= self.visual_start.max(self.visual_end)
+                            {
+                                Style::default().fg(Color::Black).bg(Color::Cyan)
+                            } else {
+                                Style::default().fg(Color::White)
+                            };
+                            ratatui::text::Line::from(ratatui::text::Span::styled(line.to_string(), style))
+                        }).collect();
+                    let has_more = self.scroll_offset + visible_lines_count < line_count;
                     let scroll_hint = if has_more { " j/k scroll " } else { "" };
 
-                    frame.render_widget(Paragraph::new(visible).style(Style::default().fg(Color::White)).wrap(Wrap { trim: false }), chunks[0]);
+                    frame.render_widget(Paragraph::new(lyrics_lines).wrap(Wrap { trim: false }), chunks[0]);
                     let has_jp = has_japanese(&self.original_lyrics);
                     let romaji_option = if has_jp { " | R: Romaji" } else { "" };
                     let ann_option = if ann_count > 0 { " | a: Annotations sidebar" } else { "" };
