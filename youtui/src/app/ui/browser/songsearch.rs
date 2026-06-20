@@ -64,16 +64,16 @@ impl Action for BrowserSongsAction {
     }
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match self {
-            BrowserSongsAction::Filter => "󰇵 Filter",
-            BrowserSongsAction::Sort => "󰇵 Sort",
-            BrowserSongsAction::PlaySong => "󰐊 Play song",
-            BrowserSongsAction::PlaySongs => "󰐊 Play songs",
-            BrowserSongsAction::AddSongToPlaylist => " Add song to playlist",
-            BrowserSongsAction::AddSongsToPlaylist => " Add songs to playlist",
-            BrowserSongsAction::ViewLyrics => "󰋼 View Lyrics",
-            BrowserSongsAction::CopySongUrl => "󰖟 Copy Song URL",
-            BrowserSongsAction::GoToArtist => "󰓇 Go to Artist",
-            BrowserSongsAction::GoToAlbum => "󰀥 Go to Album",
+            BrowserSongsAction::Filter => "Filter",
+            BrowserSongsAction::Sort => "Sort",
+            BrowserSongsAction::PlaySong => "Play song",
+            BrowserSongsAction::PlaySongs => "Play songs",
+            BrowserSongsAction::AddSongToPlaylist => "Add song to playlist",
+            BrowserSongsAction::AddSongsToPlaylist => "Add songs to playlist",
+            BrowserSongsAction::ViewLyrics => "View Lyrics",
+            BrowserSongsAction::CopySongUrl => "Copy Song URL",
+            BrowserSongsAction::GoToArtist => "Go to Artist",
+            BrowserSongsAction::GoToAlbum => "Go to Album",
         }
         .into()
     }

@@ -116,6 +116,10 @@ pub struct Playlist {
     pub undo_stack: Vec<(crate::app::structures::ListSong, usize)>,
     pub visual_mode: bool,
     pub visual_start: usize,
+    /// Guard: true when a FetchAlbumArt task is in-flight for current song
+    pub album_art_fetching: bool,
+    /// Timestamp (play progress secs) when last FetchAlbumArt was triggered
+    pub album_art_fetch_throttle: u64,
 }
 
 impl_youtui_component!(Playlist);
@@ -164,36 +168,36 @@ impl Action for PlaylistAction {
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match self {
             PlaylistAction::ViewBrowser => "View Browser",
-            PlaylistAction::PlaySelected => "󰐊 Play Selected",
-            PlaylistAction::DeleteSelected => " Delete Selected",
-            PlaylistAction::DeleteAll => " Delete All",
-            PlaylistAction::ToggleShuffle => "󰒝 Toggle Shuffle",
-            PlaylistAction::ToggleSearch => "󰍉 Toggle Search",
-            PlaylistAction::ClearSearch => "󰍉 Clear Search",
-            PlaylistAction::SaveQueue => " Save Queue",
-            PlaylistAction::LoadQueue => "󰑐 Load Queue",
-            PlaylistAction::DeleteQueue => " Delete Queue",
-            PlaylistAction::SetBestQuality => "󰋲 Set Best Quality",
-            PlaylistAction::SaveToNewPlaylist => " Save Queue to New Playlist",
-            PlaylistAction::LoadFromYTM => "󰑐 Load YouTube Music Playlist",
-            PlaylistAction::ViewLyrics => "󰋼 View Lyrics",
-            PlaylistAction::TogglePlaylistCategoryFilter => "󰇵 Toggle Category Filter",
-            PlaylistAction::NextSearchResult => "󰄸 Next Match",
-            PlaylistAction::PrevSearchResult => "󰄷 Prev Match",
-            PlaylistAction::CopySongUrl => "󰖟 Copy Song URL",
-            PlaylistAction::OpenUrl => "󰖟 Open URL",
-            PlaylistAction::ToggleRomaji => "󰘐 Toggle Romaji",
-            PlaylistAction::ToggleRepeat => "󰑩 Toggle Repeat Mode",
-            PlaylistAction::ToggleRadio => "󰓻 Toggle Radio Mode",
-            PlaylistAction::ViewSongInfo => "󰋲 View Song Info",
-            PlaylistAction::SaveToExistingPlaylist => " Save Queue to Existing Playlist",
-            PlaylistAction::UndoDelete => "󰩍 Undo Delete",
-            PlaylistAction::DeleteToTop => " Delete to Top",
-            PlaylistAction::DeleteToBottom => " Delete to Bottom",
-            PlaylistAction::ToggleVisualMode => "󰂭 Toggle Visual Mode",
-            PlaylistAction::GoToArtist => "󰓇 Go to Artist",
-            PlaylistAction::GoToAlbum => "󰀥 Go to Album",
-            PlaylistAction::ToggleLike => "󰋑 Like / Unlike",
+            PlaylistAction::PlaySelected => "Play Selected",
+            PlaylistAction::DeleteSelected => "Delete Selected",
+            PlaylistAction::DeleteAll => "Delete All",
+            PlaylistAction::ToggleShuffle => "Toggle Shuffle",
+            PlaylistAction::ToggleSearch => "Toggle Search",
+            PlaylistAction::ClearSearch => "Clear Search",
+            PlaylistAction::SaveQueue => "Save Queue",
+            PlaylistAction::LoadQueue => "Load Queue",
+            PlaylistAction::DeleteQueue => "Delete Queue",
+            PlaylistAction::SetBestQuality => "Set Best Quality",
+            PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
+            PlaylistAction::LoadFromYTM => "Load YouTube Music Playlist",
+            PlaylistAction::ViewLyrics => "View Lyrics",
+            PlaylistAction::TogglePlaylistCategoryFilter => "Toggle Category Filter",
+            PlaylistAction::NextSearchResult => "Next Match",
+            PlaylistAction::PrevSearchResult => "Prev Match",
+            PlaylistAction::CopySongUrl => "Copy Song URL",
+            PlaylistAction::OpenUrl => "Open URL",
+            PlaylistAction::ToggleRomaji => "Toggle Romaji",
+            PlaylistAction::ToggleRepeat => "Toggle Repeat Mode",
+            PlaylistAction::ToggleRadio => "Toggle Radio Mode",
+            PlaylistAction::ViewSongInfo => "View Song Info",
+            PlaylistAction::SaveToExistingPlaylist => "Save Queue to Existing Playlist",
+            PlaylistAction::UndoDelete => "Undo Delete",
+            PlaylistAction::DeleteToTop => "Delete to Top",
+            PlaylistAction::DeleteToBottom => "Delete to Bottom",
+            PlaylistAction::ToggleVisualMode => "Toggle Visual Mode",
+            PlaylistAction::GoToArtist => "Go to Artist",
+            PlaylistAction::GoToAlbum => "Go to Album",
+            PlaylistAction::ToggleLike => "Like / Unlike",
         }
         .into()
     }
@@ -730,6 +734,8 @@ impl Playlist {
             undo_stack: Vec::new(),
             visual_mode: false,
             visual_start: 0,
+            album_art_fetching: false,
+            album_art_fetch_throttle: 0,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -1008,6 +1014,10 @@ impl Playlist {
     }
 
     pub fn play_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
+        // Guard: don't re-decode if already Playing the same id
+        if matches!(self.play_status, PlayState::Playing(cur) | PlayState::Paused(cur) if cur == id) {
+            return AsyncTask::new_no_op();
+        }
         self.drop_unscoped_from_id(id);
 
         let mut effect = self.download_upcoming_from_id(id);
@@ -1052,14 +1062,18 @@ impl Playlist {
                     }
                 }
                 let is_track_entry = self.get_song_from_idx(song_index).and_then(|s| s.track_no).is_some();
-                // Trigger FetchAlbumArt if not already downloaded
+                // Trigger FetchAlbumArt if not already downloaded (with throttle)
                 if let Some(song) = self.get_song_from_idx(song_index) {
-                    if matches!(song.album_art, crate::app::structures::AlbumArtState::None | AlbumArtState::Init) {
+                    let should_fetch = matches!(song.album_art, crate::app::structures::AlbumArtState::None | AlbumArtState::Init)
+                        && !self.album_art_fetching
+                        && self.cur_played_dur.map_or(false, |d| d.as_secs() > 5 || d.is_zero());
+                    if should_fetch {
                         if let Some(ref album) = song.album {
                             let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                             let album_name = album.name.clone();
                             let api_key = self.scrobbling_config.api_key.clone();
                             if !api_key.is_empty() {
+                                self.album_art_fetching = true;
                                 effect = effect.push(AsyncTask::new_future_try(
                                     crate::app::server::FetchAlbumArt(artist, album_name, api_key),
                                     HandleFetchAlbumArtOk,
