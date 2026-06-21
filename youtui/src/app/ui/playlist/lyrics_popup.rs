@@ -139,8 +139,19 @@ impl LyricsPopup {
     }
     fn rebuild_lines(&mut self) {
         self.lines.clear();
-        for line in self.original_lyrics.lines() {
-            self.lines.push(line.to_string());
+        if self.romaji_mode && has_japanese(&self.original_lyrics) {
+            if self.romaji_cache.is_none() {
+                self.romaji_cache = Some(japanese_to_romaji(&self.original_lyrics));
+            }
+            if let Some(romaji) = &self.romaji_cache {
+                for line in romaji.lines() {
+                    self.lines.push(line.to_string());
+                }
+            }
+        } else {
+            for line in self.original_lyrics.lines() {
+                self.lines.push(line.to_string());
+            }
         }
     }
 
@@ -316,6 +327,7 @@ impl LyricsPopup {
                 self.romaji_mode = !self.romaji_mode;
                 self.romaji_cache = None;
                 self.scroll_offset = 0;
+                self.rebuild_lines();
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Tab | KeyCode::Char('l') => {
