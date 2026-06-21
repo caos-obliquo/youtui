@@ -541,19 +541,21 @@ impl YoutuiWindow {
 
         // Quit confirm screen intercepts all keys
         if self.quit_confirm {
-            if let Event::Key(k, false) = event {
-                match k.code {
-                    KeyCode::Char('y') | KeyCode::Enter => {
-                        self.quit_confirm = false;
-                        return YoutuiEffect {
-                            effect: AsyncTask::new_no_op(),
-                            callback: Some(AppCallback::Quit),
-                        };
+            if let Event::Key(k) = event {
+                if k.modifiers == crossterm::event::KeyModifiers::NONE {
+                    match k.code {
+                        KeyCode::Char('y') | KeyCode::Enter => {
+                            self.quit_confirm = false;
+                            return YoutuiEffect {
+                                effect: AsyncTask::new_no_op(),
+                                callback: Some(AppCallback::Quit),
+                            };
+                        }
+                        KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
+                            self.quit_confirm = false;
+                        }
+                        _ => {}
                     }
-                    KeyCode::Char('n') | KeyCode::Esc | KeyCode::Char('q') => {
-                        self.quit_confirm = false;
-                    }
-                    _ => {}
                 }
             }
             return AsyncTask::new_no_op().into();
@@ -600,7 +602,7 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
-        if self.song_info_popup.is_some(, false) {
+        if self.song_info_popup.is_some() {
             if let Event::Key(k) = event {
                 let popup = self.song_info_popup.as_mut().unwrap();
                 let (effect, callback) = popup.handle_key(k);
@@ -610,7 +612,7 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
-        if self.playlist_save_popup.is_some(, false) {
+        if self.playlist_save_popup.is_some() {
             if let Event::Key(k) = event {
                 let popup = self.playlist_save_popup.as_mut().unwrap();
                 let (effect, callback) = popup.handle_key(k);
@@ -620,7 +622,7 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
-        if self.playlist_update_popup.is_some(, false) {
+        if self.playlist_update_popup.is_some() {
             if let Event::Key(k) = event {
                 let popup = self.playlist_update_popup.as_mut().unwrap();
                 let (effect, callback) = popup.handle_key(k);
@@ -630,7 +632,7 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
-        if let Some(effect, false) = self.try_handle_text(&event) {
+        if let Some(effect) = self.try_handle_text(&event) {
             return effect.into();
         };
         match event {

@@ -226,7 +226,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             playlist,
             browser,
             browser_artists,
-            browser_library,
+            browser_library: _,
             browser_search,
             browser_songs,
             browser_artist_songs,
@@ -251,7 +251,7 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
             playlist: def_playlist,
             browser: def_browser,
             browser_artists: def_browser_artists,
-            browser_library: def_browser_library,
+            browser_library: _def_browser_library,
             browser_search: def_browser_search,
             browser_artist_songs: def_browser_artist_songs,
             browser_songs: def_browser_songs,
@@ -401,4 +401,5 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
         let def_config = Config::default();
         assert_ne!(config, def_config)
     }
+
 }
