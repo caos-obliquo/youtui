@@ -533,6 +533,23 @@ impl LibraryBrowser {
         }
     }
 
+    pub fn handle_text_entry_action(&mut self, action: crate::app::ui::action::TextEntryAction) -> async_callback_manager::AsyncTask<Self, crate::app::server::ArcServer, crate::app::server::TaskMetadata> {
+        if self.search_active {
+            if action == crate::app::ui::action::TextEntryAction::Submit {
+                let text = self.search.search_contents.get_text().to_string();
+                self.search.clear_text();
+                self.search_active = false;
+                self.input_routing = InputRouting::Content;
+                // Apply filter using the search text
+                let lower = text.to_lowercase();
+                if !lower.is_empty() && self.category == LibraryCategory::Playlists {
+                    self.playlist_data.retain(|p| p.title.to_lowercase().contains(&lower));
+                }
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+
     pub fn text_editor_mode(&self) -> Option<String> {
         if self.search_active {
             Some(self.search.search_contents.mode_char().to_string())

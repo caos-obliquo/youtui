@@ -2,16 +2,18 @@ use crate::app::AppCallback;
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
+use crate::app::server::SearchAlbums;
+use crate::app::component::actionhandler::Suggestable;
 use crate::app::structures::{BrowserSongsList, ListSong};
 use crate::app::ui::action::{AppAction, TextEntryAction};
-use super::shared_components::{BrowserSearchAction, FilterAction, FilterManager, SortAction, SortManager};
+use super::shared_components::{BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager};
 use super::songsearch::BrowserSongsAction;
 use crate::config::Config;
 use crate::config::keymap::Keymap;
 use async_callback_manager::{AsyncTask, BackendTask};
 use tracing::info;
 use ytmapi_rs::parse::{SearchResultAlbum, AlbumSong, ParsedSongAlbum, ParsedSongArtist};
-use ytmapi_rs::common::{AlbumID, Thumbnail, YoutubeID};
+use ytmapi_rs::common::{AlbumID, SearchSuggestion, Thumbnail, YoutubeID};
 
 pub struct AlbumSearchBrowser {
     pub albums: Vec<SearchResultAlbum>,
@@ -24,7 +26,8 @@ pub struct AlbumSearchBrowser {
     pub album_artist: String,
     pub sort: SortManager,
     pub filter: FilterManager,
-    pub search_active: bool,
+    pub search: SearchBlock,
+    pub search_popped: bool,
 }
 
 impl_youtui_component!(AlbumSearchBrowser);
@@ -42,7 +45,8 @@ impl AlbumSearchBrowser {
             album_artist: String::new(),
             sort: SortManager::default(),
             filter: FilterManager::default(),
-            search_active: false,
+            search: SearchBlock::default(),
+            search_popped: false,
         }
     }
 
@@ -94,9 +98,52 @@ impl AlbumSearchBrowser {
 
     pub fn is_text_handling(&self) -> bool { false }
     pub fn handle_toggle_search(&mut self) {
-        self.filter.shown = !self.filter.shown;
+        if self.search_popped {
+            self.search_popped = false;
+            self.search = SearchBlock::default();
+        } else {
+            self.search_popped = true;
+            self.search = SearchBlock::default();
+            self.albums.clear();
+            self.album_selected = 0;
+        }
     }
-    pub fn handle_text_entry_action(&mut self, _action: TextEntryAction) -> ComponentEffect<Self> { AsyncTask::new_no_op() }
+
+    pub fn handle_text_entry_action(&mut self, action: TextEntryAction) -> ComponentEffect<Self> {
+        if self.search_popped {
+            match action {
+                TextEntryAction::Submit => {
+                    let query = self.search.search_contents.get_text().to_string();
+                    if !query.is_empty() {
+                        return self.search_albums_query(query).0;
+                    }
+                }
+                TextEntryAction::DeleteWord => {
+                    self.search.delete_word();
+                }
+                _ => {}
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+
+    pub fn has_search_suggestions(&self) -> bool {
+        self.search.has_search_suggestions()
+    }
+
+    pub fn get_search_suggestions(&self) -> &[SearchSuggestion] {
+        self.search.get_search_suggestions()
+    }
+
+    pub fn search_albums_query(&mut self, query: String) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        let task = AsyncTask::new_future_try(
+            SearchAlbums(query),
+            HandleSearchAlbumsOk,
+            HandleSearchAlbumsError,
+            None,
+        ).map_frontend(|this: &mut Self| &mut *this);
+        (task, None)
+    }
     pub fn revert_routing(&mut self) {}
     pub fn text_editor_mode(&self) -> Option<String> { None }
     pub fn go_to_first(&mut self) { self.album_selected = 0; self.track_selected = 0; }
@@ -198,15 +245,51 @@ impl Scrollable for AlbumSearchBrowser {
 }
 
 impl TextHandler for AlbumSearchBrowser {
-    fn get_text(&self) -> Option<&str> { None }
-    fn clear_text(&mut self) -> bool { false }
-    fn replace_text(&mut self, _text: impl Into<String>) {}
-    fn is_text_handling(&self) -> bool { false }
+    fn get_text(&self) -> Option<&str> {
+        if self.search_popped {
+            Some(self.search.search_contents.get_text())
+        } else {
+            None
+        }
+    }
+    fn clear_text(&mut self) -> bool {
+        if self.search_popped {
+            let had = !self.search.search_contents.get_text().is_empty();
+            self.search.search_contents.clear();
+            had
+        } else {
+            false
+        }
+    }
+    fn replace_text(&mut self, text: impl Into<String>) {
+        self.search.search_contents.set_text(&text.into());
+    }
+    fn is_text_handling(&self) -> bool { self.search_popped }
     fn handle_text_event_impl(&mut self, _event: &crossterm::event::Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> { None }
 }
 
+impl Suggestable for AlbumSearchBrowser {
+    fn get_search_suggestions(&self) -> &[SearchSuggestion] {
+        self.search.get_search_suggestions()
+    }
+    fn has_search_suggestions(&self) -> bool {
+        self.search.has_search_suggestions()
+    }
+}
+
 impl ActionHandler<BrowserSearchAction> for AlbumSearchBrowser {
-    fn apply_action(&mut self, _action: BrowserSearchAction) -> impl Into<YoutuiEffect<Self>> {
+    fn apply_action(&mut self, action: BrowserSearchAction) -> impl Into<YoutuiEffect<Self>> {
+        match action {
+            BrowserSearchAction::PrevSearchSuggestion => {
+                self.search.increment_list(-1);
+            }
+            BrowserSearchAction::NextSearchSuggestion => {
+                self.search.increment_list(1);
+            }
+            BrowserSearchAction::Close => {
+                self.handle_toggle_search();
+            }
+        }
         (AsyncTask::new_no_op(), None)
     }
 }
@@ -297,5 +380,25 @@ impl_youtui_task_handler!(HandleFetchAlbumTracksOk, AlbumFetchResult, AlbumSearc
 });
 
 impl_youtui_task_handler!(HandleFetchAlbumTracksError, anyhow::Error, AlbumSearchBrowser, |_, _err: anyhow::Error| {
+    |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op()
+});
+
+#[derive(Debug, PartialEq)]
+pub struct HandleSearchAlbumsOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleSearchAlbumsError;
+
+impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<SearchResultAlbum>, AlbumSearchBrowser, |_, a: Vec<SearchResultAlbum>| {
+    move |target: &mut AlbumSearchBrowser| {
+        target.albums = a;
+        target.album_selected = 0;
+        target.search_popped = false;
+        target.search = SearchBlock::default();
+        target.show_tracks = false;
+        AsyncTask::new_no_op()
+    }
+});
+
+impl_youtui_task_handler!(HandleSearchAlbumsError, anyhow::Error, AlbumSearchBrowser, |_, _err: anyhow::Error| {
     |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op()
 });
