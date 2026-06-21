@@ -1,10 +1,11 @@
 use super::appevent::{AppEvent, EventHandler};
-use crate::config::ApiKey;
+use crate::config::{ApiKey, Config};
 use crate::core::get_limited_sequential_file;
 use crate::{RuntimeInfo, get_data_dir};
 use anyhow::{Context, Result, bail};
 use async_callback_manager::{AsyncCallbackManager, AsyncTask, TaskOutcome};
 use component::actionhandler::YoutuiEffect;
+use tracing::warn;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -128,6 +129,8 @@ pub enum AppCallback {
     Navigate(NavTarget),
     SeekBack,
     SeekForward,
+    SeekTo(Duration),
+    ReloadConfig,
     #[allow(dead_code)]
     Back,
 }
@@ -509,6 +512,32 @@ impl Youtui {
                 if let Some(task) = self.window_state.browser.navigate_to(target) {
                     let task = task.map_frontend(|window: &mut YoutuiWindow| &mut window.browser);
                     self.task_manager.spawn_task(&self.server, task);
+                }
+            }
+            AppCallback::SeekTo(pos) => {
+                let effect = self.window_state.playlist.handle_seek_to(pos)
+                    .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::ReloadConfig => {
+                let config_dir = crate::get_config_dir().ok();
+                let config_path = config_dir.map(|d| d.join("config.toml")).unwrap_or_else(|| std::path::PathBuf::from("config.toml"));
+                match std::fs::read_to_string(&config_path) {
+                    Ok(content) => {
+                        match toml::from_str::<crate::config::ConfigIR>(&content) {
+                            Ok(ir) => {
+                                match Config::try_from(ir) {
+                                    Ok(new_config) => {
+                                        info!("Config reloaded from {:?}", config_path);
+                                        self.window_state.config = new_config;
+                                    }
+                                    Err(e) => warn!("Failed to build config: {}", e),
+                                }
+                            }
+                            Err(e) => warn!("Failed to parse config: {}", e),
+                        }
+                    }
+                    Err(e) => warn!("Failed to read config: {}", e),
                 }
             }
             AppCallback::Back => {
