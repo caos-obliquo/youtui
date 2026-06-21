@@ -486,10 +486,18 @@ impl LyricsPopup {
                     } else {
                         Style::default().fg(Color::DarkGray)
                     };
+                    let max_digits = l_line_count.max(1).to_string().len().max(1);
                     let l_visible_lines: Vec<ratatui::text::Line> = lyrics_text.lines()
                         .skip(self.scroll_offset).take(l_visible)
                         .enumerate().map(|(i, line)| {
                             let abs_line = self.scroll_offset + i;
+                            let rel = (abs_line as isize) - (self.cursor_line as isize);
+                            let num_str = if rel == 0 {
+                                format!("{:>width$} ", abs_line, width = max_digits)
+                            } else {
+                                format!("{:>+width$} ", rel, width = max_digits)
+                            };
+                            let num_span = ratatui::text::Span::styled(num_str, Style::default().fg(Color::DarkGray));
                             let base_style = if self.visual_mode && self.focus == Focus::Lyrics
                                 && abs_line >= self.visual_start.min(self.visual_end)
                                 && abs_line <= self.visual_start.max(self.visual_end)
@@ -504,6 +512,7 @@ impl LyricsPopup {
                                 let at_char: String = line.chars().skip(self.cursor_col).take(1).collect();
                                 let after: String = line.chars().skip(self.cursor_col + 1).collect();
                                 ratatui::text::Line::from(vec![
+                                    num_span,
                                     ratatui::text::Span::styled(before, base_style),
                                     ratatui::text::Span::styled(
                                         if at_char.is_empty() { " ".to_string() } else { at_char },
@@ -512,7 +521,9 @@ impl LyricsPopup {
                                     ratatui::text::Span::styled(after, base_style),
                                 ])
                             } else {
-                                ratatui::text::Line::from(ratatui::text::Span::styled(line.to_string(), base_style))
+                                let mut spans = vec![num_span];
+                                spans.push(ratatui::text::Span::styled(line.to_string(), base_style));
+                                ratatui::text::Line::from(spans)
                             }
                         }).collect();
                     frame.render_widget(Paragraph::new(l_visible_lines).wrap(Wrap { trim: false }), l_chunks[0]);
@@ -615,11 +626,19 @@ impl LyricsPopup {
                     let visible_lines_count = (chunks[0].height as usize).saturating_sub(1);
                     let max_scroll = line_count.saturating_sub(visible_lines_count);
                     if self.scroll_offset > max_scroll { self.scroll_offset = max_scroll; }
+                    let max_digits = line_count.max(1).to_string().len().max(1);
 
                     let lyrics_lines: Vec<ratatui::text::Line> = display_text.lines()
                         .skip(self.scroll_offset).take(visible_lines_count)
                         .enumerate().map(|(i, line)| {
                             let abs_line = self.scroll_offset + i;
+                            let rel = (abs_line as isize) - (self.cursor_line as isize);
+                            let num_str = if rel == 0 {
+                                format!("{:>width$} ", abs_line, width = max_digits)
+                            } else {
+                                format!("{:>+width$} ", rel, width = max_digits)
+                            };
+                            let num_span = ratatui::text::Span::styled(num_str, Style::default().fg(Color::DarkGray));
                             let base_style = if self.visual_mode
                                 && abs_line >= self.visual_start.min(self.visual_end)
                                 && abs_line <= self.visual_start.max(self.visual_end)
@@ -634,6 +653,7 @@ impl LyricsPopup {
                                 let at_char: String = line.chars().skip(self.cursor_col).take(1).collect();
                                 let after: String = line.chars().skip(self.cursor_col + 1).collect();
                                 ratatui::text::Line::from(vec![
+                                    num_span,
                                     ratatui::text::Span::styled(before, base_style),
                                     ratatui::text::Span::styled(
                                         if at_char.is_empty() { " ".to_string() } else { at_char },
@@ -642,7 +662,9 @@ impl LyricsPopup {
                                     ratatui::text::Span::styled(after, base_style),
                                 ])
                             } else {
-                                ratatui::text::Line::from(ratatui::text::Span::styled(line.to_string(), base_style))
+                                let mut spans = vec![num_span];
+                                spans.push(ratatui::text::Span::styled(line.to_string(), base_style));
+                                ratatui::text::Line::from(spans)
                             }
                         }).collect();
                     let has_more = self.scroll_offset + visible_lines_count < line_count;
