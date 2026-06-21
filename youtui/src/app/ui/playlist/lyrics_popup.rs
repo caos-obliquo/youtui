@@ -66,6 +66,8 @@ pub struct LyricsPopup {
     ann_scroll_offset: usize,
     pub lyrics_cache: LruCache<String, String>,
     pub lyrics_cache_key: Option<String>,
+    pub filter_active: bool,
+    pub filter_text: String,
 }
 
 impl_youtui_component!(LyricsPopup);
@@ -101,6 +103,8 @@ impl LyricsPopup {
             ann_scroll_offset: 0,
             lyrics_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
             lyrics_cache_key: None,
+            filter_active: false,
+            filter_text: String::new(),
         }
     }
 
@@ -125,6 +129,10 @@ impl LyricsPopup {
         self.state = LyricsPopupState::Error(error);
     }
 
+    pub fn set_filter_text(&mut self, text: &str) {
+        self.filter_text = text.to_string();
+        self.rebuild_lines();
+    }
     fn rebuild_lines(&mut self) {
         self.lines.clear();
         for line in self.original_lyrics.lines() {
@@ -455,6 +463,12 @@ impl LyricsPopup {
                         }
                     }
                 }
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('/') => {
+                self.filter_active = !self.filter_active;
+                if !self.filter_active { self.filter_text.clear(); }
+                self.reset_count();
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('(') => {
