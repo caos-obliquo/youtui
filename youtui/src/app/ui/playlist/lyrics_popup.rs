@@ -457,21 +457,21 @@ impl LyricsPopup {
                 }
                 (AsyncTask::new_no_op(), None)
             }
-            KeyCode::Char('n') => {
-                self.reset_count();
-                (AsyncTask::new_no_op(), Some(AppCallback::ViewNextInQueue))
-            }
-            KeyCode::Char('p') => {
+            KeyCode::Char('(') => {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::ViewPrevInQueue))
             }
+            KeyCode::Char(')') => {
+                self.reset_count();
+                (AsyncTask::new_no_op(), Some(AppCallback::ViewNextInQueue))
+            }
             KeyCode::Char('<') => {
                 self.reset_count();
-                (AsyncTask::new_no_op(), Some(AppCallback::SeekBack))
+                (AsyncTask::new_no_op(), Some(AppCallback::PlayPrev))
             }
             KeyCode::Char('>') => {
                 self.reset_count();
-                (AsyncTask::new_no_op(), Some(AppCallback::SeekForward))
+                (AsyncTask::new_no_op(), Some(AppCallback::PlayNext))
             }
             KeyCode::Char('[') => {
                 self.reset_count();
