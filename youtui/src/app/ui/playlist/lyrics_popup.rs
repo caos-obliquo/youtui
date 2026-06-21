@@ -415,6 +415,34 @@ impl LyricsPopup {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::SeekForward))
             }
+            KeyCode::Char('}') => {
+                self.reset_count();
+                let lines: Vec<&str> = self.original_lyrics.lines().collect();
+                let total = lines.len();
+                let mut line = self.cursor_line;
+                while line < total && lines[line].trim().is_empty() { line += 1; }
+                while line < total && !lines[line].trim().is_empty() { line += 1; }
+                while line < total && lines[line].trim().is_empty() { line += 1; }
+                if line < total {
+                    self.cursor_line = line;
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                }
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('{') => {
+                self.reset_count();
+                let lines: Vec<&str> = self.original_lyrics.lines().collect();
+                let mut line = self.cursor_line;
+                while line > 0 && lines[line].trim().is_empty() { line -= 1; }
+                while line > 0 && !lines[line].trim().is_empty() { line -= 1; }
+                while line > 0 && lines[line].trim().is_empty() { line -= 1; }
+                while line > 0 && !lines[line - 1].trim().is_empty() { line -= 1; }
+                self.cursor_line = line;
+                self.cursor_col = 0;
+                self.cursor_to_scroll();
+                (AsyncTask::new_no_op(), None)
+            }
             _ => {
                 self.reset_count();
                 (AsyncTask::new_no_op(), None)

@@ -121,8 +121,8 @@ o = "Context Menu"
 [keybinds.browser_library]
 y = {action = "browser_library.copy_song_url", visibility = "global"}
 o.enter = "browser_library.play_song"
-o.p = "browser_library.add_songs_to_playlist"
-o.P = "browser_library.play_songs"
+o.p = "browser_library.play_songs"
+o.P = "browser_library.add_songs_to_playlist"
 o.y = "browser_library.copy_song_url"
 
 [mode_names.browser_library]
