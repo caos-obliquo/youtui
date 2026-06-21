@@ -1,5 +1,12 @@
 # youtui (caos-obliquo fork)
 
+## User Preferences (Strict)
+- **No sudo** without explicit permission. Never run sudo commands automatically.
+- **No AUR.** Only official repos + local compilation.
+- **Suckless.** Minimal deps, focused scope, ASCII-only words, no bloat.
+- **Rust only.** No shell plugins, no non-Rust dependencies. zsh-vi-mode is conceptual reference only.
+- **Subagent stack**: `rustacean` for Rust code review, `akita` for architecture/tooling decisions.
+
 ## Architecture & Key Decisions
 
 ### Key Mapping Principle
@@ -26,70 +33,52 @@
 - youtui: 122 pass, 0 fail, 4 ignored
 - ViTextEditor: 41/41 pass
 
-## User Preferences
-- One feature per branch: implement → test → commit → user approves → merge to main
-- Keyboard-only, vim muscle memory — no mouse
-- Suckless: minimal deps, ASCII-only word boundaries, no bloat
-- Album art square (7×6 like original youtui), no volume buttons in footer
-- Relative line numbers with 3-digit fixed width
-- Never trap user — always have escape routes (F2/F3/Esc)
-- `o.v` should open full-window album art popup inside youtui (NOT browser)
-- Annotations should use kopuz-inspired unified list model
-- Visual mode on annotations too
-- Rust only — no shell plugins, no non-Rust dependencies
+## Done This Session
+- Config parse fix: `o." "` → `o.s`, dead actions removed, `browser_library.*` → `browser_songs.*`
+- Footer: square album art (7×6), `+`/`-` volume buttons removed, double "Album:" prefix stripped
+- ViTextEditor bugs: `test_match_bracket_nested`, `yy` yank line, `visual_start` field, `redo_stack` cleared
+- F3 trap: `close_popup()` no longer leaves stale popup context in `prev_context`
+- Line number width: fixed 3-digit minimum in lyrics popup
+- Album art popup (`o.v`): full-window `ratatui_image`, replaces `xdg-open`
+- Annotations unified list (kopuz): `Vec<LyricLine>` + `line_is_background`, `j/k/{/}/gg/G` traverse all
+- Context menu: `o.a`/`o.b` GoToArtist/GoToAlbum in all browser views
+- `o.r` → `o.l` in context menus, direct `r` lyrics key removed, `V` removed from lyrics popup
+- `/` unified: Browser Library uses `LocalFilter` (not API Search)
+- `BrowserPlaylistSongsAction` context mislabel fixed
 
 ## Remaining Work
 
-### Current Branch (fix/config-space-key)
-- [x] Config parse fix (`o." "` → `o.s`, dead actions removed)
-- [x] Footer: square album art (7×6), volume buttons removed
-- [x] ViTextEditor bugs fixed (test_match_bracket_nested, yy, visual mode, redo_stack)
-- [x] F3 trap fix (close_popup no longer leaves stale context)
-- [x] Line number 3-digit width in lyrics popup
-- [x] Footer double "Album:" prefix stripped
-- [x] Context menu: o.a/o.b GoToArtist/GoToAlbum in browser_library defaults
-- [ ] o.a GoToArtist + o.b GoToAlbum in config.toml (repo + user) for songs, playlist_songs
-- [ ] Album art full-window popup (o.v) — NOT browser, clean popup with ratatui_image
-- [ ] Build + test + commit
-
-### Annotations Navigation Fix (kopuz-inspired)
-- [ ] Refactor annotations to background:true lyric lines with parent_line_index
-- [ ] Add relative line numbers to unified list (3-digit width, dimmer background lines)
-- [ ] Visual mode on annotations — V selects range in unified list, d/y work on both
-
-### Cleanup (Phase 3)
-- [ ] Remove r direct key for lyrics
-- [ ] o.a/o.A conflict + o.r→o.l rename
-- [ ] Remove wide config entries
+### Cleanup
+- [ ] Remove wide config entries (user config already clean)
 - [ ] Config completeness audit
 
 ### ViTextEditor Future (from zsh-vi-mode + binvim comparison)
-- [ ] Visual o exchange point/mark (tiny)
-- [ ] s/S substitute (tiny)
-- [ ] D/C/Y synonyms (tiny)
-- [ ] W/B/E BIG-word motions (small)
-- [ ] want_col field — preserve column across short lines (small)
+- [ ] Visual `o` exchange point/mark (tiny)
+- [ ] `s`/`S` substitute (tiny)
+- [ ] `D`/`C`/`Y` synonyms (tiny)
+- [ ] `W`/`B`/`E` BIG-word motions (small)
+- [ ] `want_col` field — preserve column across short lines (small)
 - [ ] Nested-pair text-object depth-counter walk (small)
-- [ ] i'/a'/i`/a` quote text objects (tiny)
-- [ ] MotionKind enum — replace per-(op,motion) arms (med)
-- [ ] Count prefix inside crate — two-slot 2d3w (med)
+- [ ] `i'`/`a'`/`` i` ``/`` a` `` quote text objects (tiny)
+- [ ] `MotionKind` enum — replace per-(op,motion) arms (med)
+- [ ] Count prefix inside crate — two-slot `2d3w` (med)
 - [ ] proptest invariants (med)
-- [ ] Surround cs/ds/ys (large)
-- [ ] Switch keyword ^A/^X numbers + booleans (med)
+- [ ] Surround `cs`/`ds`/`ys` (large)
+- [ ] Switch keyword `^A`/`^X` numbers + booleans (med)
 
 ### Kopuz-inspired Future
-- [ ] NavigationController struct — centralize GoToArtist/GoToAlbum
-- [ ] fetch_gen race guard — discard stale GetLyrics/ValidateMetadata
-- [ ] Inflight dedup — LYRICS_INFLIGHT HashSet + Drop guard
+- [ ] `NavigationController` struct — centralize GoToArtist/GoToAlbum
+- [ ] `fetch_gen` race guard — discard stale `GetLyrics`/`ValidateMetadata`
+- [ ] Inflight dedup — `LYRICS_INFLIGHT: HashSet` + Drop guard
 - [ ] LRU + persistent lyrics cache + negative TTL
-- [ ] Enter on active lyric line seeks to timestamp
+- [ ] `Enter` on active lyric line seeks to timestamp
 
 ## Known Issues
-- Annotations: j/k/{/}/gg/G always control lyrics (no focus check) — fix via kopuz unified list
 - Album cover may disappear on tmux visual line mode (sixel protocol cleared)
-- o.v currently opens Browser instead of album art popup
+- Annotations display: last entry may be cut off (lyrics_popup.rs height calc)
+- `o.a` conflict: `browser_artist_songs` uses `o.a` = PlayAlbum (not GoToArtist). All other views use `o.a` = GoToArtist
 - Native downloader 403 Forbidden (use yt-dlp downloader)
-- Crossterm 0.29 Event::Key destructure mismatch
+- Crossterm 0.29 `Event::Key` destructure mismatch
 
 ## Configs
 | File | Purpose |
