@@ -265,7 +265,10 @@ impl TextHandler for AlbumSearchBrowser {
         self.search.search_contents.set_text(&text.into());
     }
     fn is_text_handling(&self) -> bool { self.search_popped }
-    fn handle_text_event_impl(&mut self, _event: &crossterm::event::Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> { None }
+    fn handle_text_event_impl(&mut self, _event: &crossterm::event::Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> {
+        // Text events are handled by the SearchBlock/TextHandler dispatch
+        None
+    }
 }
 
 impl Suggestable for AlbumSearchBrowser {
