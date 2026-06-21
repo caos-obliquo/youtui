@@ -2,6 +2,9 @@
 /// Modes: Normal, Insert, VisualLine, OperatorPending.
 /// Single-line: j/k = history nav, Enter = submit.
 /// Multiline: j/k = line up/down, Enter = newline, gg/G = first/last line.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum FindDir { Forward, Backward }
+
 #[derive(Clone)]
 pub struct ViTextEditor {
     pub buffer: String,
@@ -11,7 +14,9 @@ pub struct ViTextEditor {
     history: Vec<String>,
     history_pos: usize,
     undo_stack: Vec<(usize, String)>,
+    redo_stack: Vec<(usize, String)>,
     pub multiline: bool,
+    last_find: Option<(char, FindDir, bool)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -19,6 +24,7 @@ pub enum ViMode {
     Normal,
     Insert,
     VisualLine,
+    VisualChar,
     OperatorPending(char),
 }
 
@@ -46,7 +52,9 @@ impl ViTextEditor {
             history: Vec::new(),
             history_pos: 0,
             undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
             multiline,
+            last_find: None,
         }
     }
 
@@ -147,6 +155,7 @@ impl ViTextEditor {
             ViMode::Normal => "[N]",
             ViMode::Insert => "[I]",
             ViMode::VisualLine => "[V]",
+            ViMode::VisualChar => "[v]",
             ViMode::OperatorPending(_) => "[OP]",
         }
     }
@@ -156,8 +165,30 @@ impl ViTextEditor {
             ViMode::Insert => self.handle_insert(key),
             ViMode::Normal => self.handle_normal(key, shift),
             ViMode::VisualLine => self.handle_visual_line(key),
+            ViMode::VisualChar => self.handle_visual_char(key),
             ViMode::OperatorPending(op) => self.handle_operator_pending(key, op),
         }
+    }
+
+    fn handle_visual_char(&mut self, key: crossterm::event::KeyCode) -> bool {
+        match key {
+            crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('v') => {
+                self.mode = ViMode::Normal;
+            }
+            crossterm::event::KeyCode::Char('d') => {
+                self.save_undo();
+                self.clipboard = self.buffer.clone();
+                self.buffer.clear();
+                self.cursor = 0;
+                self.mode = ViMode::Normal;
+            }
+            crossterm::event::KeyCode::Char('y') => {
+                self.clipboard = self.buffer.clone();
+                self.mode = ViMode::Normal;
+            }
+            _ => self.mode = ViMode::Normal,
+        }
+        false
     }
 
     fn handle_visual_line(&mut self, key: crossterm::event::KeyCode) -> bool {
@@ -252,6 +283,9 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Char('w') => {
                 self.cursor = next_word_boundary(&self.buffer, self.cursor);
             }
+            crossterm::event::KeyCode::Char('e') => {
+                self.cursor = end_of_word(&self.buffer, self.cursor);
+            }
             crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
                 self.cursor = 0;
             }
@@ -264,11 +298,33 @@ impl ViTextEditor {
                     self.buffer.remove(self.cursor);
                 }
             }
+            crossterm::event::KeyCode::Char(c @ ('f' | 'F' | 't' | 'T')) => {
+                self.mode = ViMode::OperatorPending(c);
+            }
+            crossterm::event::KeyCode::Char(';') => {
+                if let Some((ch, dir, till)) = self.last_find {
+                    let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
+                    if pos < self.buffer.len() { self.cursor = pos; }
+                }
+            }
+            crossterm::event::KeyCode::Char(',') => {
+                if let Some((ch, dir, till)) = self.last_find {
+                    let rev = match dir { FindDir::Forward => FindDir::Backward, FindDir::Backward => FindDir::Forward };
+                    let pos = find_char(&self.buffer, self.cursor, ch, rev, till);
+                    if pos < self.buffer.len() { self.cursor = pos; }
+                }
+            }
             crossterm::event::KeyCode::Char('u') => {
                 self.undo();
             }
+            crossterm::event::KeyCode::Char('c') => {
+                self.mode = ViMode::OperatorPending('c');
+            }
             crossterm::event::KeyCode::Char('d') => {
                 self.mode = ViMode::OperatorPending('d');
+            }
+            crossterm::event::KeyCode::Char('v') => {
+                self.mode = ViMode::VisualChar;
             }
             crossterm::event::KeyCode::Char('V') => {
                 self.mode = ViMode::VisualLine;
@@ -403,8 +459,76 @@ impl ViTextEditor {
                 }
                 self.mode = ViMode::Normal;
             }
+            // c operator: change (delete + insert)
+            (crossterm::event::KeyCode::Char('w'), 'c') => {
+                let end = next_word_boundary(&self.buffer, self.cursor);
+                if end > self.cursor {
+                    self.save_undo();
+                    self.clipboard = self.buffer[self.cursor..end].to_string();
+                    self.buffer.drain(self.cursor..end);
+                }
+                self.mode = ViMode::Insert;
+            }
+            (crossterm::event::KeyCode::Char('$'), 'c') => {
+                if self.cursor < self.buffer.len() {
+                    self.save_undo();
+                    self.clipboard = self.buffer[self.cursor..].to_string();
+                    self.buffer.truncate(self.cursor);
+                }
+                self.mode = ViMode::Insert;
+            }
+            (crossterm::event::KeyCode::Char('c'), 'c') => {
+                // cc: change entire line
+                self.save_undo();
+                if self.multiline {
+                    let start = self.line_start();
+                    let end = self.line_end();
+                    let after_nl = if end < self.buffer.len() { end + 1 } else { end };
+                    self.clipboard = self.buffer[start..end].to_string();
+                    self.buffer.drain(start..after_nl);
+                    self.cursor = start.min(self.buffer.len());
+                } else {
+                    self.clipboard = self.buffer.clone();
+                    self.buffer.clear();
+                    self.cursor = 0;
+                }
+                self.mode = ViMode::Insert;
+            }
             (crossterm::event::KeyCode::Char('g'), 'g') => {
                 self.cursor = 0;
+                self.mode = ViMode::Normal;
+            }
+            // f/F/t/T: next char keypress is the target
+            (crossterm::event::KeyCode::Char(ch), 'f') => {
+                let dir = FindDir::Forward;
+                let till = false;
+                let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
+                if pos < self.buffer.len() { self.cursor = pos; }
+                self.last_find = Some((ch, dir, till));
+                self.mode = ViMode::Normal;
+            }
+            (crossterm::event::KeyCode::Char(ch), 'F') => {
+                let dir = FindDir::Backward;
+                let till = false;
+                let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
+                if pos < self.buffer.len() { self.cursor = pos; }
+                self.last_find = Some((ch, dir, till));
+                self.mode = ViMode::Normal;
+            }
+            (crossterm::event::KeyCode::Char(ch), 't') => {
+                let dir = FindDir::Forward;
+                let till = true;
+                let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
+                if pos < self.buffer.len() { self.cursor = pos; }
+                self.last_find = Some((ch, dir, till));
+                self.mode = ViMode::Normal;
+            }
+            (crossterm::event::KeyCode::Char(ch), 'T') => {
+                let dir = FindDir::Backward;
+                let till = true;
+                let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
+                if pos < self.buffer.len() { self.cursor = pos; }
+                self.last_find = Some((ch, dir, till));
                 self.mode = ViMode::Normal;
             }
             _ => {
@@ -429,6 +553,20 @@ impl ViTextEditor {
             self.cursor = cursor;
         }
     }
+}
+
+fn end_of_word(text: &str, cursor: usize) -> usize {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    if cursor >= len { return len; }
+    let mut pos = cursor;
+    // If at word start, move into the word first
+    if pos < len && bytes[pos] == b' ' {
+        while pos < len && bytes[pos] == b' ' { pos += 1; }
+    }
+    // Move to end of word
+    while pos < len && bytes[pos] != b' ' { pos += 1; }
+    if pos > cursor { pos - 1 } else { cursor }
 }
 
 fn prev_word_boundary(text: &str, cursor: usize) -> usize {
@@ -464,6 +602,33 @@ fn next_word_boundary(text: &str, cursor: usize) -> usize {
         pos += 1;
     }
     pos
+}
+
+fn find_char(text: &str, cursor: usize, ch: char, dir: FindDir, till: bool) -> usize {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    let target = ch as u8;
+    match dir {
+        FindDir::Forward => {
+            let start = if cursor + 1 < len { cursor + 1 } else { return len; };
+            for i in start..len {
+                if bytes[i] == target {
+                    return if till { i.saturating_sub(1) } else { i };
+                }
+            }
+            len
+        }
+        FindDir::Backward => {
+            if cursor == 0 { return 0; }
+            let end = cursor;
+            for i in (0..end).rev() {
+                if bytes[i] == target {
+                    return if till { i + 1 } else { i };
+                }
+            }
+            0
+        }
+    }
 }
 
 #[cfg(test)]
@@ -613,5 +778,90 @@ mod tests {
         e.handle_key(crossterm::event::KeyCode::Char('d'), false);
         e.handle_key(crossterm::event::KeyCode::Char('$'), false);
         assert_eq!(e.buffer, "");
+    }
+
+    #[test]
+    fn test_find_char_forward() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello world");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('f'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('o'), false);
+        assert_eq!(e.cursor, 4);
+    }
+
+    #[test]
+    fn test_find_char_backward() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello world");
+        e.cursor = 6;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('F'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('o'), false);
+        assert_eq!(e.cursor, 4);
+    }
+
+    #[test]
+    fn test_till_char_forward() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello world");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('t'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('o'), false);
+        assert_eq!(e.cursor, 3);
+    }
+
+    #[test]
+    fn test_till_char_backward() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello world");
+        e.cursor = 6;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('T'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('o'), false);
+        assert_eq!(e.cursor, 5);
+    }
+
+    #[test]
+    fn test_repeat_find() {
+        let mut e = ViTextEditor::new();
+        e.set_text("axbxcx");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('f'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false);
+        assert_eq!(e.cursor, 1);
+        e.handle_key(crossterm::event::KeyCode::Char(';'), false);
+        assert_eq!(e.cursor, 3);
+        e.handle_key(crossterm::event::KeyCode::Char(';'), false);
+        assert_eq!(e.cursor, 5);
+    }
+
+    #[test]
+    fn test_reverse_find() {
+        let mut e = ViTextEditor::new();
+        e.set_text("x x x");
+        e.cursor = 2;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('f'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false);
+        assert_eq!(e.cursor, 4);
+        e.handle_key(crossterm::event::KeyCode::Char(','), false);
+        assert_eq!(e.cursor, 2);
+        e.handle_key(crossterm::event::KeyCode::Char(';'), false);
+        assert_eq!(e.cursor, 4);
+    }
+
+    #[test]
+    fn test_find_char_not_found() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('f'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('z'), false);
+        assert_eq!(e.cursor, 0);
     }
 }
