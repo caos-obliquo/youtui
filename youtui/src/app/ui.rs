@@ -6,6 +6,7 @@ use self::playlist::config_editor_popup::ConfigEditorPopup;
 use self::playlist::lyrics_popup::LyricsPopup;
 use self::playlist::song_info_popup::SongInfoPopup;
 use vi_text_editor::ViTextEditor;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use self::playlist::playlist_save_popup::PlaylistSavePopup;
 use self::playlist::playlist_update_popup::PlaylistUpdatePopup;
@@ -72,6 +73,7 @@ pub struct YoutuiWindow {
     pub command_mode: bool,
     pub command_editor: ViTextEditor,
     pub count_prefix: usize,
+    pub lyrics_inflight: HashSet<String>,
 }
 impl_youtui_component!(YoutuiWindow);
 
@@ -484,6 +486,7 @@ impl YoutuiWindow {
             command_mode: false,
             command_editor: ViTextEditor::new(),
             count_prefix: 0,
+            lyrics_inflight: HashSet::new(),
         };
         let initial_effect = url.map(|u| this.play_yt_url(u));
         let mut combined = task.map_frontend(|this: &mut Self| &mut this.playlist);
@@ -1023,7 +1026,27 @@ impl YoutuiWindow {
         let has_genius = !genius_token.is_empty();
         tracing::info!("open_lyrics_popup: artist={}, title={}, has_genius={}, token_len={}", artist, title, has_genius, genius_token.len());
 
-        self.lyrics_popup = Some(LyricsPopup::new());
+        let cache_key = format!("{}||{}", artist, title);
+
+        // Inflight dedup: skip if already fetching
+        if self.lyrics_inflight.contains(&cache_key) {
+            tracing::info!("Lyrics inflight dedup: skip duplicate request for {}", cache_key);
+            return AsyncTask::new_no_op();
+        }
+
+        // LRU cache: skip fetch if cached
+        if let Some(popup) = &self.lyrics_popup {
+            if popup.lyrics_cache.peek(&cache_key).is_some() {
+                tracing::info!("Lyrics cache hit for {}", cache_key);
+                return AsyncTask::new_no_op();
+            }
+        }
+
+        let inflight_key = cache_key.clone();
+        self.lyrics_inflight.insert(cache_key.clone());
+        let mut popup = LyricsPopup::new();
+        popup.lyrics_cache_key = Some(cache_key.clone());
+        self.lyrics_popup = Some(popup);
         self.prev_context = self.context;
         self.context = WindowContext::Lyrics;
         let effect: ComponentEffect<YoutuiWindow> = AsyncTask::new_future_try(
@@ -1032,7 +1055,8 @@ impl YoutuiWindow {
             HandleGetLyricsErr,
             None,
         )
-        .map_frontend(|this: &mut Self| {
+        .map_frontend(move |this: &mut Self| {
+            this.lyrics_inflight.remove(&inflight_key);
             if this.lyrics_popup.is_none() {
                 this.lyrics_popup = Some(LyricsPopup::new());
             }

@@ -6,8 +6,10 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
+use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::num::NonZeroUsize;
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,6 +63,8 @@ pub struct LyricsPopup {
     count_prefix: usize,
     cursor_line: usize,
     cursor_col: usize,
+    pub lyrics_cache: LruCache<String, String>,
+    pub lyrics_cache_key: Option<String>,
 }
 
 impl_youtui_component!(LyricsPopup);
@@ -93,10 +97,15 @@ impl LyricsPopup {
             count_prefix: 0,
             cursor_line: 0,
             cursor_col: 0,
+            lyrics_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
+            lyrics_cache_key: None,
         }
     }
 
     pub fn set_lyrics(&mut self, lyrics: String) {
+        if let Some(key) = &self.lyrics_cache_key {
+            self.lyrics_cache.put(key.clone(), lyrics.clone());
+        }
         self.original_lyrics = lyrics.clone();
         self.state = LyricsPopupState::Loaded(lyrics);
         self.romaji_cache = None;
