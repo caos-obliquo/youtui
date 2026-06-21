@@ -12,6 +12,7 @@ pub const PROGRESS_BG_COLOUR: Color = Color::DarkGray;
 pub const PROGRESS_FG_COLOUR: Color = Color::LightGreen;
 pub const TABLE_HEADINGS_COLOUR: Color = Color::LightGreen;
 pub const ROW_HIGHLIGHT_COLOUR: Color = Color::Blue;
+pub const PLAYING_COLOUR: Color = Color::Green;
 
 /// Helper function to create a popup at bottom corner of chunk.
 pub fn left_bottom_corner_rect(height: u16, width: u16, r: Rect) -> Rect {

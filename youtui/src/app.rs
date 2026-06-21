@@ -132,6 +132,8 @@ pub enum AppCallback {
     SeekTo(Duration),
     ViewNextInQueue,
     ViewPrevInQueue,
+    PlayNext,
+    PlayPrev,
     ReloadConfig,
     OpenPlaylistEditor {
         playlist_id: ytmapi_rs::common::PlaylistID<'static>,
@@ -497,6 +499,14 @@ impl Youtui {
                     );
                     self.task_manager.spawn_task(&self.server, effect);
                 }
+            }
+            AppCallback::PlayNext => {
+                let effect = self.window_state.handle_next();
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::PlayPrev => {
+                let effect = self.window_state.handle_prev();
+                self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::SeekBack => {
                 use crate::async_rodio_sink::SeekDirection;

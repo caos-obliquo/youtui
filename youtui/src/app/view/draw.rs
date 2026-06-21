@@ -4,7 +4,7 @@ use super::{
 use crate::app::ui::draw::draw_text_box;
 use crate::app::view::{BasicConstraint, HasTitle, ListView, Loadable};
 use crate::drawutils::{
-    DESELECTED_BORDER_COLOUR, ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TABLE_HEADINGS_COLOUR,
+    DESELECTED_BORDER_COLOUR, PLAYING_COLOUR, ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TABLE_HEADINGS_COLOUR,
     TEXT_COLOUR,
 };
 use crate::widgets::{ScrollingList, ScrollingTable, ScrollingTableState};
@@ -199,7 +199,7 @@ pub fn draw_table_impl<'a>(
         .visual_range_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
         .row_highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
         .headings_style(Style::default().bold().fg(TABLE_HEADINGS_COLOUR))
-        .secondary_row_highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR).add_modifier(ratatui::style::Modifier::UNDERLINED).add_modifier(ratatui::style::Modifier::BOLD).add_modifier(ratatui::style::Modifier::ITALIC))
+        .secondary_row_highlight_style(Style::default().bg(PLAYING_COLOUR).add_modifier(ratatui::style::Modifier::UNDERLINED).add_modifier(ratatui::style::Modifier::BOLD).add_modifier(ratatui::style::Modifier::ITALIC))
         .visual_range(visual_range)
         .secondary_highlight_row(secondary_highlighted_row)
         .min_ticker_gap(6)
