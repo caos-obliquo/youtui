@@ -10,6 +10,9 @@ If things break, rollback and re-apply one-by-one.
 - **Suckless.** Minimal deps, focused scope, ASCII-only words, no bloat.
 - **Rust only.** No shell plugins, no non-Rust dependencies.
 - **Subagent stack**: `rustacean` for Rust code review, `akita` for architecture/tooling decisions.
+- **WHITESPACE** (critical): Keep cursor/indentation whitespace in the above preference block exactly as-is — leading spaces, trailing spaces, blank lines between items. This block is rendered verbatim in opencode prompts and must not drift.
+- **Consistency across windows**: Every browser tab (Artists, Songs, Albums, Library, Playlist) must share the same UI patterns: search (F1), advanced table columns with sort/filter, o-mode context menu, j/k/gg/G navigation. No tab should feel like a second-class citizen.
+- **Mail**: `caos_obliquo@outlook.com`
 
 ## Full Reference Manual
 
