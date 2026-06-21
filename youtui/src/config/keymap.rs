@@ -1072,23 +1072,15 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::PlaySongs)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char(' ')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::AddSongToPlaylist)),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::AddSongsToPlaylist)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('P')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::AddSongsToPlaylist)),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::PlaySongs)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::CopySongUrl)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::ViewLyrics)),
                     ),
                 ],
                 "Context Menu".into(),
