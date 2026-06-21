@@ -41,6 +41,7 @@ pub enum ViMode {
     VisualLine,
     VisualChar,
     OperatorPending(char),
+    TextObjectPending(char, char), // (i/a, operator)
 }
 
 impl Default for ViTextEditor {
@@ -174,6 +175,7 @@ impl ViTextEditor {
             ViMode::VisualLine => "[V]",
             ViMode::VisualChar => "[v]",
             ViMode::OperatorPending(_) => "[OP]",
+            ViMode::TextObjectPending(_, _) => "[TO]",
         }
     }
 
@@ -184,6 +186,7 @@ impl ViTextEditor {
             ViMode::VisualLine => self.handle_visual_line(key),
             ViMode::VisualChar => self.handle_visual_char(key),
             ViMode::OperatorPending(op) => self.handle_operator_pending(key, op),
+            ViMode::TextObjectPending(kind, op) => self.handle_text_object(key, kind, op),
         }
     }
 
@@ -586,6 +589,13 @@ impl ViTextEditor {
                 }
                 self.mode = ViMode::Normal;
             }
+            // Text objects: i and a prefixes
+            (crossterm::event::KeyCode::Char('i'), op) if op == 'd' || op == 'c' || op == 'y' => {
+                self.mode = ViMode::TextObjectPending('i', op);
+            }
+            (crossterm::event::KeyCode::Char('a'), op) if op == 'd' || op == 'c' || op == 'y' => {
+                self.mode = ViMode::TextObjectPending('a', op);
+            }
             // f/F/t/T: next char keypress is the target
             (crossterm::event::KeyCode::Char(ch), 'f') => {
                 let dir = FindDir::Forward;
@@ -623,6 +633,94 @@ impl ViTextEditor {
                 self.mode = ViMode::Normal;
             }
         }
+        false
+    }
+
+    fn handle_text_object(&mut self, key: crossterm::event::KeyCode, kind: char, op: char) -> bool {
+        let obj_char = match key {
+            crossterm::event::KeyCode::Char(c) => c,
+            _ => { self.mode = ViMode::Normal; return false; }
+        };
+        let (start, end) = match obj_char {
+            'w' => {
+                current_word_range(&self.buffer, self.cursor)
+            }
+            '(' | ')' => {
+                // find matching parens
+                let open = self.buffer[..self.cursor].rfind('(');
+                let close = self.buffer[self.cursor..].find(')').map(|i| self.cursor + i + 1);
+                match (open, close) {
+                    (Some(s), Some(e)) if s < e => (s, e),
+                    _ => { self.mode = ViMode::Normal; return false; }
+                }
+            }
+            '"' => {
+                let open = self.buffer[..self.cursor].rfind('"');
+                let close = self.buffer[self.cursor..].find('"').map(|i| self.cursor + i + 1);
+                match (open, close) {
+                    (Some(s), Some(e)) if s < e => (s, e),
+                    _ => { self.mode = ViMode::Normal; return false; }
+                }
+            }
+            _ => { self.mode = ViMode::Normal; return false; }
+        };
+        let (del_start, del_end) = if kind == 'a' {
+            // include delimiters for 'a' objects
+            let s = match obj_char {
+                '(' | ')' => start,
+                '"' => start,
+                _ => start,
+            };
+            let e = match obj_char {
+                '(' | ')' => end,
+                '"' => end,
+                'w' => {
+                    // include trailing space(s) for a word
+                    let bytes = self.buffer.as_bytes();
+                    let mut e = end;
+                    while e < bytes.len() && bytes[e] == b' ' { e += 1; }
+                    e
+                }
+                _ => end,
+            };
+            (s, e)
+        } else {
+            // 'i' objects: exclude delimiters
+            let s = match obj_char {
+                '(' | ')' => start + 1,
+                '"' => start + 1,
+                _ => start,
+            };
+            let e = match obj_char {
+                '(' | ')' => end.saturating_sub(1),
+                '"' => end.saturating_sub(1),
+                _ => end,
+            };
+            (s, e)
+        };
+        if del_end > del_start {
+            self.save_undo();
+            match op {
+                'd' => {
+                    self.clipboard = self.buffer[del_start..del_end].to_string();
+                    self.buffer.drain(del_start..del_end);
+                    self.cursor = del_start.min(self.buffer.len());
+                }
+                'c' => {
+                    self.clipboard = self.buffer[del_start..del_end].to_string();
+                    self.buffer.drain(del_start..del_end);
+                    self.cursor = del_start.min(self.buffer.len());
+                    self.insert_buffer.clear();
+                    self.mode = ViMode::Insert;
+                    return false;
+                }
+                'y' => {
+                    self.clipboard = self.buffer[del_start..del_end].to_string();
+                }
+                _ => {}
+            }
+        }
+        self.mode = ViMode::Normal;
         false
     }
 
@@ -775,6 +873,32 @@ fn next_word_boundary(text: &str, cursor: usize) -> usize {
         pos += 1;
     }
     pos
+}
+
+fn current_word_range(text: &str, cursor: usize) -> (usize, usize) {
+    if text.is_empty() || cursor >= text.len() {
+        return (0, text.len());
+    }
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    // If at space, find surrounding spaces
+    if bytes[cursor] == b' ' {
+        // find word to the right
+        let start = cursor;
+        let end = next_word_boundary(text, cursor);
+        return (start, end);
+    }
+    // Find start of current word
+    let mut start = cursor;
+    while start > 0 && bytes[start - 1] != b' ' {
+        start -= 1;
+    }
+    // Find end of current word
+    let mut end = cursor + 1;
+    while end < len && bytes[end] != b' ' {
+        end += 1;
+    }
+    (start, end)
 }
 
 fn find_char(text: &str, cursor: usize, ch: char, dir: FindDir, till: bool) -> usize {
@@ -1102,6 +1226,79 @@ mod tests {
         e.handle_key(crossterm::event::KeyCode::Char('J'), false, false);
         assert_eq!(e.buffer, "hello world");
         assert_eq!(e.cursor, 0);
+    }
+
+    #[test]
+    fn test_diw_delete_inner_word() {
+        let mut e = ViTextEditor::new();
+        e.set_text("delete this word");
+        e.cursor = 7; // in "this"
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('i'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('w'), false, false);
+        assert_eq!(e.buffer, "delete  word");
+        assert_eq!(e.mode, ViMode::Normal);
+    }
+
+    #[test]
+    fn test_diw_at_word_start() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello world");
+        e.cursor = 0; // start of "hello"
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('i'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('w'), false, false);
+        assert_eq!(e.buffer, " world");
+    }
+
+    #[test]
+    fn test_di_parens() {
+        let mut e = ViTextEditor::new();
+        e.set_text("foo(bar)baz");
+        e.cursor = 5; // in "bar"
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('i'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('('), false, false);
+        assert_eq!(e.buffer, "foo()baz");
+    }
+
+    #[test]
+    fn test_da_parens() {
+        let mut e = ViTextEditor::new();
+        e.set_text("foo(bar)baz");
+        e.cursor = 5;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('a'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('('), false, false);
+        assert_eq!(e.buffer, "foobaz");
+    }
+
+    #[test]
+    fn test_daw_delete_a_word() {
+        let mut e = ViTextEditor::new();
+        e.set_text("delete this word");
+        e.cursor = 7; // in "this"
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('a'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('w'), false, false);
+        assert_eq!(e.buffer, "delete word");
+    }
+
+    #[test]
+    fn test_di_quotes() {
+        let mut e = ViTextEditor::new();
+        e.set_text("say \"hello\" world");
+        e.cursor = 6; // in "hello"
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('i'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('"'), false, false);
+        assert_eq!(e.buffer, "say \"\" world");
     }
 
     #[test]
