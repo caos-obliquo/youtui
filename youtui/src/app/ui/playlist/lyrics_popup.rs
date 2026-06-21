@@ -54,7 +54,6 @@ pub struct LyricsPopup {
     romaji_cache: Option<String>,
     original_lyrics: String,
     lines: Vec<String>,
-    line_is_background: Vec<bool>,
     focus: Focus,
     pub visual_mode: bool,
     pub visual_start: usize,
@@ -87,7 +86,6 @@ impl LyricsPopup {
             romaji_cache: None,
             original_lyrics: String::new(),
             lines: Vec::new(),
-            line_is_background: Vec::new(),
             focus: Focus::Lyrics,
             visual_mode: false,
             visual_start: 0,
@@ -118,23 +116,8 @@ impl LyricsPopup {
 
     fn rebuild_lines(&mut self) {
         self.lines.clear();
-        self.line_is_background.clear();
         for line in self.original_lyrics.lines() {
             self.lines.push(line.to_string());
-            self.line_is_background.push(false);
-        }
-        if self.show_annotations {
-            for a in &self.annotations {
-                let formatted = format!("── {}", a.fragment);
-                self.lines.push(formatted);
-                self.line_is_background.push(true);
-                for expl_line in a.explanation.split('\n') {
-                    self.lines.push(expl_line.to_string());
-                    self.line_is_background.push(true);
-                }
-                self.lines.push(String::new());
-                self.line_is_background.push(true);
-            }
         }
     }
 
@@ -422,6 +405,27 @@ impl LyricsPopup {
                 self.cursor_to_scroll();
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Enter => {
+                self.reset_count();
+                if let Some(line) = self.lines.get(self.cursor_line) {
+                    let trimmed = line.trim();
+                    // Parse [m:ss] or [mm:ss] at start of line
+                    if trimmed.starts_with('[') {
+                        let rest = trimmed.trim_start_matches('[');
+                        if let Some(close) = rest.find(']') {
+                            let time_str = &rest[..close];
+                            let parts: Vec<&str> = time_str.split(':').collect();
+                            if parts.len() == 2 {
+                                if let (Ok(mins), Ok(secs)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
+                                    let dur = std::time::Duration::from_secs(mins * 60 + secs);
+                                    return (AsyncTask::new_no_op(), Some(AppCallback::SeekTo(dur)));
+                                }
+                            }
+                        }
+                    }
+                }
+                (AsyncTask::new_no_op(), None)
+            }
             KeyCode::Char('[') => {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::SeekBack))
@@ -487,75 +491,118 @@ impl LyricsPopup {
                 let ann_count = self.annotations.len();
                 let has_jp = has_japanese(&self.original_lyrics);
                 let romaji_tag = if self.romaji_mode && has_jp { " [Romaji]" } else { "" };
-                let ann_tag = if ann_count > 0 { format!(" (a: {})", ann_count) } else { String::new() };
-
-                if self.show_annotations && ann_count > 0 {
-                    let title = format!(" Lyrics (a: {} annotations){} ", ann_count, romaji_tag);
-                    let block = Block::default()
-                        .title(title.as_str())
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Cyan));
-                    let inner = block.inner(popup_area);
-                    frame.render_widget(block, popup_area);
+                let split_view = self.show_annotations && ann_count > 0;
+                let title = if split_view {
+                    format!(" Lyrics (a: {} annotations){} ", ann_count, romaji_tag)
+                } else {
+                    format!(" Lyrics{} ", romaji_tag)
+                };
+                let block = Block::default()
+                    .title(title.as_str())
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan));
+                let inner = block.inner(popup_area);
+                frame.render_widget(block, popup_area);
+                let (lyrics_area, ann_area, hint_area) = if split_view {
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
                         .constraints([Constraint::Min(1), Constraint::Length(1)])
                         .split(inner);
-                    let line_count = self.total_lines();
-                    let visible_lines_count = (chunks[0].height as usize).saturating_sub(1);
-                    let max_scroll = line_count.saturating_sub(visible_lines_count);
-                    if self.scroll_offset > max_scroll { self.scroll_offset = max_scroll; }
-                    let max_digits = line_count.max(1).to_string().len().max(3);
-                    let lyrics_lines: Vec<ratatui::text::Line> = self.lines.iter()
-                        .enumerate()
-                        .skip(self.scroll_offset).take(visible_lines_count)
-                        .map(|(abs_line, line)| {
-                            let rel = (abs_line as isize) - (self.cursor_line as isize);
-                            let num_str = if rel == 0 {
-                                format!("{:>width$} ", abs_line, width = max_digits)
-                            } else {
-                                format!("{:>+width$} ", rel, width = max_digits)
-                            };
-                            let num_span = ratatui::text::Span::styled(num_str, Style::default().fg(Color::DarkGray));
-                            let is_bg = self.line_is_background.get(abs_line).copied().unwrap_or(false);
-                            let base_style = if self.visual_mode
-                                && abs_line >= self.visual_start.min(self.visual_end)
-                                && abs_line <= self.visual_start.max(self.visual_end)
-                            {
-                                Style::default().fg(Color::Black).bg(Color::Cyan)
-                            } else if is_bg {
-                                Style::default().fg(Color::DarkGray)
-                            } else {
-                                Style::default().fg(Color::White)
-                            };
-                            let show_cursor = !self.visual_mode && abs_line == self.cursor_line;
-                            if show_cursor {
-                                let before: String = line.chars().take(self.cursor_col).collect();
-                                let at_char: String = line.chars().skip(self.cursor_col).take(1).collect();
-                                let after: String = line.chars().skip(self.cursor_col + 1).collect();
-                                ratatui::text::Line::from(vec![
-                                    num_span,
-                                    ratatui::text::Span::styled(before, base_style),
-                                    ratatui::text::Span::styled(
-                                        if at_char.is_empty() { " ".to_string() } else { at_char },
-                                        Style::default().fg(Color::Black).bg(Color::White),
-                                    ),
-                                    ratatui::text::Span::styled(after, base_style),
-                                ])
-                            } else {
-                                let mut spans = vec![num_span];
-                                spans.push(ratatui::text::Span::styled(line.to_string(), base_style));
-                                ratatui::text::Line::from(spans)
-                            }
-                        }).collect();
-                    let has_more = self.scroll_offset + visible_lines_count < line_count;
-                    let scroll_hint = if has_more { " j/k scroll " } else { "" };
-                    frame.render_widget(Paragraph::new(lyrics_lines).wrap(Wrap { trim: false }), chunks[0]);
-                    let hint = Paragraph::new(format!("Esc/q: Close | a: Hide{} {}", romaji_tag, scroll_hint))
-                        .style(Style::default().fg(Color::DarkGray))
-                        .alignment(Alignment::Center);
-                    frame.render_widget(hint, chunks[1]);
-            }
+                    let horiz = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                        .split(chunks[0]);
+                    (horiz[0], Some(horiz[1]), chunks[1])
+                } else {
+                    let chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([Constraint::Min(1), Constraint::Length(1)])
+                        .split(inner);
+                    (chunks[0], None, chunks[1])
+                };
+                let line_count = self.total_lines();
+                let visible_lines_count = (lyrics_area.height as usize).saturating_sub(1);
+                let max_scroll = line_count.saturating_sub(visible_lines_count);
+                if self.scroll_offset > max_scroll { self.scroll_offset = max_scroll; }
+                let max_digits = line_count.max(1).to_string().len().max(3);
+                let lyrics_lines: Vec<ratatui::text::Line> = self.lines.iter()
+                    .enumerate()
+                    .skip(self.scroll_offset).take(visible_lines_count)
+                    .map(|(abs_line, line)| {
+                        let rel = (abs_line as isize) - (self.cursor_line as isize);
+                        let num_str = if rel == 0 {
+                            format!("{:>width$} ", abs_line, width = max_digits)
+                        } else {
+                            format!("{:>+width$} ", rel, width = max_digits)
+                        };
+                        let num_span = ratatui::text::Span::styled(num_str, Style::default().fg(Color::DarkGray));
+                        let base_style = if self.visual_mode
+                            && abs_line >= self.visual_start.min(self.visual_end)
+                            && abs_line <= self.visual_start.max(self.visual_end)
+                        {
+                            Style::default().fg(Color::Black).bg(Color::Cyan)
+                        } else {
+                            Style::default().fg(Color::White)
+                        };
+                        let show_cursor = !self.visual_mode && abs_line == self.cursor_line;
+                        if show_cursor {
+                            let before: String = line.chars().take(self.cursor_col).collect();
+                            let at_char: String = line.chars().skip(self.cursor_col).take(1).collect();
+                            let after: String = line.chars().skip(self.cursor_col + 1).collect();
+                            ratatui::text::Line::from(vec![
+                                num_span,
+                                ratatui::text::Span::styled(before, base_style),
+                                ratatui::text::Span::styled(
+                                    if at_char.is_empty() { " ".to_string() } else { at_char },
+                                    Style::default().fg(Color::Black).bg(Color::White),
+                                ),
+                                ratatui::text::Span::styled(after, base_style),
+                            ])
+                        } else {
+                            let mut spans = vec![num_span];
+                            spans.push(ratatui::text::Span::styled(line.to_string(), base_style));
+                            ratatui::text::Line::from(spans)
+                        }
+                    }).collect();
+                frame.render_widget(Paragraph::new(lyrics_lines).wrap(Wrap { trim: false }), lyrics_area);
+                if let Some(ann_area) = ann_area {
+                    let ann_colour = if self.focus == Focus::Annotations { Color::Cyan } else { Color::DarkGray };
+                    let ann_block = Block::default()
+                        .title(" Annotations ")
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(ann_colour));
+                    let ann_inner = ann_block.inner(ann_area);
+                    frame.render_widget(ann_block, ann_area);
+                    let mut ann_lines: Vec<ratatui::text::Line> = Vec::new();
+                    for a in &self.annotations {
+                        ann_lines.push(ratatui::text::Line::from(
+                            ratatui::text::Span::styled(
+                                format!("── {}", a.fragment),
+                                Style::default().fg(Color::Cyan),
+                            ),
+                        ));
+                        for expl_line in a.explanation.split('\n') {
+                            ann_lines.push(ratatui::text::Line::from(
+                                ratatui::text::Span::styled(
+                                    expl_line.to_string(),
+                                    Style::default().fg(Color::DarkGray),
+                                ),
+                            ));
+                        }
+                        ann_lines.push(ratatui::text::Line::from(""));
+                    }
+                    frame.render_widget(
+                        Paragraph::new(ann_lines).wrap(Wrap { trim: false }),
+                        ann_inner,
+                    );
+                }
+                let has_more = self.scroll_offset + visible_lines_count < line_count;
+                let scroll_hint = if has_more { " j/k scroll " } else { "" };
+                let ann_hint = if ann_count > 0 { " | a: Toggle annotations" } else { "" };
+                let hint = Paragraph::new(format!("Esc/q: Close{} {} {}", ann_hint, romaji_tag, scroll_hint))
+                    .style(Style::default().fg(Color::DarkGray))
+                    .alignment(Alignment::Center);
+                frame.render_widget(hint, hint_area);
             }
             LyricsPopupState::Error(err) => {
                 let block = Block::default()
