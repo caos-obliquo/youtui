@@ -4,7 +4,7 @@ use crate::drawutils::{
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::prelude::Alignment;
+
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
@@ -12,7 +12,7 @@ use ratatui_image::Image;
 use ratatui_image::picker::Picker;
 use std::time::Duration;
 
-pub const ALBUM_ART_WIDTH: u16 = 21;
+pub const ALBUM_ART_WIDTH: u16 = 7;
 
 pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
     time_string
@@ -83,7 +83,9 @@ pub fn draw_footer(
     let album_title = cur_active_song
         .and_then(|s| s.album.as_ref())
         .map(|s| s.name.as_str())
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .strip_prefix("Album: ")
+        .unwrap_or_else(|| cur_active_song.and_then(|s| s.album.as_ref()).map(|s| s.name.as_str()).unwrap_or_default());
     let scrobble_indicator = if w.playlist.scrobbling_config.enabled {
         if w.playlist.scrobble_state.is_some() { " [Scrobble]" } else { " [s]" }
     } else { "" };
@@ -132,35 +134,11 @@ pub fn draw_footer(
                 .add_modifier(Modifier::BOLD),
         ),
     ]));
-    let vol = w.playlist.volume.0;
-    let vol_bar_spans = vec![
-        Line::from(Span::styled(
-            " + ",
-            Style::new()
-                .fg(BUTTON_FG_COLOUR)
-                .bg(BUTTON_BG_COLOUR)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::raw(format!(" {vol:>3} "))),
-        Line::from(Span::styled(
-            " - ",
-            Style::new()
-                .fg(BUTTON_FG_COLOUR)
-                .bg(BUTTON_BG_COLOUR)
-                .add_modifier(Modifier::BOLD),
-        )),
-    ];
     let block = Block::default()
         .title("Status")
         .title(Line::from("Youtui").right_aligned())
         .borders(Borders::ALL);
-    let vol_bar = Paragraph::new(vol_bar_spans).alignment(Alignment::Right);
-
     let block_inner = block.inner(chunk);
-    let [album_art_and_progress_bar_chunk, vol_bar_chunk] = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Min(1), Constraint::Length(6)])
-        .areas(block_inner);
     let get_progress_bar_and_text_layout = |r: Rect| {
         let [song_text_chunk, progress_bar_chunk] = Layout::default()
             .direction(Direction::Vertical)
@@ -181,29 +159,21 @@ pub fn draw_footer(
             Constraint::Length(1),
             Constraint::Min(0),
         ])
-        .areas(album_art_and_progress_bar_chunk);
+        .areas(block_inner);
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
-            let font_size = terminal_image_capabilities.font_size();
-            let target_w = (ALBUM_ART_WIDTH * font_size.0) as u32;
-            let target_h = (3 * font_size.1) as u32;
-            let cropped = album_art
-                .in_mem_image
-                .clone()
-                .resize_to_fill(target_w, target_h, image::imageops::FilterType::Lanczos3);
-            match terminal_image_capabilities.new_protocol(
-                cropped,
+            let image = terminal_image_capabilities.new_protocol(
+                album_art.in_mem_image.clone(),
                 Rect {
                     x: 0,
                     y: 0,
                     width: ALBUM_ART_WIDTH,
-                    height: 3,
+                    height: ALBUM_ART_WIDTH - 1,
                 },
                 ratatui_image::Resize::Fit(None),
-            ) {
-                Ok(protocol) => {
-                    f.render_widget(Image::new(&protocol), album_art_chunk);
-                }
+            );
+            match image {
+                Ok(protocol) => f.render_widget(Image::new(&protocol), album_art_chunk),
                 Err(_) => {
                     let fallback_album_widget = Paragraph::new("").centered();
                     f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
@@ -226,5 +196,4 @@ pub fn draw_footer(
     f.render_widget(right_arrow, right_arrow_chunk);
     f.render_widget(block, chunk);
     f.render_widget(footer, song_text_chunk);
-    f.render_widget(vol_bar, vol_bar_chunk);
 }

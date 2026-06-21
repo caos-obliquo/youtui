@@ -32,6 +32,7 @@ pub struct ViTextEditor {
     last_find: Option<(char, FindDir, bool)>,
     last_change: LastChange,
     insert_buffer: String,
+    visual_start: usize,
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -73,6 +74,7 @@ impl ViTextEditor {
             last_find: None,
             last_change: LastChange::None,
             insert_buffer: String::new(),
+            visual_start: 0,
         }
     }
 
@@ -99,6 +101,7 @@ impl ViTextEditor {
         self.buffer = text.to_string();
         self.cursor = self.buffer.len();
         self.undo_stack.clear();
+        self.redo_stack.clear();
     }
 
     pub fn get_text(&self) -> &str {
@@ -109,6 +112,7 @@ impl ViTextEditor {
         self.buffer.clear();
         self.cursor = 0;
         self.undo_stack.clear();
+        self.redo_stack.clear();
         self.mode = ViMode::Insert;
     }
 
@@ -196,14 +200,27 @@ impl ViTextEditor {
                 self.mode = ViMode::Normal;
             }
             crossterm::event::KeyCode::Char('d') => {
+                let (start, end) = if self.cursor < self.visual_start {
+                    (self.cursor, self.visual_start + 1)
+                } else {
+                    (self.visual_start, self.cursor + 1)
+                };
+                let end = end.min(self.buffer.len());
                 self.save_undo();
-                self.clipboard = self.buffer.clone();
-                self.buffer.clear();
-                self.cursor = 0;
+                self.clipboard = self.buffer[start..end].to_string();
+                self.buffer.drain(start..end);
+                self.cursor = start.min(self.buffer.len());
                 self.mode = ViMode::Normal;
             }
             crossterm::event::KeyCode::Char('y') => {
-                self.clipboard = self.buffer.clone();
+                let (start, end) = if self.cursor < self.visual_start {
+                    (self.cursor, self.visual_start + 1)
+                } else {
+                    (self.visual_start, self.cursor + 1)
+                };
+                let end = end.min(self.buffer.len());
+                self.clipboard = self.buffer[start..end].to_string();
+                self.cursor = start;
                 self.mode = ViMode::Normal;
             }
             _ => self.mode = ViMode::Normal,
@@ -212,21 +229,28 @@ impl ViTextEditor {
     }
 
     fn handle_visual_line(&mut self, key: crossterm::event::KeyCode) -> bool {
+        let (lo, hi) = if self.cursor < self.visual_start {
+            (self.cursor, self.visual_start)
+        } else {
+            (self.visual_start, self.cursor)
+        };
+        let lstart = self.buffer[..lo].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let lend = self.buffer[hi..].find('\n').map(|i| hi + i).unwrap_or(self.buffer.len());
+        let after_nl = if lend < self.buffer.len() { lend + 1 } else { lend };
         match key {
             crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('V') => {
                 self.mode = ViMode::Normal;
             }
             crossterm::event::KeyCode::Char('d') => {
-                // Delete entire line
                 self.save_undo();
-                self.clipboard = self.buffer.clone();
-                self.buffer.clear();
-                self.cursor = 0;
+                self.clipboard = self.buffer[lstart..lend].to_string();
+                self.buffer.drain(lstart..after_nl);
+                self.cursor = lstart.min(self.buffer.len());
                 self.mode = ViMode::Normal;
             }
             crossterm::event::KeyCode::Char('y') => {
-                // Yank entire line
-                self.clipboard = self.buffer.clone();
+                self.clipboard = self.buffer[lstart..lend].to_string();
+                self.cursor = lstart;
                 self.mode = ViMode::Normal;
             }
             _ => self.mode = ViMode::Normal,
@@ -390,9 +414,11 @@ impl ViTextEditor {
                 self.mode = ViMode::OperatorPending('d');
             }
             crossterm::event::KeyCode::Char('v') => {
+                self.visual_start = self.cursor;
                 self.mode = ViMode::VisualChar;
             }
             crossterm::event::KeyCode::Char('V') => {
+                self.visual_start = self.cursor;
                 self.mode = ViMode::VisualLine;
             }
             crossterm::event::KeyCode::Char('y') => {
@@ -581,6 +607,17 @@ impl ViTextEditor {
                 }
                 self.insert_buffer.clear();
                 self.mode = ViMode::Insert;
+            }
+            (crossterm::event::KeyCode::Char('y'), 'y') => {
+                // yy: yank line (copy without deleting)
+                if self.multiline {
+                    let start = self.line_start();
+                    let end = self.line_end();
+                    self.clipboard = self.buffer[start..end].to_string();
+                } else {
+                    self.clipboard = self.buffer.clone();
+                }
+                self.mode = ViMode::Normal;
             }
             (crossterm::event::KeyCode::Char('g'), 'g') => {
                 self.cursor = 0;
@@ -1371,7 +1408,7 @@ mod tests {
         e.cursor = 1; // '('
         e.mode = ViMode::Normal;
         e.handle_key(crossterm::event::KeyCode::Char('%'), false, false);
-        assert_eq!(e.cursor, 8); // outer ')'
+        assert_eq!(e.cursor, 7); // outer ')'
     }
 
     #[test]

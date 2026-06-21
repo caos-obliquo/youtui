@@ -55,6 +55,7 @@ use ytmapi_rs::common::YoutubeID;
 
 pub mod lyrics_popup;
 pub mod song_info_popup;
+pub mod album_art_popup;
 pub mod config_editor_popup;
 pub mod playlist_save_popup;
 pub mod playlist_update_popup;
@@ -434,10 +435,9 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => {
                         if let Some(song) = self.get_song_from_id(*id) {
                             if let crate::app::structures::AlbumArtState::Downloaded(thumb) = &song.album_art {
-                                let path = &thumb.on_disk_path;
-                                let _ = std::process::Command::new("xdg-open")
-                                    .arg(path.to_string_lossy().as_ref())
-                                    .spawn();
+                                return (AsyncTask::new_no_op(), Some(AppCallback::ViewAlbumCover {
+                                    thumbnail: thumb.clone(),
+                                }));
                             }
                         }
                     }
