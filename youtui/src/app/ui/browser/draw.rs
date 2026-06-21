@@ -173,7 +173,9 @@ pub fn draw_album_search_browser(
     f.render_widget(List::new(items).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), left_inner);
 
     if show_tracks {
-        let title = format!(" {} — {} ", browser.album_artist, browser.albums.get(browser.album_selected).map_or("", |a| a.title.as_str()));
+        let album = browser.albums.get(browser.album_selected);
+        let album_name = album.map_or("", |a| a.title.as_str());
+        let title = format!(" {} — {} ", browser.album_artist, album_name);
         let right_block = Block::default()
             .title(title.as_str())
             .borders(Borders::ALL)
@@ -182,20 +184,41 @@ pub fn draw_album_search_browser(
         f.render_widget(Clear, right_chunk);
         f.render_widget(right_block, right_chunk);
 
-        let track_items: Vec<ListItem> = browser.track_list.get_list_iter().enumerate().map(|(i, s)| {
+        let header_style = Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD);
+        let cols = vec![
+            Line::from(vec![
+                Span::styled(" #  ", header_style),
+                Span::styled("Track", header_style),
+                Span::raw("   "),
+                Span::styled("Artist", header_style),
+                Span::raw("   "),
+                Span::styled("Duration", header_style),
+            ]),
+        ];
+
+        let track_rows: Vec<ListItem> = browser.track_list.get_list_iter().enumerate().map(|(i, s)| {
             let style = if i == browser.track_selected && right_selected {
                 Style::default().fg(ratatui::style::Color::Black).bg(ROW_HIGHLIGHT_COLOUR)
             } else {
                 Style::default().fg(TEXT_COLOUR)
             };
+            let track_no = s.track_no.map_or(String::new(), |n| n.to_string());
             let artist = s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-            ListItem::new(Line::from(Span::styled(
-                format!("{} — {}", s.title, artist),
-                style,
-            )))
+            let duration = &s.duration_string;
+            ListItem::new(Line::from(vec![
+                Span::styled(format!(" {:>2} ", track_no), style),
+                Span::styled(s.title.clone(), style.clone()),
+                Span::raw("   "),
+                Span::styled(artist, style.clone()),
+                Span::raw("   "),
+                Span::styled(duration.clone(), style),
+            ]))
         }).collect();
+
+        let mut items = cols.into_iter().map(|l| l.into()).collect::<Vec<ListItem>>();
+        items.extend(track_rows);
         let mut track_state = ListState::default().with_selected(Some(browser.track_selected));
-        f.render_widget(List::new(track_items).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), right_inner);
+        f.render_widget(List::new(items).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), right_inner);
     }
 }
 pub fn draw_library_browser(
