@@ -314,6 +314,24 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Char('e') => {
                 self.cursor = end_of_word(&self.buffer, self.cursor);
             }
+            crossterm::event::KeyCode::Char('~') => {
+                if self.cursor < self.buffer.len() {
+                    let b = self.buffer.as_bytes()[self.cursor];
+                    let toggled = if b.is_ascii_lowercase() {
+                        b.to_ascii_uppercase()
+                    } else if b.is_ascii_uppercase() {
+                        b.to_ascii_lowercase()
+                    } else {
+                        b
+                    };
+                    if toggled != b {
+                        self.save_undo();
+                        self.buffer.remove(self.cursor);
+                        self.buffer.insert(self.cursor, toggled as char);
+                        self.last_change = LastChange::ReplaceChar(toggled as char);
+                    }
+                }
+            }
             crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
                 self.cursor = 0;
             }
@@ -1084,6 +1102,26 @@ mod tests {
         e.handle_key(crossterm::event::KeyCode::Char('J'), false, false);
         assert_eq!(e.buffer, "hello world");
         assert_eq!(e.cursor, 0);
+    }
+
+    #[test]
+    fn test_toggle_case() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('~'), false, false);
+        assert_eq!(e.buffer, "Hello");
+    }
+
+    #[test]
+    fn test_toggle_case_non_ascii_noop() {
+        let mut e = ViTextEditor::new();
+        e.set_text("123");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('~'), false, false);
+        assert_eq!(e.buffer, "123");
     }
 
     #[test]
