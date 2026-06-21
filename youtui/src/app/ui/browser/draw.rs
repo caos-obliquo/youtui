@@ -145,8 +145,29 @@ pub fn draw_album_search_browser(
         [Constraint::Percentage(30), Constraint::Percentage(70)],
     ).areas(chunk);
     let show_tracks = browser.show_tracks;
-    let left_selected = selected && !show_tracks;
+    let left_selected = selected && !show_tracks && !browser.search_popped;
     let right_selected = selected && show_tracks;
+
+    // Left panel: search box or album list
+    if browser.search_popped {
+        let [search_box_chunk, rest_chunk] = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(0)])
+            .areas(left_chunk);
+        let search_block = Block::default()
+            .title(" Search Albums ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(SELECTED_BORDER_COLOUR));
+        let text_chunk = search_block.inner(search_box_chunk);
+        let display = browser.search.search_contents.render_simple("");
+        f.render_widget(Clear, search_box_chunk);
+        f.render_widget(search_block, search_box_chunk);
+        f.render_widget(Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR)), text_chunk);
+        if browser.has_search_suggestions() {
+            draw_search_suggestions(f, &browser.search, search_box_chunk, left_chunk);
+        }
+        return;
+    }
 
     // Left panel: album list
     let left_block = Block::default()
@@ -186,6 +207,33 @@ pub fn draw_album_search_browser(
         let right_inner = right_block.inner(right_chunk);
         f.render_widget(Clear, right_chunk);
         f.render_widget(right_block, right_chunk);
+
+        if browser.sort.shown {
+            let popup = crate::drawutils::centered_rect(3, 22, right_inner);
+            let items = vec![
+                ListItem::new(Line::from(Span::styled("Name", Style::default()))),
+                ListItem::new(Line::from(Span::styled("Artist", Style::default()))),
+                ListItem::new(Line::from(Span::styled("Duration", Style::default()))),
+            ];
+            f.render_widget(Clear, popup);
+            f.render_widget(
+                List::new(items)
+                    .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
+                    .block(Block::default().title("Sort").borders(Borders::ALL).border_style(Style::default().fg(SELECTED_BORDER_COLOUR))),
+                popup,
+            );
+            return;
+        }
+        if browser.filter.shown {
+            let popup = crate::drawutils::centered_rect(3, 22, right_inner);
+            f.render_widget(Clear, popup);
+            let block = Block::default().title("Filter").borders(Borders::ALL).border_style(Style::default().fg(SELECTED_BORDER_COLOUR));
+            let inner = block.inner(popup);
+            f.render_widget(block, popup);
+            let display = browser.filter.filter_text.render_simple("");
+            f.render_widget(Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR)), inner);
+            return;
+        }
 
         let col_width = right_inner.width.saturating_sub(2) as usize;
         let num_w = 4usize;
