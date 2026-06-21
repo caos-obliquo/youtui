@@ -947,6 +947,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('E')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SaveToExistingPlaylist)),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SortQueue)),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
