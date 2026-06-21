@@ -135,6 +135,7 @@ pub enum AppCallback {
     PlayNext,
     PlayPrev,
     ReloadConfig,
+    InsertNext(Vec<ListSong>),
     OpenPlaylistEditor {
         playlist_id: ytmapi_rs::common::PlaylistID<'static>,
         playlist_title: String,
@@ -378,6 +379,10 @@ impl Youtui {
                 self.window_state
                     .handle_add_songs_to_playlist_and_play(song_list),
             ),
+            AppCallback::InsertNext(song_list) => self.task_manager.spawn_task(
+                &self.server,
+                self.window_state.handle_insert_next(song_list),
+            ),
             AppCallback::OpenPlaylistSavePopup(video_ids) => {
                 self.window_state.open_playlist_save_popup(video_ids);
             }
@@ -537,38 +542,46 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ViewNextInQueue => {
-                use crate::app::structures::PlayState;
-                let song_id = match &self.window_state.playlist.play_status {
-                    PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => Some(*id),
-                    _ => None,
-                };
-                if let Some(id) = song_id {
-                    let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
-                    if let Some(pos) = songs.iter().position(|s| s.id == id) {
-                        let target_idx = pos.saturating_add(1).min(songs.len().saturating_sub(1));
-                        if let Some(song) = songs.get(target_idx) {
-                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                            let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
-                            self.task_manager.spawn_task(&self.server, effect);
+                let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
+                let start_idx = self.window_state.lyrics_viewing_idx
+                    .or_else(|| {
+                        use crate::app::structures::PlayState;
+                        match &self.window_state.playlist.play_status {
+                            PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => {
+                                songs.iter().position(|s| s.id == *id)
+                            }
+                            _ => None,
                         }
+                    });
+                if let Some(pos) = start_idx {
+                    let target_idx = pos.saturating_add(1).min(songs.len().saturating_sub(1));
+                    if let Some(song) = songs.get(target_idx) {
+                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        self.window_state.lyrics_viewing_idx = Some(target_idx);
+                        let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                        self.task_manager.spawn_task(&self.server, effect);
                     }
                 }
             }
             AppCallback::ViewPrevInQueue => {
-                use crate::app::structures::PlayState;
-                let song_id = match &self.window_state.playlist.play_status {
-                    PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => Some(*id),
-                    _ => None,
-                };
-                if let Some(id) = song_id {
-                    let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
-                    if let Some(pos) = songs.iter().position(|s| s.id == id) {
-                        let target_idx = pos.saturating_sub(1);
-                        if let Some(song) = songs.get(target_idx) {
-                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                            let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
-                            self.task_manager.spawn_task(&self.server, effect);
+                let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
+                let start_idx = self.window_state.lyrics_viewing_idx
+                    .or_else(|| {
+                        use crate::app::structures::PlayState;
+                        match &self.window_state.playlist.play_status {
+                            PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => {
+                                songs.iter().position(|s| s.id == *id)
+                            }
+                            _ => None,
                         }
+                    });
+                if let Some(pos) = start_idx {
+                    let target_idx = pos.saturating_sub(1);
+                    if let Some(song) = songs.get(target_idx) {
+                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        self.window_state.lyrics_viewing_idx = Some(target_idx);
+                        let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                        self.task_manager.spawn_task(&self.server, effect);
                     }
                 }
             }

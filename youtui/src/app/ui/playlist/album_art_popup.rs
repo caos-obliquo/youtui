@@ -31,38 +31,10 @@ impl AlbumArtPopup {
 
     pub fn draw(&mut self, f: &mut Frame, area: Rect, picker: &Picker) {
         f.render_widget(Clear, area);
-        let panel_w = u32::from(area.width.saturating_sub(2));
-        let panel_h = u32::from(area.height.saturating_sub(2));
-        let resized = image::DynamicImage::ImageRgba8(image::imageops::resize(
-            &self.thumbnail.in_mem_image,
-            panel_w,
-            panel_h,
-            image::imageops::FilterType::Lanczos3,
-        ));
-        let img = picker.new_protocol(
-            resized,
-            Rect {
-                x: 0,
-                y: 0,
-                width: area.width.saturating_sub(2),
-                height: area.height.saturating_sub(2),
-            },
-            Resize::Fit(None),
-        );
-        match img {
-            Ok(protocol) => {
-                let inner = Rect {
-                    x: area.x + 1,
-                    y: area.y + 1,
-                    width: area.width.saturating_sub(2),
-                    height: area.height.saturating_sub(2),
-                };
-                f.render_widget(Image::new(&protocol), inner);
-            }
-            Err(_) => {
-                let fallback = Paragraph::new("Failed to load album art").centered();
-                f.render_widget(fallback, area);
-            }
+        let inner = Rect { x: area.x + 1, y: area.y + 1, width: area.width.saturating_sub(2), height: area.height.saturating_sub(2) };
+        match picker.new_protocol(self.thumbnail.in_mem_image.clone(), inner, Resize::Fit(None)) {
+            Ok(protocol) => f.render_widget(Image::new(&protocol), inner),
+            Err(_) => f.render_widget(Paragraph::new("Failed to load album art").centered(), area),
         }
     }
 }
