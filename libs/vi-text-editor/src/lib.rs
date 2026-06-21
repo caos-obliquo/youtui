@@ -335,6 +335,13 @@ impl ViTextEditor {
                     }
                 }
             }
+            crossterm::event::KeyCode::Char('%') => {
+                if !self.buffer.is_empty() {
+                    if let Some(pos) = find_matching_bracket(&self.buffer, self.cursor) {
+                        self.cursor = pos;
+                    }
+                }
+            }
             crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
                 self.cursor = 0;
             }
@@ -901,6 +908,42 @@ fn current_word_range(text: &str, cursor: usize) -> (usize, usize) {
     (start, end)
 }
 
+fn find_matching_bracket(text: &str, cursor: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let len = bytes.len();
+    if cursor >= len { return None; }
+    let open_close: &[(u8, u8)] = &[(b'(', b')'), (b'[', b']'), (b'{', b'}')];
+    // Check if cursor is on an opening bracket
+    for &(open, close) in open_close {
+        if bytes[cursor] == open {
+            let mut depth = 0;
+            for i in (cursor + 1)..len {
+                if bytes[i] == open { depth += 1; }
+                else if bytes[i] == close {
+                    if depth == 0 { return Some(i); }
+                    depth -= 1;
+                }
+            }
+            return None;
+        }
+    }
+    // Check if cursor is on a closing bracket
+    for &(open, close) in open_close {
+        if bytes[cursor] == close {
+            let mut depth = 0;
+            for i in (0..cursor).rev() {
+                if bytes[i] == close { depth += 1; }
+                else if bytes[i] == open {
+                    if depth == 0 { return Some(i); }
+                    depth -= 1;
+                }
+            }
+            return None;
+        }
+    }
+    None
+}
+
 fn find_char(text: &str, cursor: usize, ch: char, dir: FindDir, till: bool) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
@@ -1299,6 +1342,46 @@ mod tests {
         e.handle_key(crossterm::event::KeyCode::Char('i'), false, false);
         e.handle_key(crossterm::event::KeyCode::Char('"'), false, false);
         assert_eq!(e.buffer, "say \"\" world");
+    }
+
+    #[test]
+    fn test_match_bracket_forward() {
+        let mut e = ViTextEditor::new();
+        e.set_text("(hello)");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('%'), false, false);
+        assert_eq!(e.cursor, 6);
+    }
+
+    #[test]
+    fn test_match_bracket_backward() {
+        let mut e = ViTextEditor::new();
+        e.set_text("(hello)");
+        e.cursor = 6;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('%'), false, false);
+        assert_eq!(e.cursor, 0);
+    }
+
+    #[test]
+    fn test_match_bracket_nested() {
+        let mut e = ViTextEditor::new();
+        e.set_text("a(b(c)d)e");
+        e.cursor = 1; // '('
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('%'), false, false);
+        assert_eq!(e.cursor, 8); // outer ')'
+    }
+
+    #[test]
+    fn test_match_bracket_no_match() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('%'), false, false);
+        assert_eq!(e.cursor, 0); // unchanged
     }
 
     #[test]
