@@ -130,6 +130,8 @@ pub enum AppCallback {
     SeekBack,
     SeekForward,
     SeekTo(Duration),
+    ViewNextInQueue,
+    ViewPrevInQueue,
     ReloadConfig,
     OpenPlaylistEditor {
         playlist_id: ytmapi_rs::common::PlaylistID<'static>,
@@ -523,6 +525,42 @@ impl Youtui {
                 let effect = self.window_state.playlist.handle_seek_to(pos)
                     .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::ViewNextInQueue => {
+                use crate::app::structures::PlayState;
+                let song_id = match &self.window_state.playlist.play_status {
+                    PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => Some(*id),
+                    _ => None,
+                };
+                if let Some(id) = song_id {
+                    let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
+                    if let Some(pos) = songs.iter().position(|s| s.id == id) {
+                        let target_idx = pos.saturating_add(1).min(songs.len().saturating_sub(1));
+                        if let Some(song) = songs.get(target_idx) {
+                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                            let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                            self.task_manager.spawn_task(&self.server, effect);
+                        }
+                    }
+                }
+            }
+            AppCallback::ViewPrevInQueue => {
+                use crate::app::structures::PlayState;
+                let song_id = match &self.window_state.playlist.play_status {
+                    PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => Some(*id),
+                    _ => None,
+                };
+                if let Some(id) = song_id {
+                    let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
+                    if let Some(pos) = songs.iter().position(|s| s.id == id) {
+                        let target_idx = pos.saturating_sub(1);
+                        if let Some(song) = songs.get(target_idx) {
+                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                            let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                            self.task_manager.spawn_task(&self.server, effect);
+                        }
+                    }
+                }
             }
             AppCallback::OpenPlaylistEditor { playlist_id, playlist_title, tracks } => {
                 use crate::app::ui::playlist::playlist_editor_popup::PlaylistEditorPopup;
