@@ -394,32 +394,17 @@ impl PlaylistSearchBrowser {
     pub fn go_to_artist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.playlist_songs_panel.get_selected_item();
         if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
-            let artist = song.artists.iter()
-                .map(|a| a.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            return (
-                AsyncTask::new_no_op(),
-                Some(AppCallback::Navigate(NavTarget::Artist(artist))),
-            );
+            if let Some(cb) = crate::app::ui::browser::shared_components::navigate_to_artist(song) {
+                return (AsyncTask::new_no_op(), Some(cb));
+            }
         }
         (AsyncTask::new_no_op(), None)
     }
     pub fn go_to_album(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.playlist_songs_panel.get_selected_item();
         if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
-            let artist = song.artists.iter()
-                .map(|a| a.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ");
-            if let Some(album) = &song.album {
-                return (
-                    AsyncTask::new_no_op(),
-                    Some(AppCallback::Navigate(NavTarget::Album {
-                        artist,
-                        album: album.name.clone(),
-                    })),
-                );
+            if let Some(cb) = crate::app::ui::browser::shared_components::navigate_to_album(song) {
+                return (AsyncTask::new_no_op(), Some(cb));
             }
             warn!("Song has no album data, cannot navigate to album");
         }

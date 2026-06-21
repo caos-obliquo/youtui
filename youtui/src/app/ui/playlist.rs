@@ -106,6 +106,8 @@ pub struct Playlist {
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
+    /// True when the last addition was via :URL — skip album splitting
+    pub url_added: bool,
     pub album_current_track: usize,
     pub scrobbling_config: crate::config::ScrobblingConfig,
     pub yt_dlp_cookie_path: Option<String>,
@@ -331,20 +333,17 @@ impl ActionHandler<PlaylistAction> for Playlist {
             PlaylistAction::GoToArtist => {
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 if let Some(song) = self.get_song_from_idx(actual_index) {
-                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                    return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist))));
+                    if let Some(cb) = crate::app::ui::browser::shared_components::navigate_to_artist(song) {
+                        return (AsyncTask::new_no_op(), Some(cb));
+                    }
                 }
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::GoToAlbum => {
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 if let Some(song) = self.get_song_from_idx(actual_index) {
-                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                    if let Some(album) = &song.album {
-                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Album {
-                            artist,
-                            album: album.name.clone(),
-                        })));
+                    if let Some(cb) = crate::app::ui::browser::shared_components::navigate_to_album(song) {
+                        return (AsyncTask::new_no_op(), Some(cb));
                     }
                     warn!("Song has no album data, cannot navigate to album");
                 }
@@ -815,6 +814,7 @@ impl Playlist {
             album_art_fetching: false,
             album_art_fetching_name: None,
             pending_count: 0,
+            url_added: false,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
