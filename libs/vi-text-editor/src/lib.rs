@@ -317,6 +317,9 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Char('u') => {
                 self.undo();
             }
+            crossterm::event::KeyCode::Char('r') => {
+                self.mode = ViMode::OperatorPending('r');
+            }
             crossterm::event::KeyCode::Char('c') => {
                 self.mode = ViMode::OperatorPending('c');
             }
@@ -496,6 +499,15 @@ impl ViTextEditor {
             }
             (crossterm::event::KeyCode::Char('g'), 'g') => {
                 self.cursor = 0;
+                self.mode = ViMode::Normal;
+            }
+            // r: replace single char
+            (crossterm::event::KeyCode::Char(ch), 'r') => {
+                if self.cursor < self.buffer.len() {
+                    self.save_undo();
+                    self.buffer.remove(self.cursor);
+                    self.buffer.insert(self.cursor, ch);
+                }
                 self.mode = ViMode::Normal;
             }
             // f/F/t/T: next char keypress is the target
@@ -863,5 +875,29 @@ mod tests {
         e.handle_key(crossterm::event::KeyCode::Char('f'), false);
         e.handle_key(crossterm::event::KeyCode::Char('z'), false);
         assert_eq!(e.cursor, 0);
+    }
+
+    #[test]
+    fn test_replace_char() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello");
+        e.cursor = 1;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('r'), false);
+        assert_eq!(e.mode, ViMode::OperatorPending('r'));
+        e.handle_key(crossterm::event::KeyCode::Char('a'), false);
+        assert_eq!(e.buffer, "hallo");
+        assert_eq!(e.mode, ViMode::Normal);
+    }
+
+    #[test]
+    fn test_replace_at_end_noop() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hi");
+        e.cursor = 2;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('r'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false);
+        assert_eq!(e.buffer, "hi");
     }
 }
