@@ -1,5 +1,5 @@
 use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffect, YoutuiEffect};
-use crate::app::ui::components::vi_text_editor::ViTextEditor;
+use vi_text_editor::{ViMode, ViTextEditor};
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -67,11 +67,11 @@ impl ConfigEditorPopup {
     pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
         match event.code {
             KeyCode::Esc => {
-                if self.editor.mode != crate::app::ui::components::vi_text_editor::ViMode::Insert {
+                if self.editor.mode != ViMode::Insert {
                     return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
                 }
                 // Esc in Insert mode → Normal
-                self.editor.handle_key(KeyCode::Esc, false);
+                self.editor.handle_key(KeyCode::Esc, false, false);
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('s') if event.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -81,13 +81,13 @@ impl ConfigEditorPopup {
             _ => {
                 // ZZ: save and quit
                 if event.code == KeyCode::Char('Z')
-                    && self.editor.mode == crate::app::ui::components::vi_text_editor::ViMode::Normal
+                    && self.editor.mode == ViMode::Normal
                 {
                     // Wait for next key via key stack? No — handle key chords here.
                     // We can't do ZZ in a single handle_key call.
                     // We'll handle it via the key_stack mechanism.
                 }
-                self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT));
+                self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), false);
                 (AsyncTask::new_no_op(), None)
             }
         }

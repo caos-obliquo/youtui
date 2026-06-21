@@ -87,7 +87,7 @@ impl PlaylistSearchPanel {
             list: Default::default(),
             route: Default::default(),
             selected: Default::default(),
-            search_popped: true,
+            search_popped: false,
             search: SearchBlock::default(),
             widget_state: Default::default(),
         }

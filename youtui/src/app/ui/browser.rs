@@ -7,6 +7,7 @@ use crate::app::component::actionhandler::{
     Scrollable, TextHandler, YoutuiEffect, apply_action_mapped,
 };
 use crate::app::ui::browser::library::{BrowserLibraryAction, LibraryBrowser};
+use vi_text_editor::ViTextEditor;
 use crate::app::ui::browser::playlistsearch::PlaylistSearchBrowser;
 use crate::app::ui::browser::playlistsearch::search_panel::BrowserPlaylistsAction;
 use crate::app::ui::browser::playlistsearch::songs_panel::BrowserPlaylistSongsAction;
@@ -49,6 +50,8 @@ pub struct Browser {
     playlist_search_browser: PlaylistSearchBrowser,
     library_browser: LibraryBrowser,
     state_stack: Vec<BrowserSnapshot>,
+    filter_editor: ViTextEditor,
+    filter_active: bool,
 }
 
 #[derive(Clone)]
@@ -63,6 +66,7 @@ impl_youtui_component!(Browser);
 pub enum BrowserAction {
     ViewPlaylist,
     Search,
+    LocalFilter,
     Left,
     Right,
     ChangeSearchType,
@@ -77,6 +81,7 @@ impl Action for BrowserAction {
         match self {
             BrowserAction::ViewPlaylist => "View Playlist",
             BrowserAction::Search => "Toggle Search",
+            BrowserAction::LocalFilter => "Local Filter",
             BrowserAction::Left => "Left",
             BrowserAction::Right => "Right",
             BrowserAction::ChangeSearchType => "Change Search Type",
@@ -246,6 +251,7 @@ impl ActionHandler<BrowserAction> for Browser {
                 );
             }
             BrowserAction::Search => self.handle_toggle_search(),
+            BrowserAction::LocalFilter => self.handle_toggle_local_filter(),
             BrowserAction::ChangeSearchType => {
                 if let Some(task) = self.handle_change_search_type() {
                     return (task, None);
@@ -312,6 +318,9 @@ impl ActionHandler<SortAction> for Browser {
 }
 impl TextHandler for Browser {
     fn is_text_handling(&self) -> bool {
+        if self.filter_active {
+            return true;
+        }
         match self.variant {
             BrowserVariant::Artist => self.artist_search_browser.is_text_handling(),
             BrowserVariant::Song => self.song_search_browser.is_text_handling(),
@@ -320,6 +329,9 @@ impl TextHandler for Browser {
         }
     }
     fn get_text(&self) -> std::option::Option<&str> {
+        if self.filter_active {
+            return Some(self.filter_editor.get_text());
+        }
         match self.variant {
             BrowserVariant::Artist => self.artist_search_browser.get_text(),
             BrowserVariant::Song => self.song_search_browser.get_text(),
@@ -328,6 +340,10 @@ impl TextHandler for Browser {
         }
     }
     fn replace_text(&mut self, text: impl Into<String>) {
+        if self.filter_active {
+            self.filter_editor.set_text(&text.into());
+            return;
+        }
         match self.variant {
             BrowserVariant::Artist => self.artist_search_browser.replace_text(text),
             BrowserVariant::Song => self.song_search_browser.replace_text(text),
@@ -336,6 +352,11 @@ impl TextHandler for Browser {
         }
     }
     fn clear_text(&mut self) -> bool {
+        if self.filter_active {
+            let had_text = !self.filter_editor.get_text().is_empty();
+            self.filter_editor.clear();
+            return had_text;
+        }
         match self.variant {
             BrowserVariant::Artist => self.artist_search_browser.clear_text(),
             BrowserVariant::Song => self.song_search_browser.clear_text(),
@@ -347,6 +368,25 @@ impl TextHandler for Browser {
         &mut self,
         event: &crossterm::event::Event,
     ) -> Option<ComponentEffect<Self>> {
+        if self.filter_active {
+            if let crossterm::event::Event::Key(k) = event {
+                if k.kind == crossterm::event::KeyEventKind::Press {
+                    match k.code {
+                        crossterm::event::KeyCode::Esc => {
+                            self.filter_active = false;
+                            self.filter_editor.clear();
+                        }
+                        crossterm::event::KeyCode::Enter => {
+                            self.filter_active = false;
+                        }
+                        _ => {
+                            self.filter_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
+                        }
+                    }
+                }
+            }
+            return None;
+        }
         match self.variant {
             BrowserVariant::Artist => self
                 .artist_search_browser
@@ -525,6 +565,8 @@ impl Browser {
             playlist_search_browser: PlaylistSearchBrowser::new(),
             library_browser: LibraryBrowser::new(),
             state_stack: Vec::new(),
+            filter_editor: ViTextEditor::new(),
+            filter_active: false,
         }
     }
     pub fn navigate_to(&mut self, target: NavTarget) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
@@ -580,6 +622,9 @@ impl Browser {
         }
     }
     pub fn text_editor_mode(&self) -> Option<String> {
+        if self.filter_active {
+            return Some(self.filter_editor.mode_char().to_string());
+        }
         match self.variant {
             BrowserVariant::Artist => self.artist_search_browser.text_editor_mode(),
             BrowserVariant::Song => self.song_search_browser.text_editor_mode(),
@@ -637,6 +682,44 @@ impl Browser {
             BrowserVariant::Song => self.song_search_browser.handle_toggle_search(),
             BrowserVariant::Playlist => self.playlist_search_browser.handle_toggle_search(),
             BrowserVariant::LibraryPlaylist => self.library_browser.handle_toggle_search(),
+        }
+    }
+    pub fn handle_toggle_local_filter(&mut self) {
+        self.filter_active = !self.filter_active;
+        if self.filter_active {
+            self.filter_editor = ViTextEditor::new();
+        } else {
+            self.filter_editor.clear();
+        }
+    }
+    pub fn dismiss_search(&mut self) {
+        if self.filter_active {
+            self.filter_active = false;
+            self.filter_editor.clear();
+        }
+        match self.variant {
+            BrowserVariant::Artist => {
+                if self.artist_search_browser.artist_search_panel.search_popped {
+                    self.artist_search_browser.artist_search_panel.close_search();
+                    self.artist_search_browser.revert_routing();
+                }
+            }
+            BrowserVariant::Song => {
+                if self.song_search_browser.search_popped {
+                    self.song_search_browser.handle_toggle_search();
+                }
+            }
+            BrowserVariant::Playlist => {
+                if self.playlist_search_browser.playlist_search_panel.search_popped {
+                    self.playlist_search_browser.playlist_search_panel.close_search();
+                    self.playlist_search_browser.revert_routing();
+                }
+            }
+            BrowserVariant::LibraryPlaylist => {
+                if self.library_browser.input_routing == library::InputRouting::Search {
+                    self.library_browser.handle_toggle_search();
+                }
+            }
         }
     }
     pub fn handle_change_search_type(&mut self) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {

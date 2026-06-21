@@ -79,7 +79,7 @@ pub fn draw_app_media_controls(w: &YoutuiWindow) -> MediaControlsUpdate<'_> {
 
 /// Upgrade YTM thumbnail URL to request largest available resolution.
 /// YTM URLs contain size params like =w60-h60 or =s60 — replace with =w600-h600.
-fn upgrade_thumbnail_url(url: &str) -> String {
+pub fn upgrade_thumbnail_url(url: &str) -> String {
     // Find and replace the size suffix pattern
     if let Some(eq_pos) = url.rfind('=') {
         let prefix = &url[..=eq_pos];

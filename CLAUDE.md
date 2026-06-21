@@ -9,7 +9,22 @@ If things break, rollback and re-apply one-by-one.
 - Rust nightly (1.97.0)
 - Binary: `cargo build --release` → `target/release/youtui`
 - Dependencies: yt-dlp, ffmpeg, alsa-lib
-- Tests: `cargo test --release -p youtui --bin youtui` (126 pass, 2 pre-existing config failures)
+- Tests: `cargo test --release -p youtui --bin youtui` (132 pass, 2 pre-existing config failures)
+
+## Vision
+Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
+
+### Design Principles
+1. **Vim motions = direct keys.** `j/k/h/l/g/G/d/y/V/u/n/N/[/]` are muscle memory — always direct, never buried in menus.
+2. **Context menu = everything else.** API calls, toggles, settings, info views → `o` mode context menu. User should not need to guess random direct keys for app-specific actions.
+3. **Reusable component crates.** Every TUI component (ViTextEditor, SearchBlock, ScrollingTable) is extractable to `libs/` for reuse in future libre projects (Libre.fm client, Bandcamp nameyourprice browser, embedded player).
+4. **Keyboard warrior stack.** dwl, Arch Linux, Neovim, Vimium, zsh-vi-mode — every keypress should feel right. Count prefixes (`5dd`), operators (`d`/`y`/`c`), motions (`w`/`b`/`e`/`gg`/`G`), visual mode (`V`+j/k, y yank).
+
+### Future Integrations
+- Libre.fm scrobbling (Last.fm API protocol — already have the client)
+- Bandcamp nameyourprice scraper as a metadata provider
+- Embedded music player via the already-decoupled `TaskManager` + `DecodeSong` pipeline
+- Full libre source stack (more permissive than open source)
 
 ## Architecture
 
@@ -120,6 +135,58 @@ Three fields: `(Arc<InMemSong>, Option<Duration> offset, Option<Duration> actual
 ## Lyrics Pipeline
 Order: `Musixmatch` → `Genius scrape` (quality gate: reject < 50 chars or < 3 lines) → `Bandcamp URL construction` → `lyr CLI` → `error`
 
+## F-Key Architecture (2026-06-20)
+
+3 primary F-keys for navigation/search. Vi motions are the foundation — all navigation built on j/k/h/l/g/G/etc.
+
+| Key | Action | Scope | Behavior |
+|---|---|---|---|
+| `F1` | Toggle YTM search | Everywhere | Opens SearchBlock with suggestions. Closes on F1 again, or on view switch (F2/F3). Text clears on close. From Playlist: opens search popup overlay. |
+| `F2` | Toggle Browser | Everywhere | Go to Browser / return to previous view (prev_context restore). Auto-dismisses any open search. |
+| `F3` | Toggle Queue | Everywhere | Go to Playlist / return to previous view (prev_context restore). Auto-dismisses any open search. |
+| `F7` | ChangeSearchType | Browser | Switches browser search type (artist/song/playlist). Moved from F6. |
+| `F11` | ViewLogs | Global | Logger view. Unchanged. |
+
+### F2/F3 toggle mechanism (Option B2)
+```
+F2:
+  if context == Browser → restore prev_context (leave Browser)
+  else → save context to prev_context, switch to Browser
+
+F3:
+  if context == Playlist → restore prev_context (leave Playlist)
+  else → save context to prev_context, switch to Playlist
+```
+Each F-key has single identity — press to enter its view, press again to return to last context. No-op when no previous context exists (already in target view at startup).
+
+### Search split: F1 vs `/`
+
+| Key | Type | Scope | Behavior |
+|---|---|---|---|
+| `F1` | Native YTM search | All windows | Backend API call. Uses `SearchBlock` with YTM suggestions. Returns new results from API. |
+| `/` | Local fuzzy finder | All windows | In-memory filter of current list. Case-insensitive fuzzy matching on visible data. No API call. |
+
+This replaces the old behavior where `/` in Browser triggered an API search. Now `/` is always local, F1 is always native.
+
+### Queue View Fidelity
+The Playlist view (queue) is left **entirely untouched** by all refactoring. It is the user's favorite view. All changes target Browser, popups, search — never the Playlist core logic, rendering, or gapless auto-advance.
+
+### Library Backend-ification
+Library browser (4th tab) removes its special `ViTextEditor` local-filter and adopts `SearchBlock` + backend API search — matching the pattern of Artist/Song/Playlist browsers.
+
+## Event Routing Bugs Found (2026-06-20) — 10 divergences to fix
+
+1. **SongInfoPopup missing AppAction**: `ActionHandler<SongInfoAction>` unreachable via keymap. Add `AppAction::SongInfo(a)`.
+2. **PlaylistUpdatePopup uses wrong keymap**: `get_active_keybinds` returns `playlist_save_popup` for update popup. Fix: return `playlist_update_popup`.
+3. **Save/Update popups bypass keymap**: Call `apply_action()` in raw `handle_key()`. Route through keymap.
+4. **Lyrics/SongInfo/Save/Update keybinds append logger keymaps** (ui.rs ~235): Wrong keybind display.
+5. **TextEntryAction::Submit no-op for Playlist**: Playlist has `/` search but Submit does nothing.
+6. **ConfigEditorPopup doesn't save prev_context**: No context tracking for config editor.
+7. **Artist/Playlist `left()`/`right()` duplication**: Near-identical panel nav with different enum names.
+8. **Library sort/filter stubs**: FilterAction/SortAction close popup but don't apply.
+9. **get_visual_range() default None**: Only Playlist has visual mode. Other windows can't use it.
+10. **Browser draw dispatch**: 4 variants with different layout conventions (Max/Min vs Percentage vs Length).
+
 ## Known Issues
 - Native downloader (`rusty_ytdl::stream()`): ignores custom filter for some videos, downloads video-only MPEG-4. Workaround: `:` command uses yt-dlp (works).
 - Metallum CLI integration blocked by Cloudflare (cf_clearance cookie + TLS fingerprint mismatch).
@@ -127,26 +194,13 @@ Order: `Musixmatch` → `Genius scrape` (quality gate: reject < 50 chars or < 3 
 - Annotations display: last entry may be cut off (lyrics_popup.rs height calc).
 - `:` command: single video URLs with autogenerated &list= no longer load extra tracks.
 
-## TODO
-- **Year metadata for playlist/library tracks**: YTM API doesn't return year data. Need
-  Last.fm/MusicBrainz pipeline (ValidateMetadata) spawned after TracksFetched/
-  TracksAppended to fill years via track.getInfo → album.getInfo.
-- **Universal `/` search**: Currently only in Playlist view. Should work in Library
-  Browser (filter loaded songs/playlists/artists/albums locally), and other contexts.
-  More powerful than native `3`/`4` filter/sort.
-- **Visual mode highlight**: `get_highlighted_row()` should visually highlight the
-  selection range (visual_start to cur_selected) when visual_mode is active.
-- **d g rename**: DeleteToTop action is `d g` (flat mode). Consider renaming to `d gg`
-  if nested mode support is added later.
-- **Annotations quote context**: Genius annotations show fragment + body but no
-  attribution (who wrote it, full context). Need Genius annotations/{id} API.
-
 ## Library Browser (4th Tab: Artist | Song | Playlist | Library)
 - `app/ui/browser/library.rs` — LibraryBrowser struct, two-panel layout (category list + content)
 - Categories: Liked Songs, Playlists, Artists, Albums — each fetches on focus
 - `GetAllLibrarySongs`, `GetAllLibraryArtists`, `GetAllLibraryAlbums` backend tasks (messages.rs)
+- **Planned**: Replace ViTextEditor local-filter with SearchBlock + backend search (matching Artist/Song/Playlist pattern)
 - `browser_library` keymap field with context menu (o: play, queue, lyrics, copy URL)
-- `r` key reloads current category, `y` copies URL, `3`/`4` toggle filter/sort
+- `r` key reloads current category, `y` copies URL
 
 ## Auth Fix (Cookie Dedup)
 - `ytmapi-rs/src/auth/browser.rs:96-130` — `parse_netscape_cookies()` now deduplicates via BTreeMap (last-wins)
@@ -181,6 +235,31 @@ Order: `Musixmatch` → `Genius scrape` (quality gate: reject < 50 chars or < 3 
 | `app/ui/browser/library.rs` | ~660 | Library browser (4th tab) |
 | `app/ui/browser.rs` | ~690 | Browser routing, tab dispatch |
 | `config/keymap.rs` | ~2025 | All keybindings by context |
+
+## ViTextEditor (`libs/vi-text-editor/`)
+Standalone crate for reuse. Single-line (command input) or multiline (config editor).
+- **Modes**: Normal, Insert, VisualLine, VisualChar, OperatorPending
+- **Motions**: h/l/w/b/e/0/$/gg/G/j/k, word boundaries are ASCII-only (intentionally — suckless)
+- **Operators**: d (dd/dw/d$/dh/dl), c (cw/c$/cc — change = delete + insert), y (yy/yank)
+- **Undo stack**: 50 entries, saved on buffer changes
+- **Clipboard**: internal string, p/P paste
+- **Count prefix**: supported through youtui's `pending_count` mechanism (Phase C)
+- **Tests**: 12 pass
+- **Deps**: crossterm only
+
+## Design Principles (Suckless + Vim-Driven)
+1. **Vim motions = direct keys.** Never buried in menus.
+2. **Context menu = everything else.** `o` mode for API calls, toggles, settings.
+3. **Only Browser Library and Playlist/Queue may differ** — everything else must be consistent.
+4. **Minimal deps.** ASCII word boundaries > unicode-segmentation dependency.
+5. **Keyboard warrior stack.** dwl, Arch, Neovim, Vimium, zsh-vi-mode. Count prefixes, operators, motions, visual mode.
+
+## Remaining Work (from TODO.md)
+1. `o.a`/`o.A` semantic conflicts between playlist and artist_songs browser
+2. Lyrics popup centering (use `centered_rect_fixed` like others)
+3. `centered_rect_fixed` code dedup into shared utility
+4. Browser config.toml sections completeness
+5. Popup keymap routing for extensibility
 
 ## Tests
 - `insert_album_tracks_sets_correct_metadata` — start_offset accumulation, duration_string, year fallback

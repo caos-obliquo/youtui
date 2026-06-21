@@ -1,4 +1,4 @@
-use super::action::AppAction;
+use super::action::{AppAction, TextEntryAction};
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
@@ -11,8 +11,8 @@ use crate::app::server::{
     TaskMetadata, ValidateMetadata, AlbumTrack,
 };
 use crate::app::structures::{
-    AlbumArtState, AudioQuality, BrowserSongsList, DownloadStatus, ListSong, ListSongDisplayableField,
-    ListSongID, Percentage, PlayState, SongListComponent, Thumbnail,
+    fuzzy_match, AlbumArtState, AudioQuality, BrowserSongsList, DownloadStatus, ListSong,
+    ListSongDisplayableField, ListSongID, Percentage, PlayState, SongListComponent, Thumbnail,
 };
 use std::collections::VecDeque;
 use crate::app::ui::playlist::effect_handlers::{
@@ -26,6 +26,7 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleRateSongOk, HandleRateSongErr,
     HandleFetchAlbumArtOk, HandleFetchAlbumArtErr,
 };
+use crate::app::ui::draw_media_controls::upgrade_thumbnail_url;
 use crate::app::ui::{AppCallback, WindowContext};
 use crate::app::{NavTarget};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
@@ -113,11 +114,15 @@ pub struct Playlist {
     /// Pending chunks for multi-playlist split (video_ids, title, description, next_index)
     pub pending_playlist_chunks: Option<(Vec<Vec<ytmapi_rs::common::VideoID<'static>>>, String, Option<String>)>,
     /// Stack of deleted songs for undo (song, original_index)
-    pub undo_stack: Vec<(crate::app::structures::ListSong, usize)>,
+    pub undo_stack: Vec<Vec<(crate::app::structures::ListSong, usize)>>,
     pub visual_mode: bool,
     pub visual_start: usize,
     /// Guard: true when a FetchAlbumArt task is in-flight for current song
     pub album_art_fetching: bool,
+    /// Album name being fetched for album art matching
+    pub album_art_fetching_name: Option<String>,
+    /// Pending count for next vim-style operation (e.g., 5dd → delete 5)
+    pub pending_count: usize,
 }
 
 impl_youtui_component!(Playlist);
@@ -156,6 +161,7 @@ pub enum PlaylistAction {
     GoToArtist,
     GoToAlbum,
     ToggleLike,
+    ViewAlbumCover,
 }
 
 impl Action for PlaylistAction {
@@ -196,6 +202,7 @@ impl Action for PlaylistAction {
             PlaylistAction::GoToArtist => "Go to Artist",
             PlaylistAction::GoToAlbum => "Go to Album",
             PlaylistAction::ToggleLike => "Like / Unlike",
+            PlaylistAction::ViewAlbumCover => "View Album Cover",
         }
         .into()
     }
@@ -240,12 +247,9 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistSavePopup(video_ids)))
             },
             PlaylistAction::SaveToExistingPlaylist => {
-                let actual_index = self.visual_to_actual_index(self.cur_selected);
-                let video_ids = if let Some(song) = self.get_song_from_idx(actual_index) {
-                    vec![song.video_id.clone()]
-                } else {
-                    Vec::new()
-                };
+                let video_ids: Vec<_> = self.list.get_list_iter()
+                    .map(|s| s.video_id.clone())
+                    .collect();
                 if video_ids.is_empty() {
                     return (AsyncTask::new_no_op(), None);
                 }
@@ -425,6 +429,22 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     (AsyncTask::new_no_op(), None)
                 }
             },
+            PlaylistAction::ViewAlbumCover => {
+                match &self.play_status {
+                    PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => {
+                        if let Some(song) = self.get_song_from_id(*id) {
+                            if let crate::app::structures::AlbumArtState::Downloaded(thumb) = &song.album_art {
+                                let path = &thumb.on_disk_path;
+                                let _ = std::process::Command::new("xdg-open")
+                                    .arg(path.to_string_lossy().as_ref())
+                                    .spawn();
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                (AsyncTask::new_no_op(), None)
+            },
         }
     }
 }
@@ -498,9 +518,13 @@ impl TextHandler for Playlist {
                     }
                     None
                 }
-                KeyCode::Esc | KeyCode::Enter => {
+                KeyCode::Esc => {
                     self.search_enabled = false;
                     Some(AsyncTask::new_no_op())
+                }
+                KeyCode::Enter => {
+                    // Let Enter reach keymap dispatch for TextEntryAction::Submit
+                    return None;
                 }
                 _ => None,
             },
@@ -733,6 +757,8 @@ impl Playlist {
             visual_mode: false,
             visual_start: 0,
             album_art_fetching: false,
+            album_art_fetching_name: None,
+            pending_count: 0,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -1071,6 +1097,7 @@ impl Playlist {
                             let api_key = self.scrobbling_config.api_key.clone();
                             if !api_key.is_empty() {
                                 self.album_art_fetching = true;
+                                self.album_art_fetching_name = Some(album_name.clone());
                                 effect = effect.push(AsyncTask::new_future_try(
                                     crate::app::server::FetchAlbumArt(artist, album_name, api_key),
                                     HandleFetchAlbumArtOk,
@@ -1311,6 +1338,7 @@ impl Playlist {
                     song.album_art = AlbumArtState::None;
                     return None;
                 };
+                let thumb_url = upgrade_thumbnail_url(&thumb_url);
                 let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
                 Some((thumbnail_id, thumb_url))
             })
@@ -1601,10 +1629,8 @@ impl Playlist {
                 if matches!(song.album_art, AlbumArtState::Downloaded(_)) {
                     return None;
                 }
-                if !song.thumbnails.as_ref().is_empty() && song.thumbnails.as_ref().iter().any(|t| !t.url.is_empty()) {
-                    return None;
-                }
                 let thumb_url = get_largest_thumbnail_url(song.thumbnails.as_ref())?;
+                let thumb_url = upgrade_thumbnail_url(&thumb_url);
                 let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
                 Some((thumbnail_id, thumb_url))
             })
@@ -1862,9 +1888,7 @@ impl Playlist {
                     to_delete.push((all_songs[actual].clone(), actual));
                 }
             }
-            for (song, _) in to_delete.iter().rev() {
-                self.undo_stack.push((song.clone(), 0));
-            }
+            self.undo_stack.push(to_delete.clone());
             // Remove from end to start so indices stay valid
             for (_, actual) in to_delete.iter().rev() {
                 self.list.remove_song_index(*actual);
@@ -1886,40 +1910,54 @@ impl Playlist {
             return return_task;
         }
 
-        let visual_index_before = self.cur_selected;
-        let actual_index = self.visual_to_actual_index(visual_index_before);
+        // Count-based delete: delete N items from current position
+        let count = self.pending_count.max(1);
+        self.pending_count = 0;
 
-        if let Some(cur_playing_id) = self.get_cur_playing_id() {
-            if Some(actual_index) == self.get_cur_playing_index() {
-                self.play_status = PlayState::NotPlaying;
-                return_task = self.stop_song_id(cur_playing_id);
+        // Delete up to `count` items one by one
+        for _ in 0..count {
+            if self.cur_selected >= self.list.get_list_iter().len() {
+                break;
             }
-        }
+            let visual_index_before = self.cur_selected;
+            let actual_index = self.visual_to_actual_index(visual_index_before);
 
-        // Delete from main list first
-        self.list.remove_song_index(actual_index);
+            if let Some(cur_playing_id) = self.get_cur_playing_id() {
+                if Some(actual_index) == self.get_cur_playing_index() {
+                    self.play_status = PlayState::NotPlaying;
+                    return_task = self.stop_song_id(cur_playing_id);
+                }
+            }
 
-        // Rebuild search to ensure accuracy
-        if !self.search_text.is_empty() {
-            self.update_search_indices();
-            self.cur_selected = if self.search_indices.is_empty() {
-                0
+            // Save to undo stack
+            if let Some(song) = self.list.get_list_iter().nth(actual_index).cloned() {
+                self.undo_stack.push(vec![(song, actual_index)]);
+            }
+
+            self.list.remove_song_index(actual_index);
+
+            // Rebuild search if active
+            if !self.search_text.is_empty() {
+                self.update_search_indices();
+                if self.search_indices.is_empty() {
+                    self.cur_selected = 0;
+                    break;
+                }
+                self.cur_selected = self.cur_selected.min(self.search_indices.len() - 1);
             } else {
-                visual_index_before.min(self.search_indices.len() - 1)
-            };
-        } else {
-            let new_max = self.list.get_list_iter().len().saturating_sub(1);
-            self.cur_selected = self.cur_selected.min(new_max);
-        }
-
-        // Adjust shuffle indices
-        if self.shuffle_enabled {
-            if let Some(pos) = self.shuffle_indices.iter().position(|&i| i == actual_index) {
-                self.shuffle_indices.remove(pos);
+                let new_max = self.list.get_list_iter().len().saturating_sub(1);
+                self.cur_selected = self.cur_selected.min(new_max);
             }
-            for idx in &mut self.shuffle_indices {
-                if *idx > actual_index {
-                    *idx = idx.saturating_sub(1);
+
+            // Adjust shuffle indices
+            if self.shuffle_enabled {
+                if let Some(pos) = self.shuffle_indices.iter().position(|&i| i == actual_index) {
+                    self.shuffle_indices.remove(pos);
+                }
+                for idx in &mut self.shuffle_indices {
+                    if *idx > actual_index {
+                        *idx = idx.saturating_sub(1);
+                    }
                 }
             }
         }
@@ -1943,8 +1981,8 @@ impl Playlist {
                 Some((all_songs[actual].clone(), actual))
             } else { None }
         }).collect();
-        for (song, actual) in to_delete.iter().rev() {
-            self.undo_stack.push((song.clone(), *actual));
+        self.undo_stack.push(to_delete.clone());
+        for (_, actual) in to_delete.iter().rev() {
             self.list.remove_song_index(*actual);
         }
         self.cur_selected = 0;
@@ -1962,8 +2000,8 @@ impl Playlist {
                 Some((all_songs[actual].clone(), actual))
             } else { None }
         }).collect();
-        for (song, actual) in to_delete.iter().rev() {
-            self.undo_stack.push((song.clone(), *actual));
+        self.undo_stack.push(to_delete.clone());
+        for (_, actual) in to_delete.iter().rev() {
             self.list.remove_song_index(*actual);
         }
         self.regenerate_downloads_for_current()
@@ -1978,11 +2016,15 @@ impl Playlist {
     }
 
     pub fn undo_delete(&mut self) -> ComponentEffect<Self> {
-        if let Some((song, original_idx)) = self.undo_stack.pop() {
-            // Insert song at original position
-            let before = if original_idx > 0 { original_idx - 1 } else { 0 };
-            self.list.insert_after(before, song);
-            self.cur_selected = original_idx.min(self.list.get_list_iter().len().saturating_sub(1));
+        if let Some(mut batch) = self.undo_stack.pop() {
+            batch.sort_by_key(|(_, idx)| *idx);
+            for (song, original_idx) in &batch {
+                self.list.insert_at(*original_idx, song.clone());
+            }
+            if let Some((_, first_idx)) = batch.first() {
+                let max = self.list.get_list_iter().len().saturating_sub(1);
+                self.cur_selected = (*first_idx).min(max);
+            }
         }
         self.regenerate_downloads_for_current()
     }
@@ -2070,9 +2112,14 @@ impl Playlist {
         AsyncTask::new_no_op()
     }
 
+    pub fn handle_text_entry_action(&mut self, action: TextEntryAction) {
+        if action == TextEntryAction::Submit && self.search_enabled {
+            self.search_enabled = false;
+        }
+    }
+
     fn update_search_indices(&mut self) {
         self.search_cur = 0;
-        let search_lower = self.search_text.to_lowercase();
 
         self.search_indices = self
             .list
@@ -2105,9 +2152,9 @@ impl Playlist {
                     .next()
                     .unwrap_or_default();
 
-                if title.to_lowercase().contains(&search_lower)
-                    || album.to_lowercase().contains(&search_lower)
-                    || artist.to_lowercase().contains(&search_lower) 
+                if fuzzy_match(&self.search_text, &title).is_some()
+                    || fuzzy_match(&self.search_text, &album).is_some()
+                    || fuzzy_match(&self.search_text, &artist).is_some()
                 {
                     Some(actual_idx)
                 } else {

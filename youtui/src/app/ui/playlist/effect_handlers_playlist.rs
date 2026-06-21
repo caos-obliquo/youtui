@@ -453,9 +453,13 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for FetchAlbumArtEffect {
     match self {
             FetchAlbumArtEffect::Fetched(thumbnail) => {
                 let thumb_rc = std::rc::Rc::new(thumbnail);
-                // Apply art to all songs with matching album name
+                let album_name = target.album_art_fetching_name.take();
                 for song in target.list.get_list_iter_mut() {
-                    if song.album_art == AlbumArtState::None {
+                    if matches!(song.album_art, AlbumArtState::None | AlbumArtState::Init)
+                        && album_name.as_deref().map_or(true, |name| {
+                            song.album.as_ref().map(|a| a.name.as_str()) == Some(name)
+                        })
+                    {
                         song.album_art = AlbumArtState::Downloaded(thumb_rc.clone());
                     }
                 }
@@ -463,6 +467,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for FetchAlbumArtEffect {
                 info!("FetchAlbumArtEffect: applied art");
             }
             FetchAlbumArtEffect::FetchError => {
+                target.album_art_fetching_name.take();
                 target.album_art_fetching = false;
                 error!("FetchAlbumArtEffect: failed to fetch album art");
             }

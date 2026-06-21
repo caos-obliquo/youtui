@@ -226,12 +226,18 @@ pub trait TextHandler: Component {
         Self: Sized;
     /// Default behaviour is to only handle an event if is_text_handling() ==
     /// true.
+    /// F-keys always bypass text handling so they reach the keymap dispatch.
     fn try_handle_text(&mut self, event: &Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>>
     where
         Self: Sized,
     {
         if !self.is_text_handling() {
             return None;
+        }
+        if let Event::Key(k) = event {
+            if matches!(k.code, KeyCode::F(_)) {
+                return None;
+            }
         }
         self.handle_text_event_impl(event)
     }

@@ -1,10 +1,10 @@
-use self::browser::Browser;
+use self::browser::{Browser, BrowserAction};
 use self::logger::Logger;
 use self::playlist::Playlist;
 use self::playlist::config_editor_popup::ConfigEditorPopup;
 use self::playlist::lyrics_popup::LyricsPopup;
 use self::playlist::song_info_popup::SongInfoPopup;
-use crate::app::ui::components::vi_text_editor::ViTextEditor;
+use vi_text_editor::ViTextEditor;
 use std::path::PathBuf;
 use self::playlist::playlist_save_popup::PlaylistSavePopup;
 use self::playlist::playlist_update_popup::PlaylistUpdatePopup;
@@ -40,7 +40,7 @@ pub mod playlist;
 // What is displayed in header
 // The main pane of the application
 // XXX: This is a bit like a route.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WindowContext {
     Browser,
     Playlist,
@@ -196,8 +196,12 @@ impl KeyRouter<AppAction> for YoutuiWindow {
         &self,
         config: &'a Config,
     ) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
-        if self.playlist_save_popup.is_some() || self.playlist_update_popup.is_some() {
+        if self.playlist_save_popup.is_some() {
             let kbs = vec![&config.keybinds.playlist_save_popup];
+            return kbs.into_iter();
+        }
+        if self.playlist_update_popup.is_some() {
+            let kbs: Vec<&Keymap<AppAction>> = vec![];
             return kbs.into_iter();
         }
         let kb = if self.is_scrollable() {
@@ -233,23 +237,19 @@ impl KeyRouter<AppAction> for YoutuiWindow {
                 v.into_iter()
             }
             WindowContext::PlaylistSavePopup => {
-                let mut v: Vec<&Keymap<AppAction>> = kb.collect();
-                v.extend(self.logger.get_active_keybinds(config));
+                let v: Vec<&Keymap<AppAction>> = kb.collect();
                 v.into_iter()
             }
             WindowContext::PlaylistUpdatePopup => {
-                let mut v: Vec<&Keymap<AppAction>> = kb.collect();
-                v.extend(self.logger.get_active_keybinds(config));
+                let v: Vec<&Keymap<AppAction>> = kb.collect();
                 v.into_iter()
             }
             WindowContext::Lyrics => {
-                let mut v: Vec<&Keymap<AppAction>> = kb.collect();
-                v.extend(self.logger.get_active_keybinds(config));
+                let v: Vec<&Keymap<AppAction>> = kb.collect();
                 v.into_iter()
             }
             WindowContext::SongInfo => {
-                let mut v: Vec<&Keymap<AppAction>> = kb.collect();
-                v.extend(self.logger.get_active_keybinds(config));
+                let v: Vec<&Keymap<AppAction>> = kb.collect();
                 v.into_iter()
             }
         }
@@ -370,7 +370,14 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                 return apply_action_mapped(self, a, |this: &mut Self| &mut this.help);
             }
             AppAction::Browser(a) => {
-                return apply_action_mapped(self, a, |this: &mut Self| &mut this.browser);
+                if a == BrowserAction::Search && self.context != WindowContext::Browser {
+                    // F1 from non-Browser: switch to Browser and open search
+                    self.prev_context = self.context;
+                    self.context = WindowContext::Browser;
+                    self.browser.handle_toggle_search();
+                } else {
+                    return apply_action_mapped(self, a, |this: &mut Self| &mut this.browser);
+                }
             }
             AppAction::Filter(a) => {
                 return apply_action_mapped(self, a, |this: &mut Self| &mut this.browser);
@@ -420,8 +427,28 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                     });
                 }
             }
+            AppAction::SongInfo(a) => {
+                if self.song_info_popup.is_some() {
+                    return apply_action_mapped(self, a, |this: &mut Self| {
+                        this.song_info_popup.as_mut().expect("popup exists")
+                    });
+                }
+            }
             AppAction::TextEntry(a) => return self.handle_text_entry_action(a).into(),
             AppAction::List(a) => return self.handle_list_action(a).into(),
+            AppAction::ToggleBrowser => {
+                if self.context == WindowContext::Browser {
+                    // Cycle to next browser tab
+                    if let Some(task) = self.browser.handle_change_search_type() {
+                        return task.map_frontend(|this: &mut Self| &mut this.browser).into();
+                    }
+                } else {
+                    self.prev_context = self.context;
+                    self.context = WindowContext::Browser;
+                }
+                self.dismiss_search();
+            }
+            AppAction::TogglePlaylist => self.handle_toggle_playlist(),
             AppAction::EditConfig => self.open_config_editor(),
             AppAction::OpenUrl => { self.command_mode = true; self.command_editor.clear(); },
             AppAction::NoOp => (),
@@ -514,7 +541,7 @@ impl YoutuiWindow {
 
         // Quit confirm screen intercepts all keys
         if self.quit_confirm {
-            if let Event::Key(k) = event {
+            if let Event::Key(k, false) = event {
                 match k.code {
                     KeyCode::Char('y') | KeyCode::Enter => {
                         self.quit_confirm = false;
@@ -546,7 +573,7 @@ impl YoutuiWindow {
                         self.command_editor.clear();
                         return AsyncTask::new_no_op().into();
                     }
-                    let submitted = self.command_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT));
+                    let submitted = self.command_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
                     if submitted {
                         let url = self.command_editor.get_text().trim().to_string();
                         self.command_mode = false;
@@ -573,7 +600,7 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
-        if self.song_info_popup.is_some() {
+        if self.song_info_popup.is_some(, false) {
             if let Event::Key(k) = event {
                 let popup = self.song_info_popup.as_mut().unwrap();
                 let (effect, callback) = popup.handle_key(k);
@@ -583,7 +610,7 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
-        if self.playlist_save_popup.is_some() {
+        if self.playlist_save_popup.is_some(, false) {
             if let Event::Key(k) = event {
                 let popup = self.playlist_save_popup.as_mut().unwrap();
                 let (effect, callback) = popup.handle_key(k);
@@ -593,7 +620,7 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
-        if self.playlist_update_popup.is_some() {
+        if self.playlist_update_popup.is_some(, false) {
             if let Event::Key(k) = event {
                 let popup = self.playlist_update_popup.as_mut().unwrap();
                 let (effect, callback) = popup.handle_key(k);
@@ -603,7 +630,7 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
-        if let Some(effect) = self.try_handle_text(&event) {
+        if let Some(effect, false) = self.try_handle_text(&event) {
             return effect.into();
         };
         match event {
@@ -682,9 +709,7 @@ impl YoutuiWindow {
                 // Non-digit key: apply accumulated count
                 if self.count_prefix > 0 && !key_event.modifiers.intersects(crossterm::event::KeyModifiers::SHIFT | crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::ALT) {
                     self.key_stack.push(key_event);
-                    let effect = self.global_handle_key_stack();
-                    self.count_prefix = 0;
-                    return effect;
+                    return self.global_handle_key_stack_with_count();
                 }
                 self.count_prefix = 0;
                 self.key_stack.push(key_event);
@@ -760,7 +785,10 @@ impl YoutuiWindow {
                 .browser
                 .handle_text_entry_action(action)
                 .map_frontend(|this: &mut Self| &mut this.browser),
-            WindowContext::Playlist => AsyncTask::new_no_op(),
+            WindowContext::Playlist => {
+                self.playlist.handle_text_entry_action(action);
+                AsyncTask::new_no_op()
+            }
             WindowContext::Logs => AsyncTask::new_no_op(),
             WindowContext::PlaylistSavePopup => AsyncTask::new_no_op(),
             WindowContext::PlaylistUpdatePopup => AsyncTask::new_no_op(),
@@ -887,6 +915,12 @@ impl YoutuiWindow {
             }
         }
     }
+    fn global_handle_key_stack_with_count(&mut self) -> YoutuiEffect<Self> {
+        let count = self.count_prefix;
+        self.count_prefix = 0;
+        self.playlist.pending_count = count;
+        self.global_handle_key_stack()
+    }
     fn key_pending(&self) -> bool {
         !self.key_stack.is_empty()
     }
@@ -914,6 +948,20 @@ impl YoutuiWindow {
     pub fn handle_change_context(&mut self, new_context: WindowContext) {
         std::mem::swap(&mut self.context, &mut self.prev_context);
         self.context = new_context;
+    }
+    pub fn handle_toggle_playlist(&mut self) {
+        if self.context == WindowContext::Playlist {
+            // Leave Playlist → restore where we were
+            std::mem::swap(&mut self.context, &mut self.prev_context);
+        } else {
+            // Enter Playlist → save current as prev
+            self.prev_context = self.context;
+            self.context = WindowContext::Playlist;
+        }
+        self.dismiss_search();
+    }
+    fn dismiss_search(&mut self) {
+        self.browser.dismiss_search();
     }
     pub fn open_playlist_save_popup(&mut self, video_ids: Vec<ytmapi_rs::common::VideoID<'static>>) {
         self.playlist_save_popup = Some(PlaylistSavePopup::new(video_ids));
@@ -1058,6 +1106,7 @@ impl YoutuiWindow {
         let config_dir = crate::get_config_dir().ok();
         let config_path = config_dir.map(|d| d.join("config.toml")).unwrap_or_else(|| PathBuf::from("config.toml"));
         let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+        self.prev_context = self.context;
         self.config_editor_popup = Some(ConfigEditorPopup::new(config_path, content));
     }
     fn _revert_context(&mut self) {

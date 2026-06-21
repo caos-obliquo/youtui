@@ -10,6 +10,7 @@ use super::playlist::PlaylistAction;
 use super::playlist::config_editor_popup::ConfigEditorAction;
 use super::playlist::lyrics_popup::LyricsPopupAction;
 use super::playlist::playlist_save_popup::PlaylistSavePopupAction;
+use super::playlist::song_info_popup::SongInfoAction;
 use crate::app::component::actionhandler::{Action, ActionHandler, YoutuiEffect};
 use crate::app::ui::browser::playlistsearch::search_panel::BrowserPlaylistsAction;
 use crate::app::ui::browser::playlistsearch::songs_panel::BrowserPlaylistSongsAction;
@@ -38,6 +39,8 @@ pub enum AppAction {
     ViewLogs,
     PlayPause,
     NoOp,
+    ToggleBrowser,
+    TogglePlaylist,
     EditConfig,
     OpenUrl,
     Browser(BrowserAction),
@@ -56,6 +59,7 @@ pub enum AppAction {
     PlaylistSavePopup(PlaylistSavePopupAction),
     ConfigEditor(ConfigEditorAction),
     LyricsPopup(LyricsPopupAction),
+    SongInfo(SongInfoAction),
     TextEntry(TextEntryAction),
     List(ListAction),
 }
@@ -130,6 +134,8 @@ impl Action for AppAction {
             | AppAction::Quit
             | AppAction::ViewLogs
             | AppAction::NoOp
+            | AppAction::ToggleBrowser
+            | AppAction::TogglePlaylist
             | AppAction::EditConfig
             | AppAction::OpenUrl
             | AppAction::PlayPause => "Global".into(),
@@ -138,6 +144,7 @@ impl Action for AppAction {
             AppAction::PlaylistSavePopup(a) => a.context(),
             AppAction::ConfigEditor(a) => a.context(),
             AppAction::LyricsPopup(a) => a.context(),
+            AppAction::SongInfo(a) => a.context(),
             AppAction::Browser(a) => a.context(),
             AppAction::Filter(a) => a.context(),
             AppAction::Sort(a) => a.context(),
@@ -162,6 +169,8 @@ impl Action for AppAction {
             AppAction::VolUp => format!("Vol Up {VOL_TICK}").into(),
             AppAction::VolDown => format!("Vol Down {VOL_TICK}").into(),
             AppAction::ToggleHelp => "Toggle Help".into(),
+            AppAction::ToggleBrowser => "Toggle Browser".into(),
+            AppAction::TogglePlaylist => "Toggle Playlist".into(),
             AppAction::ViewLogs => "View Logs".into(),
             AppAction::SeekForward => format!("Seek Forward {}s", SEEK_AMOUNT.as_secs()).into(),
             AppAction::SeekBack => format!("Seek Back {}s", SEEK_AMOUNT.as_secs()).into(),
@@ -173,6 +182,7 @@ impl Action for AppAction {
             AppAction::PlaylistSavePopup(a) => a.describe(),
             AppAction::ConfigEditor(a) => a.describe(),
             AppAction::LyricsPopup(a) => a.describe(),
+            AppAction::SongInfo(a) => a.describe(),
             AppAction::Browser(a) => a.describe(),
             AppAction::Filter(a) => a.describe(),
             AppAction::Sort(a) => a.describe(),

@@ -51,6 +51,7 @@ pub struct PlaylistUpdatePopup {
     search_text: String,
     search_active: bool,
     filtered_indices: Vec<usize>,
+    overwrite: bool,
 }
 
 impl_youtui_component!(PlaylistUpdatePopup);
@@ -115,11 +116,13 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
                         } else {
                             // Add to existing playlist mode
                             let video_ids = self.video_ids.clone();
+                            let overwrite = self.overwrite;
                             (
                                 AsyncTask::new_no_op(),
                                 Some(AppCallback::AddVideosToPlaylistFromPopup {
                                     playlist_id,
                                     video_ids,
+                                    overwrite,
                                 }),
                             )
                         }
@@ -149,6 +152,7 @@ impl PlaylistUpdatePopup {
             search_text: String::new(),
             search_active: false,
             filtered_indices: Vec::new(),
+            overwrite: false,
         }
     }
 
@@ -207,6 +211,21 @@ impl PlaylistUpdatePopup {
                     self.apply_action(PlaylistUpdatePopupAction::MoveDown).into();
                 return (effect.effect, effect.callback);
             }
+            KeyCode::Char('O') => {
+                self.overwrite = !self.overwrite;
+                return (AsyncTask::new_no_op(), None);
+            }
+            KeyCode::Char('g') => {
+                self.selected_idx = 0;
+                self.list_state.select(Some(0));
+                return (AsyncTask::new_no_op(), None);
+            }
+            KeyCode::Char('G') => {
+                let max = self.filtered_indices.len().saturating_sub(1);
+                self.selected_idx = max;
+                self.list_state.select(Some(max));
+                return (AsyncTask::new_no_op(), None);
+            }
             _ => {}
         }
         (AsyncTask::new_no_op(), None)
@@ -239,12 +258,13 @@ impl PlaylistUpdatePopup {
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
+        let mode_indicator = if self.overwrite { " [Replace]" } else { " [Append]" };
         let title = if self.video_ids.is_empty() {
             " Load YouTube Music Playlist ".to_string()
         } else if self.search_active {
             format!(" Search Playlists [{}] ", self.search_text)
         } else {
-            format!(" Select Playlist ({} songs) /:Search ", self.video_ids.len())
+            format!(" Select Playlist ({} songs){} /:Search O:Toggle ", self.video_ids.len(), mode_indicator)
         };
         let block = Block::default()
             .title(title)
