@@ -63,6 +63,7 @@ pub struct LyricsPopup {
     count_prefix: usize,
     cursor_line: usize,
     cursor_col: usize,
+    ann_scroll_offset: usize,
     pub lyrics_cache: LruCache<String, String>,
     pub lyrics_cache_key: Option<String>,
 }
@@ -97,6 +98,7 @@ impl LyricsPopup {
             count_prefix: 0,
             cursor_line: 0,
             cursor_col: 0,
+            ann_scroll_offset: 0,
             lyrics_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
             lyrics_cache_key: None,
         }
@@ -292,6 +294,9 @@ impl LyricsPopup {
             }
             KeyCode::Char('V') => {
                 self.reset_count();
+                self.visual_start = self.cursor_line;
+                self.visual_end = self.cursor_line;
+                self.visual_mode = true;
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('R') => {
@@ -320,17 +325,26 @@ impl LyricsPopup {
             KeyCode::Char('j') | KeyCode::Down => {
                 let n = self.count_prefix.max(1);
                 self.reset_count();
-                self.cursor_line = self.cursor_line.saturating_add(n).min(self.total_lines().saturating_sub(1));
-                self.cursor_col = 0;
-                self.cursor_to_scroll();
+                if self.focus == Focus::Annotations {
+                    let max = self.annotations.len().saturating_sub(1);
+                    self.ann_scroll_offset = self.ann_scroll_offset.saturating_add(n).min(max);
+                } else {
+                    self.cursor_line = self.cursor_line.saturating_add(n).min(self.total_lines().saturating_sub(1));
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                }
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 let n = self.count_prefix.max(1);
                 self.reset_count();
-                self.cursor_line = self.cursor_line.saturating_sub(n);
-                self.cursor_col = 0;
-                self.cursor_to_scroll();
+                if self.focus == Focus::Annotations {
+                    self.ann_scroll_offset = self.ann_scroll_offset.saturating_sub(n);
+                } else {
+                    self.cursor_line = self.cursor_line.saturating_sub(n);
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                }
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('w') => {
@@ -385,16 +399,24 @@ impl LyricsPopup {
             }
             KeyCode::Char('g') => {
                 self.reset_count();
-                self.cursor_line = 0;
-                self.cursor_col = 0;
-                self.scroll_offset = 0;
+                if self.focus == Focus::Annotations {
+                    self.ann_scroll_offset = 0;
+                } else {
+                    self.cursor_line = 0;
+                    self.cursor_col = 0;
+                    self.scroll_offset = 0;
+                }
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('G') => {
                 self.reset_count();
-                self.cursor_line = self.total_lines().saturating_sub(1);
-                self.cursor_col = 0;
-                self.cursor_to_scroll();
+                if self.focus == Focus::Annotations {
+                    self.ann_scroll_offset = self.annotations.len().saturating_sub(1);
+                } else {
+                    self.cursor_line = self.total_lines().saturating_sub(1);
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                }
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('d') if event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
@@ -582,8 +604,9 @@ impl LyricsPopup {
                         .border_style(Style::default().fg(ann_colour));
                     let ann_inner = ann_block.inner(ann_area);
                     frame.render_widget(ann_block, ann_area);
+                    let ann_visible = (ann_inner.height as usize).saturating_sub(1);
                     let mut ann_lines: Vec<ratatui::text::Line> = Vec::new();
-                    for a in &self.annotations {
+                    for a in self.annotations.iter().skip(self.ann_scroll_offset).take(ann_visible) {
                         ann_lines.push(ratatui::text::Line::from(
                             ratatui::text::Span::styled(
                                 format!("── {}", a.fragment),

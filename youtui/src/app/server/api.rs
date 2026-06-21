@@ -15,7 +15,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use ytmapi_rs::auth::noauth::NoAuthToken;
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID, LikeStatus};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID, LikeStatus, YoutubeID};
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,
     SearchResultArtist, SearchResultPlaylist, SearchResultSong,
@@ -300,8 +300,15 @@ async fn add_playlist_items(
     video_ids: Vec<VideoID<'static>>,
 ) -> Result<()> {
     tracing::info!("Adding {} videos to playlist", video_ids.len());
+    // Strip VL prefix — browse format != API format for add endpoint
+    let raw = playlist_id.get_raw();
+    let clean_id = if let Some(stripped) = raw.strip_prefix("VL") {
+        PlaylistID::from_raw(stripped.to_string())
+    } else {
+        playlist_id
+    };
     let query =
-        AddPlaylistItemsQuery::new_from_videos(playlist_id, video_ids, DuplicateHandlingMode::Unhandled);
+        AddPlaylistItemsQuery::new_from_videos(clean_id, video_ids, DuplicateHandlingMode::Unhandled);
     query_api_with_retry(&api, query).await.map(|_: Vec<ytmapi_rs::parse::AddPlaylistItem>| ())
 }
 

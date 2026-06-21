@@ -42,6 +42,8 @@ pub struct PlaylistEditorPopup {
     pub command_mode: bool,
     pub command_editor: ViTextEditor,
     pub modified: bool,
+    pub confirm_delete: bool,
+    pub sort_column: usize,
 }
 
 impl PlaylistEditorPopup {
@@ -55,6 +57,8 @@ impl PlaylistEditorPopup {
             command_mode: false,
             command_editor: ViTextEditor::new(),
             modified: false,
+            confirm_delete: false,
+            sort_column: 0,
         }
     }
 
@@ -192,12 +196,17 @@ impl PlaylistEditorPopup {
                 self.cursor = self.tracks.len().saturating_sub(1);
                 (AsyncTask::new_no_op(), None)
             }
-            KeyCode::Char('d') => {
+            KeyCode::Char('d') if self.confirm_delete => {
+                self.confirm_delete = false;
                 if !self.tracks.is_empty() && self.cursor < self.tracks.len() {
                     self.tracks.remove(self.cursor);
                     self.cursor = self.cursor.min(self.tracks.len().saturating_sub(1));
                     self.modified = true;
                 }
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('d') => {
+                self.confirm_delete = true;
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('J') => {
@@ -275,7 +284,9 @@ impl PlaylistEditorPopup {
             Paragraph::new(display)
                 .style(Style::default().fg(Color::Yellow))
         } else {
-            let hint_text = if self.modified {
+            let hint_text = if self.confirm_delete {
+                "Press d again to confirm delete"
+            } else if self.modified {
                 "j/k: Move | dd: Delete | J/K: Reorder | :: Command | u: Undo | q: Close [Modified]"
             } else {
                 "j/k: Move | dd: Delete | J/K: Reorder | :: Command | u: Undo | q: Close"
