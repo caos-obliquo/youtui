@@ -225,6 +225,9 @@ impl PlaylistEditorPopup {
                 }
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('/') => {
+                (AsyncTask::new_no_op(), None)
+            }
             KeyCode::Char('o') => {
                 // Context menu: currently just o.E for save
                 (AsyncTask::new_no_op(), None)

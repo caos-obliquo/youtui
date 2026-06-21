@@ -170,6 +170,7 @@ pub enum PlaylistAction {
     GoToAlbum,
     ToggleLike,
     ViewAlbumCover,
+    ContextActions,
     SortQueue,
     SortQueueAsc,
     SortQueueDesc,
@@ -215,6 +216,7 @@ impl Action for PlaylistAction {
             PlaylistAction::GoToAlbum => "Go to Album",
             PlaylistAction::ToggleLike => "Like / Unlike",
             PlaylistAction::ViewAlbumCover => "View Album Cover",
+            PlaylistAction::ContextActions => "Context Actions",
             PlaylistAction::SortQueue => "Sort Queue",
             PlaylistAction::SortQueueAsc => "Sort Ascending",
             PlaylistAction::SortQueueDesc => "Sort Descending",
@@ -441,6 +443,14 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 } else {
                     (AsyncTask::new_no_op(), None)
                 }
+            },
+            PlaylistAction::ContextActions => {
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                if let Some(song) = self.get_song_from_idx(actual_index) {
+                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                    tracing::info!("Context actions for: {} - {}", artist, song.title);
+                }
+                (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ViewAlbumCover => {
                 match &self.play_status {

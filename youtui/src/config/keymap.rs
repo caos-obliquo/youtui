@@ -951,6 +951,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SortQueue)),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('c')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ContextActions)),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
