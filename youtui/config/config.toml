@@ -118,6 +118,16 @@ enter.E = "browser_playlist_songs.add_songs_to_existing_playlist"
 enter = "Play"
 o = "Context Menu"
 
+[keybinds.browser_library]
+y = {action = "browser_library.copy_song_url", visibility = "global"}
+o.enter = "browser_library.play_song"
+o.p = "browser_library.add_songs_to_playlist"
+o.P = "browser_library.play_songs"
+o.y = "browser_library.copy_song_url"
+
+[mode_names.browser_library]
+o = "Context Menu"
+
 [keybinds.browser_songs]
 3 = {action = "browser_songs.filter", visibility = "global"}
 4 = {action = "browser_songs.sort", visibility = "global"}
