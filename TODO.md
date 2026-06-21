@@ -108,3 +108,9 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - Config template syntax (`o.enter`/`enter.enter` 2 pre-existing test failures)
 - YouTube API format drift (external issue)
 - Crossterm 0.29 `Event::Key` destructure mismatch (pre-existing, not our changes)
+
+## Known Gaps (Consistency)
+- **Albums tab still lacks YTM search** (F1 toggles local filter only). Needs a `SearchAlbums` backend task + SearchBlock integration to match Songs/Artist behavior.
+- **Albums track display** uses custom column layout instead of `draw_advanced_table`. Works but lacks sort/filter popups that other tabs have.
+- **Library Playlists** still uses basic track list — could benefit from same advanced table as the old PlaylistSearchBrowser tab.
+- **Footer album art** fetches async which causes brief blank on song change. Cache helps but not instantaneous.
