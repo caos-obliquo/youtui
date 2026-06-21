@@ -3,6 +3,7 @@ use self::logger::Logger;
 use self::playlist::Playlist;
 use self::playlist::album_art_popup::AlbumArtPopup;
 use self::playlist::config_editor_popup::ConfigEditorPopup;
+use self::playlist::playlist_editor_popup::PlaylistEditorPopup;
 use self::playlist::lyrics_popup::LyricsPopup;
 use self::playlist::song_info_popup::SongInfoPopup;
 use vi_text_editor::ViTextEditor;
@@ -51,6 +52,7 @@ pub enum WindowContext {
     PlaylistUpdatePopup,
     Lyrics,
     SongInfo,
+    PlaylistEditor,
 }
 
 pub struct YoutuiWindow {
@@ -65,6 +67,7 @@ pub struct YoutuiWindow {
     pub song_info_popup: Option<SongInfoPopup>,
     pub album_art_popup: Option<AlbumArtPopup>,
     pub config_editor_popup: Option<ConfigEditorPopup>,
+    pub playlist_editor_popup: Option<PlaylistEditorPopup>,
     pub config: Config,
     pub key_stack: Vec<KeyEvent>,
     pub help: HelpMenu,
@@ -123,6 +126,7 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
                 WindowContext::PlaylistUpdatePopup => true,
                 WindowContext::Lyrics => true,
                 WindowContext::SongInfo => true,
+                WindowContext::PlaylistEditor => true,
             }
     }
 
@@ -162,6 +166,9 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
             WindowContext::SongInfo => Either::Right(Either::Right(
                 [&config.keybinds.help, &config.keybinds.list].into_iter(),
             )),
+            WindowContext::PlaylistEditor => Either::Right(Either::Right(
+                [&config.keybinds.help, &config.keybinds.list].into_iter(),
+            )),
         }
     }
 }
@@ -179,6 +186,7 @@ impl Scrollable for YoutuiWindow {
             WindowContext::PlaylistUpdatePopup => (),
             WindowContext::Lyrics => (),
             WindowContext::SongInfo => (),
+            WindowContext::PlaylistEditor => (),
         }
     }
     fn is_scrollable(&self) -> bool {
@@ -191,6 +199,8 @@ impl Scrollable for YoutuiWindow {
                 WindowContext::PlaylistUpdatePopup => false,
                 WindowContext::Lyrics => false,
                 WindowContext::SongInfo => false,
+            WindowContext::PlaylistEditor => false,
+                WindowContext::PlaylistEditor => false,
             }
     }
 }
@@ -256,6 +266,10 @@ impl KeyRouter<AppAction> for YoutuiWindow {
                 let v: Vec<&Keymap<AppAction>> = kb.collect();
                 v.into_iter()
             }
+            WindowContext::PlaylistEditor => {
+                let v: Vec<&Keymap<AppAction>> = kb.collect();
+                v.into_iter()
+            }
         }
     }
     fn get_all_keybinds<'a>(
@@ -285,6 +299,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistUpdatePopup => false,
             WindowContext::Lyrics => false,
             WindowContext::SongInfo => false,
+            WindowContext::PlaylistEditor => false,
         }
     }
     fn get_text(&self) -> std::option::Option<&str> {
@@ -296,6 +311,8 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistUpdatePopup => None,
             WindowContext::Lyrics => None,
             WindowContext::SongInfo => None,
+            WindowContext::PlaylistEditor => None,
+            WindowContext::PlaylistEditor => None,
         }
     }
     fn replace_text(&mut self, text: impl Into<String>) {
@@ -307,6 +324,8 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistUpdatePopup => {}
             WindowContext::Lyrics => {}
             WindowContext::SongInfo => {}
+            WindowContext::PlaylistEditor => {}
+            WindowContext::PlaylistEditor => {}
         }
     }
     fn clear_text(&mut self) -> bool {
@@ -318,6 +337,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistUpdatePopup => false,
             WindowContext::Lyrics => false,
             WindowContext::SongInfo => false,
+            WindowContext::PlaylistEditor => false,
         }
     }
     fn handle_text_event_impl(&mut self, event: &Event) -> Option<ComponentEffect<Self>> {
@@ -338,6 +358,8 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistUpdatePopup => None,
             WindowContext::Lyrics => None,
             WindowContext::SongInfo => None,
+            WindowContext::PlaylistEditor => None,
+            WindowContext::PlaylistEditor => None,
         }
     }
 }
@@ -479,6 +501,7 @@ impl YoutuiWindow {
             song_info_popup: None,
             album_art_popup: None,
             config_editor_popup: None,
+            playlist_editor_popup: None,
             key_stack: Vec::new(),
             help: HelpMenu::new(),
             tick: 0,
@@ -521,6 +544,7 @@ impl YoutuiWindow {
             }
             WindowContext::Lyrics => vec![],
             WindowContext::SongInfo => vec![],
+            WindowContext::PlaylistEditor => vec![],
         };
         items.extend(get_visible_keybinds_as_readable_iter(
             std::iter::once(&self.config.keybinds.global)
@@ -775,6 +799,8 @@ impl YoutuiWindow {
                             WindowContext::PlaylistUpdatePopup => {}
                             WindowContext::Lyrics => {}
                             WindowContext::SongInfo => {}
+            WindowContext::PlaylistEditor => {}
+            WindowContext::PlaylistEditor => {}
                         }
                     }
                 }
@@ -790,6 +816,8 @@ impl YoutuiWindow {
                             WindowContext::PlaylistUpdatePopup => {}
                             WindowContext::Lyrics => {}
                             WindowContext::SongInfo => {}
+            WindowContext::PlaylistEditor => {}
+            WindowContext::PlaylistEditor => {}
                         }
                     }
                 }
@@ -815,6 +843,7 @@ impl YoutuiWindow {
             WindowContext::PlaylistUpdatePopup => AsyncTask::new_no_op(),
             WindowContext::Lyrics => AsyncTask::new_no_op(),
             WindowContext::SongInfo => AsyncTask::new_no_op(),
+            WindowContext::PlaylistEditor => AsyncTask::new_no_op(),
         }
     }
     pub fn pauseplay(&mut self) -> ComponentEffect<Self> {
@@ -973,7 +1002,7 @@ impl YoutuiWindow {
     pub fn handle_toggle_playlist(&mut self) {
         if self.context == WindowContext::Playlist {
             // Leave Playlist → restore where we were
-            if matches!(self.prev_context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup) {
+            if matches!(self.prev_context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup | WindowContext::PlaylistEditor) {
                 // prev_context is a stale popup context — go to Browser instead
                 self.prev_context = WindowContext::Playlist;
                 self.context = WindowContext::Browser;
@@ -1149,10 +1178,11 @@ impl YoutuiWindow {
         self.song_info_popup = None;
         self.album_art_popup = None;
         self.config_editor_popup = None;
+        self.playlist_editor_popup = None;
         // Restore context from prev_context, but don't leave prev_context
         // as a stale popup context (would trap user on next toggle).
         self.context = self.prev_context;
-        if matches!(self.context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup) {
+        if matches!(self.context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup | WindowContext::PlaylistEditor) {
             // prev_context was also a popup (nested) — fall back to safe context
             self.context = WindowContext::Playlist;
         }

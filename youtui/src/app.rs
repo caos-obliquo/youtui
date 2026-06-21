@@ -131,6 +131,11 @@ pub enum AppCallback {
     SeekForward,
     SeekTo(Duration),
     ReloadConfig,
+    OpenPlaylistEditor {
+        playlist_id: ytmapi_rs::common::PlaylistID<'static>,
+        playlist_title: String,
+        tracks: Vec<crate::app::structures::ListSong>,
+    },
     #[allow(dead_code)]
     Back,
 }
@@ -518,6 +523,11 @@ impl Youtui {
                 let effect = self.window_state.playlist.handle_seek_to(pos)
                     .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::OpenPlaylistEditor { playlist_id, playlist_title, tracks } => {
+                use crate::app::ui::playlist::playlist_editor_popup::PlaylistEditorPopup;
+                self.window_state.playlist_editor_popup = Some(PlaylistEditorPopup::new(playlist_id, playlist_title, tracks));
+                self.window_state.context = WindowContext::PlaylistEditor;
             }
             AppCallback::ReloadConfig => {
                 let config_dir = crate::get_config_dir().ok();

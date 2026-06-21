@@ -59,6 +59,7 @@ pub mod album_art_popup;
 pub mod config_editor_popup;
 pub mod playlist_save_popup;
 pub mod playlist_update_popup;
+pub mod playlist_editor_popup;
 mod effect_handlers;
 pub mod effect_handlers_playlist;
 #[cfg(test)]
