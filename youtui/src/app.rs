@@ -110,6 +110,9 @@ pub enum AppCallback {
     ViewSongInfo {
         song: ListSong,
     },
+    ViewAlbumCover {
+        thumbnail: std::rc::Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>,
+    },
     UpdateSongInfo {
         id: ListSongID,
         song: ListSong,
@@ -405,6 +408,9 @@ impl Youtui {
             AppCallback::ViewSongInfo { song } => {
                 let effect = self.window_state.open_song_info_popup(song);
                 self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::ViewAlbumCover { thumbnail } => {
+                self.window_state.album_art_popup = Some(ui::playlist::album_art_popup::AlbumArtPopup::new(thumbnail));
             }
             AppCallback::UpdateSongInfo { id, song } => {
                 let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");

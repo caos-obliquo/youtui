@@ -1,6 +1,7 @@
 use self::browser::{Browser, BrowserAction};
 use self::logger::Logger;
 use self::playlist::Playlist;
+use self::playlist::album_art_popup::AlbumArtPopup;
 use self::playlist::config_editor_popup::ConfigEditorPopup;
 use self::playlist::lyrics_popup::LyricsPopup;
 use self::playlist::song_info_popup::SongInfoPopup;
@@ -61,6 +62,7 @@ pub struct YoutuiWindow {
     pub playlist_update_popup: Option<PlaylistUpdatePopup>,
     pub lyrics_popup: Option<LyricsPopup>,
     pub song_info_popup: Option<SongInfoPopup>,
+    pub album_art_popup: Option<AlbumArtPopup>,
     pub config_editor_popup: Option<ConfigEditorPopup>,
     pub config: Config,
     pub key_stack: Vec<KeyEvent>,
@@ -473,6 +475,7 @@ impl YoutuiWindow {
             playlist_update_popup: None,
             lyrics_popup: None,
             song_info_popup: None,
+            album_art_popup: None,
             config_editor_popup: None,
             key_stack: Vec::new(),
             help: HelpMenu::new(),
@@ -598,6 +601,16 @@ impl YoutuiWindow {
                 let (effect, callback) = popup.handle_key(k);
                 let effect = effect.map_frontend(|this: &mut Self| {
                     this.lyrics_popup.as_mut().unwrap()
+                });
+                return YoutuiEffect { effect, callback };
+            }
+        }
+        if self.album_art_popup.is_some() {
+            if let Event::Key(k) = event {
+                let popup = self.album_art_popup.as_mut().unwrap();
+                let (effect, callback) = popup.handle_key(k);
+                let effect = effect.map_frontend(|this: &mut Self| {
+                    this.album_art_popup.as_mut().unwrap()
                 });
                 return YoutuiEffect { effect, callback };
             }
@@ -954,7 +967,13 @@ impl YoutuiWindow {
     pub fn handle_toggle_playlist(&mut self) {
         if self.context == WindowContext::Playlist {
             // Leave Playlist → restore where we were
-            std::mem::swap(&mut self.context, &mut self.prev_context);
+            if matches!(self.prev_context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup) {
+                // prev_context is a stale popup context — go to Browser instead
+                self.prev_context = WindowContext::Playlist;
+                self.context = WindowContext::Browser;
+            } else {
+                std::mem::swap(&mut self.context, &mut self.prev_context);
+            }
         } else {
             // Enter Playlist → save current as prev
             self.prev_context = self.context;
@@ -1101,8 +1120,16 @@ impl YoutuiWindow {
         self.playlist_update_popup = None;
         self.lyrics_popup = None;
         self.song_info_popup = None;
+        self.album_art_popup = None;
         self.config_editor_popup = None;
-        std::mem::swap(&mut self.context, &mut self.prev_context);
+        // Restore context from prev_context, but don't leave prev_context
+        // as a stale popup context (would trap user on next toggle).
+        self.context = self.prev_context;
+        if matches!(self.context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup) {
+            // prev_context was also a popup (nested) — fall back to safe context
+            self.context = WindowContext::Playlist;
+        }
+        self.prev_context = WindowContext::Browser;
     }
     pub fn open_config_editor(&mut self) {
         let config_dir = crate::get_config_dir().ok();

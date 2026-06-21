@@ -60,7 +60,7 @@ pub enum BrowserPlaylistSongsAction {
 
 impl Action for BrowserPlaylistSongsAction {
     fn context(&self) -> Cow<'_, str> {
-        "Artist Songs Panel".into()
+        "Playlist Songs Panel".into()
     }
     fn describe(&self) -> Cow<'_, str> {
         match &self {
