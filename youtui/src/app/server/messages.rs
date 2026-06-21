@@ -512,7 +512,60 @@ impl BackendTask<ArcServer> for GetLyrics {
             let title = self.1;
             let genius_token = self.2;
 
-            // Try Genius API first if token available
+            async fn genius_json_lyrics(
+                http_client: &reqwest::Client,
+                song_id: i64,
+            ) -> Option<String> {
+                let lyrics_url = format!("https://genius.com/api/songs/{}/lyrics", song_id);
+                let resp = http_client.get(&lyrics_url).send().await.ok()?;
+                let data: serde_json::Value = resp.json().await.ok()?;
+                let html = data
+                    .pointer("/response/lyrics/lyrics/body/html")?
+                    .as_str()?;
+                let raw = html
+                    .replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n");
+                let mut text = String::new();
+                let mut in_tag = false;
+                for ch in raw.chars() {
+                    match ch {
+                        '<' => in_tag = true,
+                        '>' if in_tag => { in_tag = false; }
+                        _ if !in_tag => text.push(ch),
+                        _ => {}
+                    }
+                }
+                let cleaned = text
+                    .replace("&quot;", "\"").replace("&#x27;", "'")
+                    .replace("&#x2019;", "'").replace("&amp;", "&")
+                    .replace("&lt;", "<").replace("&gt;", ">")
+                    .replace("&#x2014;", "--").replace("&#x2013;", "-");
+                let raw_lines: Vec<&str> = cleaned.lines().collect();
+                let mut merged: Vec<String> = Vec::new();
+                for line in raw_lines {
+                    let t = line.trim();
+                    if t.is_empty() || t.contains("Contributors") || t.contains("You might also like") {
+                        continue;
+                    }
+                    if t == "(" || t == ")" || t.len() <= 2 && (t.contains('(') || t.contains(')')) {
+                        if let Some(last) = merged.last_mut() {
+                            if t == "(" { last.push_str(" ("); }
+                            else { last.push(')'); }
+                        }
+                    } else {
+                        merged.push(t.to_string());
+                    }
+                }
+                let result = merged.join("\n");
+                if result.len() > 50 && result.lines().count() > 2 {
+                    tracing::info!("Genius JSON lyrics: {} chars", result.len());
+                    Some(result)
+                } else {
+                    tracing::info!("Genius JSON lyrics too short ({} chars), falling through", result.len());
+                    None
+                }
+            }
+
+            // 1. Try Genius search with Bearer token (best search quality)
             if !genius_token.is_empty() {
                 let search_url = format!("https://api.genius.com/search?q={}+{}",
                     urlenc(&artist), urlenc(&title));
@@ -524,14 +577,11 @@ impl BackendTask<ArcServer> for GetLyrics {
                     Ok(resp) => {
                         if let Ok(data) = resp.json::<serde_json::Value>().await {
                             if let Some(hit) = data.pointer("/response/hits/0/result") {
-                                if let Some(api_path) = hit.get("api_path").and_then(|p| p.as_str()) {
-                                    let song_url = format!("https://api.genius.com{}", api_path);
-                                    tracing::info!("Genius API: fetching song {}", song_url);
-                                }
-                                // Use the URL from Genius to scrape lyrics (API doesn't provide lyrics)
-                                if let Some(url) = hit.get("url").and_then(|u| u.as_str()) {
-                                    tracing::info!("Genius API found: {}", url);
-                                    // Fall through to existing Genius scrape with this URL
+                                if let Some(id) = hit.get("id").and_then(|v| v.as_i64()) {
+                                    tracing::info!("Genius API: found song id={}", id);
+                                    if let Some(lyrics) = genius_json_lyrics(&http_client, id).await {
+                                        return Ok(lyrics);
+                                    }
                                 }
                             }
                         }
@@ -540,7 +590,41 @@ impl BackendTask<ArcServer> for GetLyrics {
                 }
             }
 
-            // Try musixmatch-inofficial first
+            // Normalize title: lowercase, collapse whitespace, strip non-alphanumeric
+            fn normalize(s: &str) -> String {
+                s.to_lowercase()
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+            tracing::info!("Lyrics fallback: artist='{}', title='{}'", &artist, &title);
+
+            // 2. Try Genius public search API + JSON lyrics (no auth needed)
+            fn urlenc(s: &str) -> String {
+                s.split_whitespace().collect::<Vec<_>>().join("+")
+            }
+            let search_url = format!(
+                "https://genius.com/api/search/song?q={}+{}",
+                urlenc(&title),
+                urlenc(&artist)
+            );
+            match http_client.get(&search_url).send().await {
+                Ok(resp) => {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        if let Some(hit) = data.pointer("/response/sections/0/hits/0/result") {
+                            if let Some(id) = hit.get("id").and_then(|v| v.as_i64()) {
+                                tracing::info!("Genius search: found song id={}", id);
+                                if let Some(lyrics) = genius_json_lyrics(&http_client, id).await {
+                                    return Ok(lyrics);
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!("Genius search failed: {}", e),
+            }
+
+            // Try musixmatch-inofficial (free tier may return partial lyrics)
             match Musixmatch::builder().build() {
                 Ok(client) => match client.matcher_lyrics(&title, &artist).await {
                     Ok(lyrics) => return Ok(lyrics.lyrics_body),
@@ -554,91 +638,6 @@ impl BackendTask<ArcServer> for GetLyrics {
                 Err(e) => {
                     tracing::warn!("Failed to build Musixmatch client: {}", e);
                 }
-            }
-
-            // Normalize title: lowercase, collapse whitespace, strip non-alphanumeric
-            fn normalize(s: &str) -> String {
-                s.to_lowercase()
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            }
-            tracing::info!("Lyrics fallback: artist='{}', title='{}'", &artist, &title);
-
-            // Try Genius search + scrape direct (most reliable, bypasses lyr matching)
-            fn urlenc(s: &str) -> String {
-                s.split_whitespace().collect::<Vec<_>>().join("+")
-            }
-            let search_url = format!(
-                "https://genius.com/api/search/song?q={}+{}",
-                urlenc(&title),
-                urlenc(&artist)
-            );
-            match http_client.get(&search_url).send().await {
-                Ok(resp) => {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if let Some(hit) = data.pointer("/response/sections/0/hits/0/result") {
-                            if let Some(url) = hit.get("url").and_then(|u| u.as_str()) {
-                                tracing::info!("Genius found: {}", url);
-                                // Fetch the Genius page and extract lyrics
-                                if let Ok(page) = http_client.get(url).send().await {
-                                    if let Ok(html) = page.text().await {
-                                        // Extract lyrics from Genius page data-lyrics-container divs
-                                        let mut all_lyrics = String::new();
-                                        for part in html.split("data-lyrics-container=\"true\"").skip(1) {
-                                            if let Some(start) = part.find(">") {
-                                                let inside = &part[start + 1..];
-                                                // Find closing </div> of this container
-                                                let content = inside.split("</div>").next().unwrap_or(inside);
-                                                // Strip HTML tags, decode entities
-                                                let mut in_tag = false;
-                                                for ch in content.chars() {
-                                                    match ch {
-                                                        '<' => in_tag = true,
-                                                        '>' if in_tag => { in_tag = false; all_lyrics.push('\n'); }
-                                                        _ if !in_tag => all_lyrics.push(ch),
-                                                        _ => {}
-                                                    }
-                                                }
-                                                all_lyrics.push('\n');
-                                            }
-                                        }
-                                        let cleaned: String = all_lyrics
-                                            .replace("&quot;", "\"").replace("&#x27;", "'")
-                                            .replace("&#x2019;", "'").replace("&amp;", "&")
-                                            .replace("&lt;", "<").replace("&gt;", ">")
-                                            .replace("&#x2014;", "--").replace("&#x2013;", "-");
-                                        let raw_lines: Vec<&str> = cleaned.lines().collect();
-                                        let mut merged: Vec<String> = Vec::new();
-                                        for line in raw_lines {
-                                            let t = line.trim();
-                                            if t.is_empty() || t.contains("Contributors") || t.contains("You might also like") {
-                                                continue;
-                                            }
-                                            if t == "(" || t == ")" || t.len() <= 2 && (t.contains('(') || t.contains(')')) {
-                                                if let Some(last) = merged.last_mut() {
-                                                    if t == "(" { last.push_str(" ("); }
-                                                    else { last.push(')'); }
-                                                }
-                                            } else {
-                                                merged.push(t.to_string());
-                                            }
-                                        }
-                                        let cleaned: String = merged.join("\n");
-                                        // Only accept Genius result if substantial (>50 chars) and not just the song title
-                                        if cleaned.len() > 50 && cleaned.lines().count() > 2 {
-                                            tracing::info!("Genius scrape: {} chars", cleaned.len());
-                                            return Ok(cleaned);
-                                        } else {
-                                            tracing::info!("Genius scrape too short ({} chars), falling through", cleaned.len());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => tracing::warn!("Genius search failed: {}", e),
             }
 
             // Try bandcamp with constructed URL before lyr CLI fallback
