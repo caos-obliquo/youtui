@@ -361,6 +361,10 @@ impl_youtui_task_handler!(HandleLibraryAlbumsOk, Vec<SearchResultAlbum>, AlbumSe
     move |target: &mut AlbumSearchBrowser| {
         target.albums = a;
         target.album_selected = 0;
+        if target.albums.is_empty() && !target.search_popped {
+            target.search_popped = true;
+            target.search = SearchBlock::default();
+        }
         AsyncTask::new_no_op()
     }
 });
