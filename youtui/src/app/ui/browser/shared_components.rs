@@ -1,6 +1,6 @@
 use crate::app::component::actionhandler::{Action, ComponentEffect, Suggestable, TextHandler};
 use crate::app::server::{GetSearchSuggestions, HandleApiError};
-use crate::app::ui::components::vi_text_editor::ViTextEditor;
+use vi_text_editor::ViTextEditor;
 use crate::app::view::{TableFilterCommand, TableSortCommand};
 use anyhow::Context;
 use async_callback_manager::{AsyncTask, Constraint, NoOpHandler};
@@ -149,7 +149,7 @@ impl TextHandler for FilterManager {
             if matches!(key.code, KeyCode::Char('3') | KeyCode::Enter | KeyCode::Esc) {
                 return None;
             }
-            use crate::app::ui::components::vi_text_editor::ViMode;
+            use vi_text_editor::ViMode;
             if self.filter_text.mode == ViMode::Normal
                 && matches!(key.code, KeyCode::Char('j')
                     | KeyCode::Char('k')
@@ -158,7 +158,7 @@ impl TextHandler for FilterManager {
             {
                 return None;
             }
-            self.filter_text.handle_key(key.code, false);
+            self.filter_text.handle_key(key.code, false, false);
         }
         Some(AsyncTask::new_no_op())
     }
@@ -187,10 +187,10 @@ impl TextHandler for SearchBlock {
             if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
                 return None;
             }
-            use crate::app::ui::components::vi_text_editor::ViMode;
+            use vi_text_editor::ViMode;
             // Check mode BEFORE handling the key
             let was_normal = self.search_contents.mode == ViMode::Normal;
-            let changed = self.search_contents.handle_key(key.code, false);
+            let changed = self.search_contents.handle_key(key.code, false, false);
             if changed {
                 return None;
             }

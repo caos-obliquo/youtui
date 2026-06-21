@@ -12,7 +12,7 @@ use ratatui_image::Image;
 use ratatui_image::picker::Picker;
 use std::time::Duration;
 
-pub const ALBUM_ART_WIDTH: u16 = 7;
+pub const ALBUM_ART_WIDTH: u16 = 21;
 
 pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
     time_string
@@ -179,13 +179,20 @@ pub fn draw_footer(
         .areas(album_art_and_progress_bar_chunk);
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
+            let font_size = terminal_image_capabilities.font_size();
+            let target_w = (ALBUM_ART_WIDTH * font_size.0) as u32;
+            let target_h = (3 * font_size.1) as u32;
+            let cropped = album_art
+                .in_mem_image
+                .clone()
+                .resize_to_fill(target_w, target_h, image::imageops::FilterType::Lanczos3);
             match terminal_image_capabilities.new_protocol(
-                album_art.in_mem_image.clone(),
+                cropped,
                 Rect {
                     x: 0,
                     y: 0,
                     width: ALBUM_ART_WIDTH,
-                    height: ALBUM_ART_WIDTH - 1,
+                    height: 3,
                 },
                 ratatui_image::Resize::Fit(None),
             ) {

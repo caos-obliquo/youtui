@@ -13,7 +13,7 @@ use crate::app::view::draw::{draw_advanced_table, draw_list, draw_loadable, draw
 use crate::drawutils::{
     ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TEXT_COLOUR, below_left_rect, bottom_of_rect,
 };
-use crate::app::ui::components::vi_text_editor::ViTextEditor;
+use vi_text_editor::ViTextEditor;
 use ratatui::Frame;
 use ratatui::prelude::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
@@ -302,7 +302,7 @@ pub fn draw_library_browser(
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .areas(right_chunk);
-        draw_text_box(f, "Search", &mut browser.search_editor, search_chunk);
+        draw_text_box(f, "Search", &mut browser.search.search_contents, search_chunk);
         rest
     } else {
         right_chunk

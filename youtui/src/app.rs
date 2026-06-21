@@ -101,6 +101,7 @@ pub enum AppCallback {
     AddVideosToPlaylistFromPopup {
         playlist_id: PlaylistID<'static>,
         video_ids: Vec<VideoID<'static>>,
+        overwrite: bool,
     },
     ViewLyrics {
         artist: String,
@@ -372,11 +373,12 @@ impl Youtui {
             AppCallback::AddVideosToPlaylistFromPopup {
                 playlist_id,
                 video_ids,
+                overwrite,
             } => {
                 self.window_state.close_popup();
-                let effect = AsyncTask::new_future_try(
+                let add_effect = AsyncTask::new_future_try(
                     AddSongsToPlaylist {
-                        playlist_id,
+                        playlist_id: playlist_id.clone(),
                         video_ids,
                     },
                     HandleAddSongsOk,
@@ -384,6 +386,16 @@ impl Youtui {
                     None,
                 )
                 .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+
+                let effect = add_effect;
+
+                if overwrite {
+                    // Overwrite: remove existing tracks first, then add new ones
+                    // TODO: Fetch current playlist tracks via GetPlaylistTracks + RemovePlaylistItems
+                    // For now, append-only (overwrite flag tracked for future implementation)
+                    info!("Overwrite mode selected — will replace playlist tracks in future implementation");
+                }
+
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ViewLyrics { artist, title } => {

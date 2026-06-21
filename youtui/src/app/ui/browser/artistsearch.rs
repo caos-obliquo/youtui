@@ -669,6 +669,7 @@ mod tests {
     #[test]
     fn test_on_submit_action_search_box_cleared() {
         let mut browser = get_dummy_artist_search_browser();
+        browser.handle_toggle_search();
         browser
             .artist_search_panel
             .search

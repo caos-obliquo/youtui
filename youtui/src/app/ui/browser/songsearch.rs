@@ -347,7 +347,7 @@ impl AdvancedTableView for SongSearchBrowser {
     fn get_mut_sort_state(&mut self) -> &mut ratatui::widgets::ListState {
         &mut self.sort.state
     }
-    fn get_mut_filter_state(&mut self) -> &mut crate::app::ui::components::vi_text_editor::ViTextEditor {
+    fn get_mut_filter_state(&mut self) -> &mut vi_text_editor::ViTextEditor {
         &mut self.filter.filter_text
     }
 }
@@ -380,7 +380,7 @@ impl SongSearchBrowser {
         Self {
             input_routing: Default::default(),
             song_list: Default::default(),
-            search_popped: true,
+            search_popped: false,
             search: Default::default(),
             widget_state: Default::default(),
             sort: Default::default(),
@@ -757,6 +757,7 @@ mod tests {
     #[test]
     fn test_on_submit_action_search_box_cleared() {
         let mut browser = get_dummy_song_search_browser();
+        browser.handle_toggle_search();
         browser.search.search_contents.set_text("Search!");
         let browser_text = browser.search.search_contents.get_text();
         assert!(!browser_text.is_empty());

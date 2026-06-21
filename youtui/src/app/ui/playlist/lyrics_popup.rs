@@ -185,13 +185,56 @@ impl LyricsPopup {
                 KeyCode::Char('j') | KeyCode::Down => {
                     let n = self.count_prefix.max(1);
                     self.reset_count();
-                    self.visual_end = self.visual_end.saturating_add(n);
+                    let max_line = self.total_lines().saturating_sub(1);
+                    self.visual_end = self.visual_end.saturating_add(n).min(max_line);
+                    self.cursor_line = self.visual_end;
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
                     return (AsyncTask::new_no_op(), None);
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     let n = self.count_prefix.max(1);
                     self.reset_count();
                     self.visual_end = self.visual_end.saturating_sub(n);
+                    self.cursor_line = self.visual_end;
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('g') => {
+                    self.reset_count();
+                    self.visual_end = 0;
+                    self.cursor_line = 0;
+                    self.cursor_col = 0;
+                    self.scroll_offset = 0;
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('G') => {
+                    self.reset_count();
+                    let max_line = self.total_lines().saturating_sub(1);
+                    self.visual_end = max_line;
+                    self.cursor_line = max_line;
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('d') if event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                    let n = self.count_prefix.max(1) * 10;
+                    self.reset_count();
+                    let max_line = self.total_lines().saturating_sub(1);
+                    self.visual_end = self.visual_end.saturating_add(n).min(max_line);
+                    self.cursor_line = self.visual_end;
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('u') if event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                    let n = self.count_prefix.max(1) * 10;
+                    self.reset_count();
+                    self.visual_end = self.visual_end.saturating_sub(n);
+                    self.cursor_line = self.visual_end;
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
                     return (AsyncTask::new_no_op(), None);
                 }
                 KeyCode::Char('y') => {
@@ -333,6 +376,37 @@ impl LyricsPopup {
                 self.cursor_to_scroll();
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('g') => {
+                self.reset_count();
+                self.cursor_line = 0;
+                self.cursor_col = 0;
+                self.scroll_offset = 0;
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('G') => {
+                self.reset_count();
+                self.cursor_line = self.total_lines().saturating_sub(1);
+                self.cursor_col = 0;
+                self.cursor_to_scroll();
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('d') if event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                let n = self.count_prefix.max(1) * 10;
+                self.reset_count();
+                let max_line = self.total_lines().saturating_sub(1);
+                self.cursor_line = self.cursor_line.saturating_add(n).min(max_line);
+                self.cursor_col = 0;
+                self.cursor_to_scroll();
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('u') if event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                let n = self.count_prefix.max(1) * 10;
+                self.reset_count();
+                self.cursor_line = self.cursor_line.saturating_sub(n);
+                self.cursor_col = 0;
+                self.cursor_to_scroll();
+                (AsyncTask::new_no_op(), None)
+            }
             KeyCode::Char('[') => {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::SeekBack))
@@ -470,7 +544,7 @@ impl LyricsPopup {
                         .collect();
 
                     let a_line_count = ann_lines.len();
-                    let a_visible = r_chunks[0].height as usize;
+                    let a_visible = (r_chunks[0].height as usize).saturating_sub(1);
                     let a_max = a_line_count.saturating_sub(a_visible);
                     if self.ann_scroll_offset > a_max { self.ann_scroll_offset = a_max; }
                     let mut a_visible_lines: Vec<Line<'static>> = ann_lines.into_iter().skip(self.ann_scroll_offset).take(a_visible).collect();

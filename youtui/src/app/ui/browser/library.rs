@@ -1,11 +1,11 @@
 use super::songsearch::BrowserSongsAction;
-use super::shared_components::{BrowserSearchAction, FilterAction, FilterManager, SortAction, SortManager};
+use super::shared_components::{BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager};
 use crate::app::{AppCallback, NavTarget};
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSongAlbum};
-use crate::app::ui::components::vi_text_editor::ViTextEditor;
+
 use crate::app::server::{
     GetAllLibrarySongs, GetAllLibraryPlaylists, GetAllLibraryArtists, GetAllLibraryAlbums,
     GetPlaylistTracks,
@@ -330,7 +330,7 @@ pub struct LibraryBrowser {
     pub albums_fetched: bool,
     // Local search
     pub search_active: bool,
-    pub search_editor: ViTextEditor,
+    pub search: SearchBlock,
 }
 
 impl LibraryBrowser {
@@ -359,7 +359,7 @@ impl LibraryBrowser {
             artists_fetched: false,
             albums_fetched: false,
             search_active: false,
-            search_editor: ViTextEditor::default(),
+            search: SearchBlock::default(),
         }
     }
 
@@ -525,17 +525,17 @@ impl LibraryBrowser {
     pub fn handle_toggle_search(&mut self) {
         self.search_active = !self.search_active;
         if self.search_active {
-            self.search_editor = ViTextEditor::default();
+            self.search = SearchBlock::default();
             self.input_routing = InputRouting::Search;
         } else {
-            self.search_editor.clear();
+            self.search.clear_text();
             self.input_routing = InputRouting::Content;
         }
     }
 
     pub fn text_editor_mode(&self) -> Option<String> {
         if self.search_active {
-            Some(self.search_editor.mode_char().to_string())
+            Some(self.search.search_contents.mode_char().to_string())
         } else {
             None
         }
@@ -543,7 +543,7 @@ impl LibraryBrowser {
 
     #[allow(dead_code)]
     pub fn search_text(&self) -> &str {
-        self.search_editor.get_text()
+        self.search.search_contents.get_text()
     }
     #[allow(dead_code)]
     pub fn is_search_active(&self) -> bool {
@@ -825,33 +825,25 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
     }
 }
 
-use crossterm::event::{Event, KeyCode, KeyModifiers};
+use crossterm::event::Event;
 impl TextHandler for LibraryBrowser {
     fn is_text_handling(&self) -> bool {
         self.input_routing == InputRouting::Search
     }
     fn get_text(&self) -> Option<&str> {
-        Some(self.search_editor.get_text())
+        Some(self.search.search_contents.get_text())
     }
     fn replace_text(&mut self, text: impl Into<String>) {
-        self.search_editor.set_text(&text.into());
+        self.search.search_contents.set_text(&text.into());
     }
     fn clear_text(&mut self) -> bool {
-        self.search_editor.clear();
+        self.search.clear_text();
         true
     }
     fn handle_text_event_impl(&mut self, event: &Event) -> Option<ComponentEffect<Self>> {
-        if let Event::Key(key) = event {
-            if key.modifiers.contains(KeyModifiers::CONTROL) {
-                return None;
-            }
-            match key.code {
-                KeyCode::Esc | KeyCode::Enter => return None,
-                _ => {}
-            }
-            self.search_editor.handle_key(key.code, false);
-        }
-        Some(AsyncTask::new_no_op())
+        self.search
+            .handle_text_event_impl(event)
+            .map(|effect| effect.map_frontend(|this: &mut Self| &mut this.search))
     }
 }
 

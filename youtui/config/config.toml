@@ -13,7 +13,9 @@ yt_dlp_command = "yt-dlp"
 "[" = "seek_back"
 "?" = {action = "toggle_help", visibility = "global"}
 q = {action = "quit", visibility = "global"}
-0 = {action = "view_logs", visibility = "global"}
+F11 = {action = "view_logs", visibility = "global"}
+F2 = {action = "toggle_browser", visibility = "global"}
+F3 = {action = "toggle_playlist", visibility = "global"}
 space = {action = "play_pause", visibility = "global"}
 C-c = "quit"
 C-e = {action = "edit_config", visibility = "global"}
@@ -22,34 +24,41 @@ C-e = {action = "edit_config", visibility = "global"}
 [mode_names.global]
 
 [keybinds.playlist]
-1 = {action = "playlist.view_browser", visibility = "global"}
-s = {action = "playlist.toggle_shuffle", visibility = "global"}
 "/" = {action = "playlist.toggle_search", visibility = "global"}
-A = {action = "playlist.set_best_quality", visibility = "global"}
-d = {action = "playlist.delete_selected", visibility = "global"}
-y = {action = "playlist.view_lyrics", visibility = "global"}
+d.d = "playlist.delete_selected"
+d.g = "playlist.delete_to_top"
+d.G = "playlist.delete_to_bottom"
+y = {action = "playlist.copy_song_url", visibility = "global"}
 n = {action = "playlist.next_search_result", visibility = "global"}
 N = {action = "playlist.prev_search_result", visibility = "global"}
-c = {action = "playlist.toggle_playlist_category_filter", visibility = "global"}
-D = {action = "playlist.delete_all", visibility = "global"}
 enter.enter = "playlist.play_selected"
 enter.n = "playlist.save_to_new_playlist"
 o.enter = "playlist.play_selected"
 o.d = "playlist.delete_selected"
 o.l = "playlist.view_lyrics"
 o.y = "playlist.copy_song_url"
-
+o.v = "playlist.view_album_cover"
+o.a = "playlist.go_to_artist"
+o.b = "playlist.go_to_album"
+o.s = "playlist.toggle_shuffle"
+o.A = "playlist.set_best_quality"
+o.c = "playlist.toggle_playlist_category_filter"
+o.D = "playlist.delete_all"
+o.I = "playlist.view_song_info"
+o.z = "playlist.toggle_repeat"
+o.t = "playlist.toggle_like"
 
 [mode_names.playlist]
 enter = "Playlist Action"
 o = "Context Menu"
+d = "Delete"
 
 [keybinds.browser]
-5 = {action = "browser.view_playlist", visibility = "global"}
-2 = {action = "browser.search", visibility = "global"}
+"/" = {action = "browser.search", visibility = "global"}
+F1 = {action = "browser.search", visibility = "global"}
 h = "browser.left"
 l = "browser.right"
-6 = {action = "browser.change_search_type", visibility = "global"}
+F7 = {action = "browser.change_search_type", visibility = "global"}
 
 [keybinds.browser_artists]
 enter = "browser_artists.display_selected_artist_albums"
@@ -149,7 +158,6 @@ esc = {action = "sort.close", visibility = "hidden"}
 4 = {action = "sort.close", visibility = "global"}
 
 [keybinds.log]
-5 = {action = "log.view_browser", visibility = "global"}
 S-left = "log.reduce_captured"
 S-right = "log.increase_captured"
 left = "log.reduce_shown"

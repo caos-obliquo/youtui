@@ -605,6 +605,10 @@ impl BrowserSongsList {
         self.next_id.0 += 1;
         id
     }
+    pub fn insert_at(&mut self, idx: usize, song: ListSong) {
+        let pos = idx.min(self.list.len());
+        self.list.insert(pos, song);
+    }
     pub fn insert_after(&mut self, idx: usize, song: ListSong) {
         let pos = (idx + 1).min(self.list.len());
         self.list.insert(pos, song);
@@ -641,4 +645,73 @@ impl BrowserSongsList {
         self.list.get(idx)
     }
 
+}
+
+/// Score-based fuzzy match: returns Some(score) if all query chars appear in target in order.
+/// Higher score = better match. Score favors early match position and contiguous runs.
+pub fn fuzzy_match(query: &str, target: &str) -> Option<u64> {
+    if query.is_empty() {
+        return Some(0);
+    }
+    let query = query.to_lowercase();
+    let target = target.to_lowercase();
+    let qb = query.as_bytes();
+    let tb = target.as_bytes();
+    let mut ti = 0;
+    let mut score: u64 = 0;
+    let mut first_match = None;
+    let mut consecutive = 0;
+    for &qc in qb {
+        while ti < tb.len() && tb[ti] != qc {
+            consecutive = 0;
+            ti += 1;
+        }
+        if ti >= tb.len() {
+            return None;
+        }
+        if first_match.is_none() {
+            first_match = Some(ti);
+        }
+        // Bonus for consecutive match
+        if consecutive > 0 {
+            score += 10;
+        }
+        score += 1;
+        consecutive += 1;
+        ti += 1;
+    }
+    // Prefer matches that start earlier in the target string
+    let start_bonus = first_match.map(|s| (tb.len().saturating_sub(s) * 5) as u64).unwrap_or(0);
+    Some(score + start_bonus)
+}
+
+#[cfg(test)]
+mod fuzzy_tests {
+    use super::fuzzy_match;
+    #[test]
+    fn test_exact_match() {
+        assert!(fuzzy_match("hello", "hello").is_some());
+    }
+    #[test]
+    fn test_subsequence_match() {
+        assert!(fuzzy_match("hlo", "hello").is_some());
+    }
+    #[test]
+    fn test_no_match() {
+        assert!(fuzzy_match("xyz", "hello").is_none());
+    }
+    #[test]
+    fn test_case_insensitive() {
+        assert!(fuzzy_match("HELLO", "hello").is_some());
+    }
+    #[test]
+    fn test_empty_query() {
+        assert!(fuzzy_match("", "anything").is_some());
+    }
+    #[test]
+    fn test_early_position_higher_score() {
+        let s1 = fuzzy_match("ab", "abc").unwrap();
+        let s2 = fuzzy_match("ab", "xab").unwrap();
+        assert!(s1 > s2, "earlier match should score higher");
+    }
 }

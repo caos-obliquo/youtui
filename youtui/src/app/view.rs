@@ -1,7 +1,7 @@
 /// Traits related to viewable application components.
 use super::structures::{ListSong, ListSongDisplayableField, Percentage};
 use crate::widgets::{ScrollingListState, ScrollingTableState};
-use crate::app::ui::components::vi_text_editor::ViTextEditor;
+use vi_text_editor::ViTextEditor;
 use ratatui::Frame;
 use ratatui::prelude::{Constraint, Rect};
 use ratatui::widgets::ListState;

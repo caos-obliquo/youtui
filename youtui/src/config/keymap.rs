@@ -9,7 +9,7 @@ use crate::app::ui::browser::playlistsearch::songs_panel::BrowserPlaylistSongsAc
 use crate::app::ui::browser::shared_components::{BrowserSearchAction, FilterAction, SortAction};
 use crate::app::ui::browser::songsearch::BrowserSongsAction;
 use crate::app::ui::logger::LoggerAction;
-use crate::app::ui::playlist::PlaylistAction::{self, ViewBrowser};
+use crate::app::ui::playlist::PlaylistAction;
 use crate::keyaction::{KeyAction, KeyActionVisibility};
 use crate::keybind::Keybind;
 use anyhow::{Context, Error, Result};
@@ -805,6 +805,27 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key_with_visibility(AppAction::Quit, KeyActionVisibility::Global),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::F(1)),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Browser(BrowserAction::Search),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::F(2)),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::ToggleBrowser,
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::F(3)),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::TogglePlaylist,
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::F(11)),
             KeyActionTree::new_key_with_visibility(
                 AppAction::ViewLogs,
@@ -827,37 +848,9 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
 fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(4)),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(ViewBrowser),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::ToggleShuffle),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::ToggleSearch),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('A')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::SetBestQuality),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::DeleteSelected),
                 KeyActionVisibility::Global,
             ),
         ),
@@ -869,44 +862,16 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('n')),
             KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::ViewLyrics),
+                AppAction::Playlist(PlaylistAction::NextSearchResult),
                 KeyActionVisibility::Global,
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('N')),
             KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::ToggleRepeat),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('I')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::ViewSongInfo),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('Z')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::ToggleRadio),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('L')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::LoadFromYTM),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char(';')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::ToggleLike),
+                AppAction::Playlist(PlaylistAction::PrevSearchResult),
                 KeyActionVisibility::Global,
             ),
         ),
@@ -918,11 +883,12 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('D')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::DeleteAll),
-                KeyActionVisibility::Global,
-            ),
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('u')),
+            KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::UndoDelete)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('V')),
+            KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleVisualMode)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('o')),
@@ -937,19 +903,51 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewLyrics)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('I')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewSongInfo)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::CopySongUrl)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('v')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewAlbumCover)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('a')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::GoToArtist)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('b')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::GoToAlbum)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleShuffle)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('A')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SetBestQuality)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('c')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::TogglePlaylistCategoryFilter)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('D')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteAll)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('I')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewSongInfo)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleRepeat)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('t')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleLike)),
                     ),
                     (
@@ -981,18 +979,6 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('E')),
-            KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SaveToExistingPlaylist)),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('u')),
-            KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::UndoDelete)),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('V')),
-            KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleVisualMode)),
-        ),
-        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
             KeyActionTree::new_mode(
                 [
@@ -1008,40 +994,8 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToBottom)),
                     ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
-                        KeyActionTree::new_mode(
-                            [
-                                (
-                                    Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
-                                    KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToTop)),
-                                ),
-                                (
-                                    Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),
-                                    KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteToBottom)),
-                                ),
-                            ],
-                            "Delete To".into(),
-                        ),
-                    ),
                 ],
-                "Delete Mode".into(),
-            ),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
-            KeyActionTree::new_mode(
-                [
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('a')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::GoToArtist)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('b')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::GoToAlbum)),
-                    ),
-                ],
-                "Go To".into(),
+                "Delete".into(),
             ),
         ),
     ])
@@ -1049,16 +1003,9 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
 fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(5)),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Browser(BrowserAction::ViewPlaylist),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
             KeyActionTree::new_key_with_visibility(
-                AppAction::Browser(BrowserAction::Search),
+                AppAction::Browser(BrowserAction::LocalFilter),
                 KeyActionVisibility::Global,
             ),
         ),
@@ -1071,7 +1018,7 @@ fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key(AppAction::Browser(BrowserAction::Left)),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(6)),
+            Keybind::new_unmodified(crossterm::event::KeyCode::F(7)),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Browser(BrowserAction::ChangeSearchType),
                 KeyActionVisibility::Global,
@@ -1644,13 +1591,6 @@ fn default_text_entry_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> 
 }
 fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(5)),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Log(LoggerAction::ViewBrowser),
-                KeyActionVisibility::Global,
-            ),
-        ),
         (
             Keybind::new(crossterm::event::KeyCode::Left, KeyModifiers::SHIFT),
             KeyActionTree::new_key(AppAction::Log(LoggerAction::ReduceCaptured)),

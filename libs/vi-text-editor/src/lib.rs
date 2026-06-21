@@ -160,10 +160,10 @@ impl ViTextEditor {
         }
     }
 
-    pub fn handle_key(&mut self, key: crossterm::event::KeyCode, shift: bool) -> bool {
+    pub fn handle_key(&mut self, key: crossterm::event::KeyCode, shift: bool, ctrl: bool) -> bool {
         match self.mode {
             ViMode::Insert => self.handle_insert(key),
-            ViMode::Normal => self.handle_normal(key, shift),
+            ViMode::Normal => self.handle_normal(key, shift, ctrl),
             ViMode::VisualLine => self.handle_visual_line(key),
             ViMode::VisualChar => self.handle_visual_char(key),
             ViMode::OperatorPending(op) => self.handle_operator_pending(key, op),
@@ -254,7 +254,7 @@ impl ViTextEditor {
         false
     }
 
-    fn handle_normal(&mut self, key: crossterm::event::KeyCode, _shift: bool) -> bool {
+    fn handle_normal(&mut self, key: crossterm::event::KeyCode, _shift: bool, ctrl: bool) -> bool {
         match key {
             crossterm::event::KeyCode::Char('i') => {
                 self.mode = ViMode::Insert;
@@ -316,6 +316,9 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Char('u') => {
                 self.undo();
+            }
+            crossterm::event::KeyCode::Char('r') if ctrl => {
+                self.redo();
             }
             crossterm::event::KeyCode::Char('r') => {
                 self.mode = ViMode::OperatorPending('r');
@@ -561,6 +564,18 @@ impl ViTextEditor {
 
     fn undo(&mut self) {
         if let Some((cursor, text)) = self.undo_stack.pop() {
+            self.redo_stack.push((self.cursor, self.buffer.clone()));
+            if self.redo_stack.len() > 50 {
+                self.redo_stack.remove(0);
+            }
+            self.buffer = text;
+            self.cursor = cursor;
+        }
+    }
+
+    fn redo(&mut self) {
+        if let Some((cursor, text)) = self.redo_stack.pop() {
+            self.undo_stack.push((self.cursor, self.buffer.clone()));
             self.buffer = text;
             self.cursor = cursor;
         }
@@ -651,8 +666,8 @@ mod tests {
     fn test_insert_chars() {
         let mut e = ViTextEditor::new();
         e.mode = ViMode::Insert;
-        e.handle_key(crossterm::event::KeyCode::Char('h'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('i'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('h'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('i'), false, false);
         assert_eq!(e.buffer, "hi");
         assert_eq!(e.cursor, 2);
     }
@@ -663,7 +678,7 @@ mod tests {
         e.mode = ViMode::Insert;
         e.set_text("hello");
         e.cursor = 5;
-        e.handle_key(crossterm::event::KeyCode::Esc, false);
+        e.handle_key(crossterm::event::KeyCode::Esc, false, false);
         assert_eq!(e.mode, ViMode::Normal);
         assert_eq!(e.cursor, 4); // moved back one
     }
@@ -674,13 +689,13 @@ mod tests {
         e.set_text("hello world");
         e.mode = ViMode::Normal;
         e.cursor = 0;
-        e.handle_key(crossterm::event::KeyCode::Char('w'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('w'), false, false);
         assert_eq!(e.cursor, 6); // start of "world"
-        e.handle_key(crossterm::event::KeyCode::Char('b'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('b'), false, false);
         assert_eq!(e.cursor, 0); // back to "hello"
-        e.handle_key(crossterm::event::KeyCode::Char('$'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('$'), false, false);
         assert_eq!(e.cursor, 11);
-        e.handle_key(crossterm::event::KeyCode::Char('0'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('0'), false, false);
         assert_eq!(e.cursor, 0);
     }
 
@@ -690,7 +705,7 @@ mod tests {
         e.set_text("hello");
         e.mode = ViMode::Normal;
         e.cursor = 1;
-        e.handle_key(crossterm::event::KeyCode::Char('x'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false, false);
         assert_eq!(e.buffer, "hllo");
         assert_eq!(e.cursor, 1);
     }
@@ -700,8 +715,8 @@ mod tests {
         let mut e = ViTextEditor::new();
         e.set_text("hello world");
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('d'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('d'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
         assert_eq!(e.buffer, "");
         assert_eq!(e.clipboard, "hello world");
     }
@@ -712,9 +727,9 @@ mod tests {
         e.set_text("hello");
         e.mode = ViMode::Normal;
         e.cursor = 4;
-        e.handle_key(crossterm::event::KeyCode::Char('x'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false, false);
         assert_eq!(e.buffer, "hell");
-        e.handle_key(crossterm::event::KeyCode::Char('u'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('u'), false, false);
         assert_eq!(e.buffer, "hello");
     }
 
@@ -724,11 +739,11 @@ mod tests {
         e.push_history("cmd1".into());
         e.push_history("cmd2".into());
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('k'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('k'), false, false);
         assert_eq!(e.buffer, "cmd2");
-        e.handle_key(crossterm::event::KeyCode::Char('k'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('k'), false, false);
         assert_eq!(e.buffer, "cmd1");
-        e.handle_key(crossterm::event::KeyCode::Char('j'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('j'), false, false);
         assert_eq!(e.buffer, "cmd2");
     }
 
@@ -737,9 +752,9 @@ mod tests {
         let mut e = ViTextEditor::new();
         e.set_text("hello world");
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('V'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('V'), false, false);
         assert_eq!(e.mode, ViMode::VisualLine);
-        e.handle_key(crossterm::event::KeyCode::Char('d'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
         assert_eq!(e.buffer, "");
         assert_eq!(e.clipboard, "hello world");
         assert_eq!(e.mode, ViMode::Normal);
@@ -750,8 +765,8 @@ mod tests {
         let mut e = ViTextEditor::new();
         e.set_text("yank me");
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('V'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('y'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('V'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('y'), false, false);
         assert_eq!(e.clipboard, "yank me");
         assert_eq!(e.buffer, "yank me"); // buffer unchanged
     }
@@ -763,7 +778,7 @@ mod tests {
         e.clipboard = " world".to_string();
         e.cursor = 5;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('p'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('p'), false, false);
         assert_eq!(e.buffer, "hello world");
         assert_eq!(e.cursor, 11);
     }
@@ -774,9 +789,9 @@ mod tests {
         e.set_text("delete word here");
         e.cursor = 0;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('d'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
         assert_eq!(e.mode, ViMode::OperatorPending('d'));
-        e.handle_key(crossterm::event::KeyCode::Char('w'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('w'), false, false);
         assert_eq!(e.buffer, "word here");
         assert_eq!(e.mode, ViMode::Normal);
     }
@@ -787,8 +802,8 @@ mod tests {
         e.set_text("delete from here to end");
         e.cursor = 0;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('d'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('$'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('d'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('$'), false, false);
         assert_eq!(e.buffer, "");
     }
 
@@ -798,8 +813,8 @@ mod tests {
         e.set_text("hello world");
         e.cursor = 0;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('f'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('o'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('f'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('o'), false, false);
         assert_eq!(e.cursor, 4);
     }
 
@@ -809,8 +824,8 @@ mod tests {
         e.set_text("hello world");
         e.cursor = 6;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('F'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('o'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('F'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('o'), false, false);
         assert_eq!(e.cursor, 4);
     }
 
@@ -820,8 +835,8 @@ mod tests {
         e.set_text("hello world");
         e.cursor = 0;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('t'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('o'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('t'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('o'), false, false);
         assert_eq!(e.cursor, 3);
     }
 
@@ -831,8 +846,8 @@ mod tests {
         e.set_text("hello world");
         e.cursor = 6;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('T'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('o'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('T'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('o'), false, false);
         assert_eq!(e.cursor, 5);
     }
 
@@ -842,12 +857,12 @@ mod tests {
         e.set_text("axbxcx");
         e.cursor = 0;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('f'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('x'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('f'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false, false);
         assert_eq!(e.cursor, 1);
-        e.handle_key(crossterm::event::KeyCode::Char(';'), false);
+        e.handle_key(crossterm::event::KeyCode::Char(';'), false, false);
         assert_eq!(e.cursor, 3);
-        e.handle_key(crossterm::event::KeyCode::Char(';'), false);
+        e.handle_key(crossterm::event::KeyCode::Char(';'), false, false);
         assert_eq!(e.cursor, 5);
     }
 
@@ -857,12 +872,12 @@ mod tests {
         e.set_text("x x x");
         e.cursor = 2;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('f'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('x'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('f'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false, false);
         assert_eq!(e.cursor, 4);
-        e.handle_key(crossterm::event::KeyCode::Char(','), false);
+        e.handle_key(crossterm::event::KeyCode::Char(','), false, false);
         assert_eq!(e.cursor, 2);
-        e.handle_key(crossterm::event::KeyCode::Char(';'), false);
+        e.handle_key(crossterm::event::KeyCode::Char(';'), false, false);
         assert_eq!(e.cursor, 4);
     }
 
@@ -872,8 +887,8 @@ mod tests {
         e.set_text("hello");
         e.cursor = 0;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('f'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('z'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('f'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('z'), false, false);
         assert_eq!(e.cursor, 0);
     }
 
@@ -883,9 +898,9 @@ mod tests {
         e.set_text("hello");
         e.cursor = 1;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('r'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('r'), false, false);
         assert_eq!(e.mode, ViMode::OperatorPending('r'));
-        e.handle_key(crossterm::event::KeyCode::Char('a'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('a'), false, false);
         assert_eq!(e.buffer, "hallo");
         assert_eq!(e.mode, ViMode::Normal);
     }
@@ -896,8 +911,48 @@ mod tests {
         e.set_text("hi");
         e.cursor = 2;
         e.mode = ViMode::Normal;
-        e.handle_key(crossterm::event::KeyCode::Char('r'), false);
-        e.handle_key(crossterm::event::KeyCode::Char('x'), false);
+        e.handle_key(crossterm::event::KeyCode::Char('r'), false, false);
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false, false);
         assert_eq!(e.buffer, "hi");
+    }
+
+    #[test]
+    fn test_redo() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello");
+        e.cursor = 4;
+        e.mode = ViMode::Normal;
+        // delete 'o' → "hell"
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false, false);
+        assert_eq!(e.buffer, "hell");
+        // undo
+        e.handle_key(crossterm::event::KeyCode::Char('u'), false, false);
+        assert_eq!(e.buffer, "hello");
+        // redo
+        e.handle_key(crossterm::event::KeyCode::Char('r'), false, true);
+        assert_eq!(e.buffer, "hell");
+    }
+
+    #[test]
+    fn test_multi_undo_redo() {
+        let mut e = ViTextEditor::new();
+        e.set_text("abc");
+        e.mode = ViMode::Normal;
+        e.cursor = 0;
+        // delete 'c' → "ab"
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false, false);
+        // delete 'b' → "a"
+        e.handle_key(crossterm::event::KeyCode::Char('x'), false, false);
+        assert_eq!(e.buffer, "c");
+        // undo twice
+        e.handle_key(crossterm::event::KeyCode::Char('u'), false, false);
+        assert_eq!(e.buffer, "bc");
+        e.handle_key(crossterm::event::KeyCode::Char('u'), false, false);
+        assert_eq!(e.buffer, "abc");
+        // redo twice
+        e.handle_key(crossterm::event::KeyCode::Char('r'), false, true);
+        assert_eq!(e.buffer, "bc");
+        e.handle_key(crossterm::event::KeyCode::Char('r'), false, true);
+        assert_eq!(e.buffer, "c");
     }
 }

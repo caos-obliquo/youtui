@@ -20,7 +20,7 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         .constraints([
             Constraint::Length(header::header_required_height(w)),
             Constraint::Min(2),
-            Constraint::Length(5),
+            Constraint::Length(6),
         ])
         .areas(f.area());
     header::draw_header(f, w, header_chunk);
@@ -83,7 +83,7 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Percentage(40),
-                Constraint::Length(6),
+            Constraint::Length(5),
                 Constraint::Length(3),
                 Constraint::Percentage(40),
             ])
@@ -253,7 +253,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
 pub fn draw_text_box(
     f: &mut Frame,
     title: impl AsRef<str>,
-    contents: &mut crate::app::ui::components::vi_text_editor::ViTextEditor,
+    contents: &mut vi_text_editor::ViTextEditor,
     chunk: Rect,
 ) {
     let block_widget = Block::default()

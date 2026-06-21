@@ -154,7 +154,12 @@ impl SongThumbnailDownloader {
             return Ok(cached_song_thumbnail);
         }
 
-        let url = reqwest::Url::parse(&thumbnail_url)?;
+        // Upgrade YTM thumbnail URL to request larger resolution.
+        let url = if let Some(eq_pos) = thumbnail_url.rfind('=') {
+            reqwest::Url::parse(&format!("{}w600-h600", &thumbnail_url[..=eq_pos]))?
+        } else {
+            reqwest::Url::parse(&thumbnail_url)?
+        };
         let image_bytes = self.client.get(url).send().await?.bytes().await?;
         // `Bytes` is cheap to clone.
         let image_reader = image::ImageReader::new(std::io::Cursor::new(image_bytes.clone()))
