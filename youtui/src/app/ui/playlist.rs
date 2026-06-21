@@ -30,7 +30,7 @@ use crate::app::ui::draw_media_controls::upgrade_thumbnail_url;
 use crate::app::ui::{AppCallback, WindowContext};
 use crate::app::{NavTarget};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
-use crate::app::view::{BasicConstraint, DrawableMut, HasTitle, Loadable, TableView};
+use crate::app::view::{BasicConstraint, DrawableMut, HasTitle, Loadable, SortDirection, TableView};
 use crate::async_rodio_sink::{
     AllStopped, AutoplayUpdate, PlayUpdate, QueueUpdate, SeekDirection, Stopped, VolumeUpdate,
 };
@@ -124,6 +124,10 @@ pub struct Playlist {
     pub album_art_fetching_name: Option<String>,
     /// Pending count for next vim-style operation (e.g., 5dd → delete 5)
     pub pending_count: usize,
+    /// Sort state for queue
+    pub sort_mode: bool,
+    pub sort_column: usize,
+    pub sort_direction: SortDirection,
 }
 
 impl_youtui_component!(Playlist);
@@ -163,6 +167,10 @@ pub enum PlaylistAction {
     GoToAlbum,
     ToggleLike,
     ViewAlbumCover,
+    SortQueue,
+    SortQueueAsc,
+    SortQueueDesc,
+    SortQueueClear,
 }
 
 impl Action for PlaylistAction {
@@ -204,6 +212,10 @@ impl Action for PlaylistAction {
             PlaylistAction::GoToAlbum => "Go to Album",
             PlaylistAction::ToggleLike => "Like / Unlike",
             PlaylistAction::ViewAlbumCover => "View Album Cover",
+            PlaylistAction::SortQueue => "Sort Queue",
+            PlaylistAction::SortQueueAsc => "Sort Ascending",
+            PlaylistAction::SortQueueDesc => "Sort Descending",
+            PlaylistAction::SortQueueClear => "Clear Sort",
         }
         .into()
     }
@@ -445,7 +457,50 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 }
                 (AsyncTask::new_no_op(), None)
             },
+            PlaylistAction::SortQueue => {
+                self.sort_column = (self.sort_column + 1) % 5;
+                let field = sort_column_to_field(self.sort_column);
+                self.list.sort(field, SortDirection::Asc);
+                info!("Queue sorted by column {} asc", self.sort_column);
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::SortQueueAsc => {
+                let field = sort_column_to_field(0);
+                self.list.sort(field, SortDirection::Asc);
+                self.sort_mode = false;
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::SortQueueDesc => {
+                let field = sort_column_to_field(0);
+                self.list.sort(field, SortDirection::Desc);
+                self.sort_mode = false;
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::SortQueueClear => {
+                self.sort_mode = false;
+                (AsyncTask::new_no_op(), None)
+            },
         }
+    }
+}
+
+fn sort_column_to_field(col: usize) -> ListSongDisplayableField {
+    match col {
+        0 => ListSongDisplayableField::Song,
+        1 => ListSongDisplayableField::Artists,
+        2 => ListSongDisplayableField::Album,
+        3 => ListSongDisplayableField::Duration,
+        _ => ListSongDisplayableField::Song,
+    }
+}
+
+fn sort_column_label(col: usize) -> &'static str {
+    match col {
+        0 => "Title",
+        1 => "Artist",
+        2 => "Album",
+        3 => "Duration",
+        _ => "Clear",
     }
 }
 
@@ -762,6 +817,9 @@ impl Playlist {
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
+            sort_mode: false,
+            sort_column: 0,
+            sort_direction: SortDirection::Asc,
         };
 
         (playlist, task)
