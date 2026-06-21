@@ -386,6 +386,18 @@ impl ViTextEditor {
                     self.last_change = LastChange::Paste;
                 }
             }
+            crossterm::event::KeyCode::Char('J') => {
+                if self.multiline {
+                    let after = &self.buffer[self.cursor..];
+                    if let Some(nl) = after.find('\n') {
+                        self.save_undo();
+                        let pos = self.cursor + nl;
+                        self.buffer.remove(pos);
+                        self.buffer.insert(pos, ' ');
+                        self.last_change = LastChange::InsertText(" ".to_string());
+                    }
+                }
+            }
             crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down => {
                 if self.multiline {
                     let col = self.cursor_col();
@@ -1061,6 +1073,27 @@ mod tests {
         // repeat: delete 'b'
         e.handle_key(crossterm::event::KeyCode::Char('.'), false, false);
         assert_eq!(e.buffer, "cd");
+    }
+
+    #[test]
+    fn test_join_lines() {
+        let mut e = ViTextEditor::new_multiline();
+        e.set_text("hello\nworld");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('J'), false, false);
+        assert_eq!(e.buffer, "hello world");
+        assert_eq!(e.cursor, 0);
+    }
+
+    #[test]
+    fn test_join_single_line_noop() {
+        let mut e = ViTextEditor::new();
+        e.set_text("hello");
+        e.cursor = 0;
+        e.mode = ViMode::Normal;
+        e.handle_key(crossterm::event::KeyCode::Char('J'), false, false);
+        assert_eq!(e.buffer, "hello");
     }
 
     #[test]
