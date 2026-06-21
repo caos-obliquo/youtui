@@ -718,19 +718,16 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::GoToArtist => {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
-                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist))));
+                        if let Some(cb) = super::shared_components::navigate_to_artist(song) {
+                            return (AsyncTask::new_no_op(), Some(cb));
+                        }
                     }
                 }
                 BrowserSongsAction::GoToAlbum => {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
-                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                        if let Some(album) = &song.album {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Album {
-                                artist,
-                                album: album.name.clone(),
-                            })));
+                        if let Some(cb) = super::shared_components::navigate_to_album(song) {
+                            return (AsyncTask::new_no_op(), Some(cb));
                         }
                         warn!("Song has no album data, cannot navigate to album");
                     }
@@ -784,19 +781,18 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::GoToArtist => {
                     if self.show_playlist_tracks {
                         if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                            return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist))));
+                            if let Some(cb) = super::shared_components::navigate_to_artist(song) {
+                                return (AsyncTask::new_no_op(), Some(cb));
+                            }
                         }
                     }
                 }
                 BrowserSongsAction::GoToAlbum => {
                     if self.show_playlist_tracks {
                         if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                            if let Some(album) = &song.album {
-                                return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Album { artist, album: album.name.clone() })));
+                            if let Some(cb) = super::shared_components::navigate_to_album(song) {
+                                return (AsyncTask::new_no_op(), Some(cb));
                             }
-                            warn!("Song has no album data, cannot navigate to album");
                         }
                     }
                 }

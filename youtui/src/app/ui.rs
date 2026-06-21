@@ -615,7 +615,13 @@ impl YoutuiWindow {
                             if cmd == "reload" || cmd == "reload!" {
                                 return YoutuiEffect { effect: AsyncTask::new_no_op(), callback: Some(AppCallback::ReloadConfig) };
                             }
-                            return self.play_yt_url(cmd).into();
+                            if cmd.starts_with("http://") || cmd.starts_with("https://") || cmd.starts_with("youtu") {
+                                return self.play_yt_url(cmd).into();
+                            }
+                            // Treat as raw search query
+                            let encoded: String = cmd.split_whitespace().collect::<Vec<_>>().join("+");
+                            let search_url = format!("https://music.youtube.com/search?q={}", encoded);
+                            return self.play_yt_url(search_url).into();
                         }
                         self.command_editor.clear();
                     }
@@ -1155,6 +1161,7 @@ impl YoutuiWindow {
 
         if video_id_str.len() >= 10 && video_id_str.len() <= 20 {
             let vid = ytmapi_rs::common::VideoID::from_raw(video_id_str.clone());
+            self.playlist.url_added = true;
             effect = self.playlist.add_yt_video(vid, &url)
                 .map_frontend(|this: &mut Self| &mut this.playlist);
         } else {

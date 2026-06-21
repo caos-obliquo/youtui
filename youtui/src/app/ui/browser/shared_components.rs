@@ -1,5 +1,8 @@
 use crate::app::component::actionhandler::{Action, ComponentEffect, Suggestable, TextHandler};
 use crate::app::server::{GetSearchSuggestions, HandleApiError};
+use crate::app::structures::ListSong;
+use crate::app::ui::AppCallback;
+use crate::app::NavTarget;
 use vi_text_editor::ViTextEditor;
 use crate::app::view::{TableFilterCommand, TableSortCommand};
 use anyhow::Context;
@@ -308,6 +311,24 @@ pub fn get_adjusted_list_column<T: Copy, const N: usize>(
             format!("Unable to sort column, doesn't match up with underlying list. {target_col}",)
         })
         .copied()
+}
+
+pub fn navigate_to_artist(song: &ListSong) -> Option<AppCallback> {
+    let artist = song.artists.iter()
+        .map(|a| a.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(AppCallback::Navigate(NavTarget::Artist(artist)))
+}
+
+pub fn navigate_to_album(song: &ListSong) -> Option<AppCallback> {
+    let artist = song.artists.iter()
+        .map(|a| a.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    song.album.as_ref().map(|album| {
+        AppCallback::Navigate(NavTarget::Album { artist, album: album.name.clone() })
+    })
 }
 
 #[cfg(test)]
