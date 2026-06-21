@@ -580,12 +580,15 @@ impl YoutuiWindow {
                     }
                     let submitted = self.command_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
                     if submitted {
-                        let url = self.command_editor.get_text().trim().to_string();
+                        let cmd = self.command_editor.get_text().trim().to_string();
                         self.command_mode = false;
-                        if !url.is_empty() {
-                            self.command_editor.push_history(url.clone());
+                        if !cmd.is_empty() {
+                            self.command_editor.push_history(cmd.clone());
                             self.command_editor.clear();
-                            return self.play_yt_url(url).into();
+                            if cmd == "reload" || cmd == "reload!" {
+                                return YoutuiEffect { effect: AsyncTask::new_no_op(), callback: Some(AppCallback::ReloadConfig) };
+                            }
+                            return self.play_yt_url(cmd).into();
                         }
                         self.command_editor.clear();
                     }
