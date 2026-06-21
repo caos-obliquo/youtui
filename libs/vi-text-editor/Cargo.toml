@@ -1,0 +1,9 @@
+[package]
+name = "vi-text-editor"
+version = "0.1.0"
+edition = "2021"
+description = "Vim-mode text editor widget for Ratatui TUI applications"
+license = "MIT"
+
+[dependencies]
+crossterm = { version = "0.29.0", default-features = false, features = ["event-stream"] }
