@@ -732,6 +732,20 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         warn!("Song has no album data, cannot navigate to album");
                     }
                 }
+                BrowserSongsAction::SaveToExistingPlaylist => {
+                    let video_ids: Vec<_> = self.song_list.get_list_iter()
+                        .map(|s| s.video_id.clone())
+                        .collect();
+                    if !video_ids.is_empty() {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)));
+                    }
+                }
+                BrowserSongsAction::InsertNext => {
+                    let songs: Vec<_> = self.song_list.get_list_iter().skip(self.cur_selected).cloned().collect();
+                    if !songs.is_empty() {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
+                    }
+                }
             },
             #[allow(unreachable_patterns)]
             LibraryCategory::Playlists => match action {
@@ -795,6 +809,49 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                             }
                         }
                     }
+                }
+                BrowserSongsAction::AddSongToPlaylist => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(vec![song.clone()])));
+                        }
+                    }
+                }
+                BrowserSongsAction::AddSongsToPlaylist => {
+                    if self.show_playlist_tracks {
+                        let songs: Vec<_> = self.playlist_tracks.clone();
+                        return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(songs)));
+                    }
+                }
+                BrowserSongsAction::SaveToExistingPlaylist => {
+                    if self.show_playlist_tracks {
+                        let video_ids: Vec<_> = self.playlist_tracks.iter()
+                            .map(|s| s.video_id.clone())
+                            .collect();
+                        if !video_ids.is_empty() {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)));
+                        }
+                    }
+                }
+                BrowserSongsAction::InsertNext => {
+                    if self.show_playlist_tracks {
+                        let songs: Vec<_> = self.playlist_tracks.clone();
+                        if !songs.is_empty() {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
+                        }
+                    }
+                }
+                BrowserSongsAction::Filter => {
+                    if self.show_playlist_tracks {
+                        self.filter.shown = !self.filter.shown;
+                    }
+                    return (AsyncTask::new_no_op(), None);
+                }
+                BrowserSongsAction::Sort => {
+                    if self.show_playlist_tracks {
+                        self.sort.shown = !self.sort.shown;
+                    }
+                    return (AsyncTask::new_no_op(), None);
                 }
                 _ => warn!("Unsupported song action for playlists: {:?}", action),
             },

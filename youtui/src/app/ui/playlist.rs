@@ -1455,6 +1455,49 @@ impl Playlist {
         (first_id, effect)
     }
 
+    pub fn insert_next_song_list(
+        &mut self,
+        mut song_list: Vec<ListSong>,
+    ) -> (ListSongID, ComponentEffect<Self>) {
+        let get_largest_thumbnails_url = |thumbs: &Vec<Thumbnail>| {
+            thumbs.iter().max_by_key(|thumbs| thumbs.height * thumbs.width).map(|thumb| thumb.url.clone())
+        };
+        let albums = song_list.iter_mut().filter_map(|song| {
+            let Some(thumb_url) = get_largest_thumbnails_url(song.thumbnails.as_ref()) else {
+                song.album_art = AlbumArtState::None;
+                return None;
+            };
+            let thumb_url = upgrade_thumbnail_url(&thumb_url);
+            let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
+            Some((thumbnail_id, thumb_url))
+        }).collect::<HashMap<SongThumbnailID, String>>();
+        let effect: ComponentEffect<Self> = albums.into_iter().map(|(thumbnail_id, thumbnail_url)| {
+            AsyncTask::new_future_try(
+                GetSongThumbnail { thumbnail_url, thumbnail_id: thumbnail_id.clone() },
+                HandleGetSongThumbnailOk,
+                HandleGetSongThumbnailError(thumbnail_id),
+                None,
+            )
+        }).collect();
+        let insert_pos = self.get_cur_playing_index().map(|i| i + 1).unwrap_or(0);
+        let first_id = self.list.insert_song_list_at(song_list, insert_pos);
+        if self.shuffle_enabled {
+            self.generate_shuffle_indices();
+            if let Some(playing_idx) = self.get_cur_playing_index() {
+                if let Some(shuffled_pos) = self.shuffle_indices.iter().position(|&i| i == playing_idx) {
+                    self.cur_selected = shuffled_pos;
+                }
+            } else {
+                self.cur_selected = 0.min(self.get_max_visual_index());
+            }
+        }
+        if !self.search_text.is_empty() {
+            self.update_search_indices();
+            self.cur_selected = self.cur_selected.min(self.get_max_visual_index());
+        }
+        (first_id, effect)
+    }
+
     pub fn play_next_or_stop(&mut self, prev_id: ListSongID) -> ComponentEffect<Self> {
         let cur = &self.play_status;
         match cur {

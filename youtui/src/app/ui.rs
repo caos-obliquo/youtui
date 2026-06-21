@@ -77,6 +77,8 @@ pub struct YoutuiWindow {
     pub command_editor: ViTextEditor,
     pub count_prefix: usize,
     pub lyrics_inflight: HashSet<String>,
+    pub lyrics_viewing_idx: Option<usize>,
+    pub last_album_art: Option<std::rc::Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>>,
 }
 impl_youtui_component!(YoutuiWindow);
 
@@ -423,11 +425,13 @@ impl ActionHandler<AppAction> for YoutuiWindow {
             AppAction::BrowserSongs(a) => {
                 return apply_action_mapped(self, a, |this: &mut Self| &mut this.browser);
             }
-            AppAction::BrowserPlaylists(a) => {
-                return apply_action_mapped(self, a, |this: &mut Self| &mut this.browser);
+            #[allow(dead_code)]
+            AppAction::BrowserPlaylists(_) => {
+                tracing::warn!("BrowserPlaylists action is deprecated, no-op");
             }
-            AppAction::BrowserPlaylistSongs(a) => {
-                return apply_action_mapped(self, a, |this: &mut Self| &mut this.browser);
+            #[allow(dead_code)]
+            AppAction::BrowserPlaylistSongs(_) => {
+                tracing::warn!("BrowserPlaylistSongs action is deprecated, no-op");
             }
             AppAction::BrowserLibrary(a) => {
                 return apply_action_mapped(self, a, |this: &mut Self| &mut this.browser);
@@ -510,6 +514,8 @@ impl YoutuiWindow {
             command_editor: ViTextEditor::new(),
             count_prefix: 0,
             lyrics_inflight: HashSet::new(),
+            lyrics_viewing_idx: None,
+            last_album_art: None,
         };
         let initial_effect = url.map(|u| this.play_yt_url(u));
         let mut combined = task.map_frontend(|this: &mut Self| &mut this.playlist);
@@ -957,6 +963,13 @@ impl YoutuiWindow {
             .push(self.playlist.play_song_id(id))
             .map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    pub fn handle_insert_next(
+        &mut self,
+        song_list: Vec<ListSong>,
+    ) -> ComponentEffect<Self> {
+        let (_, effect) = self.playlist.insert_next_song_list(song_list);
+        effect.map_frontend(|this: &mut Self| &mut this.playlist)
+    }
     fn global_handle_key_stack(&mut self) -> YoutuiEffect<Self> {
         match handle_key_stack(self.get_active_keybinds(&self.config), &self.key_stack) {
             KeyHandleAction::Action(a) => {
@@ -1048,7 +1061,10 @@ impl YoutuiWindow {
             None,
         )
         .map_frontend(|this: &mut Self| {
-            this.playlist_update_popup.as_mut().expect("popup exists")
+            if this.playlist_update_popup.is_none() {
+                this.playlist_update_popup = Some(PlaylistUpdatePopup::new(Vec::new()));
+            }
+            this.playlist_update_popup.as_mut().expect("just set")
         })
     }
     pub fn open_lyrics_popup(&mut self, artist: String, title: String) -> ComponentEffect<Self> {
@@ -1062,6 +1078,8 @@ impl YoutuiWindow {
         tracing::info!("open_lyrics_popup: artist={}, title={}, has_genius={}, token_len={}", artist, title, has_genius, genius_token.len());
 
         let cache_key = format!("{}||{}", artist, title);
+        self.lyrics_viewing_idx = self.playlist.list.get_list_iter()
+            .position(|s| s.title == title && s.artists.iter().any(|a| artist.contains(a.name.as_str()) || a.name.contains(&artist)));
 
         // Inflight dedup: skip if already fetching
         if self.lyrics_inflight.contains(&cache_key) {
@@ -1078,8 +1096,10 @@ impl YoutuiWindow {
         }
 
         let inflight_key = cache_key.clone();
+        let artist2 = artist.clone();
+        let title2 = title.clone();
         self.lyrics_inflight.insert(cache_key.clone());
-        let mut popup = LyricsPopup::new();
+        let mut popup = LyricsPopup::new(artist.clone(), title.clone());
         popup.lyrics_cache_key = Some(cache_key.clone());
         self.lyrics_popup = Some(popup);
         self.prev_context = self.context;
@@ -1093,22 +1113,24 @@ impl YoutuiWindow {
         .map_frontend(move |this: &mut Self| {
             this.lyrics_inflight.remove(&inflight_key);
             if this.lyrics_popup.is_none() {
-                this.lyrics_popup = Some(LyricsPopup::new());
+                this.lyrics_popup = Some(LyricsPopup::new(artist2, title2));
             }
             this.lyrics_popup.as_mut().expect("just set")
         });
 
         if has_genius {
             use crate::app::server::GetAnnotations;
+            let ann_artist = artist.clone();
+            let ann_title = title.clone();
             let ann_effect: ComponentEffect<YoutuiWindow> = AsyncTask::new_future_try(
                 GetAnnotations(artist, title, genius_token),
                 HandleGetAnnotationsOk,
                 HandleGetAnnotationsErr,
                 None,
             )
-            .map_frontend(|this: &mut Self| {
+            .map_frontend(move |this: &mut Self| {
                 if this.lyrics_popup.is_none() {
-                    this.lyrics_popup = Some(LyricsPopup::new());
+                    this.lyrics_popup = Some(LyricsPopup::new(ann_artist, ann_title));
                 }
                 this.lyrics_popup.as_mut().expect("just set")
             });

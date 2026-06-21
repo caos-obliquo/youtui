@@ -3,7 +3,7 @@ use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::KeyCode;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use lru::LruCache;
@@ -68,6 +68,8 @@ pub struct LyricsPopup {
     pub lyrics_cache_key: Option<String>,
     pub filter_active: bool,
     pub filter_text: String,
+    pub artist: String,
+    pub title: String,
 }
 
 impl_youtui_component!(LyricsPopup);
@@ -83,7 +85,7 @@ impl ActionHandler<LyricsPopupAction> for LyricsPopup {
 }
 
 impl LyricsPopup {
-    pub fn new() -> Self {
+    pub fn new(artist: String, title: String) -> Self {
         Self {
             state: LyricsPopupState::Loading,
             scroll_offset: 0,
@@ -105,6 +107,8 @@ impl LyricsPopup {
             lyrics_cache_key: None,
             filter_active: false,
             filter_text: String::new(),
+            artist,
+            title,
         }
     }
 
@@ -581,8 +585,20 @@ impl LyricsPopup {
                         .split(inner);
                     (chunks[0], None, chunks[1])
                 };
+                let (header_area, song_area) = {
+                    let vert = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([Constraint::Length(3), Constraint::Min(1)])
+                        .split(lyrics_area);
+                    (vert[0], vert[1])
+                };
+                let header_text = vec![
+                    ratatui::text::Line::from(ratatui::text::Span::styled(self.artist.as_str(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+                    ratatui::text::Line::from(ratatui::text::Span::styled(self.title.as_str(), Style::default().fg(Color::Cyan))),
+                ];
+                frame.render_widget(Paragraph::new(header_text), header_area);
                 let line_count = self.total_lines();
-                let visible_lines_count = (lyrics_area.height as usize).saturating_sub(1);
+                let visible_lines_count = (song_area.height as usize).saturating_sub(1);
                 let max_scroll = line_count.saturating_sub(visible_lines_count);
                 if self.scroll_offset > max_scroll { self.scroll_offset = max_scroll; }
                 let max_digits = line_count.max(1).to_string().len().max(3);
@@ -625,7 +641,7 @@ impl LyricsPopup {
                             ratatui::text::Line::from(spans)
                         }
                     }).collect();
-                frame.render_widget(Paragraph::new(lyrics_lines).wrap(Wrap { trim: false }), lyrics_area);
+                frame.render_widget(Paragraph::new(lyrics_lines).wrap(Wrap { trim: false }), song_area);
                 if let Some(ann_area) = ann_area {
                     let ann_colour = if self.focus == Focus::Annotations { Color::Cyan } else { Color::DarkGray };
                     let ann_block = Block::default()
@@ -661,7 +677,7 @@ impl LyricsPopup {
                 let has_more = self.scroll_offset + visible_lines_count < line_count;
                 let scroll_hint = if has_more { " j/k scroll " } else { "" };
                 let ann_hint = if ann_count > 0 { " | a: Toggle annotations" } else { "" };
-                let hint = Paragraph::new(format!("n/p: Next | <> [] Seek | Esc/q: Close"))
+                let hint = Paragraph::new(format!("( ): Next/Prev | <> [] Seek | Esc/q: Close"))
                     .style(Style::default().fg(Color::DarkGray))
                     .alignment(Alignment::Center);
                 frame.render_widget(hint, hint_area);

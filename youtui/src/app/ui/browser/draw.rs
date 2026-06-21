@@ -6,9 +6,7 @@ use super::artistsearch::{self, ArtistSearchBrowser};
 use super::shared_components::SearchBlock;
 use super::songsearch::SongSearchBrowser;
 use crate::app::component::actionhandler::Suggestable;
-use crate::app::ui::browser::playlistsearch::search_panel::PlaylistInputRouting;
-use crate::app::ui::browser::playlistsearch::songs_panel::PlaylistSongsInputRouting;
-use crate::app::ui::browser::playlistsearch::{self, PlaylistSearchBrowser};
+use crate::app::ui::browser::albumsearch::AlbumSearchBrowser;
 use crate::app::view::draw::{draw_advanced_table, draw_list, draw_loadable, draw_panel_mut};
 use crate::drawutils::{
     ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TEXT_COLOUR, below_left_rect, bottom_of_rect,
@@ -43,9 +41,9 @@ pub fn draw_browser(
             selected,
             cur_tick,
         ),
-        super::BrowserVariant::Playlist => draw_playlist_search_browser(
+        super::BrowserVariant::Album => draw_album_search_browser(
             f,
-            &mut browser.playlist_search_browser,
+            &mut browser.album_search_browser,
             chunk,
             selected,
             cur_tick,
@@ -135,81 +133,70 @@ pub fn draw_artist_search_browser(
         },
     );
 }
-pub fn draw_playlist_search_browser(
+pub fn draw_album_search_browser(
     f: &mut Frame,
-    browser: &mut PlaylistSearchBrowser,
+    browser: &mut AlbumSearchBrowser,
     chunk: Rect,
     selected: bool,
-    cur_tick: u64,
+    _cur_tick: u64,
 ) {
-    let [playlists_chunk, songs_chunk] = Layout::new(
-        ratatui::prelude::Direction::Horizontal,
+    let [left_chunk, right_chunk] = Layout::new(
+        Direction::Horizontal,
         [Constraint::Percentage(30), Constraint::Percentage(70)],
-    )
-    .areas(chunk);
-    // Potentially could handle this better.
-    let songs_selected = selected
-        && browser.input_routing == playlistsearch::InputRouting::Song
-        && browser.playlist_songs_panel.route == PlaylistSongsInputRouting::List;
-    let playlists_selected = !songs_selected
-        && selected
-        && browser.input_routing == playlistsearch::InputRouting::Playlist
-        && browser.playlist_search_panel.route == PlaylistInputRouting::List;
+    ).areas(chunk);
+    let show_tracks = browser.show_tracks;
+    let left_selected = selected && !show_tracks;
+    let right_selected = selected && show_tracks;
 
-    if !browser.playlist_search_panel.search_popped {
-        draw_panel_mut(
-            f,
-            &mut browser.playlist_search_panel,
-            playlists_chunk,
-            playlists_selected,
-            |t, f, chunk| {
-                draw_list(f, t, chunk, cur_tick);
-                None
-            },
-        );
-    } else {
-        let [search_box_chunk, shrunk_playlists_chunk] = Layout::default()
-            .direction(Direction::Vertical)
-            .margin(0)
-            .constraints([Constraint::Length(3), Constraint::Min(0)])
-            .areas(playlists_chunk);
-        draw_panel_mut(
-            f,
-            &mut browser.playlist_search_panel,
-            shrunk_playlists_chunk,
-            playlists_selected,
-            |t, f, chunk| {
-                draw_list(f, t, chunk, cur_tick);
-                None
-            },
-        );
-        draw_search_box(
-            f,
-            "Search Playlists",
-            &mut browser.playlist_search_panel.search,
-            search_box_chunk,
-        );
-        // Should this be part of draw_search_box
-        if browser.playlist_search_panel.has_search_suggestions() {
-            draw_search_suggestions(
-                f,
-                &browser.playlist_search_panel.search,
-                search_box_chunk,
-                playlists_chunk,
-            )
-        }
+    let left_block = Block::default()
+        .title(" Albums ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(if left_selected { SELECTED_BORDER_COLOUR } else { ratatui::style::Color::DarkGray }));
+    let left_inner = left_block.inner(left_chunk);
+    f.render_widget(Clear, left_chunk);
+    f.render_widget(left_block, left_chunk);
+
+    let items: Vec<ListItem> = browser.albums.iter().enumerate().map(|(i, a)| {
+        let style = if i == browser.album_selected && left_selected {
+            Style::default().fg(ratatui::style::Color::Black).bg(ROW_HIGHLIGHT_COLOUR)
+        } else {
+            Style::default().fg(TEXT_COLOUR)
+        };
+        let label = if a.year.is_empty() {
+            format!("{} — {}", a.title, a.artist)
+        } else {
+            format!("{} — {} ({})", a.title, a.artist, a.year)
+        };
+        ListItem::new(Line::from(Span::styled(label, style)))
+    }).collect();
+    let mut list_state = ListState::default().with_selected(Some(browser.album_selected));
+    f.render_widget(List::new(items).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), left_inner);
+
+    if show_tracks {
+        let title = format!(" {} — {} ", browser.album_artist, browser.albums.get(browser.album_selected).map_or("", |a| a.title.as_str()));
+        let right_block = Block::default()
+            .title(title.as_str())
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(if right_selected { SELECTED_BORDER_COLOUR } else { ratatui::style::Color::DarkGray }));
+        let right_inner = right_block.inner(right_chunk);
+        f.render_widget(Clear, right_chunk);
+        f.render_widget(right_block, right_chunk);
+
+        let track_items: Vec<ListItem> = browser.track_list.get_list_iter().enumerate().map(|(i, s)| {
+            let style = if i == browser.track_selected && right_selected {
+                Style::default().fg(ratatui::style::Color::Black).bg(ROW_HIGHLIGHT_COLOUR)
+            } else {
+                Style::default().fg(TEXT_COLOUR)
+            };
+            let artist = s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+            ListItem::new(Line::from(Span::styled(
+                format!("{} — {}", s.title, artist),
+                style,
+            )))
+        }).collect();
+        let mut track_state = ListState::default().with_selected(Some(browser.track_selected));
+        f.render_widget(List::new(track_items).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), right_inner);
     }
-    draw_panel_mut(
-        f,
-        &mut browser.playlist_songs_panel,
-        songs_chunk,
-        songs_selected,
-        |t, f, chunk| {
-            draw_loadable(f, t, chunk, |t, f, chunk| {
-                Some(draw_advanced_table(f, t, chunk, cur_tick))
-            })
-        },
-    );
 }
 pub fn draw_library_browser(
     f: &mut Frame,

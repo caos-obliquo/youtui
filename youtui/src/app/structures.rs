@@ -592,6 +592,15 @@ impl BrowserSongsList {
         }
         first_id
     }
+    pub fn insert_song_list_at(&mut self, song_list: Vec<ListSong>, position: usize) -> ListSongID {
+        let pos = position.min(self.list.len());
+        let first_id = self.create_next_id();
+        for (i, mut song) in song_list.into_iter().enumerate() {
+            song.id = if i == 0 { first_id } else { self.create_next_id() };
+            self.list.insert(pos + i, song);
+        }
+        first_id
+    }
     /// Safely deletes the song at index if it exists, and returns it.
     pub fn remove_song_index(&mut self, idx: usize) -> Option<ListSong> {
         // Guard against index out of bounds

@@ -52,6 +52,8 @@ pub enum BrowserSongsAction {
     PlaySongs,
     AddSongToPlaylist,
     AddSongsToPlaylist,
+    SaveToExistingPlaylist,
+    InsertNext,
     ViewLyrics,
     CopySongUrl,
     GoToArtist,
@@ -70,6 +72,8 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::PlaySongs => "Play songs",
             BrowserSongsAction::AddSongToPlaylist => "Add song to playlist",
             BrowserSongsAction::AddSongsToPlaylist => "Add songs to playlist",
+            BrowserSongsAction::SaveToExistingPlaylist => "Save to existing playlist",
+            BrowserSongsAction::InsertNext => "Play next",
             BrowserSongsAction::ViewLyrics => "View Lyrics",
             BrowserSongsAction::CopySongUrl => "Copy Song URL",
             BrowserSongsAction::GoToArtist => "Go to Artist",
@@ -210,6 +214,8 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::PlaySongs => return self.play_songs().into(),
             BrowserSongsAction::AddSongToPlaylist => return self.add_song_to_playlist().into(),
             BrowserSongsAction::AddSongsToPlaylist => return self.add_songs_to_playlist().into(),
+            BrowserSongsAction::SaveToExistingPlaylist => return self.save_to_existing_playlist().into(),
+            BrowserSongsAction::InsertNext => return self.insert_next().into(),
             BrowserSongsAction::ViewLyrics => return self.view_lyrics().into(),
             BrowserSongsAction::CopySongUrl => return self.copy_song_url().into(),
             BrowserSongsAction::GoToArtist => return self.go_to_artist().into(),
@@ -604,6 +610,24 @@ impl SongSearchBrowser {
             AsyncTask::new_no_op(),
             Some(AppCallback::AddSongsToPlaylist(song_list)),
         )
+    }
+    pub fn save_to_existing_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let video_ids: Vec<_> = self
+            .get_filtered_list_iter()
+            .map(|s| s.video_id.clone())
+            .collect();
+        if video_ids.is_empty() {
+            return (AsyncTask::new_no_op(), None);
+        }
+        (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)))
+    }
+    pub fn insert_next(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        let song_list: Vec<_> = self.get_filtered_list_iter().skip(cur_idx).cloned().collect();
+        if song_list.is_empty() {
+            return (AsyncTask::new_no_op(), None);
+        }
+        (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(song_list)))
     }
     pub fn add_song_to_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
