@@ -18,7 +18,7 @@ use ytmapi_rs::auth::noauth::NoAuthToken;
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID, LikeStatus, YoutubeID};
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,
-    SearchResultArtist, SearchResultPlaylist, SearchResultSong,
+    SearchResultAlbum, SearchResultArtist, SearchResultPlaylist, SearchResultSong,
 };
 use ytmapi_rs::continuations::ParseFromContinuable;
 use ytmapi_rs::query::{
@@ -63,6 +63,9 @@ impl Api {
     }
     pub async fn search_playlists(&self, text: String) -> Result<Vec<SearchResultPlaylist>> {
         search_playlists(self.get_api().await?, text).await
+    }
+    pub async fn search_albums(&self, text: String) -> Result<Vec<SearchResultAlbum>> {
+        search_albums(self.get_api().await?, text).await
     }
     pub async fn search_artists(&self, text: String) -> Result<Vec<SearchResultArtist>> {
         search_artists(self.get_api().await?, text).await
@@ -251,6 +254,19 @@ async fn search_playlists(api: ConcurrentApi, text: String) -> Result<Vec<Search
     let query = ytmapi_rs::query::SearchQuery::new_filtered(
         text,
         ytmapi_rs::query::search::PlaylistsFilter,
+    )
+    .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
+    query_api_with_retry(&api, query).await
+}
+
+async fn search_albums(api: ConcurrentApi, text: String) -> Result<Vec<SearchResultAlbum>> {
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    tracing::info!("Searching albums for {text}");
+    let query = ytmapi_rs::query::SearchQuery::new_filtered(
+        text,
+        ytmapi_rs::query::search::AlbumsFilter,
     )
     .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
     query_api_with_retry(&api, query).await

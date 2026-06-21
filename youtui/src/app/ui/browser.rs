@@ -617,7 +617,10 @@ impl Browser {
                 .album_search_browser
                 .handle_text_entry_action(action)
                 .map_frontend(|this: &mut Self| &mut this.album_search_browser),
-            BrowserVariant::LibraryPlaylist => AsyncTask::new_no_op(),
+            BrowserVariant::LibraryPlaylist => self
+                .library_browser
+                .handle_text_entry_action(action)
+                .map_frontend(|this: &mut Self| &mut this.library_browser),
         }
     }
     pub fn handle_toggle_search(&mut self) {

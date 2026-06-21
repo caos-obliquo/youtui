@@ -52,6 +52,8 @@ pub struct SearchSongs(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchPlaylists(pub String);
 #[derive(Debug, PartialEq)]
+pub struct SearchAlbums(pub String);
+#[derive(Debug, PartialEq)]
 pub struct GetArtistSongs(pub ArtistChannelID<'static>);
 #[derive(Debug, PartialEq)]
 pub struct GetPlaylistSongs {
@@ -994,6 +996,26 @@ impl BackendTask<ArcServer> for SearchPlaylists {
                 Err(e) => {
                     tracing::warn!("Playlist search failed (YTM API): {}. Returning empty.", e);
                     Ok(Vec::new()) // return empty instead of error
+                }
+            }
+        }
+    }
+}
+impl BackendTask<ArcServer> for SearchAlbums {
+    type Output = Result<Vec<SearchResultAlbum>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        let query = self.0;
+        async move {
+            match backend.api.search_albums(query.clone()).await {
+                Ok(albums) => Ok(albums),
+                Err(e) => {
+                    tracing::warn!("Album search failed (YTM API): {}. Returning empty.", e);
+                    Ok(Vec::new())
                 }
             }
         }
