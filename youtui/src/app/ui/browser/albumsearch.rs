@@ -4,7 +4,7 @@ use crate::app::component::actionhandler::{
 };
 use crate::app::structures::{BrowserSongsList, ListSong};
 use crate::app::ui::action::{AppAction, TextEntryAction};
-use super::shared_components::{BrowserSearchAction, FilterAction, SortAction};
+use super::shared_components::{BrowserSearchAction, FilterAction, FilterManager, SortAction, SortManager};
 use super::songsearch::BrowserSongsAction;
 use crate::config::Config;
 use crate::config::keymap::Keymap;
@@ -22,6 +22,9 @@ pub struct AlbumSearchBrowser {
     pub fetched: bool,
     pub album_year: String,
     pub album_artist: String,
+    pub sort: SortManager,
+    pub filter: FilterManager,
+    pub search_active: bool,
 }
 
 impl_youtui_component!(AlbumSearchBrowser);
@@ -37,6 +40,9 @@ impl AlbumSearchBrowser {
             fetched: false,
             album_year: String::new(),
             album_artist: String::new(),
+            sort: SortManager::default(),
+            filter: FilterManager::default(),
+            search_active: false,
         }
     }
 
@@ -87,7 +93,9 @@ impl AlbumSearchBrowser {
     }
 
     pub fn is_text_handling(&self) -> bool { false }
-    pub fn handle_toggle_search(&mut self) {}
+    pub fn handle_toggle_search(&mut self) {
+        self.filter.shown = !self.filter.shown;
+    }
     pub fn handle_text_entry_action(&mut self, _action: TextEntryAction) -> ComponentEffect<Self> { AsyncTask::new_no_op() }
     pub fn revert_routing(&mut self) {}
     pub fn text_editor_mode(&self) -> Option<String> { None }
@@ -205,12 +213,14 @@ impl ActionHandler<BrowserSearchAction> for AlbumSearchBrowser {
 
 impl ActionHandler<FilterAction> for AlbumSearchBrowser {
     fn apply_action(&mut self, _action: FilterAction) -> impl Into<YoutuiEffect<Self>> {
+        self.filter.shown = !self.filter.shown;
         (AsyncTask::new_no_op(), None)
     }
 }
 
 impl ActionHandler<SortAction> for AlbumSearchBrowser {
     fn apply_action(&mut self, _action: SortAction) -> impl Into<YoutuiEffect<Self>> {
+        self.sort.shown = !self.sort.shown;
         (AsyncTask::new_no_op(), None)
     }
 }
