@@ -49,37 +49,62 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - **K**: `e` motion (end of word), `c` operator (change = delete+insert), visual char mode (`v`)
 - **M**: Non-vim direct keys moved to context menu — removed `s/A/c/D/z/;/I/E/Z/L` from direct, added to `o` mode: `o.s/A/c/D/I/z/t/E`
 
-### Context menu (`o` mode) now has:
-| Key | Action | Key | Action |
-|-----|--------|-----|--------|
-| enter | Play Selected | s | Toggle Shuffle |
-| d | Delete Selected | A | Set Best Quality |
-| l | View Lyrics | c | Toggle Category Filter |
-| y | Copy Song URL | D | Delete All |
-| v | View Album Cover | I | View Song Info |
-| a | Go to Artist | z | Toggle Repeat |
-| b | Go to Album | t | Toggle Like |
-| E | Save to Existing Playlist | | |
+### ViTextEditor Steps 0–2
+- **0**: Delete stale `components/vi_text_editor.rs` (unused duplicate)
+- **1**: `f`/`F`/`t`/`T` motions + `;`/`,` repeat
+- **2**: `r` replace single char
 
-## Remaining (for next session)
+## Priority Order (next steps)
 
-### Priority 1: Semantic conflicts
-1. **`o.a` conflict** — playlist = GoToArtist, artist_songs browser = PlayAlbum. Pick one or rename.
-2. **`o.A` conflict** — playlist = SetBestQuality, artist_songs = AddAlbumToPlaylist. Same fix.
+| # | Step | File(s) | Est |
+|---|------|---------|-----|
+| 3 | `C-r` redo (commit) | `libs/vi-text-editor/src/lib.rs` + 6 callers | ✓ ready |
+| 4 | `.` repeat last change | `libs/vi-text-editor/src/lib.rs` | med |
+| 5 | `J` join lines | `libs/vi-text-editor/src/lib.rs` | small |
+| 6 | `~` toggle case | `libs/vi-text-editor/src/lib.rs` | small |
+| 7 | Lyrics hybrid line numbers | `lyrics_popup.rs` | med |
+| 8 | Footer album format fix | `footer.rs` | small |
+| 9 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
+| 10 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
+| 11 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
+| 12 | Album art full-window popup (`o.v`) | new popup + `playlist.rs` + `action.rs` + `keymap.rs` | large |
+| 13 | Remove `r` direct key for lyrics | `keymap.rs` | tiny |
+| 14 | `o.a`/`o.A` conflict + `o.r`→`o.l` | `keymap.rs` | small |
+| 15 | Config.toml completeness (all settings in config) | `config.toml` + `keymap.rs` | med |
+| 16 | Build + full test suite | verify | verify |
 
-### Priority 2: UI consistency
-3. **Lyrics popup** — uses `top_anchored_rect()` instead of `centered_rect_fixed()`. Make it centered like all other popups.
-4. **`centered_rect_fixed`** duplicated in 4 popup files — extract to shared utility.
+### Step details
 
-### Priority 3: Config completeness
-5. **`o.y`/`o.r` missing** from browser config.toml sections (songs, artist_songs, playlist_songs).
-6. **Browser library** has no config.toml section — add it.
-7. **`o.E` in config.toml playlist** — present in keymap.rs but verify it's in config.toml.
+**Step 3**: `C-r` redo. `handle_key` API gains `ctrl: bool` param. `undo()` pushes to `redo_stack`. New `redo()` method. Internal tests updated.
 
-### Priority 4: Keymap routing
-8. **Popups bypass keymap** — all route through raw `handle_key()` instead of `apply_action()` via keymap. Works but not extensible. Add keymap sections for update popup.
+**Step 4**: `.` repeat last change. Store last edit (insert/delete/change/replace) as `LastChange` enum. On `.` press, replay it.
+
+**Step 5**: `J` join lines. `buffer.remove(cursor)` if next char is `\n`, replacing with ` `.
+
+**Step 6**: `~` toggle case at cursor. ASCII `a-z` ↔ `A-Z`.
+
+**Step 7**: Hybrid line numbers in lyrics popup. `abs_line == cursor` show absolute, else show relative offset. Dim `Color::DarkGray`. Both render paths (side-by-side + full-width). `max_digits` from total line count.
+
+**Step 8**: Footer album format. `footer.rs:98-101` — construct `format!("{artists} - {album}")` composite string instead of artist/album on separate lines.
+
+**Step 9**: `~/.config/youtui/config.toml` — revert custom keybinds to clean defaults. Remove "wide" overrides.
+
+**Step 10**: Text objects. `iw` inner word, `i(`/`i)` inner parens, `a(`/`a)` a parens (including parens), `i"`/`a"` inner/a string. Works with `d`, `c`, `y` operators.
+
+**Step 11**: `%` bracket match. `([{}])` — find matching pair. Forward/backward cursor move.
+
+**Step 12**: Album art popup. New `AlbumArtPopup` widget + `WindowContext` variant. `o.v` opens full-window `ratatui_image` view of downloaded album art. High resolution.
+
+**Step 13**: Remove `r` direct key for lyrics from all browser views (artist_songs, songs, playlist_songs). Keep `o.l` only.
+
+**Step 14**: `o.a`/`o.A` conflict resolution. Playlist vs artist_songs. Standardize names. `o.r` → `o.l` for lyrics consistency.
+
+**Step 15**: Full config externalization. ALL keymap sections in `config.toml`. Add `playlist_update_popup`, `song_info_popup`, `lyrics_popup`, `config_editor_popup` as keymap fields + config sections. Route all popups through keymap dispatch (no raw `handle_key()`). Add `browser_library` section. Audit all hardcoded settings → config.
+
+**Step 16**: `cargo build --release`, `cargo test --release`, verify no regressions.
 
 ## Blocked
 - Cross-platform clipboard (Wayland-only `wl-copy` — low priority, sidequest)
 - Config template syntax (`o.enter`/`enter.enter` 2 pre-existing test failures)
 - YouTube API format drift (external issue)
+- Crossterm 0.29 `Event::Key` destructure mismatch (pre-existing, not our changes)
