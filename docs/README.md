@@ -22,6 +22,7 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | [06-subsystems/scrobbling](06-subsystems/scrobbling.md) | Libre.fm/Last.fm integration |
 | [06-subsystems/auth](06-subsystems/auth.md) | OAuth, cookie, browser auth flows |
 | [06-subsystems/queue](06-subsystems/queue.md) | Persistence, shuffle, repeat modes |
+| [06-subsystems/playlist-editor](06-subsystems/playlist-editor.md) | Vim-driven playlist editing popup |
 | [07-testing](07-testing.md) | Test structure, running, coverage |
 | [08-known-issues](08-known-issues.md) | Bugs, workarounds, version issues |
 | [09-roadmap](09-roadmap.md) | Future features, crate extraction |
@@ -47,6 +48,7 @@ cargo test --release -p ytmapi-rs              # 80 tests
 |------|-------|---------|
 | `app/server/messages.rs` | ~1280 | All backend tasks |
 | `app/ui/playlist.rs` | ~2440 | Queue, playback, scrobbling, visual mode |
+| `app/ui/playlist/playlist_editor_popup.rs` | ~320 | Vim-driven playlist editor popup |
 | `app/ui/playlist/effect_handlers_playlist.rs` | ~555 | Frontend effect handlers |
 | `app/ui/browser/library.rs` | ~914 | Library browser (4th tab) |
 | `app/ui/browser.rs` | ~690 | Browser routing, tab dispatch |
