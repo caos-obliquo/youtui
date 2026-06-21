@@ -457,6 +457,22 @@ impl LyricsPopup {
                 }
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('n') => {
+                self.reset_count();
+                (AsyncTask::new_no_op(), Some(AppCallback::ViewNextInQueue))
+            }
+            KeyCode::Char('p') => {
+                self.reset_count();
+                (AsyncTask::new_no_op(), Some(AppCallback::ViewPrevInQueue))
+            }
+            KeyCode::Char('<') => {
+                self.reset_count();
+                (AsyncTask::new_no_op(), Some(AppCallback::SeekBack))
+            }
+            KeyCode::Char('>') => {
+                self.reset_count();
+                (AsyncTask::new_no_op(), Some(AppCallback::SeekForward))
+            }
             KeyCode::Char('[') => {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::SeekBack))
@@ -631,7 +647,7 @@ impl LyricsPopup {
                 let has_more = self.scroll_offset + visible_lines_count < line_count;
                 let scroll_hint = if has_more { " j/k scroll " } else { "" };
                 let ann_hint = if ann_count > 0 { " | a: Toggle annotations" } else { "" };
-                let hint = Paragraph::new(format!("Esc/q: Close{} {} {}", ann_hint, romaji_tag, scroll_hint))
+                let hint = Paragraph::new(format!("n/p: Next | <> [] Seek | Esc/q: Close"))
                     .style(Style::default().fg(Color::DarkGray))
                     .alignment(Alignment::Center);
                 frame.render_widget(hint, hint_area);
