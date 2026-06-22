@@ -364,10 +364,8 @@ pub struct AlbumFetchResult {
 }
 
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub struct HandleLibraryAlbumsOk;
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub struct HandleLibraryAlbumsError;
 #[derive(Debug, PartialEq)]
 pub struct HandleFetchAlbumTracksOk;
