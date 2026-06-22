@@ -669,6 +669,18 @@ impl YoutuiWindow {
             }
         }
 
+        // Notes popup intercepts events
+        if self.notes_popup.is_some() {
+            if let Event::Key(k) = event {
+                let popup = self.notes_popup.as_mut().unwrap();
+                let (effect, callback) = popup.handle_key(k);
+                let effect = effect.map_frontend(|this: &mut Self| {
+                    this.notes_popup.as_mut().unwrap()
+                });
+                return YoutuiEffect { effect, callback };
+            }
+        }
+
         // Quit confirm screen intercepts all keys
         if self.quit_confirm {
             if let Event::Key(k) = event {
@@ -714,6 +726,19 @@ impl YoutuiWindow {
                             self.command_editor.clear();
                             if cmd == "reload" || cmd == "reload!" {
                                 return YoutuiEffect { effect: AsyncTask::new_no_op(), callback: Some(AppCallback::ReloadConfig) };
+                            }
+                            if cmd == "notes" {
+                                let notes_path = crate::get_config_dir()
+                                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                                    .join("notes.txt");
+                                let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
+                                self.notes_popup = Some(
+                                    crate::app::ui::playlist::notes_popup::NotesPopup::new(
+                                        notes_path,
+                                        content,
+                                    ),
+                                );
+                                return AsyncTask::new_no_op().into();
                             }
                             if cmd.starts_with("http://") || cmd.starts_with("https://") || cmd.starts_with("youtu") {
                                 return self.play_yt_url(cmd).into();
@@ -1464,6 +1489,7 @@ impl YoutuiWindow {
         self.album_art_popup = None;
         self.config_editor_popup = None;
         self.playlist_editor_popup = None;
+        self.notes_popup = None;
         self.playlist_rename_popup = None;
         self.playlist_edit_popup = None;
         self.playlist_details_popup = None;

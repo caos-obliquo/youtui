@@ -86,6 +86,18 @@ impl ViTextEditor {
         }
     }
 
+    /// Get the visual selection line range (start, end), or None if not in visual line mode
+    pub fn visual_line_range(&self) -> Option<(usize, usize)> {
+        match self.mode {
+            ViMode::VisualLine => {
+                let start = self.buffer[..self.visual_start].matches('\n').count();
+                let end = self.cursor_line();
+                if start <= end { Some((start, end)) } else { Some((end, start)) }
+            }
+            _ => None,
+        }
+    }
+
     pub fn cursor_line(&self) -> usize {
         self.buffer[..self.cursor].matches('\n').count()
     }
@@ -135,7 +147,7 @@ impl ViTextEditor {
         self.history_pos = self.history.len();
     }
 
-    fn cursor_marker(&self) -> &'static str {
+    pub fn cursor_marker(&self) -> &'static str {
         match self.mode {
             ViMode::Insert => "▎",
             _ => "█",
@@ -450,7 +462,6 @@ impl ViTextEditor {
                     self.insert_buffer.clear();
                 }
                 self.mode = ViMode::Normal;
-                if self.cursor > 0 { self.cursor -= 1; }
             }
             crossterm::event::KeyCode::Enter => {
                 if self.multiline {
@@ -516,6 +527,23 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Char('A') => {
                 self.insert_buffer.clear();
                 self.cursor = self.buffer.len();
+                self.mode = ViMode::Insert;
+            }
+            crossterm::event::KeyCode::Char('o') if self.multiline => {
+                let pos = self.cursor;
+                let nl_pos = if pos < self.buffer.len() { pos + 1 } else { pos };
+                self.save_undo();
+                self.buffer.insert(nl_pos, '\n');
+                self.cursor = nl_pos + 1;
+                self.insert_buffer.clear();
+                self.mode = ViMode::Insert;
+            }
+            crossterm::event::KeyCode::Char('O') if self.multiline => {
+                let pos = self.cursor;
+                self.save_undo();
+                self.buffer.insert(pos, '\n');
+                self.cursor = pos;
+                self.insert_buffer.clear();
                 self.mode = ViMode::Insert;
             }
             crossterm::event::KeyCode::Char('s') => {
@@ -1566,7 +1594,7 @@ mod tests {
         e.cursor = 5;
         e.handle_key(crossterm::event::KeyCode::Esc, false, false);
         assert_eq!(e.mode, ViMode::Normal);
-        assert_eq!(e.cursor, 4); // moved back one
+        assert_eq!(e.cursor, 5); // stays in place on Esc
     }
 
     #[test]
@@ -1998,9 +2026,9 @@ mod tests {
         e.handle_key(crossterm::event::KeyCode::Char('w'), false, false);
         e.handle_key(crossterm::event::KeyCode::Esc, false, false);
         assert_eq!(e.buffer, "hello w");
-        // repeat inserts " w" before the char at cursor (on 'w')
+        // Esc leaves cursor at position 7 (no cursor-back)
         e.handle_key(crossterm::event::KeyCode::Char('.'), false, false);
-        assert_eq!(e.buffer, "hello  ww");
+        assert_eq!(e.buffer, "hello w w");
     }
 
     #[test]
