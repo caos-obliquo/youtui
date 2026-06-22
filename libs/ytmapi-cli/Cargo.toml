@@ -1,0 +1,12 @@
+[package]
+name = "ytmapi-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI debug tool for ytmapi-rs — search, playlist, album, fixture, auth"
+license = "MIT"
+
+[dependencies]
+ytmapi-rs = { path = "../../ytmapi-rs", version = "0.3.2" }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1"
+tracing = "0.1"
