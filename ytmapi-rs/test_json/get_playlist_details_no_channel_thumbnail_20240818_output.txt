@@ -35,4 +35,7 @@ GetPlaylistDetails {
             url: "https://lh3.googleusercontent.com/d2fnwqtY8S96gce8C4rTBApWt3H-FP75C7Oih9fYSRQNT56yHC9a8WKOCdRH744Ysdr3TlKJFJENduI=w544-h544-l90-rj",
         },
     ],
+    like_status: Some(
+        Indifferent,
+    ),
 }

@@ -108,6 +108,35 @@ All default keybindings by context. Customizable in `config.toml`.
 | `Backspace` | TextEntry(Backspace) |
 | `Ctrl-w` | TextEntry(DeleteWord) |
 
+## Lyrics Context
+
+| Key | Action |
+|-----|--------|
+| `Esc`/`q` | Close popup |
+| `j`/`Down`/`J` | Move/scroll down |
+| `k`/`Up`/`K` | Move/scroll up |
+| `H`/`Left` | Cursor left within line |
+| `L`/`Right` | Cursor right within line |
+| `g` | First line |
+| `G` | Last line |
+| `0` | Line start |
+| `$` | Line end |
+| `w`/`W` | Next word |
+| `b`/`B` | Prev word |
+| `e`/`E` | Word end |
+| `Ctrl+d` | Page down |
+| `Ctrl+u` | Page up |
+| `a` | Toggle annotations |
+| `R` | Toggle romaji |
+| `Tab`/`l` | Next panel |
+| `BackTab`/`h` | Prev panel |
+| `V` | Enter visual mode |
+| `y` | Yank selection (visual mode) |
+| `Enter` | Seek timestamp |
+| `/` | Filter mode |
+| `}` | Next paragraph |
+| `{` | Prev paragraph |
+
 ## Help Context
 
 | Key | Action | Description |

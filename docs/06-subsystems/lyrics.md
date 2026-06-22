@@ -108,6 +108,52 @@ File: `app/ui/playlist/lyrics_popup.rs` — `LyricsPopup` struct.
 
 When `a` is pressed and annotations exist, the view splits 55/45 between lyrics and annotations. `Tab`/`l`/`h` switches focus between panels.
 
+### Navigation
+
+#### Normal Mode
+
+| Key | Action |
+|-----|--------|
+| `j`/`Down`/`J` | Move cursor down |
+| `k`/`Up`/`K` | Move cursor up |
+| `H`/`Left` | Move cursor left within line |
+| `L`/`Right` | Move cursor right within line |
+| `g` | Jump to first line |
+| `G` | Jump to last line |
+| `w`/`W` | Next word start |
+| `b`/`B` | Previous word start |
+| `e`/`E` | Next word end |
+| `0` | Line start |
+| `$` | Line end |
+| `Ctrl+d` | Page down (n × 10 lines) |
+| `Ctrl+u` | Page up (n × 10 lines) |
+| `(`/`)` | View previous/next in queue |
+| `<`/`>` | Seek backward/forward |
+| `[`/`]` | Seek backward/forward larger |
+| `}` | Next paragraph (double newline) |
+| `{` | Previous paragraph |
+
+#### Visual Mode
+
+Enter: `V`. Exit: `Esc` or `V`.
+
+| Key | Action |
+|-----|--------|
+| `j`/`Down`/`J` | Extend selection down |
+| `k`/`Up`/`K` | Extend selection up |
+| `H`/`Left` | Move cursor left within line |
+| `L`/`Right` | Move cursor right within line |
+| `g` | Jump selection start to first line |
+| `G` | Jump selection end to last line |
+| `0` | Line start |
+| `$` | Line end |
+| `w`/`W` | Next word start |
+| `b`/`B` | Previous word start |
+| `e`/`E` | Next word end |
+| `Ctrl+d` | Page down selection (n × 10) |
+| `Ctrl+u` | Page up selection (n × 10) |
+| `y` | Yank selection to clipboard (`wl-copy`) |
+
 ### Enter Seeks Timestamp
 
 If a lyric line starts with `[m:ss]` or `[mm:ss]`, pressing `Enter` seeks to that absolute position.

@@ -97,6 +97,7 @@ pub fn draw_footer(
     let radio_icon = if w.playlist.radio_mode { " ↻" } else { "" };
     let shuffle_icon = if w.playlist.shuffle_enabled { " ⇄" } else { "" };
     let album_art = cur_active_song.map(|s| &s.album_art);
+    let last_art = w.last_album_art.clone();
     let album_str = if album_title.is_empty() {
         String::new()
     } else {
@@ -162,6 +163,7 @@ pub fn draw_footer(
         .areas(block_inner);
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
+            w.last_album_art = Some(album_art.clone());
             let image = terminal_image_capabilities.new_protocol(
                 album_art.in_mem_image.clone(),
                 Rect {
@@ -185,8 +187,28 @@ pub fn draw_footer(
             f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
         }
         _ => {
-            let fallback_album_widget = Paragraph::new(" ").centered();
-            f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
+            if let Some(last) = &last_art {
+                let image = terminal_image_capabilities.new_protocol(
+                    last.in_mem_image.clone(),
+                    Rect {
+                        x: 0,
+                        y: 0,
+                        width: ALBUM_ART_WIDTH,
+                        height: ALBUM_ART_WIDTH - 1,
+                    },
+                    ratatui_image::Resize::Fit(None),
+                );
+                match image {
+                    Ok(protocol) => f.render_widget(Image::new(&protocol), album_art_chunk),
+                    Err(_) => {
+                        let fallback_album_widget = Paragraph::new("").centered();
+                        f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
+                    }
+                }
+            } else {
+                let fallback_album_widget = Paragraph::new(" ").centered();
+                f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
+            }
         }
     };
     let (song_text_chunk, [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk]) =

@@ -28,7 +28,6 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
 };
 use crate::app::ui::draw_media_controls::upgrade_thumbnail_url;
 use crate::app::ui::{AppCallback, WindowContext};
-use crate::app::{NavTarget};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
 use crate::app::view::{BasicConstraint, DrawableMut, HasTitle, Loadable, SortDirection, TableView};
 use crate::async_rodio_sink::{
@@ -60,6 +59,9 @@ pub mod config_editor_popup;
 pub mod playlist_save_popup;
 pub mod playlist_update_popup;
 pub mod playlist_editor_popup;
+pub mod playlist_rename_popup;
+pub mod playlist_edit_popup;
+pub mod playlist_details_popup;
 mod effect_handlers;
 pub mod effect_handlers_playlist;
 #[cfg(test)]
@@ -116,7 +118,7 @@ pub struct Playlist {
     /// Transient error message shown in playlist header (clears on next action)
     pub last_error: Option<String>,
     /// Pending chunks for multi-playlist split (video_ids, title, description, next_index)
-    pub pending_playlist_chunks: Option<(Vec<Vec<ytmapi_rs::common::VideoID<'static>>>, String, Option<String>)>,
+    pub pending_playlist_chunks: Option<(Vec<Vec<ytmapi_rs::common::VideoID<'static>>>, String, Option<String>, Option<ytmapi_rs::query::playlist::PrivacyStatus>)>,
     /// Stack of deleted songs for undo (song, original_index)
     pub undo_stack: Vec<Vec<(crate::app::structures::ListSong, usize)>>,
     pub visual_mode: bool,
@@ -130,6 +132,8 @@ pub struct Playlist {
     /// Sort state for queue
     pub sort_mode: bool,
     pub sort_column: usize,
+    // TODO: Wire column sort in playlist queue
+    #[allow(dead_code)]
     pub sort_direction: SortDirection,
 }
 
@@ -504,6 +508,8 @@ fn sort_column_to_field(col: usize) -> ListSongDisplayableField {
     }
 }
 
+// TODO: Wire column sort in playlist queue — header labels
+#[allow(dead_code)]
 fn sort_column_label(col: usize) -> &'static str {
     match col {
         0 => "Title",
@@ -1452,6 +1458,49 @@ impl Playlist {
             self.cur_selected = self.cur_selected.min(self.get_max_visual_index());
         }
 
+        (first_id, effect)
+    }
+
+    pub fn insert_next_song_list(
+        &mut self,
+        mut song_list: Vec<ListSong>,
+    ) -> (ListSongID, ComponentEffect<Self>) {
+        let get_largest_thumbnails_url = |thumbs: &Vec<Thumbnail>| {
+            thumbs.iter().max_by_key(|thumbs| thumbs.height * thumbs.width).map(|thumb| thumb.url.clone())
+        };
+        let albums = song_list.iter_mut().filter_map(|song| {
+            let Some(thumb_url) = get_largest_thumbnails_url(song.thumbnails.as_ref()) else {
+                song.album_art = AlbumArtState::None;
+                return None;
+            };
+            let thumb_url = upgrade_thumbnail_url(&thumb_url);
+            let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
+            Some((thumbnail_id, thumb_url))
+        }).collect::<HashMap<SongThumbnailID, String>>();
+        let effect: ComponentEffect<Self> = albums.into_iter().map(|(thumbnail_id, thumbnail_url)| {
+            AsyncTask::new_future_try(
+                GetSongThumbnail { thumbnail_url, thumbnail_id: thumbnail_id.clone() },
+                HandleGetSongThumbnailOk,
+                HandleGetSongThumbnailError(thumbnail_id),
+                None,
+            )
+        }).collect();
+        let insert_pos = self.get_cur_playing_index().map(|i| i + 1).unwrap_or(0);
+        let first_id = self.list.insert_song_list_at(song_list, insert_pos);
+        if self.shuffle_enabled {
+            self.generate_shuffle_indices();
+            if let Some(playing_idx) = self.get_cur_playing_index() {
+                if let Some(shuffled_pos) = self.shuffle_indices.iter().position(|&i| i == playing_idx) {
+                    self.cur_selected = shuffled_pos;
+                }
+            } else {
+                self.cur_selected = 0.min(self.get_max_visual_index());
+            }
+        }
+        if !self.search_text.is_empty() {
+            self.update_search_indices();
+            self.cur_selected = self.cur_selected.min(self.get_max_visual_index());
+        }
         (first_id, effect)
     }
 

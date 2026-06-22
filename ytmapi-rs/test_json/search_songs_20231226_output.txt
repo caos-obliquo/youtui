@@ -21,6 +21,7 @@
                 url: "https://lh3.googleusercontent.com/lNd64sU8cAboiAZ0HVcYg-TWc5wS8TTKpqQUR3w0z3_r0nZ9uqEfJRxdJ0y1SdDdoVKXCO2arS3SuBLvng=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Sleeping in the Cold Below (From \"Warframe\") (feat. Damhnait Doyle)",
@@ -51,6 +52,7 @@
                 url: "https://lh3.googleusercontent.com/SdV90lGM_wxu3dzLlc6kEhENt6vRBO-TwCAnzKCI-8cslYXnHOUC9u91g4cj3ZkrKAZySFKN6r5z7L3e=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Ticket To Ride (2023 Mix)",
@@ -81,6 +83,7 @@
                 url: "https://lh3.googleusercontent.com/CbjJQRLZjUS9jvX3VDtjxk0CtpF_izoi8uEkvKKcnYOrDjNlsZhi7LmdoUFdnGrJH686mTICLZKOhrHLKw=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Don't Let Me Down (Rooftop Performance / Take 2)",
@@ -111,6 +114,7 @@
                 url: "https://lh3.googleusercontent.com/ZMbbfFua2T4giKdxPw32r1LAOqJit-yhjneipMCSl07-WCHmx6Gz5lENjMh7jZ_-0K3KVR7FLb5HUQ=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "I Want You (She's So Heavy) (Remastered 2009)",
@@ -141,6 +145,7 @@
                 url: "https://lh3.googleusercontent.com/bmG1q9eu3ub2CtYcgArvzpiehqUpZGuLsOa_B0Bxkwxdfsk9r7nRzAQy1P5dTjqerODLxq3LycWGWW5m=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "What's The New Mary Jane (Anthology 3 Version)",
@@ -171,6 +176,7 @@
                 url: "https://lh3.googleusercontent.com/KS07aBkgPPReRdSFphMz-73Fp7_Bu84wnThUnN0THFAQJxpegt_Yhykr2DyKs5mOcbLV1C0MAc-6YNQ=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Good Morning Good Morning (Take 8 / Anthology 2 Version)",
@@ -201,6 +207,7 @@
                 url: "https://lh3.googleusercontent.com/QpdkXLA-Uk-rDaYu_Vh4YtMEAtsluGUEee_jNEv5FiUrZsx1ZpezAknb7-d7rb8ySbaXm4FQomjjWw0p=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Only A Northern Song (Anthology 2 Version)",
@@ -231,6 +238,7 @@
                 url: "https://lh3.googleusercontent.com/QpdkXLA-Uk-rDaYu_Vh4YtMEAtsluGUEee_jNEv5FiUrZsx1ZpezAknb7-d7rb8ySbaXm4FQomjjWw0p=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "A Day In The Life (Take 1)",
@@ -261,6 +269,7 @@
                 url: "https://lh3.googleusercontent.com/r7FUIs4CwI2tr7vFGnvIo8-EgGLBC7LOh5V3OJOIKEneTOAIhgEbUwHeAPizEa2roidqNYaAK-Su48fP1A=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "While My Guitar Gently Weeps (Anthology 3 Version)",
@@ -291,6 +300,7 @@
                 url: "https://lh3.googleusercontent.com/KS07aBkgPPReRdSFphMz-73Fp7_Bu84wnThUnN0THFAQJxpegt_Yhykr2DyKs5mOcbLV1C0MAc-6YNQ=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Michelle (Remastered 2009)",
@@ -321,6 +331,7 @@
                 url: "https://lh3.googleusercontent.com/IjEb5kMRk7qimcH3BCJaK85pf79X383z5KNrAxJSNOHVWC41_e66Id233ZGj1AQhH1H5AiKxQMEbHPn0=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Come Together",
@@ -351,6 +362,7 @@
                 url: "https://lh3.googleusercontent.com/O0BM0qveWB40423x8L9AdJxuMcBhFg0x_UtCbFQ_pRwbF412bmnlKj420gEPx1wwwAVpyXHpHp35cAU=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Octopus's Garden (Remastered 2009)",
@@ -381,6 +393,7 @@
                 url: "https://lh3.googleusercontent.com/bmG1q9eu3ub2CtYcgArvzpiehqUpZGuLsOa_B0Bxkwxdfsk9r7nRzAQy1P5dTjqerODLxq3LycWGWW5m=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Something (Take 39 / Instrumental / Strings Only)",
@@ -411,6 +424,7 @@
                 url: "https://lh3.googleusercontent.com/g8bzAg2zxvdnm7ismLMYLA9-9azb4y6VP2uOF56A2G2rpsqLHT6mrJWXRKq_VttXQZ-o-jmVgTFIVgdj=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Don’t Let Me Down (First Rooftop Performance)",
@@ -441,6 +455,7 @@
                 url: "https://lh3.googleusercontent.com/0uSK3j19kosq8SmrnZZ_mlw3kL6ZWFcLRgt0cqhACJcA6cEfLgCscIllVfF-LjkuV3zhuYG6MSFih6PdMw=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Nowhere Man (Remastered 2009)",
@@ -471,6 +486,7 @@
                 url: "https://lh3.googleusercontent.com/IjEb5kMRk7qimcH3BCJaK85pf79X383z5KNrAxJSNOHVWC41_e66Id233ZGj1AQhH1H5AiKxQMEbHPn0=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Blackbird (Remastered 2009)",
@@ -501,6 +517,7 @@
                 url: "https://lh3.googleusercontent.com/8MFj-k2DNUXPKOw8BawKI291ty1Wh8V4M3J6fiq4itWkjw34ncAem60h80eMzsD2XjczahdZEF69CQ8=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Black Beatles (feat. Gucci Mane)",
@@ -531,6 +548,7 @@
                 url: "https://lh3.googleusercontent.com/ICQacM23_M2uMsvADP1v4RtdCCKeW-i8neEsDIr3g_qErQQxRg-QD0lUAmORXZ2Os5CQQdiQsW6kT41_Ag=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Helter Skelter (Remastered 2009)",
@@ -561,6 +579,7 @@
                 url: "https://lh3.googleusercontent.com/8MFj-k2DNUXPKOw8BawKI291ty1Wh8V4M3J6fiq4itWkjw34ncAem60h80eMzsD2XjczahdZEF69CQ8=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Jealous Guy",
@@ -591,6 +610,7 @@
                 url: "https://lh3.googleusercontent.com/3NgQRedyr9sdsiEUyaJ9k2hTl5eTotzV5-6ABSiSGY9SFuHNJnWFcG9wiI-6sKQwCgXNlwp89VqZKR4C=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
     SearchResultSong {
         title: "Lovely Rita (Remastered 2009)",
@@ -621,5 +641,6 @@
                 url: "https://lh3.googleusercontent.com/BfHLoMyzk389QwfEx3Ewr-J4g0nCbbrVzBt43qHtdfnX75veUIropjgAShejer3PzEG3yjSEZsLr-Q9a=w120-h120-l90-rj",
             },
         ],
+        year: None,
     },
 ]

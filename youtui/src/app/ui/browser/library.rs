@@ -22,7 +22,7 @@ use async_callback_manager::{AsyncTask, FrontendEffect};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 use std::borrow::Cow;
-use ytmapi_rs::common::YoutubeID;
+use ytmapi_rs::common::{YoutubeID, LikeStatus};
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
 
@@ -533,6 +533,23 @@ impl LibraryBrowser {
         }
     }
 
+    pub fn handle_text_entry_action(&mut self, action: crate::app::ui::action::TextEntryAction) -> async_callback_manager::AsyncTask<Self, crate::app::server::ArcServer, crate::app::server::TaskMetadata> {
+        if self.search_active {
+            if action == crate::app::ui::action::TextEntryAction::Submit {
+                let text = self.search.search_contents.get_text().to_string();
+                self.search.clear_text();
+                self.search_active = false;
+                self.input_routing = InputRouting::Content;
+                // Apply filter using the search text
+                let lower = text.to_lowercase();
+                if !lower.is_empty() && self.category == LibraryCategory::Playlists {
+                    self.playlist_data.retain(|p| p.title.to_lowercase().contains(&lower));
+                }
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+
     pub fn text_editor_mode(&self) -> Option<String> {
         if self.search_active {
             Some(self.search.search_contents.mode_char().to_string())
@@ -732,6 +749,21 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         warn!("Song has no album data, cannot navigate to album");
                     }
                 }
+                BrowserSongsAction::SaveToExistingPlaylist => {
+                    let video_ids: Vec<_> = self.song_list.get_list_iter()
+                        .map(|s| s.video_id.clone())
+                        .collect();
+                    if !video_ids.is_empty() {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)));
+                    }
+                }
+                BrowserSongsAction::InsertNext => {
+                    let songs: Vec<_> = self.song_list.get_list_iter().skip(self.cur_selected).cloned().collect();
+                    if !songs.is_empty() {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
+                    }
+                }
+                _ => warn!("Unsupported song action for liked songs: {:?}", action),
             },
             #[allow(unreachable_patterns)]
             LibraryCategory::Playlists => match action {
@@ -793,6 +825,87 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                             if let Some(cb) = super::shared_components::navigate_to_album(song) {
                                 return (AsyncTask::new_no_op(), Some(cb));
                             }
+                        }
+                    }
+                }
+                BrowserSongsAction::AddSongToPlaylist => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(vec![song.clone()])));
+                        }
+                    }
+                }
+                BrowserSongsAction::AddSongsToPlaylist => {
+                    if self.show_playlist_tracks {
+                        let songs: Vec<_> = self.playlist_tracks.clone();
+                        return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(songs)));
+                    }
+                }
+                BrowserSongsAction::SaveToExistingPlaylist => {
+                    if self.show_playlist_tracks {
+                        let video_ids: Vec<_> = self.playlist_tracks.iter()
+                            .map(|s| s.video_id.clone())
+                            .collect();
+                        if !video_ids.is_empty() {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)));
+                        }
+                    }
+                }
+                BrowserSongsAction::InsertNext => {
+                    if self.show_playlist_tracks {
+                        let songs: Vec<_> = self.playlist_tracks.clone();
+                        if !songs.is_empty() {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
+                        }
+                    }
+                }
+                BrowserSongsAction::Filter => {
+                    if self.show_playlist_tracks {
+                        self.filter.shown = !self.filter.shown;
+                    }
+                    return (AsyncTask::new_no_op(), None);
+                }
+                BrowserSongsAction::Sort => {
+                    if self.show_playlist_tracks {
+                        self.sort.shown = !self.sort.shown;
+                    }
+                    return (AsyncTask::new_no_op(), None);
+                }
+                BrowserSongsAction::DeletePlaylist => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::ShowDeleteConfirm(pl.playlist_id.clone(), pl.title.clone())));
+                        }
+                    }
+                }
+                BrowserSongsAction::RenamePlaylist => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenRenamePopup(pl.playlist_id.clone(), pl.title.clone())));
+                        }
+                    }
+                }
+                BrowserSongsAction::EditPlaylistDetails => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenEditPopup(pl.playlist_id.clone(), pl.title.clone())));
+                        }
+                    }
+                }
+                BrowserSongsAction::RatePlaylist => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(
+                                pl.playlist_id.clone(),
+                                LikeStatus::Liked,
+                            )));
+                        }
+                    }
+                }
+                BrowserSongsAction::GetPlaylistDetails => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenDetailsPopup(pl.playlist_id.clone(), pl.title.clone())));
                         }
                     }
                 }
