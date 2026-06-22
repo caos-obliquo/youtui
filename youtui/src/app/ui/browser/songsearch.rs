@@ -3,7 +3,7 @@ use super::shared_components::{
     BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager,
     get_adjusted_list_column,
 };
-use crate::app::{AppCallback, NavTarget};
+use crate::app::AppCallback;
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, Suggestable, TextHandler,
     YoutuiEffect,

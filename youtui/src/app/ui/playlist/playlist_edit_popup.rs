@@ -1,4 +1,3 @@
-use crate::app::component::actionhandler::YoutuiEffect;
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -6,7 +5,6 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
-use std::borrow::Cow;
 use ytmapi_rs::common::PlaylistID;
 use ytmapi_rs::query::playlist::PrivacyStatus;
 

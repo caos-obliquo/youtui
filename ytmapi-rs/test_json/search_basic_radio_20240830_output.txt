@@ -395,6 +395,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/1BdYjdWRV8lk8K0_CCSxZtuX1vlET7bafZttFNxcRe9UqOhkVSRNMOabzeV4OTSGSias3q39qT6wLsPvMQ=w120-h120-s-l90-rj",
                 },
             ],
+            year: None,
         },
         SearchResultSong {
             title: "Violin Concerto in A Minor, BWV 1041: I. Allegro",
@@ -425,6 +426,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/17MQ5mgN5kxRMinQow0liEDP6HPyDxqafsl9iLP9ZMjBynMhrLbIoZfOcsTlaIdKzfiWfgb24YyBF5yaNg=w120-h120-l90-rj",
                 },
             ],
+            year: None,
         },
         SearchResultSong {
             title: "Deep Sleep Music: Deeper Relaxation",
@@ -455,6 +457,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/izy-xwSTCCdIGhhIC-zIbatYKoQaIqf_lTHzscee2mvj5INnAPCEoqkPGBgcLjs4WSATb75kS8nECSv_=w120-h120-l90-rj",
                 },
             ],
+            year: None,
         },
     ],
     videos: [

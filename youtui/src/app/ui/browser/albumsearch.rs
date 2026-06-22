@@ -1,10 +1,10 @@
 use crate::app::AppCallback;
 use crate::app::component::actionhandler::{
-    Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
+    ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
 use crate::app::server::SearchAlbums;
 use crate::app::component::actionhandler::Suggestable;
-use crate::app::structures::{BrowserSongsList, ListSong};
+use crate::app::structures::BrowserSongsList;
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use super::shared_components::{BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager};
 use super::songsearch::BrowserSongsAction;
@@ -21,6 +21,8 @@ pub struct AlbumSearchBrowser {
     pub track_list: BrowserSongsList,
     pub track_selected: usize,
     pub show_tracks: bool,
+    // TODO: Wire albums tab in browser — caching flag
+    #[allow(dead_code)]
     pub fetched: bool,
     pub album_year: String,
     pub album_artist: String,
@@ -50,6 +52,8 @@ impl AlbumSearchBrowser {
         }
     }
 
+    // TODO: Wire albums tab in browser — initial load + refresh
+    #[allow(dead_code)]
     pub fn fetch_albums(&mut self) -> (ComponentEffect<Self>, Option<AppCallback>) {
         self.fetched = true;
         let task = AsyncTask::new_future_try(
@@ -69,8 +73,8 @@ impl AlbumSearchBrowser {
     }
 
     pub fn play_selected_album(&mut self) -> (ComponentEffect<Self>, Option<AppCallback>) {
-        use crate::app::server::api;
-        use async_callback_manager::BackendTask;
+        
+        
         let Some(album) = self.get_selected_album().cloned() else { return (AsyncTask::new_no_op(), None); };
         let album_id = album.album_id.clone();
         let task = AsyncTask::new_future_try(
@@ -131,6 +135,8 @@ impl AlbumSearchBrowser {
         self.search.has_search_suggestions()
     }
 
+    // TODO: Wire album search text input — suggestions drop-down
+    #[allow(dead_code)]
     pub fn get_search_suggestions(&self) -> &[SearchSuggestion] {
         self.search.get_search_suggestions()
     }
@@ -144,6 +150,8 @@ impl AlbumSearchBrowser {
         ).map_frontend(|this: &mut Self| &mut *this);
         (task, None)
     }
+    // TODO: Wire album browser routing state reset
+    #[allow(dead_code)]
     pub fn revert_routing(&mut self) {}
     pub fn text_editor_mode(&self) -> Option<String> { None }
     pub fn go_to_first(&mut self) { self.album_selected = 0; self.track_selected = 0; }
@@ -348,8 +356,12 @@ pub struct AlbumFetchResult {
     pub tracks: Vec<AlbumSong>,
 }
 
+// TODO: Wire albums tab in browser — fetch all library albums
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleLibraryAlbumsOk;
+// TODO: Wire albums tab in browser — fetch error handling
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleLibraryAlbumsError;
 #[derive(Debug, PartialEq)]

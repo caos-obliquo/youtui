@@ -43,12 +43,29 @@ docs/
 ## Tests
 
 ```bash
-cargo test --release -p youtui --bin youtui       # 126 pass
+cargo test --release -p youtui --bin youtui       # 120 pass, 4 ignore
 cargo test --release -p vi-text-editor             # 65 pass
-cargo test --release -p ytmapi-rs                  # 28/80 pass (needs auth)
+cargo test --release -p ytmapi-rs --lib            # 82 pass (no auth needed)
+cargo test --release -p ytmapi-rs                  # 28 pass / 52 fail (needs auth)
 cargo test --release -p async-callback-manager     # 15 pass
 cargo test --release -p json-crawler               # 8 pass
 ```
+
+## Warnings
+
+`cargo build --release` — 0 warnings across workspace (youtui + 4 lib crates).
+Eliminated 46 youtui warnings via `cargo fix` + manual `#[allow(dead_code)]` annotations.
+10 ytmapi-rs fixture-drift test failures fixed by regenerating expected output files.
+
+## Dead Code Policy
+
+Future features leave skeleton structs/variants/methods in place, annotated with:
+```rust
+// TODO: Wire <feature name> — <description>
+#[allow(dead_code)]
+```
+This keeps planned extensions visible in code and grep-able by `TODO: Wire` pattern.
+Add new entries to `docs/09-roadmap.md` when annotating. Remove `#[allow]` when wiring.
 
 ## Key Files
 

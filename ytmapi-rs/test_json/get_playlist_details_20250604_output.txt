@@ -32,4 +32,7 @@ GetPlaylistDetails {
             url: "https://yt3.ggpht.com/YBt8Xst5N_I35MAUzdZwh_5ltgdlU7uxsojLYVqUIYUV8GTuKSDZ0K5O1AaFIuH3BZ20b4KbM5U=s1200",
         },
     ],
+    like_status: Some(
+        Indifferent,
+    ),
 }

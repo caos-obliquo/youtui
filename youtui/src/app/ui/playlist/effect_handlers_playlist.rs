@@ -47,16 +47,24 @@ pub struct HandleRatePlaylistError;
 pub struct HandleGetPlaylistDetailsOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleGetPlaylistDetailsError;
+// TODO: Wire drag-to-reorder in playlist visual mode
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleReorderPlaylistItemOk;
+// TODO: Wire drag-to-reorder — error handling
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleReorderPlaylistItemError;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistError;
+// TODO: Wire remove songs UI in playlist context menu
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleRemovePlaylistItemsOk;
+// TODO: Wire remove songs — error handling
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleRemovePlaylistItemsError;
 

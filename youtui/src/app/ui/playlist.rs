@@ -28,7 +28,6 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
 };
 use crate::app::ui::draw_media_controls::upgrade_thumbnail_url;
 use crate::app::ui::{AppCallback, WindowContext};
-use crate::app::{NavTarget};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
 use crate::app::view::{BasicConstraint, DrawableMut, HasTitle, Loadable, SortDirection, TableView};
 use crate::async_rodio_sink::{
@@ -133,6 +132,8 @@ pub struct Playlist {
     /// Sort state for queue
     pub sort_mode: bool,
     pub sort_column: usize,
+    // TODO: Wire column sort in playlist queue
+    #[allow(dead_code)]
     pub sort_direction: SortDirection,
 }
 
@@ -507,6 +508,8 @@ fn sort_column_to_field(col: usize) -> ListSongDisplayableField {
     }
 }
 
+// TODO: Wire column sort in playlist queue — header labels
+#[allow(dead_code)]
 fn sort_column_label(col: usize) -> &'static str {
     match col {
         0 => "Title",

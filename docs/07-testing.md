@@ -4,9 +4,10 @@
 
 | Suite | Command | Count | Notes |
 |-------|---------|-------|-------|
-| Main app | `cargo test --release -p youtui --bin youtui` | 126 | Unit + integration |
+| Main app | `cargo test --release -p youtui --bin youtui` | 120 + 4 ignore | Unit + integration |
 | ViTextEditor | `cargo test --release -p vi-text-editor` | 65 | Unit + proptests |
-| ytmapi-rs | `cargo test --release -p ytmapi-rs` | 80 | 28 pass, 52 fail (need auth) |
+| ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 82 | All pass offline |
+| ytmapi-rs (full) | `cargo test --release -p ytmapi-rs` | 28 pass / 52 fail | Needs browser auth |
 | async-callback-manager | `cargo test --release -p async-callback-manager` | 15 | Unit |
 | json-crawler | `cargo test --release -p json-crawler` | 8 | Unit |
 

@@ -595,7 +595,7 @@ impl Browser {
     pub fn right(&mut self) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
         match self.variant {
             BrowserVariant::Artist => { self.artist_search_browser.right(); None }
-            BrowserVariant::Album => { self.album_search_browser.right(); None }
+            BrowserVariant::Album => { let _ = self.album_search_browser.right(); None }
             BrowserVariant::Song => None,
             BrowserVariant::LibraryPlaylist => {
                 let task = self.library_browser.focus_content();

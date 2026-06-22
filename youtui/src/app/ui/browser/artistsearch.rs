@@ -1,5 +1,5 @@
 use super::shared_components::{BrowserSearchAction, FilterAction, SortAction};
-use crate::app::{AppCallback, NavTarget};
+use crate::app::AppCallback;
 use crate::app::component::actionhandler::{
     ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
