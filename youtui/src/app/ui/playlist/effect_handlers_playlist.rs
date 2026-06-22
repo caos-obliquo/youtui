@@ -263,7 +263,7 @@ impl_youtui_task_handler!(
     |_, details: ytmapi_rs::parse::GetPlaylistDetails| {
         move |this: &mut Playlist| {
             info!("Got playlist details: {}", details.title);
-            this.last_error = Some(format!("Playlist: {} — {} tracks", details.title, details.track_count_text));
+            this.last_error = Some(format!("Playlist: {} - {} tracks", details.title, details.track_count_text));
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
@@ -870,7 +870,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
             }
             LoadPlaylistEffect::FetchError => {
                 error!("Failed to load playlist tracks from YouTube Music");
-                target.last_error = Some("Failed to load YouTube Music playlist — single video added if available".to_string());
+                target.last_error = Some("Failed to load YouTube Music playlist - single video added if available".to_string());
             }
         }
         AsyncTask::new_no_op()

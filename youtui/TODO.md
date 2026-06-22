@@ -71,3 +71,11 @@
 - `AppCallback::Back` — wire back navigation
 - `AppCallback::GetPlaylistDetailsFromLibrary` — rate toggle from popup
 - `SearchPlaylists`/`GetPlaylistSongs` — batch streaming
+
+## Feature: Standardize count-in-header across all browser views
+Every browser right panel should show entity count in title bar like Albums now does:
+- Songs: `Songs - {count}`
+- Artists: `Artists - {count}`
+- PlaylistSearch songs: `{playlist name} - {count} tracks`
+- Library LikedSongs: `Liked Songs - {count}`
+- Library Playlist tracks: `{playlist name} - {count} tracks`

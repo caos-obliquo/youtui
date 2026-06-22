@@ -14,7 +14,7 @@ use crate::app::view::{
 };
 use crate::config::Config;
 use crate::config::keymap::Keymap;
-use crate::widgets::ScrollingTableState;
+use crate::widgets::{ScrollingListState, ScrollingTableState};
 use super::shared_components::{
     BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager, get_adjusted_list_column,
 };
@@ -53,6 +53,7 @@ pub struct AlbumSearchBrowser {
     pub filter: FilterManager,
     pub search: SearchBlock,
     pub search_popped: bool,
+    pub album_list_state: ScrollingListState,
     search_cache: LruCache<String, Vec<SearchResultAlbum>>,
     last_search_query: Option<String>,
 }
@@ -76,6 +77,7 @@ impl AlbumSearchBrowser {
             search_popped: false,
             input_routing: InputRouting::List,
             widget_state: ScrollingTableState::default(),
+            album_list_state: ScrollingListState::default(),
             search_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
             last_search_query: None,
         }
@@ -195,8 +197,8 @@ impl AlbumSearchBrowser {
     }
     fn subcolumns_of_vec() -> [ListSongDisplayableField; 4] {
         [
+            ListSongDisplayableField::TrackNo,
             ListSongDisplayableField::Song,
-            ListSongDisplayableField::Artists,
             ListSongDisplayableField::Duration,
             ListSongDisplayableField::Year,
         ]
@@ -290,7 +292,7 @@ impl AlbumSearchBrowser {
         };
         self.close_sort();
     }
-    fn sortable_columns(&self) -> &[usize] { &[0, 1, 3] }
+    fn sortable_columns(&self) -> &[usize] { &[1, 3] }
 }
 
 impl Loadable for AlbumSearchBrowser {
@@ -303,7 +305,8 @@ impl HasTitle for AlbumSearchBrowser {
         if self.show_tracks {
             let album = self.albums.get(self.album_selected);
             let name = album.map_or("", |a| a.title.as_str());
-            format!(" {} — {} ", self.album_artist, name).into()
+            let count = self.track_list.get_list_iter().count();
+            format!(" {} - {} ({} tracks) ", self.album_artist, name, count).into()
         } else {
             " Album Tracks ".into()
         }
@@ -321,10 +324,10 @@ impl TableView for AlbumSearchBrowser {
     }
     fn get_layout(&self) -> &[BasicConstraint] {
         &[
-            BasicConstraint::Percentage(Percentage(35)),
-            BasicConstraint::Percentage(Percentage(30)),
+            BasicConstraint::Length(4),
+            BasicConstraint::Percentage(Percentage(75)),
             BasicConstraint::Length(8),
-            BasicConstraint::Length(6),
+            BasicConstraint::Length(5),
         ]
     }
     fn get_highlighted_row(&self) -> Option<usize> {
@@ -336,7 +339,7 @@ impl TableView for AlbumSearchBrowser {
             .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        ["Song", "Artist", "Duration", "Year"].into_iter()
+        ["#", "Song", "Duration", "Year"].into_iter()
     }
 }
 impl AdvancedTableView for AlbumSearchBrowser {
@@ -344,7 +347,7 @@ impl AdvancedTableView for AlbumSearchBrowser {
         self.get_filtered_list_iter().count()
     }
     fn get_sortable_columns(&self) -> &[usize] {
-        &[0, 1, 3]
+        &[1, 3]
     }
     fn get_sort_commands(&self) -> &[TableSortCommand] {
         &self.sort.sort_commands
@@ -371,7 +374,7 @@ impl AdvancedTableView for AlbumSearchBrowser {
         self.filter.filter_commands.clear()
     }
     fn get_filterable_columns(&self) -> &[usize] {
-        &[0, 1, 3]
+        &[1]
     }
     fn get_sort_popup_cur(&self) -> usize {
         self.sort.cur

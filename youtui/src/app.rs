@@ -471,7 +471,7 @@ impl Youtui {
                     // Overwrite: remove existing tracks first, then add new ones
                     // TODO: Fetch current playlist tracks via GetPlaylistTracks + RemovePlaylistItems
                     // For now, append-only (overwrite flag tracked for future implementation)
-                    info!("Overwrite mode selected — will replace playlist tracks in future implementation");
+                    info!("Overwrite mode selected - will replace playlist tracks in future implementation");
                 }
 
                 self.task_manager.spawn_task(&self.server, effect);
