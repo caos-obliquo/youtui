@@ -107,22 +107,16 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 - Auth test infra: 3 cookie path fallbacks
 - Library refresh: 4 missing playlists_fetched = false paths
 
-## Session 2026-06-23 (Follow-up, Committed)
-- Albums UI polish: ScrollingList marquee text (left panel), #/Song/Duration/Year columns (right panel), count-in-header on both panels
-- All display em-dashes replaced with hyphens across codebase
-- Save queue/load queue: proper info-level logging
-- TODO.md: added count-in-header standardization task
-
-## Session 2026-06-23 (This Session, Uncommitted)
-- **Footer album format**: Single-line footer `▶ Title - Artist - Album ↺ [s]` instead of separate artist/album lines. footer.rs
-- **Sixel tmux vanish fix**: Post-draw `flush_sixel()` re-sends sixel data with cursor positioning, gated behind `TERM=tmux*` env. app.rs, footer.rs, ui.rs, draw.rs
-- **Sixel `:` command clear**: Clear stale sixel data at top of `draw_app`; blanking sequence when footer hidden. draw.rs, footer.rs
-- **`[I]` mode indicator leak**: Songs `InputRouting::Search`→`List` default; Artists `ArtistInputRouting::Search`→`List` default; `BrowserSearchAction::Close` now resets `search_popped`. songsearch.rs, search_panel.rs, artistsearch.rs
-- **Browser tab order**: Changed from Artists/Albums/Songs/Library/Playlists to Artists/Albums/Songs/Playlists/Library. browser.rs
-- **Album global YTM search**: `handle_text_entry_action(Submit)` now calls `search_albums_query`; removed live-search-on-every-keystroke bug. albumsearch.rs
-- **`o.v` album art popup**: Fixed `ViewAlbumCover` to resolve thumbnail from current song or `last_album_art` fallback; uses `Resize::Scale` for fullscreen upscaled. app.rs, playlist.rs, album_art_popup.rs
-- **Albums right panel**: Always shows `draw_advanced_table` with column headers instead of hint when no album selected. draw.rs
-- **PlaylistSearch right panel**: Same treatment — always shows `draw_advanced_table` headers. draw.rs
+## Session 2026-06-23 (This Session, Committed)
+- Footer album format: Single-line `Title - Artist - Album_ [s]` instead of separate album line
+- Sixel tmux vanish fix: Post-draw flush_sixel() re-sends sixel data with cursor positioning, gated behind TERM=tmux* env
+- Sixel `:` command: Clear stale sixel data in draw_app; blanking sequence when footer hidden
+- `[I]` mode indicator leak: Songs InputRouting default List; Artists ArtistInputRouting default List; BrowserSearchAction::Close resets search_popped
+- Browser tab order: Artists/Albums/Songs/Playlists/Library (Library last)
+- Album global YTM search: handle_text_entry_action(Submit) calls search_albums_query; removed live-search-on-every-keystroke bug
+- `o.v` album art popup: ViewAlbumCover resolves thumbnail from current song or last_album_art; uses Resize::Scale for fullscreen
+- Albums right panel: Always shows draw_advanced_table headers instead of hint
+- PlaylistSearch right panel: Always shows draw_advanced_table headers
 
 ## Known Issues
 - **Genius annotations w/o token**: `__INITIAL_STATE__` scraping fails on most pages. Need `GENIUS_TOKEN`.
