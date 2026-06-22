@@ -117,6 +117,10 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 - `o.v` album art popup: ViewAlbumCover resolves thumbnail from current song or last_album_art; uses Resize::Scale for fullscreen
 - Albums right panel: Always shows draw_advanced_table headers instead of hint
 - PlaylistSearch right panel: Always shows draw_advanced_table headers
+- Config cleanup: Strip defaults, keep only overrides; docs updated
+- Header dedup: Remove duplicate F1, colon, y/C-y CopySongUrl global keybinds
+- ytmapi-cli: Add search-playlists, playlist-songs subcommands (Debug-First)
+- dead_code cleanup: Remove stale annotations from SearchPlaylists, GetPlaylistSongs, api.rs methods (all now wired)
 
 ## Known Issues
 - **Genius annotations w/o token**: `__INITIAL_STATE__` scraping fails on most pages. Need `GENIUS_TOKEN`.
