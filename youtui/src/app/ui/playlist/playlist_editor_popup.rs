@@ -39,6 +39,7 @@ pub struct PlaylistEditorPopup {
     pub command_editor: ViTextEditor,
     pub modified: bool,
     pub confirm_delete: bool,
+    #[allow(dead_code)]
     pub sort_column: usize,
 }
 
