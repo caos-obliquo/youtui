@@ -471,10 +471,13 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::SortQueue => {
-                self.sort_column = (self.sort_column + 1) % 5;
-                let field = sort_column_to_field(self.sort_column);
-                self.list.sort(field, SortDirection::Asc);
-                info!("Queue sorted by column {} asc", self.sort_column);
+                if self.sort_mode {
+                    let field = sort_column_to_field(self.sort_column);
+                    self.list.sort(field, self.sort_direction);
+                    self.sort_mode = false;
+                } else {
+                    self.sort_mode = true;
+                }
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::SortQueueAsc => {
@@ -604,6 +607,29 @@ impl TextHandler for Playlist {
 
 impl DrawableMut for Playlist {
     fn draw_mut_chunk(&mut self, f: &mut Frame, chunk: Rect, selected: bool, cur_tick: u64) {
+        if self.sort_mode {
+            use ratatui::widgets::{Clear, Block, Borders, List, ListItem};
+            use ratatui::style::{Color, Style};
+            let popup = crate::drawutils::centered_rect(4, 28, chunk);
+            f.render_widget(Clear, popup);
+            let items: Vec<ListItem> = (0..=3).map(|col| {
+                let label = if col == self.sort_column {
+                    format!("✓ {} {:?}", sort_column_label(col), self.sort_direction)
+                } else {
+                    format!("  {}", sort_column_label(col))
+                };
+                ListItem::new(label).style(Style::default().fg(Color::White))
+            }).collect();
+            f.render_widget(
+                List::new(items)
+                    .block(Block::default()
+                        .title("Sort Queue")
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Cyan))),
+                popup,
+            );
+            return;
+        }
         draw_panel_mut(f, self, chunk, selected, |t, f, chunk| {
             draw_loadable(f, t, chunk, |t, f, chunk| {
                 Some(draw_table(f, t, chunk, cur_tick))
@@ -620,6 +646,11 @@ impl Loadable for Playlist {
 
 impl Scrollable for Playlist {
     fn increment_list(&mut self, amount: isize) {
+        if self.sort_mode {
+            let cols = 4;
+            self.sort_column = ((self.sort_column as isize + amount).rem_euclid(cols)) as usize;
+            return;
+        }
         let max_index = self.get_max_visual_index();
         self.cur_selected = self
             .cur_selected
