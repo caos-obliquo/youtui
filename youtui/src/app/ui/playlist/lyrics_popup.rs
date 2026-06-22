@@ -33,6 +33,7 @@ pub enum LyricsPopupState {
     Loading,
     // TODO: Wire lyrics text display — currently set from async fetch
     #[allow(dead_code)]
+    #[allow(dead_code)]
     Loaded(String),
     Error(String),
 }
@@ -124,8 +125,6 @@ impl LyricsPopup {
         self.rebuild_lines();
     }
 
-    // TODO: Wire annotations display — show song annotations inline
-    #[allow(dead_code)]
     pub fn set_annotations(&mut self, annotations: Vec<Annotation>) {
         self.annotations = annotations;
         self.rebuild_lines();
@@ -135,7 +134,6 @@ impl LyricsPopup {
         self.state = LyricsPopupState::Error(error);
     }
 
-    // TODO: Wire lyrics filter text input from search bar
     #[allow(dead_code)]
     pub fn set_filter_text(&mut self, text: &str) {
         self.filter_text = text.to_string();

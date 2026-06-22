@@ -211,7 +211,16 @@ impl Scrollable for YoutuiWindow {
             WindowContext::PlaylistUpdatePopup => (),
             WindowContext::Lyrics => (),
             WindowContext::SongInfo => (),
-            WindowContext::PlaylistEditor => (),
+            WindowContext::PlaylistEditor => {
+                if let Some(ref mut ed) = self.playlist_editor_popup {
+                    let max = ed.tracks.len().saturating_sub(1);
+                    let new_cursor = (ed.cursor as isize).saturating_add(amount).clamp(0, max as isize) as usize;
+                    ed.cursor = new_cursor;
+                    if new_cursor < ed.scroll_offset || new_cursor >= ed.scroll_offset + 20 {
+                        ed.scroll_offset = new_cursor.saturating_sub(5);
+                    }
+                }
+            }
             WindowContext::PlaylistRenamePopup => (),
             WindowContext::PlaylistEditPopup => (),
             WindowContext::PlaylistDetailsPopup => (),
@@ -798,6 +807,16 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
+        if self.playlist_editor_popup.is_some() {
+            if let Event::Key(k) = event {
+                let popup = self.playlist_editor_popup.as_mut().unwrap();
+                let (effect, callback) = popup.handle_key(k);
+                let effect = effect.map_frontend(|this: &mut Self| {
+                    this.playlist_editor_popup.as_mut().unwrap()
+                });
+                return YoutuiEffect { effect, callback };
+            }
+        }
         if let Some(effect) = self.try_handle_text(&event) {
             return effect.into();
         };
@@ -922,7 +941,12 @@ impl YoutuiWindow {
                             WindowContext::PlaylistUpdatePopup => {}
                             WindowContext::Lyrics => {}
                             WindowContext::SongInfo => {}
-            WindowContext::PlaylistEditor => {}
+            WindowContext::PlaylistEditor => {
+                if let Some(ref mut ed) = self.playlist_editor_popup {
+                    ed.scroll_offset = 0;
+                    ed.cursor = 0;
+                }
+            }
             WindowContext::PlaylistRenamePopup => {}
             WindowContext::PlaylistEditPopup => {}
             WindowContext::PlaylistDetailsPopup => {}
@@ -941,7 +965,12 @@ impl YoutuiWindow {
                             WindowContext::PlaylistUpdatePopup => {}
                             WindowContext::Lyrics => {}
                             WindowContext::SongInfo => {}
-            WindowContext::PlaylistEditor => {}
+            WindowContext::PlaylistEditor => {
+                if let Some(ref mut ed) = self.playlist_editor_popup {
+                    ed.cursor = ed.tracks.len().saturating_sub(1);
+                    ed.scroll_offset = 0;
+                }
+            }
             WindowContext::PlaylistRenamePopup => {}
             WindowContext::PlaylistEditPopup => {}
             WindowContext::PlaylistDetailsPopup => {}

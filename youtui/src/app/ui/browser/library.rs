@@ -958,6 +958,16 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::ArtistChannel(artist.channel_id.clone()))));
                     }
                 }
+                BrowserSongsAction::SubscribeToArtist => {
+                    if let Some(artist) = self.artist_data.get(self.artist_selected) {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(artist.channel_id.clone())));
+                    }
+                }
+                BrowserSongsAction::UnsubscribeFromArtist => {
+                    if let Some(artist) = self.artist_data.get(self.artist_selected) {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![artist.channel_id.clone()])));
+                    }
+                }
                 _ => warn!("Unsupported song action for artists: {:?}", action),
             },
             LibraryCategory::Albums => match action {

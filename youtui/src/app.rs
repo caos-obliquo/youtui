@@ -24,6 +24,8 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleGetPlaylistDetailsOk, HandleGetPlaylistDetailsError,
     HandleRemovePlaylistItemsOk, HandleRemovePlaylistItemsError,
     HandleReorderPlaylistItemOk, HandleReorderPlaylistItemError,
+    HandleSubscribeToArtistOk, HandleSubscribeToArtistError,
+    HandleUnsubscribeFromArtistsOk, HandleUnsubscribeFromArtistsError,
 };
 use std::borrow::Cow;
 use std::time::Duration;
@@ -104,11 +106,7 @@ pub enum AppCallback {
     ChangeContext(WindowContext),
     AddSongsToPlaylist(Vec<ListSong>),
     AddSongsToPlaylistAndPlay(Vec<ListSong>),
-    // TODO: Wire save-to-playlist popup — dropdown playlist picker
-    #[allow(dead_code)]
     OpenPlaylistSavePopup(Vec<VideoID<'static>>),
-    // TODO: Wire update-playlist popup — overwrite vs append
-    #[allow(dead_code)]
     OpenPlaylistUpdatePopup(Vec<VideoID<'static>>),
     AddVideosToPlaylistFromPopup {
         playlist_id: PlaylistID<'static>,
@@ -177,6 +175,8 @@ pub enum AppCallback {
     GetPlaylistDetailsFromLibrary(PlaylistID<'static>),
     RemovePlaylistItemsFromLibrary(PlaylistID<'static>, Vec<VideoID<'static>>),
     ReorderPlaylistItemFromLibrary(PlaylistID<'static>, VideoID<'static>, VideoID<'static>),
+    SubscribeToArtistFromLibrary(ArtistChannelID<'static>),
+    UnsubscribeFromArtistFromLibrary(Vec<ArtistChannelID<'static>>),
 }
 
 impl Youtui {
@@ -474,6 +474,26 @@ impl Youtui {
                     },
                     HandleReorderPlaylistItemOk,
                     HandleReorderPlaylistItemError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::SubscribeToArtistFromLibrary(channel_id) => {
+                let effect = AsyncTask::new_future_try(
+                    server::SubscribeToArtist(channel_id),
+                    HandleSubscribeToArtistOk,
+                    HandleSubscribeToArtistError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::UnsubscribeFromArtistFromLibrary(channel_ids) => {
+                let effect = AsyncTask::new_future_try(
+                    server::UnsubscribeFromArtists(channel_ids),
+                    HandleUnsubscribeFromArtistsOk,
+                    HandleUnsubscribeFromArtistsError,
                     None,
                 )
                 .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);

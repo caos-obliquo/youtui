@@ -66,6 +66,8 @@ pub enum BrowserSongsAction {
     RemoveTrackFromPlaylist,
     MoveTrackUp,
     MoveTrackDown,
+    SubscribeToArtist,
+    UnsubscribeFromArtist,
 }
 
 impl Action for BrowserSongsAction {
@@ -94,6 +96,8 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::RemoveTrackFromPlaylist => "Remove from Playlist",
             BrowserSongsAction::MoveTrackUp => "Move Track Up",
             BrowserSongsAction::MoveTrackDown => "Move Track Down",
+            BrowserSongsAction::SubscribeToArtist => "Subscribe to Artist",
+            BrowserSongsAction::UnsubscribeFromArtist => "Unsubscribe from Artist",
         }
         .into()
     }

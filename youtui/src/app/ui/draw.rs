@@ -88,6 +88,9 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     if let Some(popup) = &mut w.playlist_details_popup {
         popup.draw(f, f.area());
     }
+    if let Some(popup) = &mut w.playlist_editor_popup {
+        popup.draw(f, f.area());
+    }
     if let Some((_, ref title)) = w.delete_confirm {
         use ratatui::style::{Color, Modifier, Style};
         use ratatui::widgets::{Clear, Paragraph};

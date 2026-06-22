@@ -132,8 +132,6 @@ pub struct Playlist {
     /// Sort state for queue
     pub sort_mode: bool,
     pub sort_column: usize,
-    // TODO: Wire column sort in playlist queue
-    #[allow(dead_code)]
     pub sort_direction: SortDirection,
 }
 
@@ -508,7 +506,6 @@ fn sort_column_to_field(col: usize) -> ListSongDisplayableField {
     }
 }
 
-// TODO: Wire column sort in playlist queue — header labels
 #[allow(dead_code)]
 fn sort_column_label(col: usize) -> &'static str {
     match col {
