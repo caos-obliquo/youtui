@@ -134,6 +134,14 @@ impl NotesPopup {
                 self.command_editor = ViTextEditor::new();
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('y') if self.editor.mode == ViMode::VisualLine || self.editor.mode == ViMode::VisualChar => {
+                self.editor.handle_key(event.code, false, false);
+                let text = self.editor.get_clipboard();
+                if !text.is_empty() {
+                    let _ = std::process::Command::new("wl-copy").arg(&text).spawn();
+                }
+                (AsyncTask::new_no_op(), None)
+            }
             _ => {
                 self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), false);
                 (AsyncTask::new_no_op(), None)
@@ -175,7 +183,7 @@ impl NotesPopup {
             let mut lines: Vec<ratatui::text::Line> = Vec::new();
             for (i, line_text) in self.editor.get_text().split('\n').enumerate() {
                 let selected = visual_range.map_or(false, |(s, e)| i >= s && i <= e);
-                let bg = if selected { Color::Rgb(0x44, 0x44, 0x44) } else { ratatui::style::Color::default() };
+                let bg = if selected { Color::Rgb(0x00, 0x5f, 0x5f) } else { ratatui::style::Color::default() };
                 let is_cursor = i == cur_line;
                 if is_cursor {
                     let (before, after) = line_text.split_at(cur_col.min(line_text.len()));

@@ -84,11 +84,15 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `config/keymap.rs` | ~2079 | All keybindings by context |
 | `app/ui.rs` | ~1530 | Main window, event routing |
 | `libs/metadata-provider/` | 19 tests | Metadata trait + 5 provider impls |
+| `app/ui/playlist/notes_popup.rs` | ~200 | Vim-driven notes text editor |
 
 ## Playlist Features Status
 All CRUD wired: Create, Delete, Rename, Edit details, Edit privacy, Add/Remove items, Reorder (swap), Rate, Get details, Get tracks, Library playlists, Batch-merge.
 
 Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M), save popup (privacy picker), rename popup, edit popup (4 fields), details popup (loading->display), editor popup (:rename/:privacy/:rate), delete confirm. Library auto-refresh on mutation.
+
+## Notes Popup Keybindings
+`:w` Save | `:wq` Save+Quit | `:q` Quit | `Esc` Close | Enter on URL: Open | `i` Insert | `V` visual line | `y` yank | All VTE motions (j/k/h/l/gg/G/w/b/dd/yy/p/P/u/C-r)
 
 ## Queue Keybindings (o menu)
 `o.s` shuffle, `o.r`/`o.S` sort, `o.R` get related, `o.q` save, `o.L` load, `o.Q` delete, `o.m` romaji, `o.n` new playlist, `o.E` existing playlist, `o.d` delete, `o.D` delete all, `o.A` best quality, `o.c` category filter, `o.I` song info, `o.z` repeat, `o.t` like, `o.l` lyrics, `o.a` artist, `o.b` album, `o.v` album cover, `o.y`/`y` copy url.
@@ -123,6 +127,11 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 - dead_code cleanup: Remove stale annotations from SearchPlaylists, GetPlaylistSongs, api.rs methods (all now wired)
 - Genius hit validation: fetch_page returns final URL; find_and_fetch validates hits against query; redirects to wrong pages rejected. Song without Genius page shows clean "No lyrics found"
 - Genius CLI: Add annotations subcommand (Debug-First for testing annotation extraction)
+- Notes popup (`:notes`): Vim-driven text editor for URLs and notes, plain text persistence
+- VTE Esc fix: Removed `cursor -= 1` on Esc from insert mode (non-standard vim behavior)
+- Visual line mode in Notes: `V` + `j/k` with cyan highlight, `y` yanks to system clipboard
+- `o`/`O` in normal mode: Open new line below/above, enter insert mode
+- Docs: New `docs/subsystems/notes.md` — full arch decisions, keybinds, design rationale
 
 ## Known Issues
 - **Genius annotations w/o token**: `__INITIAL_STATE__` scraping fails on most pages. Need `GENIUS_TOKEN`.
@@ -140,3 +149,6 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 - ytmapi-cli: more fixture types, streaming tests
 - Crate extraction: audio-player (deep async_rodio_sink coupling)
 - Count-in-header standardization across all browser views
+- Library playing indicator (second highlight for current song)
+- Playlist browser track splitting + metadata validation
+- Visual block mode (C-v) in ViTextEditor

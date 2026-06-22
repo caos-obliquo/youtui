@@ -147,6 +147,10 @@ impl ViTextEditor {
         self.history_pos = self.history.len();
     }
 
+    pub fn get_clipboard(&self) -> String {
+        self.clipboard.clone()
+    }
+
     pub fn cursor_marker(&self) -> &'static str {
         match self.mode {
             ViMode::Insert => "▎",
