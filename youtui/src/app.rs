@@ -22,6 +22,8 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleEditPlaylistDetailsOk, HandleEditPlaylistDetailsError,
     HandleRatePlaylistOk, HandleRatePlaylistError,
     HandleGetPlaylistDetailsOk, HandleGetPlaylistDetailsError,
+    HandleRemovePlaylistItemsOk, HandleRemovePlaylistItemsError,
+    HandleReorderPlaylistItemOk, HandleReorderPlaylistItemError,
 };
 use std::borrow::Cow;
 use std::time::Duration;
@@ -173,6 +175,8 @@ pub enum AppCallback {
     // TODO: Wire playlist details popup — parse like_status for rate toggle
     #[allow(dead_code)]
     GetPlaylistDetailsFromLibrary(PlaylistID<'static>),
+    RemovePlaylistItemsFromLibrary(PlaylistID<'static>, Vec<VideoID<'static>>),
+    ReorderPlaylistItemFromLibrary(PlaylistID<'static>, VideoID<'static>, VideoID<'static>),
 }
 
 impl Youtui {
@@ -446,6 +450,33 @@ impl Youtui {
                     info!("Overwrite mode selected — will replace playlist tracks in future implementation");
                 }
 
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::RemovePlaylistItemsFromLibrary(playlist_id, video_ids) => {
+                let effect = AsyncTask::new_future_try(
+                    server::RemovePlaylistItems {
+                        playlist_id,
+                        video_ids,
+                    },
+                    HandleRemovePlaylistItemsOk,
+                    HandleRemovePlaylistItemsError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::ReorderPlaylistItemFromLibrary(playlist_id, video_id, target_video_id) => {
+                let effect = AsyncTask::new_future_try(
+                    server::ReorderPlaylistItem {
+                        playlist_id,
+                        video_id,
+                        target_video_id,
+                    },
+                    HandleReorderPlaylistItemOk,
+                    HandleReorderPlaylistItemError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ViewLyrics { artist, title } => {

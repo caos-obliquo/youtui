@@ -63,6 +63,9 @@ pub enum BrowserSongsAction {
     EditPlaylistDetails,
     RatePlaylist,
     GetPlaylistDetails,
+    RemoveTrackFromPlaylist,
+    MoveTrackUp,
+    MoveTrackDown,
 }
 
 impl Action for BrowserSongsAction {
@@ -88,6 +91,9 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::EditPlaylistDetails => "Edit Details",
             BrowserSongsAction::RatePlaylist => "Like / Unlike Playlist",
             BrowserSongsAction::GetPlaylistDetails => "View Details",
+            BrowserSongsAction::RemoveTrackFromPlaylist => "Remove from Playlist",
+            BrowserSongsAction::MoveTrackUp => "Move Track Up",
+            BrowserSongsAction::MoveTrackDown => "Move Track Down",
         }
         .into()
     }

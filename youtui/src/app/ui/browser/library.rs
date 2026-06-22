@@ -909,6 +909,46 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         }
                     }
                 }
+                BrowserSongsAction::RemoveTrackFromPlaylist => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                                return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(
+                                    pl.playlist_id.clone(),
+                                    vec![song.video_id.clone()],
+                                )));
+                            }
+                        }
+                    }
+                }
+                BrowserSongsAction::MoveTrackUp => {
+                    if self.show_playlist_tracks && self.playlist_tracks_selected > 0 {
+                        let cur = self.playlist_tracks_selected;
+                        if let (Some(song), Some(above)) = (self.playlist_tracks.get(cur), self.playlist_tracks.get(cur - 1)) {
+                            if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                                return (AsyncTask::new_no_op(), Some(AppCallback::ReorderPlaylistItemFromLibrary(
+                                    pl.playlist_id.clone(),
+                                    song.video_id.clone(),
+                                    above.video_id.clone(),
+                                )));
+                            }
+                        }
+                    }
+                }
+                BrowserSongsAction::MoveTrackDown => {
+                    if self.show_playlist_tracks && self.playlist_tracks_selected + 1 < self.playlist_tracks.len() {
+                        let cur = self.playlist_tracks_selected;
+                        if let (Some(song), Some(below)) = (self.playlist_tracks.get(cur), self.playlist_tracks.get(cur + 1)) {
+                            if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                                return (AsyncTask::new_no_op(), Some(AppCallback::ReorderPlaylistItemFromLibrary(
+                                    pl.playlist_id.clone(),
+                                    song.video_id.clone(),
+                                    below.video_id.clone(),
+                                )));
+                            }
+                        }
+                    }
+                }
                 _ => warn!("Unsupported song action for playlists: {:?}", action),
             },
             LibraryCategory::Artists => match action {

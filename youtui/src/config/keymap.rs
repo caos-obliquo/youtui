@@ -1121,6 +1121,10 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('i')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::GetPlaylistDetails)),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('x')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::RemoveTrackFromPlaylist)),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
