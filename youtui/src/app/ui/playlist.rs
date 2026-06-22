@@ -131,6 +131,7 @@ pub struct Playlist {
     pub pending_count: usize,
     /// Sort state for queue
     pub sort_mode: bool,
+    #[allow(dead_code)]
     pub sort_column: usize,
     #[allow(dead_code)]
     pub sort_direction: SortDirection,

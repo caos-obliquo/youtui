@@ -1,7 +1,10 @@
+use std::path::Path;
 use ytmapi_rs::{
-    common::{PlaylistID, YoutubeID},
+    auth::BrowserToken,
+    common::{AlbumID, PlaylistID, YoutubeID},
+    process_json,
     query::{
-        GetPlaylistTracksQuery,
+        GetAlbumQuery, GetPlaylistTracksQuery,
         SearchQuery, search::SongsFilter,
     },
 };
@@ -13,93 +16,69 @@ async fn main() {
         eprintln!("Usage: ytmapi <command> [args...]");
         eprintln!();
         eprintln!("Commands:");
-        eprintln!("  search <query>              Search YouTube Music");
-        eprintln!("  playlist <id>               Fetch playlist tracks");
-        eprintln!("  album <id>                  Fetch album details");
-        eprintln!("  fixture <query> [--dir .]   Search and save JSON + output");
+        eprintln!("  search <query>              Search (needs fixture file)");
+        eprintln!("  playlist <id>              Fetch playlist (needs fixture)");
+        eprintln!("  album <id>                 Fetch album (needs fixture)");
+        eprintln!("  fixture <file>             Parse fixture JSON file");
         return;
     }
 
     let command = &args[1];
-    let result = match command.as_str() {
-        "search" => cmd_search(&args[2..]).await,
-        "playlist" => cmd_playlist(&args[2..]).await,
-        "album" => cmd_album(&args[2..]).await,
+    match command.as_str() {
         "fixture" => cmd_fixture(&args[2..]).await,
         _ => {
-            eprintln!("Unknown command: {}. Use one of: search, playlist, album, fixture", command);
-            return;
+            eprintln!("Use 'fixture' command to parse saved JSON files.");
+            eprintln!("Example: ytmapi fixture ./test_json/search_songs_20231226.json");
         }
+    }
+}
+
+async fn cmd_fixture(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: ytmapi fixture <file> [--search <query>]");
+        eprintln!("       ytmapi fixture <file> --playlist");
+        eprintln!("       ytmapi fixture <file> --album");
+        return;
+    }
+
+    let file = &args[0];
+    let path = Path::new(file);
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Error reading {}: {}", file, e); return; }
     };
 
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
-    }
-}
-
-async fn cmd_search(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err("Usage: ytmapi search <query>".to_string());
-    }
-    let query_str = args.join(" ");
-    // Use SongsFilter to get structured song results
-    let _query = SearchQuery::new(&query_str).with_filter(SongsFilter);
-    let _source = r#"{}"#.to_string();
-    // For now, print the query we'd execute (live queries require auth)
-    println!("Search query: {}", query_str);
-    println!("Filter: Songs");
-    println!();
-    println!("To run a live search, pipe through a fixture file.");
-    println!("Example: ytmapi fixture \"Beatles\" --dir ./test_json/");
-    Ok(())
-}
-
-async fn cmd_playlist(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err("Usage: ytmapi playlist <playlist_id> [--json]".to_string());
-    }
-    let id = &args[0];
-    let playlist_id = PlaylistID::from_raw(id);
-    let _query = GetPlaylistTracksQuery::new(playlist_id);
-
-    // For now, show info about what we'd do
-    println!("Playlist ID: {}", id);
-    println!("Use fixture mode to run actual query against saved JSON.");
-    Ok(())
-}
-
-async fn cmd_album(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err("Usage: ytmapi album <album_id>".to_string());
-    }
-    let id = &args[0];
-    println!("Album ID: {}", id);
-    println!("Use fixture mode to run actual query against saved JSON.");
-    Ok(())
-}
-
-async fn cmd_fixture(args: &[String]) -> Result<(), String> {
-    if args.is_empty() {
-        return Err("Usage: ytmapi fixture <query> [--dir <dir>]".to_string());
-    }
-    let mut query_str = String::new();
-    let mut dir = "./test_json".to_string();
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--dir" {
-            if i + 1 < args.len() {
-                dir = args[i + 1].clone();
-                i += 1;
-            }
-        } else {
-            if !query_str.is_empty() { query_str.push(' '); }
-            query_str.push_str(&args[i]);
+    // Detect query type from args
+    let mut query_type = "search";
+    for arg in args {
+        match arg.as_str() {
+            "--playlist" => query_type = "playlist",
+            "--album" => query_type = "album",
+            _ => {}
         }
-        i += 1;
     }
-    println!("Fixture mode: search='{}', dir='{}'", query_str, dir);
-    println!("This will search YTM and save JSON + parsed output.");
-    println!("Requires YTM API credentials (cookie/auth).");
-    Ok(())
+
+    match query_type {
+        "playlist" => {
+            let query = GetPlaylistTracksQuery::new(PlaylistID::from_raw(""));
+            match process_json::<GetPlaylistTracksQuery<'_>, BrowserToken>(source, &query) {
+                Ok(output) => println!("{:#?}", output),
+                Err(e) => eprintln!("Parse error: {}", e),
+            }
+        }
+        "album" => {
+            let query = GetAlbumQuery::new(AlbumID::from_raw(""));
+            match process_json::<GetAlbumQuery<'_>, BrowserToken>(source, &query) {
+                Ok(output) => println!("{:#?}", output),
+                Err(e) => eprintln!("Parse error: {}", e),
+            }
+        }
+        _ => {
+            let query: SearchQuery<'_, ytmapi_rs::query::search::FilteredSearch<SongsFilter>> = SearchQuery::new("").with_filter(SongsFilter);
+            match process_json::<SearchQuery<'_, ytmapi_rs::query::search::FilteredSearch<SongsFilter>>, BrowserToken>(source, &query) {
+                Ok(output) => println!("{:#?}", output),
+                Err(e) => eprintln!("Parse error: {}", e),
+            }
+        }
+    }
 }

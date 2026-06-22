@@ -51,6 +51,7 @@ pub struct SearchArtists(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchSongs(pub String);
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub struct SearchPlaylists(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchAlbums(pub String);

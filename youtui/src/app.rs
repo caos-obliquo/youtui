@@ -29,7 +29,7 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
 };
 use std::borrow::Cow;
 use std::time::Duration;
-use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID, LikeStatus};
+use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID};
 
 #[derive(Debug)]
 pub enum NavTarget {
@@ -169,7 +169,7 @@ pub enum AppCallback {
         description: Option<String>,
         privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
     },
-    RatePlaylistFromLibrary(PlaylistID<'static>, LikeStatus),
+    RatePlaylistFromLibrary(PlaylistID<'static>, ytmapi_rs::common::LikeStatus),
     // TODO: Wire playlist details popup — parse like_status for rate toggle
     #[allow(dead_code)]
     GetPlaylistDetailsFromLibrary(PlaylistID<'static>),

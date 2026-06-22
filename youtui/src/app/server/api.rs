@@ -15,6 +15,7 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use ytmapi_rs::auth::noauth::NoAuthToken;
+#[allow(unused_imports)]
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID, LikeStatus, YoutubeID};
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,
@@ -61,6 +62,7 @@ impl Api {
     ) -> Result<(Vec<SearchSuggestion>, String)> {
         get_search_suggestions(self.get_api().await?, text).await
     }
+    #[allow(dead_code)]
     pub async fn search_playlists(&self, text: String) -> Result<Vec<SearchResultPlaylist>> {
         search_playlists(self.get_api().await?, text).await
     }
