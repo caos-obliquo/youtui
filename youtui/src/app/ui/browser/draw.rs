@@ -166,49 +166,68 @@ pub fn draw_album_search_browser(
         if browser.has_search_suggestions() {
             draw_search_suggestions(f, &browser.search, search_box_chunk, left_chunk);
         }
-        return;
+        // No return — fall through to draw right panel below
+    } else {
+        // Left panel: album list (only when not searching)
+        let left_block = Block::default()
+            .title(" Albums ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(if left_selected { SELECTED_BORDER_COLOUR } else { ratatui::style::Color::DarkGray }));
+        let left_inner = left_block.inner(left_chunk);
+        f.render_widget(Clear, left_chunk);
+        f.render_widget(left_block, left_chunk);
+
+        if browser.albums.is_empty() {
+            let empty_msg = Paragraph::new(Line::from(Span::styled(
+                "No albums found",
+                Style::default().fg(ratatui::style::Color::DarkGray),
+            )))
+            .alignment(ratatui::layout::Alignment::Center);
+            f.render_widget(empty_msg, left_inner);
+        } else {
+            let items: Vec<ListItem> = browser.albums.iter().enumerate().map(|(i, a)| {
+                let style = if i == browser.album_selected && left_selected {
+                    Style::default().fg(ratatui::style::Color::Black).bg(ROW_HIGHLIGHT_COLOUR)
+                } else {
+                    Style::default().fg(TEXT_COLOUR)
+                };
+                let label = if a.year.is_empty() {
+                    format!("{} — {}", a.title, a.artist)
+                } else {
+                    format!("{} — {} ({})", a.title, a.artist, a.year)
+                };
+                ListItem::new(Line::from(Span::styled(label, style)))
+            }).collect();
+            f.render_widget(List::new(items).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), left_inner);
+        }
     }
 
-    // Left panel: album list
-    let left_block = Block::default()
-        .title(" Albums ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(if left_selected { SELECTED_BORDER_COLOUR } else { ratatui::style::Color::DarkGray }));
-    let left_inner = left_block.inner(left_chunk);
-    f.render_widget(Clear, left_chunk);
-    f.render_widget(left_block, left_chunk);
-
-    let items: Vec<ListItem> = browser.albums.iter().enumerate().map(|(i, a)| {
-        let style = if i == browser.album_selected && left_selected {
-            Style::default().fg(ratatui::style::Color::Black).bg(ROW_HIGHLIGHT_COLOUR)
-        } else {
-            Style::default().fg(TEXT_COLOUR)
-        };
-        let label = if a.year.is_empty() {
-            format!("{} — {}", a.title, a.artist)
-        } else {
-            format!("{} — {} ({})", a.title, a.artist, a.year)
-        };
-        ListItem::new(Line::from(Span::styled(label, style)))
-    }).collect();
-    let _list_state = ListState::default().with_selected(Some(browser.album_selected));
-    f.render_widget(List::new(items).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), left_inner);
-
-    // Right panel: album tracks or empty
-    if show_tracks {
+    // Right panel: always visible — tracks or hint
+    {
         use ratatui::text::Span as Sp;
-        let album = browser.albums.get(browser.album_selected);
-        let album_name = album.map_or("", |a| a.title.as_str());
-        let title = format!(" {} — {} ", browser.album_artist, album_name);
+        let right_title = if show_tracks {
+            let album = browser.albums.get(browser.album_selected);
+            let album_name = album.map_or("", |a| a.title.as_str());
+            format!(" {} — {} ", browser.album_artist, album_name)
+        } else {
+            " Album Tracks ".to_string()
+        };
         let right_block = Block::default()
-            .title(title.as_str())
+            .title(right_title.as_str())
             .borders(Borders::ALL)
             .border_style(Style::default().fg(if right_selected { SELECTED_BORDER_COLOUR } else { ratatui::style::Color::DarkGray }));
         let right_inner = right_block.inner(right_chunk);
         f.render_widget(Clear, right_chunk);
         f.render_widget(right_block, right_chunk);
 
-        if browser.sort.shown {
+        if !show_tracks {
+            let hint = Paragraph::new(Line::from(Span::styled(
+                "→ Select an album to view tracks",
+                Style::default().fg(ratatui::style::Color::DarkGray),
+            )))
+            .alignment(ratatui::layout::Alignment::Center);
+            f.render_widget(hint, right_inner);
+        } else if browser.sort.shown {
             let popup = crate::drawutils::centered_rect(3, 22, right_inner);
             let items = vec![
                 ListItem::new(Line::from(Span::styled("Name", Style::default()))),
@@ -222,9 +241,7 @@ pub fn draw_album_search_browser(
                     .block(Block::default().title("Sort").borders(Borders::ALL).border_style(Style::default().fg(SELECTED_BORDER_COLOUR))),
                 popup,
             );
-            return;
-        }
-        if browser.filter.shown {
+        } else if browser.filter.shown {
             let popup = crate::drawutils::centered_rect(3, 22, right_inner);
             f.render_widget(Clear, popup);
             let block = Block::default().title("Filter").borders(Borders::ALL).border_style(Style::default().fg(SELECTED_BORDER_COLOUR));
@@ -232,40 +249,38 @@ pub fn draw_album_search_browser(
             f.render_widget(block, popup);
             let display = browser.filter.filter_text.render_simple("");
             f.render_widget(Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR)), inner);
-            return;
-        }
+        } else {
+            let col_width = right_inner.width.saturating_sub(2) as usize;
+            let num_w = 4usize;
+            let dur_w = 8usize;
+            let title_w = (col_width.saturating_sub(num_w + dur_w + 2)).max(20);
 
-        let col_width = right_inner.width.saturating_sub(2) as usize;
-        let num_w = 4usize;
-        let dur_w = 8usize;
-        let title_w = (col_width.saturating_sub(num_w + dur_w + 2)).max(20);
-
-        let header_style = Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD);
-        let mut rows: Vec<ListItem> = Vec::new();
-        rows.push(ListItem::new(Line::from(vec![
-            Sp::styled(format!("{:>width$}", "#", width = num_w.saturating_sub(1)), header_style),
-            Sp::styled(format!(" {:width$}", "Song", width = title_w), header_style),
-            Sp::styled(format!(" {:>width$}", "Duration", width = dur_w.saturating_sub(1)), header_style),
-        ])));
-
-        for (i, s) in browser.track_list.get_list_iter().enumerate() {
-            let sel = i == browser.track_selected && right_selected;
-            let style = if sel {
-                Style::default().fg(ratatui::style::Color::Black).bg(ROW_HIGHLIGHT_COLOUR)
-            } else {
-                Style::default().fg(TEXT_COLOUR)
-            };
-            let track_no = s.track_no.map_or(String::new(), |n| n.to_string());
-            let artist_str = s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+            let header_style = Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD);
+            let mut rows: Vec<ListItem> = Vec::new();
             rows.push(ListItem::new(Line::from(vec![
-                Sp::styled(format!("{:>width$}", track_no, width = num_w.saturating_sub(1)), style),
-                Sp::styled(format!(" {}", s.title), style),
-                Sp::styled(format!(" {}", artist_str), Style::default().fg(ratatui::style::Color::DarkGray)),
-                Sp::styled(format!(" {:>width$}", s.duration_string, width = dur_w.saturating_sub(1)), style),
+                Sp::styled(format!("{:>width$}", "#", width = num_w.saturating_sub(1)), header_style),
+                Sp::styled(format!(" {:width$}", "Song", width = title_w), header_style),
+                Sp::styled(format!(" {:>width$}", "Duration", width = dur_w.saturating_sub(1)), header_style),
             ])));
+
+            for (i, s) in browser.track_list.get_list_iter().enumerate() {
+                let sel = i == browser.track_selected && right_selected;
+                let style = if sel {
+                    Style::default().fg(ratatui::style::Color::Black).bg(ROW_HIGHLIGHT_COLOUR)
+                } else {
+                    Style::default().fg(TEXT_COLOUR)
+                };
+                let track_no = s.track_no.map_or(String::new(), |n| n.to_string());
+                let artist_str = s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                rows.push(ListItem::new(Line::from(vec![
+                    Sp::styled(format!("{:>width$}", track_no, width = num_w.saturating_sub(1)), style),
+                    Sp::styled(format!(" {}", s.title), style),
+                    Sp::styled(format!(" {}", artist_str), Style::default().fg(ratatui::style::Color::DarkGray)),
+                    Sp::styled(format!(" {:>width$}", s.duration_string, width = dur_w.saturating_sub(1)), style),
+                ])));
+            }
+            f.render_widget(List::new(rows).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), right_inner);
         }
-        let _track_state = ListState::default().with_selected(Some(browser.track_selected));
-        f.render_widget(List::new(rows).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), right_inner);
     }
 }
 pub fn draw_library_browser(
