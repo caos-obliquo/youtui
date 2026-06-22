@@ -15,9 +15,7 @@ If things break, rollback and re-apply one-by-one.
 - **Mail**: `caos_obliquo@outlook.com`
 
 ## Full Reference Manual
-
 See `docs/` for the comprehensive reference:
-
 ```
 docs/
 ├── README.md                        — Entry point
@@ -31,8 +29,7 @@ docs/
 ├── 08-known-issues.md               — Bugs and workarounds
 └── 09-roadmap.md                    — Next features, crate extraction
 ```
-
-**5,452 lines, 20 files, ~45 pages** — covers all 5 crates, 49k LOC.
+**5,452 lines, 20 files, ~45 pages** — covers all 7 crates, 49k LOC.
 
 ## Build
 - Workspace root: `/home/caos/builds/youtui/`
@@ -41,25 +38,23 @@ docs/
 - Dependencies: yt-dlp, ffmpeg, alsa-lib (system packages via pacman)
 
 ## Tests
-
 ```bash
 cargo test --release -p youtui --bin youtui       # 120 pass, 4 ignore
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 82 pass (no auth needed)
 cargo test --release -p ytmapi-rs                  # 28 pass / 52 fail (needs auth)
-cargo test --release -p genius-rs                  # 11 pass
+cargo test --release -p genius-rs                  # 14 pass
 cargo test --release -p async-callback-manager     # 15 pass
 cargo test --release -p json-crawler               # 8 pass
+cargo test --release -p ytmapi-cli                 # 0 (stub, no tests yet)
 ```
 
 ## Warnings
-
-`cargo build --release` — 0 warnings across workspace (youtui + 4 lib crates).
+`cargo build --release` — 0 warnings across workspace (youtui + 6 lib crates).
 Eliminated 46 youtui warnings via `cargo fix` + manual `#[allow(dead_code)]` annotations.
 10 ytmapi-rs fixture-drift test failures fixed by regenerating expected output files.
 
 ## Dead Code Policy
-
 Future features leave skeleton structs/variants/methods in place, annotated with:
 ```rust
 // TODO: Wire <feature name> — <description>
@@ -69,24 +64,22 @@ This keeps planned extensions visible in code and grep-able by `TODO: Wire` patt
 Add new entries to `docs/09-roadmap.md` when annotating. Remove `#[allow]` when wiring.
 
 ## Key Files
-
 | File | Lines | Purpose |
-|---|---|---|---|
-| `app/server/messages.rs` | ~1280 | All backend tasks |
-| `app/ui/playlist.rs` | ~2440 | Queue, playback, scrobbling, visual mode |
-| `app/ui/playlist/effect_handlers_playlist.rs` | ~555 | Frontend effect handlers |
-| `app/ui/browser/library.rs` | ~914 | Library browser (4th tab) |
-| `app/ui/browser.rs` | ~690 | Browser routing, tab dispatch |
-| `config/keymap.rs` | ~1982 | All keybindings by context |
-| `libs/vi-text-editor/src/lib.rs` | ~2260 | Vi-mode text editor |
-| `libs/genius-rs/src/lib.rs` | ~100 | Genius API client + HTML scraped lyrics/annotations |
+|---|---|---|
+| `app/server/messages.rs` | ~1318 | All backend tasks |
+| `app/ui/playlist.rs` | ~2750 | Queue, playback, scrobbling, visual mode |
+| `app/ui/playlist/effect_handlers_playlist.rs` | ~965 | Frontend effect handlers |
+| `app/ui/browser/library.rs` | ~1080 | Library browser (4th tab) |
+| `app/ui/browser.rs` | ~790 | Browser routing, tab dispatch |
+| `config/keymap.rs` | ~1920 | All keybindings by context |
+| `libs/vi-text-editor/src/lib.rs` | ~2360 | Vi-mode text editor |
+| `libs/genius-rs/src/lib.rs` | ~120 | Genius API client + HTML scraped lyrics/annotations |
 | `app/ui/playlist/playlist_rename_popup.rs` | ~85 | Rename popup (char buffer) |
 | `app/ui/playlist/playlist_edit_popup.rs` | ~165 | Edit popup (4 fields, tab cycle) |
 | `app/ui/playlist/playlist_details_popup.rs` | ~145 | Details popup (loading→display) |
-| `app/ui/playlist/lyrics_popup.rs` | ~690 | Lyrics display + visual mode |
+| `app/ui/playlist/lyrics_popup.rs` | ~945 | Lyrics display + visual mode |
 
 ## ViTextEditor Summary
-
 65 tests, all pass. Full feature set:
 - Motions: `h/l/j/k/w/b/e/0/$/gg/G/W/B/E`, `f/F/t/T`/`;/,`, `%`
 - Operators: `d`/`c`/`y`/`r`/`~`/`J`/`x`, with text objects `iw/aw/i(/a(/i"/a"/i'/a'/`` i`/a` ``
@@ -98,12 +91,10 @@ Add new entries to `docs/09-roadmap.md` when annotating. Remove `#[allow]` when 
 - Deps: crossterm only (intentionally suckless)
 
 ## Key Architecture
-
 3-layer async callback:
 ```
 Frontend (UI) → TaskManager → Backend (Server)
 ```
-
 See `docs/01-architecture.md` and `docs/03-data-flow.md` for full detail.
 See `docs/06-subsystems/lyrics.md` for lyrics pipeline.
 See `docs/06-subsystems/validation.md` for metadata validation.
@@ -133,7 +124,6 @@ All CRUD ops exist. Gaps: batch reorder (swap only), single-song metadata, song 
 | Add playlist→playlist | `AddPlaylistToPlaylist` | ✅ |
 
 ### Frontend (youtui) — Wiring status
-
 | Layer | File | Status |
 |---|---|---|
 | Backend messages | `app/server/messages.rs` | All 7 messages wired: DeletePlaylist, EditPlaylistDetails, RatePlaylistMessage, GetPlaylistDetailsMessage, ReorderPlaylistItem, RenamePlaylist, RemovePlaylistItems |
@@ -148,10 +138,9 @@ All CRUD ops exist. Gaps: batch reorder (swap only), single-song metadata, song 
 | Details popup | `app/ui/playlist/playlist_details_popup.rs` | Loading→details display, async fetch |
 | Editor popup | `app/ui/playlist/playlist_editor_popup.rs` | `:rename`, `:privacy`, `:rate` commands |
 | Delete confirm | `app/ui.rs` (inline) | y/Enter confirm, n/Esc/q cancel |
-| Library auto-refresh | `app.rs` | `playlists_fetched = false` after mutations |
+| Library auto-refresh | `app.rs` | `playlists_fetched = false` after all playlist mutations |
 
 ### Architecture Decisions — Playlist Popup System
-
 | Decision | Why | Intent |
 |---|---|---|
 | 3 separate popup files | Each has distinct input + rendering. No bloat in playlist.rs. | Single-responsibility |
@@ -166,7 +155,6 @@ All CRUD ops exist. Gaps: batch reorder (swap only), single-song metadata, song 
 | Details loading state | "Loading..." instantly, content on async response. No flicker. | Immediate feedback |
 
 ### Visual Mode Feature — Shift+HJKL + arrows in VL/VC + lyrics
-
 #### vi-text-editor (`libs/vi-text-editor/src/lib.rs`)
 - **handle_visual_char**: H/J/K/L merged into existing h/j/k/l arms (shift variants = same behavior)
 - **handle_visual_line**: Full VisualChar motion parity — h/l/H/L/Left/Right/0/$/Home/End + w/W/b/B/e/E + J/K as j/k aliases
@@ -176,25 +164,6 @@ All CRUD ops exist. Gaps: batch reorder (swap only), single-song metadata, song 
 - **Normal mode**: H=left, L=right, Left/Right arrows, 0/$ for line start/end
 - **Visual mode**: H=left, L=right, J=j/Down, K=k/Up, Left/Right arrows, 0/$, w/b/e word motions
 - J/K move visual_end selection; H/L move cursor_col within current line
-
-### Completed — All ncspot-inspired playlist features
-| Feature | Status | Keybinding |
-|---------|--------|------------|
-| View all playlists | ✅ | Library > Playlists |
-| View playlist tracks | ✅ | Right arrow |
-| Delete playlist | ✅ | `o.D` |
-| Rename playlist | ✅ | `o.R` |
-| Edit description/privacy | ✅ | `o.E` |
-| Rate playlist | ✅ | `o.t` (always Liked, toggle coming) |
-| Get playlist details | ✅ | `o.i` |
-| Remove tracks from playlist | ✅ | `o.x` |
-| Reorder tracks | ✅ | `o.J`/`o.K` |
-| Save to existing playlist | ✅ | `o.E` (update popup) |
-| Save to new playlist | ✅ | `o.s` (save popup) |
-| Playlist editor popup | ✅ | `o.e` |
-| Artist subscribe/unsubscribe | ✅ | `o.S`/`o.U` |
-| Back navigation | ✅ | (backspace/browser back) |
-| Library auto-refresh | ✅ | After all playlist mutations |
 
 ### Known Bugs (discovered 2026-06-22)
 - **Albums search not working**: F1 search opens but typing doesn't populate results. Album list shows "No albums found". Root cause: `fetch_albums()` task is discarded, search text handler doesn't properly propagate keystrokes to `SearchBlock`.
@@ -221,18 +190,13 @@ All 4 branches independent — each merges to `main` on completion.
 - Section spacing: blank lines BETWEEN sections (not after headers)
 - 0 non-deprecation warnings
 - 120 youtui tests, 82 ytmapi-rs lib tests, 14 genius-rs tests all pass
+- Album art resolution: 1920x1200 (matches native display)
+- Album art centering: `Resize::Fit(None)` uses correct chunk rect
+- Batch-merge AppCallback wired (context menu pending)
 
 #### Remaining for tomorrow
-- Albums search fix (F1 typing doesn't work)
+- Albums search fix (F1 typing doesn't populate results — run `RUST_LOG=info youtui` to debug)
 - Annotations without Bearer token (need individual page scraping fallback)
 - Playlist search tab (new browser variant — largest remaining feature)
-- Wire batch-merge frontend dispatch (AppCallback + context menu)
-6 items needing feature-level work. Branches created on `main`:
-- `feat/playlist-search` — new browser tab for YTM playlist search
-- `feat/batch-streaming` — `get_playlist_songs()` to stream all playlist tracks
-- `feat/queue-sort` — sort popup UI for queue columns
-- `feat/batch-merge` — `append_raw_playlist_items` backend message
-
-Known issues:
-- `o.E` edit playlist 400 — YTM API rejects `EditPlaylistQuery`. Fixed duplicate `privacy_status` action. Verify fix.
-- Genius annotations API — new `fetch_annotations_with_token()` method. Requires `GENIUS_TOKEN` env var.
+- Wire batch-merge context menu entry
+- Verify `o.E` 400 fix (was duplicate `privacy_status` action)

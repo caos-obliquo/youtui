@@ -1,0 +1,79 @@
+.TH GENIUS-RS 1 "2026-06-22" "0.1.0" "Genius CLI"
+.SH NAME
+genius-rs \- Fetch lyrics and annotations from Genius.com
+.SH SYNOPSIS
+.B genius-rs
+[\fI\,OPTIONS\/\fR] \fICOMMAND\fR \fI\,ARTIST\/\fR \fI\,TITLE\/\fR
+.SH DESCRIPTION
+Genius.com API client with HTML scraping for lyrics and annotations.
+Tries a computed slug URL first (no API call), then falls back to the
+Genius search API. Annotations use a three-tier fallback: Bearer token API,
+page-embedded JSON, then empty result.
+.SH COMMANDS
+.TP
+.B fetch, lyrics
+Fetch lyrics for a song. Prints lyrics with section headers like
+[Verse 1], [Chorus]. Uses slug URL first, then API search.
+.TP
+.B search
+Search Genius for a song. Returns song ID, URL path, year, album.
+.TP
+.B all, full
+Fetch lyrics and all annotations. Annotations require GENIUS_TOKEN env var
+for reliable results.
+.TP
+.B slug
+Compute the Genius song URL from artist and title without making any
+API call. Useful for testing slug generation.
+.SH OPTIONS
+.TP
+.B \-\-json
+Output in JSON format for machine parsing.
+.TP
+.B \-\-fixture \fI\,DIR\/\fR
+Save parsed lyrics and annotations to files in the specified directory.
+Useful for creating test fixtures.
+.TP
+.B \-\-verbose
+Enable debug logging. Shows tracing output for HTTP requests,
+HTML parsing, and annotation extraction.
+.TP
+.B \-\-raw-html
+Print the raw HTML of the Genius song page instead of parsing it.
+Useful for debugging scraping issues.
+.SH ENVIRONMENT
+.TP
+.B GENIUS_TOKEN
+Genius API Bearer token. Required for reliable annotation fetching.
+Get one at https://genius.com/api-clients
+.SH EXAMPLES
+.TP
+Fetch lyrics
+genius-rs fetch "FIDLAR" "Wasted"
+.TP
+Fetch lyrics with annotations
+genius-rs all "FIDLAR" "Wasted"
+.TP
+JSON output for scripting
+genius-rs fetch "Beatles" "Here Comes The Sun" \-\-json
+.TP
+Save fixtures for testing
+genius-rs all "Queen" "Bohemian Rhapsody" \-\-fixture ./test_fixtures/
+.TP
+Debug scraping with verbose logging
+genius-rs fetch "100 gecs" "money machine" \-\-verbose
+.TP
+Dump raw HTML for inspection
+genius-rs fetch "FIDLAR" "Wasted" \-\-raw-html | head -100
+.TP
+Compute URL without API call
+genius-rs slug "FIDLAR" "Wasted"
+.SH EXIT STATUS
+.IP 0
+Success.
+.IP 1
+Error (no results, network failure, parse error).
+.SH AUTHORS
+caos-obliquo <caos_obliquo@outlook.com>
+.SH SEE ALSO
+.BR ytmapi-cli (1)
