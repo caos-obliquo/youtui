@@ -50,8 +50,6 @@ pub struct GetSearchSuggestions(pub String);
 pub struct SearchArtists(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchSongs(pub String);
-// TODO: Wire playlist search tab in browser
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct SearchPlaylists(pub String);
 #[derive(Debug, PartialEq)]
@@ -60,6 +58,7 @@ pub struct SearchAlbums(pub String);
 pub struct GetArtistSongs(pub ArtistChannelID<'static>);
 #[derive(Debug, PartialEq)]
 // TODO: Wire batch playlist song fetching for editor/export
+#[allow(dead_code)]
 #[allow(dead_code)]
 pub struct GetPlaylistSongs {
     pub playlist_id: PlaylistID<'static>,
@@ -98,13 +97,53 @@ impl BackendTask<ArcServer> for RateSong {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct SubscribeToArtist(pub ArtistChannelID<'static>);
+
+impl BackendTask<ArcServer> for SubscribeToArtist {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::SubscribeArtistQuery;
+            let api_guard = backend.api.get_api().await?;
+            let query = SubscribeArtistQuery::new(self.0);
+            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
+            tracing::info!("Subscribed to artist");
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct UnsubscribeFromArtists(pub Vec<ArtistChannelID<'static>>);
+
+impl BackendTask<ArcServer> for UnsubscribeFromArtists {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::UnsubscribeArtistsQuery;
+            let api_guard = backend.api.get_api().await?;
+            let query = UnsubscribeArtistsQuery::new(self.0.into_iter().map(|id| id));
+            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct RenamePlaylist {
     pub playlist_id: PlaylistID<'static>,
     pub new_title: String,
 }
 
-// TODO: Wire remove songs UI in playlist context menu
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct RemovePlaylistItems {
     pub playlist_id: PlaylistID<'static>,
@@ -128,8 +167,6 @@ pub struct RatePlaylistMessage(pub PlaylistID<'static>, pub LikeStatus);
 #[derive(Debug, PartialEq)]
 pub struct GetPlaylistDetailsMessage(pub PlaylistID<'static>);
 
-// TODO: Wire drag-to-reorder in playlist visual mode
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct ReorderPlaylistItem {
     pub playlist_id: PlaylistID<'static>,

@@ -21,8 +21,6 @@ pub struct AlbumSearchBrowser {
     pub track_list: BrowserSongsList,
     pub track_selected: usize,
     pub show_tracks: bool,
-    // TODO: Wire albums tab in browser — caching flag
-    #[allow(dead_code)]
     pub fetched: bool,
     pub album_year: String,
     pub album_artist: String,
@@ -52,7 +50,6 @@ impl AlbumSearchBrowser {
         }
     }
 
-    // TODO: Wire albums tab in browser — initial load + refresh
     #[allow(dead_code)]
     pub fn fetch_albums(&mut self) -> (ComponentEffect<Self>, Option<AppCallback>) {
         self.fetched = true;
@@ -135,7 +132,6 @@ impl AlbumSearchBrowser {
         self.search.has_search_suggestions()
     }
 
-    // TODO: Wire album search text input — suggestions drop-down
     #[allow(dead_code)]
     pub fn get_search_suggestions(&self) -> &[SearchSuggestion] {
         self.search.get_search_suggestions()
@@ -150,7 +146,6 @@ impl AlbumSearchBrowser {
         ).map_frontend(|this: &mut Self| &mut *this);
         (task, None)
     }
-    // TODO: Wire album browser routing state reset
     #[allow(dead_code)]
     pub fn revert_routing(&mut self) {}
     pub fn text_editor_mode(&self) -> Option<String> { None }
@@ -366,13 +361,11 @@ pub struct AlbumFetchResult {
     pub tracks: Vec<AlbumSong>,
 }
 
-// TODO: Wire albums tab in browser — fetch all library albums
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub struct HandleLibraryAlbumsOk;
-// TODO: Wire albums tab in browser — fetch error handling
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub struct HandleLibraryAlbumsError;
 #[derive(Debug, PartialEq)]
 pub struct HandleFetchAlbumTracksOk;

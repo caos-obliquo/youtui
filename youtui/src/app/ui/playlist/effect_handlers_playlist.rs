@@ -47,25 +47,21 @@ pub struct HandleRatePlaylistError;
 pub struct HandleGetPlaylistDetailsOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleGetPlaylistDetailsError;
-// TODO: Wire drag-to-reorder in playlist visual mode
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub struct HandleReorderPlaylistItemOk;
-// TODO: Wire drag-to-reorder — error handling
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub struct HandleReorderPlaylistItemError;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistError;
-// TODO: Wire remove songs UI in playlist context menu
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub struct HandleRemovePlaylistItemsOk;
-// TODO: Wire remove songs — error handling
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub struct HandleRemovePlaylistItemsError;
 
 #[derive(Debug, PartialEq)]
@@ -914,5 +910,47 @@ impl_youtui_task_handler!(
         LoadPlaylistEffect::TracksAppended(songs)
     }
 );
+
+#[derive(Debug, PartialEq)]
+pub struct HandleSubscribeToArtistOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleSubscribeToArtistError;
+
+impl_youtui_task_handler!(HandleSubscribeToArtistOk, (), Playlist, |_, _: ()| {
+    |_this: &mut Playlist| {
+        info!("Subscribed to artist");
+        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+    }
+});
+
+impl_youtui_task_handler!(HandleSubscribeToArtistError, anyhow::Error, Playlist, |_, err: anyhow::Error| {
+    let msg = err.to_string();
+    move |this: &mut Playlist| {
+        error!("Failed to subscribe to artist: {}", msg);
+        this.last_error = Some(format!("Subscribe failed: {}", msg));
+        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+    }
+});
+
+#[derive(Debug, PartialEq)]
+pub struct HandleUnsubscribeFromArtistsOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleUnsubscribeFromArtistsError;
+
+impl_youtui_task_handler!(HandleUnsubscribeFromArtistsOk, (), Playlist, |_, _: ()| {
+    |_this: &mut Playlist| {
+        info!("Unsubscribed from artist");
+        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+    }
+});
+
+impl_youtui_task_handler!(HandleUnsubscribeFromArtistsError, anyhow::Error, Playlist, |_, err: anyhow::Error| {
+    let msg = err.to_string();
+    move |this: &mut Playlist| {
+        error!("Failed to unsubscribe from artist: {}", msg);
+        this.last_error = Some(format!("Unsubscribe failed: {}", msg));
+        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+    }
+});
 
 
