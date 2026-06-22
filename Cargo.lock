@@ -9093,6 +9093,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ytmapi-cli"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tokio",
+ "tracing",
+ "ytmapi-rs",
+]
+
+[[package]]
 name = "ytmapi-rs"
 version = "0.3.2"
 dependencies = [
