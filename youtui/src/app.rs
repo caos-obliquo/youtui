@@ -15,10 +15,18 @@ use media_controls::MediaController;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui_image::picker::Picker;
-use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, CreatePlaylistWithVideos};
+use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, CreatePlaylistWithVideos, RenamePlaylist, RemovePlaylistItems, DeletePlaylist, EditPlaylistDetails, RatePlaylistMessage, GetPlaylistDetailsMessage};
+use crate::app::ui::playlist::effect_handlers_playlist::{
+    HandleRenamePlaylistOk, HandleRenamePlaylistError,
+    HandleRemovePlaylistItemsOk, HandleRemovePlaylistItemsError,
+    HandleDeletePlaylistOk, HandleDeletePlaylistError,
+    HandleEditPlaylistDetailsOk, HandleEditPlaylistDetailsError,
+    HandleRatePlaylistOk, HandleRatePlaylistError,
+    HandleGetPlaylistDetailsOk, HandleGetPlaylistDetailsError,
+};
 use std::borrow::Cow;
 use std::time::Duration;
-use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID};
+use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID, LikeStatus};
 
 #[derive(Debug)]
 pub enum NavTarget {
@@ -124,6 +132,7 @@ pub enum AppCallback {
     CreatePlaylistFromPopup {
         title: String,
         description: Option<String>,
+        privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
         video_ids: Vec<VideoID<'static>>,
     },
     Navigate(NavTarget),
@@ -143,6 +152,23 @@ pub enum AppCallback {
     },
     #[allow(dead_code)]
     Back,
+    ShowDeleteConfirm(PlaylistID<'static>, String),
+    OpenRenamePopup(PlaylistID<'static>, String),
+    OpenEditPopup(PlaylistID<'static>, String),
+    OpenDetailsPopup(PlaylistID<'static>, String),
+    DeletePlaylistFromLibrary(PlaylistID<'static>),
+    RenamePlaylistFromLibrary {
+        playlist_id: PlaylistID<'static>,
+        new_title: String,
+    },
+    EditPlaylistDetailsFromLibrary {
+        playlist_id: PlaylistID<'static>,
+        title: Option<String>,
+        description: Option<String>,
+        privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
+    },
+    RatePlaylistFromLibrary(PlaylistID<'static>, LikeStatus),
+    GetPlaylistDetailsFromLibrary(PlaylistID<'static>),
 }
 
 impl Youtui {
@@ -465,12 +491,84 @@ impl Youtui {
                 .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
             }
+            AppCallback::ShowDeleteConfirm(playlist_id, title) => {
+                self.window_state.delete_confirm = Some((playlist_id, title));
+            }
+            AppCallback::OpenRenamePopup(playlist_id, title) => {
+                self.window_state.open_playlist_rename_popup(playlist_id, title);
+            }
+            AppCallback::OpenEditPopup(playlist_id, title) => {
+                self.window_state.open_playlist_edit_popup(playlist_id, title);
+            }
+            AppCallback::OpenDetailsPopup(playlist_id, title) => {
+                let effect = self.window_state.open_playlist_details_popup(playlist_id, title);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::DeletePlaylistFromLibrary(playlist_id) => {
+                self.window_state.close_popup();
+                self.window_state.browser.library_browser.playlists_fetched = false;
+                let effect = AsyncTask::new_future_try(
+                    DeletePlaylist(playlist_id),
+                    HandleDeletePlaylistOk,
+                    HandleDeletePlaylistError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::RenamePlaylistFromLibrary { playlist_id, new_title } => {
+                self.window_state.close_popup();
+                self.window_state.browser.library_browser.playlists_fetched = false;
+                let effect = AsyncTask::new_future_try(
+                    RenamePlaylist { playlist_id, new_title },
+                    HandleRenamePlaylistOk,
+                    HandleRenamePlaylistError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::EditPlaylistDetailsFromLibrary { playlist_id, title, description, privacy } => {
+                self.window_state.close_popup();
+                self.window_state.browser.library_browser.playlists_fetched = false;
+                let effect = AsyncTask::new_future_try(
+                    EditPlaylistDetails { playlist_id, title, description, privacy },
+                    HandleEditPlaylistDetailsOk,
+                    HandleEditPlaylistDetailsError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::RatePlaylistFromLibrary(playlist_id, rating) => {
+                self.window_state.close_popup();
+                self.window_state.browser.library_browser.playlists_fetched = false;
+                let effect = AsyncTask::new_future_try(
+                    RatePlaylistMessage(playlist_id, rating),
+                    HandleRatePlaylistOk,
+                    HandleRatePlaylistError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::GetPlaylistDetailsFromLibrary(playlist_id) => {
+                let effect = AsyncTask::new_future_try(
+                    GetPlaylistDetailsMessage(playlist_id),
+                    HandleGetPlaylistDetailsOk,
+                    HandleGetPlaylistDetailsError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
             AppCallback::ClosePopup => {
                 self.window_state.close_popup();
             }
             AppCallback::CreatePlaylistFromPopup {
                 title,
                 description,
+                privacy,
                 video_ids,
             } => {
                 self.window_state.close_popup();
@@ -481,7 +579,7 @@ impl Youtui {
                     let chunks_needed = chunks.len();
                     info!("Splitting {} songs into {} playlists", total, chunks_needed);
                     // Store remaining chunks (skip first, it's about to be spawned)
-                    self.window_state.playlist.pending_playlist_chunks = Some((chunks[1..].to_vec(), title.clone(), description.clone()));
+                    self.window_state.playlist.pending_playlist_chunks = Some((chunks[1..].to_vec(), title.clone(), description.clone(), privacy));
                     // Spawn first chunk
                     let first_title = format!("{} ({}/{})", title, 1, chunks_needed);
                     let effect = AsyncTask::new_future_try(
@@ -489,6 +587,7 @@ impl Youtui {
                             title: first_title,
                             description: description.clone(),
                             video_ids: chunks[0].clone(),
+                            privacy: None,
                         },
                         HandleCreatePlaylistOk,
                         HandleCreatePlaylistError,
@@ -500,6 +599,7 @@ impl Youtui {
                     let effect = self.window_state.handle_create_playlist_from_popup(
                         title,
                         description,
+                        privacy,
                         video_ids,
                     );
                     self.task_manager.spawn_task(&self.server, effect);

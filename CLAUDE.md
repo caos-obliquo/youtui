@@ -61,6 +61,10 @@ cargo test --release -p json-crawler               # 8 pass
 | `app/ui/browser.rs` | ~690 | Browser routing, tab dispatch |
 | `config/keymap.rs` | ~1982 | All keybindings by context |
 | `libs/vi-text-editor/src/lib.rs` | ~2260 | Vi-mode text editor |
+| `app/ui/playlist/playlist_rename_popup.rs` | ~85 | Rename popup (char buffer) |
+| `app/ui/playlist/playlist_edit_popup.rs` | ~165 | Edit popup (4 fields, tab cycle) |
+| `app/ui/playlist/playlist_details_popup.rs` | ~145 | Details popup (loading→display) |
+| `app/ui/playlist/lyrics_popup.rs` | ~690 | Lyrics display + visual mode |
 
 ## ViTextEditor Summary
 
@@ -85,3 +89,78 @@ See `docs/01-architecture.md` and `docs/03-data-flow.md` for full detail.
 See `docs/06-subsystems/lyrics.md` for lyrics pipeline.
 See `docs/06-subsystems/validation.md` for metadata validation.
 See `docs/06-subsystems/audio.md` for audio download + playback.
+
+## Playlist Features — Implementation Status
+
+### Backend (ytmapi-rs) — 90% complete
+All CRUD ops exist. Gaps: batch reorder (swap only), single-song metadata, song feedback tokens, hardcoded locale.
+
+| Feature | ytmapi-rs Query | Status |
+|---|---|---|
+| Create playlist | `CreatePlaylistQuery` | ✅ |
+| Delete playlist | `DeletePlaylistQuery` | ✅ |
+| Rename playlist | `EditPlaylistQuery::new_title` | ✅ |
+| Edit description | `EditPlaylistQuery::new_description` | ✅ |
+| Edit privacy | `EditPlaylistQuery::new_privacy_status` | ✅ |
+| Add items | `AddPlaylistItemsQuery` | ✅ |
+| Remove items | `RemovePlaylistItemsQuery` | ✅ |
+| Reorder (swap) | `EditPlaylistQuery::swap_videos_order` | ✅ |
+| Rate playlist | `RatePlaylistQuery` | ✅ |
+| Get details | `GetPlaylistDetailsQuery` | ✅ |
+| Get tracks | `GetPlaylistTracksQuery` | ✅ |
+| Library playlists | `GetLibraryPlaylistsQuery` | ✅ |
+| Change add order | `EditPlaylistQuery::change_add_order` | ✅ |
+| Duplicate handling | `DuplicateHandlingMode` | ✅ |
+| Add playlist→playlist | `AddPlaylistToPlaylist` | ✅ |
+
+### Frontend (youtui) — Wiring status
+
+| Layer | File | Status |
+|---|---|---|
+| Backend messages | `app/server/messages.rs` | All 7 messages wired: DeletePlaylist, EditPlaylistDetails, RatePlaylistMessage, GetPlaylistDetailsMessage, ReorderPlaylistItem, RenamePlaylist, RemovePlaylistItems |
+| API bridge | `app/server/api.rs` | `create_playlist_with_videos` accepts privacy param |
+| Effect handlers | `app/ui/playlist/effect_handlers_playlist.rs` | 14 handler pairs (Ok/Err) for all operations |
+| AppCallbacks | `app.rs` | 9 callbacks: DeletePlaylistFromLibrary, RenamePlaylistFromLibrary, EditPlaylistDetailsFromLibrary, RatePlaylistFromLibrary, GetPlaylistDetailsFromLibrary, ShowDeleteConfirm, OpenRenamePopup, OpenEditPopup, OpenDetailsPopup |
+| Library browser | `app/ui/browser/library.rs` | Context menu: D delete (with confirm), R rename popup, E edit popup, t rate, i details popup |
+| Keybindings | `config/keymap.rs` | `o` context menu: D delete, R rename, E edit, t rate, i details |
+| Save popup | `app/ui/playlist/playlist_save_popup.rs` | Privacy picker field (Private→Public→Unlisted) |
+| Rename popup | `app/ui/playlist/playlist_rename_popup.rs` | Text input + Enter confirm + Esc cancel |
+| Edit popup | `app/ui/playlist/playlist_edit_popup.rs` | 4 fields (Title/Desc/Privacy/Save), tab/focus cycle |
+| Details popup | `app/ui/playlist/playlist_details_popup.rs` | Loading→details display, async fetch |
+| Editor popup | `app/ui/playlist/playlist_editor_popup.rs` | `:rename`, `:privacy`, `:rate` commands |
+| Delete confirm | `app/ui.rs` (inline) | y/Enter confirm, n/Esc/q cancel |
+| Library auto-refresh | `app.rs` | `playlists_fetched = false` after mutations |
+
+### Architecture Decisions — Playlist Popup System
+
+| Decision | Why | Intent |
+|---|---|---|
+| 3 separate popup files | Each has distinct input + rendering. No bloat in playlist.rs. | Single-responsibility |
+| WindowContext per popup | Youtui dispatches events by context. New variant = correct routing. | Event routing correctness |
+| Delete confirm as inline Option | Same as quit_confirm. y/N response, 2 match arms. | Minimal code for simple dialog |
+| Option\<GetPlaylistDetails\> | #[non_exhaustive] — can't construct outside ytmapi-rs. | Works around crate boundary |
+| Library refresh = playlists_fetched = false | On next category focus, auto-refetch. Zero new infra. Matches ncspot. | Auto-refresh without new fields |
+| Sequential API for edit | No builder in ytmapi-rs. Each field = separate query. | Works with existing API surface |
+| Rate always sends Liked | No like_status in response to parse. Future: parse from GetPlaylistDetails. | Forward-compatible stub |
+| Rename popup char buffer | One field, Enter/Esc. ViTextEditor overhead not worth it. | Suckless |
+| Edit popup FocusedField enum | Tab/Enter cycles Title→Desc→Privacy→Save. No ambiguous keys. | Predictable UX |
+| Details loading state | "Loading..." instantly, content on async response. No flicker. | Immediate feedback |
+
+### Visual Mode Feature — Shift+HJKL + arrows in VL/VC + lyrics
+
+#### vi-text-editor (`libs/vi-text-editor/src/lib.rs`)
+- **handle_visual_char**: H/J/K/L merged into existing h/j/k/l arms (shift variants = same behavior)
+- **handle_visual_line**: Full VisualChar motion parity — h/l/H/L/Left/Right/0/$/Home/End + w/W/b/B/e/E + J/K as j/k aliases
+- No new types, no new deps. Existing test suite covers h/j/k which applies to H/J/K via pattern merge.
+
+#### lyrics_popup (`youtui/src/app/ui/playlist/lyrics_popup.rs`)
+- **Normal mode**: H=left, L=right, Left/Right arrows, 0/$ for line start/end
+- **Visual mode**: H=left, L=right, J=j/Down, K=k/Up, Left/Right arrows, 0/$, w/b/e word motions
+- J/K move visual_end selection; H/L move cursor_col within current line
+
+### TODO / Deferred
+- Phase 3: Rate toggle — parse like_status from GetPlaylistDetails response (needs ytmapi-rs field)
+- Phase 4: Reorder UI wiring — `ReorderPlaylistItem` message exists, needs `SetVideoID` parsing in ytmapi-rs
+- Overwrite-vs-append toggle for save-to-existing playlist
+- Playlist radio via GetWatchPlaylistQuery
+- Server-side sort persistence (local sort only)

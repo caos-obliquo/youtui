@@ -7,6 +7,7 @@ use crate::app::structures::{AlbumArtState, DownloadStatus};
 use crate::app::ui::playlist::Playlist;
 use crate::app::ui::playlist::lyrics_popup::LyricsPopup;
 use crate::app::ui::playlist::playlist_update_popup::{PlaylistUpdatePopup, PlaylistUpdatePopupState};
+use crate::app::ui::playlist::playlist_details_popup::PlaylistDetailsPopup;
 use async_callback_manager::{AsyncTask, FrontendEffect};
 use std::rc::Rc;
 use tracing::{error, info};
@@ -30,6 +31,79 @@ pub struct HandleAddSongsError;
 pub struct HandleGetAllLibraryPlaylistsOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleGetAllLibraryPlaylistsError;
+#[derive(Debug, PartialEq)]
+pub struct HandleDeletePlaylistOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleDeletePlaylistError;
+#[derive(Debug, PartialEq)]
+pub struct HandleEditPlaylistDetailsOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleEditPlaylistDetailsError;
+#[derive(Debug, PartialEq)]
+pub struct HandleRatePlaylistOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleRatePlaylistError;
+#[derive(Debug, PartialEq)]
+pub struct HandleGetPlaylistDetailsOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleGetPlaylistDetailsError;
+#[derive(Debug, PartialEq)]
+pub struct HandleReorderPlaylistItemOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleReorderPlaylistItemError;
+#[derive(Debug, PartialEq)]
+pub struct HandleRenamePlaylistOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleRenamePlaylistError;
+#[derive(Debug, PartialEq)]
+pub struct HandleRemovePlaylistItemsOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleRemovePlaylistItemsError;
+
+#[derive(Debug, PartialEq)]
+pub struct HandleFetchPlaylistDetailsOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleFetchPlaylistDetailsError;
+
+#[derive(Debug, PartialEq)]
+pub enum PlaylistDetailsEffect {
+    DetailsFetched(ytmapi_rs::parse::GetPlaylistDetails),
+    FetchError(String),
+}
+
+impl FrontendEffect<PlaylistDetailsPopup, ArcServer, TaskMetadata> for PlaylistDetailsEffect {
+    fn apply(self, target: &mut PlaylistDetailsPopup) -> impl Into<ComponentEffect<PlaylistDetailsPopup>> {
+        match self {
+            PlaylistDetailsEffect::DetailsFetched(details) => {
+                target.loaded = true;
+                target.details = Some(details);
+            }
+            PlaylistDetailsEffect::FetchError(msg) => {
+                target.loaded = true;
+                target.error = Some(msg);
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+impl_youtui_task_handler!(
+    HandleFetchPlaylistDetailsOk,
+    ytmapi_rs::parse::GetPlaylistDetails,
+    PlaylistDetailsPopup,
+    |_, details: ytmapi_rs::parse::GetPlaylistDetails| {
+        PlaylistDetailsEffect::DetailsFetched(details)
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleFetchPlaylistDetailsError,
+    anyhow::Error,
+    PlaylistDetailsPopup,
+    |_, err: anyhow::Error| {
+        PlaylistDetailsEffect::FetchError(err.to_string())
+    }
+);
 
 #[derive(Debug, PartialEq)]
 pub enum PlaylistEffect {
@@ -103,19 +177,202 @@ impl_youtui_task_handler!(
     }
 );
 
+impl_youtui_task_handler!(
+    HandleDeletePlaylistOk,
+    (),
+    Playlist,
+    |_, _: ()| {
+        |_this: &mut Playlist| {
+            info!("Playlist deleted successfully");
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleDeletePlaylistError,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("Failed to delete playlist: {}", msg);
+            this.last_error = Some(format!("Delete failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleEditPlaylistDetailsOk,
+    (),
+    Playlist,
+    |_, _: ()| {
+        |_this: &mut Playlist| {
+            info!("Playlist details updated");
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleEditPlaylistDetailsError,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("Failed to update playlist details: {}", msg);
+            this.last_error = Some(format!("Edit failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRatePlaylistOk,
+    (),
+    Playlist,
+    |_, _: ()| {
+        |_this: &mut Playlist| {
+            info!("Playlist rated successfully");
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRatePlaylistError,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("Failed to rate playlist: {}", msg);
+            this.last_error = Some(format!("Rate failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleGetPlaylistDetailsOk,
+    ytmapi_rs::parse::GetPlaylistDetails,
+    Playlist,
+    |_, details: ytmapi_rs::parse::GetPlaylistDetails| {
+        move |this: &mut Playlist| {
+            info!("Got playlist details: {}", details.title);
+            this.last_error = Some(format!("Playlist: {} — {} tracks", details.title, details.track_count_text));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleGetPlaylistDetailsError,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("Failed to get playlist details: {}", msg);
+            this.last_error = Some(format!("Details failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleReorderPlaylistItemOk,
+    (),
+    Playlist,
+    |_, _: ()| {
+        |_this: &mut Playlist| {
+            info!("Playlist item reordered");
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleReorderPlaylistItemError,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("Failed to reorder playlist item: {}", msg);
+            this.last_error = Some(format!("Reorder failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRenamePlaylistOk,
+    (),
+    Playlist,
+    |_, _: ()| {
+        |_this: &mut Playlist| {
+            info!("Playlist renamed successfully");
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRenamePlaylistError,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("Failed to rename playlist: {}", msg);
+            this.last_error = Some(format!("Rename failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRemovePlaylistItemsOk,
+    (),
+    Playlist,
+    |_, _: ()| {
+        |_this: &mut Playlist| {
+            info!("Playlist items removed successfully");
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRemovePlaylistItemsError,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("Failed to remove playlist items: {}", msg);
+            this.last_error = Some(format!("Remove failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
 impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for PlaylistEffect {
     fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
         match self {
             PlaylistEffect::CreatePlaylistSuccess(playlist_id) => {
                 info!("Playlist created: {:?}", playlist_id);
                 // Check if there are more chunks to create (sequential chain)
-                if let Some((chunks, ref title, ref description)) = target.pending_playlist_chunks.take() {
+                if let Some((chunks, ref title, ref description, ref privacy)) = target.pending_playlist_chunks.take() {
                     if let Some((i, chunk)) = chunks.iter().enumerate().next() {
                         let total = chunks.len() + 1;
                         let chunk_title = format!("{} ({}/{})", title, i + 2, total);
                         let remaining: Vec<Vec<_>> = chunks[i + 1..].to_vec();
                         target.pending_playlist_chunks = if remaining.is_empty() { None } else {
-                            Some((remaining, title.clone(), description.clone()))
+                            Some((remaining, title.clone(), description.clone(), privacy.clone()))
                         };
                         use crate::app::server::CreatePlaylistWithVideos;
                         use crate::app::ui::playlist::effect_handlers_playlist::{
@@ -126,6 +383,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for PlaylistEffect {
                                 title: chunk_title,
                                 description: description.clone(),
                                 video_ids: chunk.clone(),
+                                privacy: privacy.clone(),
                             },
                             HandleCreatePlaylistOk,
                             HandleCreatePlaylistError,

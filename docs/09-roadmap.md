@@ -20,6 +20,17 @@
 | 9 | Recommendations (`o.r` context menu) | med | New `GetRelatedTracks` backend task |
 | 10 | Library refresh fixes | small | Already exists as `r` key, review behavior |
 
+## Visual Mode Enhancements
+
+| # | Feature | Est | Status |
+|---|---------|-----|--------|
+| 11 | H/J/K/L + arrows in VisualChar mode | tiny | Done |
+| 12 | Full VisualChar motion parity in VisualLine mode | small | Done |
+| 13 | H/L/arrows + 0/$ in lyrics normal mode | tiny | Done |
+| 14 | H/J/K/L/arrows/0/w/b/e in lyrics visual mode | small | Done |
+| 15 | Phase 3: Rate toggle (parse like_status) | med | Pending |
+| 16 | Phase 4: Reorder UI wiring | med | Blocked (setVideoId) |
+
 ## Medium Term — Crate Extraction
 
 | # | Crate | Files | Reason |

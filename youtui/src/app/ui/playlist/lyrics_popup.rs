@@ -211,11 +211,15 @@ impl LyricsPopup {
     }
 
     pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
-        // Count prefix: accumulate digits
+        // Count prefix: accumulate digits (0 is line-start if no prefix active)
         if let KeyCode::Char(c) = event.code {
             if let Some(d) = c.to_digit(10) {
-                self.count_prefix = self.count_prefix * 10 + d as usize;
-                return (AsyncTask::new_no_op(), None);
+                if d == 0 && self.count_prefix == 0 {
+                    // 0 with no count = line start, skip digit accumulation
+                } else {
+                    self.count_prefix = self.count_prefix * 10 + d as usize;
+                    return (AsyncTask::new_no_op(), None);
+                }
             }
         }
         if self.visual_mode {
@@ -225,7 +229,7 @@ impl LyricsPopup {
                     self.reset_count();
                     return (AsyncTask::new_no_op(), None);
                 }
-                KeyCode::Char('j') | KeyCode::Down => {
+                KeyCode::Char('j') | KeyCode::Char('J') | KeyCode::Down => {
                     let n = self.count_prefix.max(1);
                     self.reset_count();
                     let max_line = self.total_lines().saturating_sub(1);
@@ -235,13 +239,41 @@ impl LyricsPopup {
                     self.cursor_to_scroll();
                     return (AsyncTask::new_no_op(), None);
                 }
-                KeyCode::Char('k') | KeyCode::Up => {
+                KeyCode::Char('k') | KeyCode::Char('K') | KeyCode::Up => {
                     let n = self.count_prefix.max(1);
                     self.reset_count();
                     self.visual_end = self.visual_end.saturating_sub(n);
                     self.cursor_line = self.visual_end;
                     self.cursor_col = 0;
                     self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Left => {
+                    self.reset_count();
+                    if self.cursor_col > 0 {
+                        self.cursor_col -= 1;
+                    }
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('l') | KeyCode::Char('L') | KeyCode::Right => {
+                    self.reset_count();
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        self.cursor_col = (self.cursor_col + 1).min(line.len());
+                    }
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('0') => {
+                    self.reset_count();
+                    self.cursor_col = 0;
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('$') => {
+                    self.reset_count();
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        self.cursor_col = line.len();
+                    }
                     return (AsyncTask::new_no_op(), None);
                 }
                 KeyCode::Char('g') => {
@@ -277,6 +309,56 @@ impl LyricsPopup {
                     self.visual_end = self.visual_end.saturating_sub(n);
                     self.cursor_line = self.visual_end;
                     self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('w') | KeyCode::Char('W') => {
+                    self.reset_count();
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        if let Some(pos) = Self::next_word_boundary(line, self.cursor_col) {
+                            self.cursor_col = pos;
+                        } else {
+                            self.cursor_line = (self.cursor_line + 1).min(self.total_lines().saturating_sub(1));
+                            self.cursor_col = 0;
+                        }
+                    }
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('b') | KeyCode::Char('B') => {
+                    self.reset_count();
+                    if self.cursor_col > 0 {
+                        if let Some(line) = self.lines.get(self.cursor_line) {
+                            if let Some(pos) = Self::prev_word_boundary(line, self.cursor_col) {
+                                self.cursor_col = pos;
+                            } else {
+                                self.cursor_col = 0;
+                            }
+                        }
+                    } else if self.cursor_line > 0 {
+                        self.cursor_line -= 1;
+                        if let Some(line) = self.lines.get(self.cursor_line) {
+                            self.cursor_col = line.len();
+                            if let Some(pos) = Self::prev_word_boundary(line, self.cursor_col) {
+                                self.cursor_col = pos;
+                            } else {
+                                self.cursor_col = 0;
+                            }
+                        }
+                    }
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('e') | KeyCode::Char('E') => {
+                    self.reset_count();
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        if let Some(pos) = Self::next_word_end(line, self.cursor_col) {
+                            self.cursor_col = pos;
+                        } else {
+                            self.cursor_line = (self.cursor_line + 1).min(self.total_lines().saturating_sub(1));
+                            self.cursor_col = 0;
+                        }
+                    }
                     self.cursor_to_scroll();
                     return (AsyncTask::new_no_op(), None);
                 }
@@ -368,6 +450,40 @@ impl LyricsPopup {
                     self.cursor_line = self.cursor_line.saturating_sub(n);
                     self.cursor_col = 0;
                     self.cursor_to_scroll();
+                }
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('H') | KeyCode::Left => {
+                self.reset_count();
+                if self.focus != Focus::Annotations {
+                    if self.cursor_col > 0 {
+                        self.cursor_col -= 1;
+                    }
+                }
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('L') | KeyCode::Right => {
+                self.reset_count();
+                if self.focus != Focus::Annotations {
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        self.cursor_col = (self.cursor_col + 1).min(line.len());
+                    }
+                }
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('0') => {
+                self.reset_count();
+                if self.focus != Focus::Annotations {
+                    self.cursor_col = 0;
+                }
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('$') => {
+                self.reset_count();
+                if self.focus != Focus::Annotations {
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        self.cursor_col = line.len();
+                    }
                 }
                 (AsyncTask::new_no_op(), None)
             }
