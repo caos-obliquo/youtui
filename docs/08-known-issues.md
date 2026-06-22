@@ -30,7 +30,7 @@
 
 | Issue | File | Description |
 |-------|------|-------------|
-| Album art disappears in tmux | `album_art_popup.rs` | Sixel protocol cleared by tmux redraw. Re-renders on next event |
+| Library tab missing playing indicator | `library.rs` | No second highlight (purple/green) showing which song is currently playing, unlike the local queue view |
 | `>` key crash guard | `draw_media_controls.rs` | `duration == 0` check prevents division by zero |
 | Last annotation cut off | `lyrics_popup.rs` | Height calculation doesn't account for bottom border |
 

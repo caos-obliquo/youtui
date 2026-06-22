@@ -755,14 +755,6 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key_with_visibility(AppAction::OpenUrl, KeyActionVisibility::Global),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char(':')),
-            KeyActionTree::new_key_with_visibility(AppAction::OpenUrl, KeyActionVisibility::Global),
-        ),
-        (
-            Keybind::new(crossterm::event::KeyCode::Char('y'), KeyModifiers::CONTROL),
-            KeyActionTree::new_key_with_visibility(AppAction::Playlist(PlaylistAction::CopySongUrl), KeyActionVisibility::Global),
-        ),
-        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('+')),
             KeyActionTree::new_key(AppAction::VolUp),
         ),
@@ -785,13 +777,6 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('[')),
             KeyActionTree::new_key(AppAction::SeekBack),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::BrowserSongs(BrowserSongsAction::CopySongUrl),
-                KeyActionVisibility::Global,
-            ),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('q')),
@@ -1033,10 +1018,6 @@ fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                 AppAction::Browser(BrowserAction::LocalFilter),
                 KeyActionVisibility::Global,
             ),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::F(1)),
-            KeyActionTree::new_key(AppAction::Browser(BrowserAction::Search)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
