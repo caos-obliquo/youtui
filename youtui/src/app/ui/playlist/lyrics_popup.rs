@@ -64,6 +64,8 @@ pub struct LyricsPopup {
     cursor_line: usize,
     cursor_col: usize,
     ann_scroll_offset: usize,
+    ann_visual_start: usize,
+    ann_visual_end: usize,
     pub lyrics_cache: LruCache<String, String>,
     /// Negative cache: stores error timestamps (TTL = 5 min)
     pub error_cache: LruCache<String, Instant>,
@@ -105,6 +107,8 @@ impl LyricsPopup {
             cursor_line: 0,
             cursor_col: 0,
             ann_scroll_offset: 0,
+            ann_visual_start: 0,
+            ann_visual_end: 0,
             lyrics_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
             error_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
             lyrics_cache_key: None,
@@ -271,7 +275,20 @@ impl LyricsPopup {
                 }
             }
         }
-        if self.visual_mode {
+        if !self.visual_mode {
+            // Fall through to normal mode handling below
+        } else {
+            // Visual mode — use annotation fields when focused on annotations
+            let focus_annotations = self.focus == Focus::Annotations;
+            let (v_end_ptr, v_cursor_ptr, max_val): (*mut usize, *mut usize, usize) = if focus_annotations {
+                let max = self.annotations.len().saturating_sub(1);
+                (&mut self.ann_visual_end, &mut self.ann_scroll_offset, max)
+            } else {
+                let max = self.total_lines().saturating_sub(1);
+                (&mut self.visual_end, &mut self.cursor_line, max)
+            };
+            let v_end = unsafe { &mut *v_end_ptr };
+            let v_cursor = unsafe { &mut *v_cursor_ptr };
             match event.code {
                 KeyCode::Esc | KeyCode::Char('V') => {
                     self.visual_mode = false;
@@ -281,20 +298,17 @@ impl LyricsPopup {
                 KeyCode::Char('j') | KeyCode::Char('J') | KeyCode::Down => {
                     let n = self.count_prefix.max(1);
                     self.reset_count();
-                    let max_line = self.total_lines().saturating_sub(1);
-                    self.visual_end = self.visual_end.saturating_add(n).min(max_line);
-                    self.cursor_line = self.visual_end;
-                    self.cursor_col = 0;
-                    self.cursor_to_scroll();
+                    *v_end = v_end.saturating_add(n).min(max_val);
+                    *v_cursor = *v_end;
+                    if self.focus != Focus::Annotations { self.cursor_col = 0; self.cursor_to_scroll(); }
                     return (AsyncTask::new_no_op(), None);
                 }
                 KeyCode::Char('k') | KeyCode::Char('K') | KeyCode::Up => {
                     let n = self.count_prefix.max(1);
                     self.reset_count();
-                    self.visual_end = self.visual_end.saturating_sub(n);
-                    self.cursor_line = self.visual_end;
-                    self.cursor_col = 0;
-                    self.cursor_to_scroll();
+                    *v_end = v_end.saturating_sub(n);
+                    *v_cursor = *v_end;
+                    if self.focus != Focus::Annotations { self.cursor_col = 0; self.cursor_to_scroll(); }
                     return (AsyncTask::new_no_op(), None);
                 }
                 KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Left => {
@@ -484,6 +498,9 @@ impl LyricsPopup {
             }
             KeyCode::Char('a') => {
                 self.reset_count();
+                if self.annotations.is_empty() {
+                    return (AsyncTask::new_no_op(), None);
+                }
                 self.show_annotations = !self.show_annotations;
                 self.rebuild_lines();
                 if self.show_annotations {
@@ -498,8 +515,13 @@ impl LyricsPopup {
             }
             KeyCode::Char('V') => {
                 self.reset_count();
-                self.visual_start = self.cursor_line;
-                self.visual_end = self.cursor_line;
+                if self.focus == Focus::Annotations {
+                    self.ann_visual_start = self.ann_scroll_offset;
+                    self.ann_visual_end = self.ann_scroll_offset;
+                } else {
+                    self.visual_start = self.cursor_line;
+                    self.visual_end = self.cursor_line;
+                }
                 self.visual_mode = true;
                 (AsyncTask::new_no_op(), None)
             }
@@ -939,15 +961,15 @@ impl LyricsPopup {
                             format!("{:>+width$} ", rel, width = ann_max_digits)
                         };
                         let is_cursor = !self.visual_mode && i == ann_cursor;
-                        let row_style = if is_cursor {
-                            Style::default().bg(ratatui::style::Color::Rgb(0x44, 0x44, 0x44))
+                        let cursor_style = if is_cursor {
+                            Style::default().fg(Color::Cyan).bg(ratatui::style::Color::Rgb(0x44, 0x44, 0x44))
                         } else {
-                            Style::default()
+                            Style::default().fg(Color::Cyan)
                         };
                         ann_lines.push(ratatui::text::Line::from(
                             ratatui::text::Span::styled(
                                 format!("{}{}", num_str, a.fragment),
-                                if is_cursor { Style::default().fg(Color::Cyan).bg(ratatui::style::Color::Rgb(0x44, 0x44, 0x44)) } else { Style::default().fg(Color::Cyan) },
+                                cursor_style,
                             ),
                         ));
                         for expl_line in a.explanation.split('\n') {

@@ -131,6 +131,8 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 - **`AppCallback::GetPlaylistDetailsFromLibrary`**: `#[allow(dead_code)]` at app.rs:177 -- rate toggle pending.
 - **`SearchPlaylists`/`GetPlaylistSongs`**: `#[allow(dead_code)]` at messages.rs:54,62 -- batch streaming (now wired, stale annotation removed).
 - **Album art popup**: Sixel fullscreen may fail on small terminals (width/height < image cells). Needs graceful fallback.
+- **Playlist merge into self**: `AddPlaylistToPlaylist` with identical source/target IDs causes 400 error. UI should prevent selecting same playlist. `effect_handlers_playlist.rs:1029`
+- **Cursor style in editor popups**: Notes popup cursor style implemented (`SetCursorStyle`). ConfigEditorPopup and other editor popups lack cursor style — they always show default terminal cursor.
 
 ## Remaining
 - Genius annotations: page scrape fallback (no `__INITIAL_STATE__`)

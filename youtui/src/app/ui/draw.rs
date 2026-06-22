@@ -96,7 +96,7 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         popup.draw(f, f.area());
     }
     if let Some(popup) = &mut w.notes_popup {
-        popup.draw(f, f.area());
+        popup.draw(f, window_chunk);
     }
     if let Some((_, ref title)) = w.delete_confirm {
         use ratatui::style::{Color, Modifier, Style};

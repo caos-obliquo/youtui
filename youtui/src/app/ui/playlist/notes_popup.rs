@@ -29,6 +29,8 @@ impl Action for NotesAction {
 pub struct NotesPopup {
     pub editor: ViTextEditor,
     pub notes_path: std::path::PathBuf,
+    command_mode: bool,
+    command_editor: ViTextEditor,
 }
 
 impl_youtui_component!(NotesPopup);
@@ -47,11 +49,16 @@ impl NotesPopup {
     pub fn new(notes_path: std::path::PathBuf, content: String) -> Self {
         let mut editor = ViTextEditor::new_multiline();
         editor.set_text(&content);
-        Self { editor, notes_path }
+        Self {
+            editor,
+            notes_path,
+            command_mode: false,
+            command_editor: ViTextEditor::new(),
+        }
     }
 
     pub fn mode_char(&self) -> &'static str {
-        self.editor.mode_char()
+        if self.command_mode { ": " } else { self.editor.mode_char() }
     }
 
     fn save(&self) {
@@ -71,7 +78,40 @@ impl NotesPopup {
         url.map(|u| AppCallback::OpenUrl(u))
     }
 
+    fn execute_command(&mut self, cmd: &str) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        let parts: Vec<&str> = cmd.trim().split_whitespace().collect();
+        match parts.first().copied().unwrap_or("") {
+            "w" => { self.save(); (AsyncTask::new_no_op(), None) }
+            "wq" => { self.save(); (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)) }
+            "q" | "q!" => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
+            _ => (AsyncTask::new_no_op(), None),
+        }
+    }
+
     pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        if self.command_mode {
+            match event.code {
+                KeyCode::Esc => {
+                    self.command_mode = false;
+                    self.command_editor.clear();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Enter => {
+                    let cmd = self.command_editor.get_text().trim().to_string();
+                    self.command_mode = false;
+                    self.command_editor.clear();
+                    if !cmd.is_empty() {
+                        return self.execute_command(&cmd);
+                    }
+                    return (AsyncTask::new_no_op(), None);
+                }
+                _ => {
+                    self.command_editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), false);
+                    return (AsyncTask::new_no_op(), None);
+                }
+            }
+        }
+
         match event.code {
             KeyCode::Esc => {
                 if self.editor.mode != ViMode::Insert {
@@ -89,9 +129,10 @@ impl NotesPopup {
                 self.editor.handle_key(KeyCode::Enter, false, false);
                 (AsyncTask::new_no_op(), None)
             }
-            KeyCode::Char('s') if event.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.save();
-                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
+            KeyCode::Char(':') if self.editor.mode == ViMode::Normal => {
+                self.command_mode = true;
+                self.command_editor = ViTextEditor::new();
+                (AsyncTask::new_no_op(), None)
             }
             _ => {
                 self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), false);
@@ -101,34 +142,65 @@ impl NotesPopup {
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        let popup_area = Self::centered_rect_fixed(80, 80, area);
+        let popup_area = Self::centered_rect_fixed(85, 85, area);
         frame.render_widget(Clear, popup_area);
-        let mode = self.editor.mode_char();
+        let mode = self.mode_char();
         let block = Block::default()
-            .title(format!(" Notes {mode} (Ctrl+s: Save, Esc: Cancel, Enter on URL to open) "))
+            .title(format!(" Notes {mode} "))
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Cyan));
         let inner = block.inner(popup_area);
         frame.render_widget(block, popup_area);
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(inner);
-        let display = self.editor.render_simple("");
-        let text = Paragraph::new(display)
-            .style(Style::default().fg(Color::White))
-            .wrap(Wrap { trim: false });
-        frame.render_widget(text, chunks[0]);
-        let hint = Paragraph::new("Ctrl+s: Save | Esc: Cancel | Enter on URL: Open | i: Insert | j/k: Navigate")
-            .style(Style::default().fg(Color::DarkGray))
-            .alignment(Alignment::Center);
-        frame.render_widget(hint, chunks[1]);
-        let cur_col = self.editor.cursor_col() as u16;
-        let cur_line = self.editor.cursor_line() as u16;
-        frame.set_cursor_position((
-            inner.x + 1 + cur_col,
-            inner.y + 1 + cur_line,
-        ));
+
+        let [text_area, footer_area] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
+
+        if self.command_mode {
+            let display = self.editor.render_simple("");
+            frame.render_widget(
+                Paragraph::new(display).style(Style::default().fg(Color::White)).wrap(Wrap { trim: false }),
+                text_area,
+            );
+            let cmd_display = self.command_editor.render_simple(":");
+            frame.render_widget(
+                Paragraph::new(format!(":{}", cmd_display.trim_start_matches(':')))
+                    .style(Style::default().fg(Color::Cyan))
+                    .alignment(Alignment::Left),
+                footer_area,
+            );
+        } else {
+            let mark = self.editor.cursor_marker();
+            let cur_line = self.editor.cursor_line();
+            let cur_col = self.editor.cursor_col();
+            let visual_range = self.editor.visual_line_range();
+            let mut lines: Vec<ratatui::text::Line> = Vec::new();
+            for (i, line_text) in self.editor.get_text().split('\n').enumerate() {
+                let selected = visual_range.map_or(false, |(s, e)| i >= s && i <= e);
+                let bg = if selected { Color::Rgb(0x44, 0x44, 0x44) } else { ratatui::style::Color::default() };
+                let is_cursor = i == cur_line;
+                if is_cursor {
+                    let (before, after) = line_text.split_at(cur_col.min(line_text.len()));
+                    lines.push(ratatui::text::Line::from(vec![
+                        ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White).bg(bg)),
+                        ratatui::text::Span::styled(mark.to_string(), Style::default().fg(Color::White).bg(bg)),
+                        ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White).bg(bg)),
+                    ]));
+                } else {
+                    lines.push(ratatui::text::Line::from(
+                        ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White).bg(bg)),
+                    ));
+                }
+            }
+            frame.render_widget(
+                Paragraph::new(lines).wrap(Wrap { trim: false }),
+                text_area,
+            );
+            frame.render_widget(
+                Paragraph::new(":w Save | :wq Save+Quit | :q Quit | Esc Close | Enter URL | i Insert | j/k Navigate")
+                    .style(Style::default().fg(Color::DarkGray))
+                    .alignment(Alignment::Center),
+                footer_area,
+            );
+        }
     }
 
     fn centered_rect_fixed(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
