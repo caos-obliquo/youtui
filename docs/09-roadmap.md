@@ -21,6 +21,12 @@
 | 23 | Fix `NavTarget::Album` → Albums tab with `GetAlbumQuery` | `browser.rs:525-529` |
 | 24 | Wire F1 search in Albums tab (`TextHandler` delegate to `SearchBlock`) | `albumsearch.rs:276-279` |
 | 25 | Wire `GoToAlbum` context menu in album track view | `albumsearch.rs:223-229` |
+| 26 | Remove tracks from playlist (`o.x`) | `library.rs`, `app.rs`, `messages.rs` |
+| 27 | Reorder tracks in playlist (`o.J`/`o.K`) | `library.rs`, `app.rs`, `keymap.rs` |
+| 28 | Playlist Editor Popup (7 methods wired into dispatch) | `playlist_editor_popup.rs`, `app/ui.rs` |
+| 29 | Albums draw quadrants consistency | `draw.rs` |
+| 30 | Artist subscribe/unsubscribe (`o.S`/`o.U`) | `messages.rs`, `app.rs`, `library.rs`, `keymap.rs` |
+| 31 | Back navigation wired | `app.rs` |
 
 | # | Feature | Files |
 |---|---------|-------|
@@ -59,26 +65,20 @@
 | 15 | Phase 3: Rate toggle (parse like_status) | med | Blocked (needs details response field) |
 | 16 | Phase 4: Reorder UI wiring | med | Blocked (needs setVideoId parsed) |
 
-## Wiring Backlog (Dead Code Gaps)
+## Wiring Backlog (Remaining Dead Code)
 
-Code skeletons exist with `#[allow(dead_code)]` + `// TODO: Wire ...` — grep for `TODO: Wire`:
+Grep `TODO: Wire` for all remaining unconnected features:
 
 | # | Feature | Files | Notes |
 |---|---------|-------|-------|
-| 20 | Playlist search tab | `messages.rs:54`, `api.rs:65,255` | New browser tab for playlist search |
-| 21 | Batch playlist song streaming | `messages.rs:63`, `api.rs:103,524,540` | Stream all songs from playlist |
-| 22 | Remove songs from playlist UI | `messages.rs:107`, `effect_handlers_playlist.rs:63,67` | Context menu delete selected |
-| 23 | Drag-to-reorder playlist | `messages.rs:132`, `effect_handlers_playlist.rs:51,55` | Visual mode reorder |
-| 24 | Rate toggle from details | `app.rs:171` | Like/indifferent from details popup |
-| 25 | Save-to-playlist popup | `app.rs:105` | Playlist picker dropdown |
-| 26 | Update-playlist overwrite toggle | `app.rs:107` | Overwrite vs append prompt |
-| 27 | Back navigation | `app.rs:152` | Browser back button |
-| 28 | Column sort in playlist | `playlist.rs:136,512` | Header click sort |
-| 29 | Batch append for merge/reorder | `structures.rs:396,490` | Raw playlist item batch ops |
-| 30 | Albums tab in browser | `albumsearch.rs:25,56,360,364` | Library album browser |
-| 31 | Album search text input | `albumsearch.rs:139,154` | Search suggestions + routing reset |
-| 32 | Lyrics filter | `lyrics_popup.rs:137` | Filter text in lyrics view |
-| 33 | Playlist editor mode/commands | `playlist_editor_popup.rs:43-360` | 7 methods: draw, key input, commands, layout |
+| 20 | Playlist search tab | `messages.rs`, `api.rs` | New browser tab for playlist search |
+| 21 | Batch playlist song streaming | `api.rs`, `messages.rs` | Stream all songs from playlist |
+| 28 | Queue column sort | `playlist.rs` | Header click sort |
+| 29 | Batch append for merge/reorder | `structures.rs` | Raw playlist item batch ops |
+| 30 | Albums tab caching | `albumsearch.rs` | Cache flag + fetch trigger |
+| 31 | Album search text input | `albumsearch.rs` | Search suggestions + routing |
+| 32 | Lyrics filter | `lyrics_popup.rs` | Filter text in lyrics view |
+| 34 | Artist subscription toggle | `library.rs` | Check current subscription status |
 
 ## Medium Term — Crate Extraction
 
