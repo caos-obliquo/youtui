@@ -176,9 +176,24 @@ All CRUD ops exist. Gaps: batch reorder (swap only), single-song metadata, song 
 - **Visual mode**: H=left, L=right, J=j/Down, K=k/Up, Left/Right arrows, 0/$, w/b/e word motions
 - J/K move visual_end selection; H/L move cursor_col within current line
 
-### TODO / Deferred
-- Phase 3: Rate toggle — parse like_status from GetPlaylistDetails response (needs ytmapi-rs field)
-- Phase 4: Reorder UI wiring — `ReorderPlaylistItem` message exists, needs `SetVideoID` parsing in ytmapi-rs
-- Overwrite-vs-append toggle for save-to-existing playlist
-- Playlist radio via GetWatchPlaylistQuery
-- Server-side sort persistence (local sort only)
+### Completed — All ncspot-inspired playlist features
+| Feature | Status | Keybinding |
+|---------|--------|------------|
+| View all playlists | ✅ | Library > Playlists |
+| View playlist tracks | ✅ | Right arrow |
+| Delete playlist | ✅ | `o.D` |
+| Rename playlist | ✅ | `o.R` |
+| Edit description/privacy | ✅ | `o.E` |
+| Rate playlist | ✅ | `o.t` (always Liked, toggle coming) |
+| Get playlist details | ✅ | `o.i` |
+| Remove tracks from playlist | ✅ | `o.x` |
+| Reorder tracks | ✅ | `o.J`/`o.K` |
+| Save to existing playlist | ✅ | `o.E` (update popup) |
+| Save to new playlist | ✅ | `o.s` (save popup) |
+| Playlist editor popup | ✅ | `o.e` |
+| Artist subscribe/unsubscribe | ✅ | `o.S`/`o.U` |
+| Back navigation | ✅ | (backspace/browser back) |
+| Library auto-refresh | ✅ | After all playlist mutations |
+
+### Remaining dead code (needs feature-level work)
+- Playlist search tab, Batch streaming, Albums caching, Queue sort — grep `TODO: Wire`
