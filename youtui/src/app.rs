@@ -26,6 +26,7 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleReorderPlaylistItemOk, HandleReorderPlaylistItemError,
     HandleSubscribeToArtistOk, HandleSubscribeToArtistError,
     HandleUnsubscribeFromArtistsOk, HandleUnsubscribeFromArtistsError,
+    HandleAddPlaylistToPlaylistOk, HandleAddPlaylistToPlaylistError,
 };
 use std::borrow::Cow;
 use std::time::Duration;
@@ -177,6 +178,9 @@ pub enum AppCallback {
     ReorderPlaylistItemFromLibrary(PlaylistID<'static>, VideoID<'static>, VideoID<'static>),
     SubscribeToArtistFromLibrary(ArtistChannelID<'static>),
     UnsubscribeFromArtistFromLibrary(Vec<ArtistChannelID<'static>>),
+    // TODO: Wire playlist merge — context menu entry pending
+    #[allow(dead_code)]
+    AddPlaylistToPlaylistFromLibrary(PlaylistID<'static>, PlaylistID<'static>),
 }
 
 impl Youtui {
@@ -494,6 +498,16 @@ impl Youtui {
                     server::UnsubscribeFromArtists(channel_ids),
                     HandleUnsubscribeFromArtistsOk,
                     HandleUnsubscribeFromArtistsError,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::AddPlaylistToPlaylistFromLibrary(source_id, target_id) => {
+                let effect = AsyncTask::new_future_try(
+                    server::AddPlaylistToPlaylist { source_id, target_id },
+                    HandleAddPlaylistToPlaylistOk,
+                    HandleAddPlaylistToPlaylistError,
                     None,
                 )
                 .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);

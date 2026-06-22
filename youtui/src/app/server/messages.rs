@@ -173,7 +173,7 @@ pub struct ReorderPlaylistItem {
     pub target_video_id: VideoID<'static>,
 }
 
-// TODO: Wire playlist merge — frontend dispatch pending
+// TODO: Wire playlist merge — context menu entry pending
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct AddPlaylistToPlaylist {

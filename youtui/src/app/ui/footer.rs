@@ -164,14 +164,10 @@ pub fn draw_footer(
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
             w.last_album_art = Some(album_art.clone());
+            // Center the image within album_art_chunk using Fit(None)
             let image = terminal_image_capabilities.new_protocol(
                 album_art.in_mem_image.clone(),
-                Rect {
-                    x: 0,
-                    y: 0,
-                    width: ALBUM_ART_WIDTH,
-                    height: ALBUM_ART_WIDTH - 1,
-                },
+                album_art_chunk,
                 ratatui_image::Resize::Fit(None),
             );
             match image {
