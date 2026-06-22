@@ -67,7 +67,9 @@ fn print_usage() {
     eprintln!("  search <query>              Search songs");
     eprintln!("  search-artists <query>      Search artists");
     eprintln!("  search-albums <query>       Search albums");
+    eprintln!("  search-playlists <query>     Search playlists");
     eprintln!("  playlist <id>               Get playlist tracks");
+    eprintln!("  playlist-songs <id>         Get playlist tracks (streaming debug)");
     eprintln!("  album <id>                  Get album details");
     eprintln!("  artist <id>                 Get artist");
     eprintln!("  watch-playlist <video_id>   Get related/watch playlist for a video");
@@ -128,9 +130,26 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                 Err(e) => eprintln!("Search error: {}", e),
             }
         }
+        "search-playlists" => {
+            let query = args.join(" ");
+            if query.is_empty() { eprintln!("Usage: ytmapi search-playlists <query>"); return; }
+            match yt.search_playlists(&query).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Search error: {}", e),
+            }
+        }
         "playlist" => {
             if args.is_empty() { eprintln!("Usage: ytmapi playlist <id>"); return; }
             let id = PlaylistID::from_raw(&args[0]);
+            match yt.get_playlist_tracks(id).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Playlist error: {}", e),
+            }
+        }
+        "playlist-songs" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi playlist-songs <id>"); return; }
+            let id = PlaylistID::from_raw(&args[0]);
+            eprintln!("Fetching tracks (streaming)...");
             match yt.get_playlist_tracks(id).await {
                 Ok(results) => print_results(&results, json),
                 Err(e) => eprintln!("Playlist error: {}", e),

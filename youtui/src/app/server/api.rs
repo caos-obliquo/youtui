@@ -62,7 +62,6 @@ impl Api {
     ) -> Result<(Vec<SearchSuggestion>, String)> {
         get_search_suggestions(self.get_api().await?, text).await
     }
-    #[allow(dead_code)]
     pub async fn search_playlists(&self, text: String) -> Result<Vec<SearchResultPlaylist>> {
         search_playlists(self.get_api().await?, text).await
     }
@@ -99,7 +98,6 @@ impl Api {
         let api = self.get_api().await?;
         api.read().await.rate_song(video_id, rating).await
     }
-    #[allow(dead_code)]
     pub fn get_playlist_songs(
         &self,
         playlist_id: PlaylistID<'static>,
@@ -517,8 +515,6 @@ fn get_artist_songs(
     PanickingReceiverStream::new(rx, handle)
 }
 
-#[allow(dead_code)]
-#[allow(dead_code)]
 pub enum GetPlaylistSongsProgressUpdate {
     Loading,
     Songs(Vec<PlaylistItem>),

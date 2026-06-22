@@ -51,7 +51,6 @@ pub struct SearchArtists(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchSongs(pub String);
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub struct SearchPlaylists(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchAlbums(pub String);
@@ -59,7 +58,6 @@ pub struct SearchAlbums(pub String);
 pub struct GetArtistSongs(pub ArtistChannelID<'static>);
 #[derive(Debug, PartialEq)]
 // TODO: Wire batch playlist song streaming
-#[allow(dead_code)]
 pub struct GetPlaylistSongs {
     pub playlist_id: PlaylistID<'static>,
     pub max_songs: usize,
