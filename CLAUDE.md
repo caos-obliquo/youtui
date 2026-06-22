@@ -196,5 +196,13 @@ All CRUD ops exist. Gaps: batch reorder (swap only), single-song metadata, song 
 | Back navigation | ✅ | (backspace/browser back) |
 | Library auto-refresh | ✅ | After all playlist mutations |
 
-### Remaining dead code (needs feature-level work)
-- Playlist search tab, Batch streaming, Albums caching, Queue sort — grep `TODO: Wire`
+### Remaining dead code / feature gaps
+6 items needing feature-level work. Branches created on `main`:
+- `feat/playlist-search` — new browser tab for YTM playlist search
+- `feat/batch-streaming` — `get_playlist_songs()` to stream all playlist tracks
+- `feat/queue-sort` — sort popup UI for queue columns
+- `feat/batch-merge` — `append_raw_playlist_items` backend message
+
+Known issues:
+- `o.E` edit playlist 400 — YTM API rejects `EditPlaylistQuery`. Fixed duplicate `privacy_status` action. Verify fix.
+- Genius annotations API — new `fetch_annotations_with_token()` method. Requires `GENIUS_TOKEN` env var.
