@@ -78,8 +78,9 @@ impl Api {
         title: String,
         description: Option<String>,
         video_ids: Vec<VideoID<'static>>,
+        privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
     ) -> Result<PlaylistID<'static>> {
-        create_playlist_with_videos(self.get_api().await?, title, description, video_ids).await
+        create_playlist_with_videos(self.get_api().await?, title, description, video_ids, privacy).await
     }
     pub async fn add_playlist_items(
         &self,
@@ -303,9 +304,11 @@ async fn create_playlist_with_videos(
     title: String,
     description: Option<String>,
     video_ids: Vec<VideoID<'static>>,
+    privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
 ) -> Result<PlaylistID<'static>> {
     tracing::info!("Creating playlist with {} videos: {}", video_ids.len(), title);
-    let query = CreatePlaylistQuery::new(&title, description.as_deref(), PrivacyStatus::Unlisted)
+    let privacy = privacy.unwrap_or(PrivacyStatus::Unlisted);
+    let query = CreatePlaylistQuery::new(&title, description.as_deref(), privacy)
         .with_video_ids(video_ids);
     query_api_with_retry(&api, query).await
 }

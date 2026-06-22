@@ -20,9 +20,10 @@ use futures::{Future, Stream};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, YoutubeID, LikeStatus};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, SetVideoID, YoutubeID, LikeStatus};
+use ytmapi_rs::query::playlist::PrivacyStatus;
 use musixmatch_inofficial::Musixmatch;
-use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong};
+use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong, GetPlaylistDetails};
 
 #[derive(PartialEq, Debug)]
 pub enum TaskMetadata {
@@ -66,6 +67,7 @@ pub struct CreatePlaylistWithVideos {
     pub title: String,
     pub description: Option<String>,
     pub video_ids: Vec<VideoID<'static>>,
+    pub privacy: Option<PrivacyStatus>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -92,17 +94,39 @@ impl BackendTask<ArcServer> for RateSong {
 }
 
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub struct RenamePlaylist {
     pub playlist_id: PlaylistID<'static>,
     pub new_title: String,
 }
 
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub struct RemovePlaylistItems {
     pub playlist_id: PlaylistID<'static>,
     pub video_ids: Vec<VideoID<'static>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DeletePlaylist(pub PlaylistID<'static>);
+
+#[derive(Debug, PartialEq)]
+pub struct EditPlaylistDetails {
+    pub playlist_id: PlaylistID<'static>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub privacy: Option<PrivacyStatus>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct RatePlaylistMessage(pub PlaylistID<'static>, pub LikeStatus);
+
+#[derive(Debug, PartialEq)]
+pub struct GetPlaylistDetailsMessage(pub PlaylistID<'static>);
+
+#[derive(Debug, PartialEq)]
+pub struct ReorderPlaylistItem {
+    pub playlist_id: PlaylistID<'static>,
+    pub video_id: VideoID<'static>,
+    pub target_video_id: VideoID<'static>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -294,6 +318,7 @@ impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
         async move {
             let title = self.title;
             let description = self.description;
+            let privacy = self.privacy;
             let all_ids = self.video_ids;
             let total = all_ids.len();
             tracing::info!("Creating playlist with {total} videos: {title}");
@@ -321,6 +346,7 @@ impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
                     playlist_title,
                     description.clone(),
                     playlist_songs,
+                    privacy.clone(),
                 ).await?;
 
                 if first_playlist_id.is_none() {
@@ -400,6 +426,114 @@ impl BackendTask<ArcServer> for RemovePlaylistItems {
             let query = RemovePlaylistItemsQuery::new(self.playlist_id, set_ids);
             api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
             tracing::info!("Playlist items removed");
+            Ok(())
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for DeletePlaylist {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::DeletePlaylistQuery;
+            let api_guard = backend.api.get_api().await?;
+            let query = DeletePlaylistQuery::new(self.0);
+            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
+            tracing::info!("Playlist deleted");
+            Ok(())
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for EditPlaylistDetails {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::EditPlaylistQuery;
+            use ytmapi_rs::common::ApiOutcome;
+            let api_guard = backend.api.get_api().await?;
+            // Apply each change sequentially. YTM API supports per-field edits.
+            if let Some(title) = &self.title {
+                let query = EditPlaylistQuery::new_title(&self.playlist_id, title.as_str());
+                let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+            }
+            if let Some(description) = &self.description {
+                let query = EditPlaylistQuery::new_description(&self.playlist_id, description.as_str());
+                let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+            }
+            if let Some(privacy) = self.privacy {
+                let query = EditPlaylistQuery::new_privacy_status(&self.playlist_id, privacy);
+                let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+            }
+            tracing::info!("Playlist details updated");
+            Ok(())
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for RatePlaylistMessage {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::RatePlaylistQuery;
+            let api_guard = backend.api.get_api().await?;
+            let query = RatePlaylistQuery::new(self.0, self.1);
+            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
+            tracing::info!("Playlist rated");
+            Ok(())
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for GetPlaylistDetailsMessage {
+    type Output = Result<GetPlaylistDetails>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::GetPlaylistDetailsQuery;
+            let api_guard = backend.api.get_api().await?;
+            let query = GetPlaylistDetailsQuery::new(self.0);
+            api_guard.read().await.query_browser_or_oauth::<_, GetPlaylistDetails>(query).await
+        }
+    }
+}
+
+impl BackendTask<ArcServer> for ReorderPlaylistItem {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::EditPlaylistQuery;
+            use ytmapi_rs::common::ApiOutcome;
+            let api_guard = backend.api.get_api().await?;
+            let set_id = SetVideoID::from_raw(self.video_id.get_raw().to_string());
+            let target_set_id = SetVideoID::from_raw(self.target_video_id.get_raw().to_string());
+            let query = EditPlaylistQuery::swap_videos_order(self.playlist_id, set_id, target_set_id);
+            let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+            tracing::info!("Playlist item reordered");
             Ok(())
         }
     }

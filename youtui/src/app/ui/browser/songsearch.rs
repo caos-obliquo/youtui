@@ -58,6 +58,11 @@ pub enum BrowserSongsAction {
     CopySongUrl,
     GoToArtist,
     GoToAlbum,
+    DeletePlaylist,
+    RenamePlaylist,
+    EditPlaylistDetails,
+    RatePlaylist,
+    GetPlaylistDetails,
 }
 
 impl Action for BrowserSongsAction {
@@ -78,6 +83,11 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::CopySongUrl => "Copy Song URL",
             BrowserSongsAction::GoToArtist => "Go to Artist",
             BrowserSongsAction::GoToAlbum => "Go to Album",
+            BrowserSongsAction::DeletePlaylist => "Delete Playlist",
+            BrowserSongsAction::RenamePlaylist => "Rename Playlist",
+            BrowserSongsAction::EditPlaylistDetails => "Edit Details",
+            BrowserSongsAction::RatePlaylist => "Like / Unlike Playlist",
+            BrowserSongsAction::GetPlaylistDetails => "View Details",
         }
         .into()
     }
@@ -220,6 +230,7 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::CopySongUrl => return self.copy_song_url().into(),
             BrowserSongsAction::GoToArtist => return self.go_to_artist().into(),
             BrowserSongsAction::GoToAlbum => return self.go_to_album().into(),
+            _ => warn!("Unsupported action: {:?}", action),
         }
         YoutuiEffect::new_no_op()
     }

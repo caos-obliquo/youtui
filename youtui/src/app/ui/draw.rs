@@ -51,6 +51,12 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             w.playlist
                 .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
         }
+        WindowContext::PlaylistRenamePopup
+        | WindowContext::PlaylistEditPopup
+        | WindowContext::PlaylistDetailsPopup => {
+            w.playlist
+                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+        }
     }
     if w.help.shown {
         draw_help(f, w, window_chunk);
@@ -72,6 +78,39 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     }
     if let Some(popup) = &mut w.config_editor_popup {
         popup.draw(f, f.area());
+    }
+    if let Some(popup) = &mut w.playlist_rename_popup {
+        popup.draw(f, f.area());
+    }
+    if let Some(popup) = &mut w.playlist_edit_popup {
+        popup.draw(f, f.area());
+    }
+    if let Some(popup) = &mut w.playlist_details_popup {
+        popup.draw(f, f.area());
+    }
+    if let Some((_, ref title)) = w.delete_confirm {
+        use ratatui::style::{Color, Modifier, Style};
+        use ratatui::widgets::{Clear, Paragraph};
+        use ratatui::layout::{Alignment, Constraint, Direction, Layout};
+        let area = f.area();
+        f.render_widget(Clear, area);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(40),
+                Constraint::Length(5),
+                Constraint::Min(3),
+                Constraint::Percentage(40),
+            ])
+            .split(area);
+        let you_died = Paragraph::new("Delete Playlist?")
+            .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+            .alignment(Alignment::Center);
+        f.render_widget(you_died, chunks[1]);
+        let prompt = Paragraph::new(format!("Delete \"{}\"? (y/N)", title))
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center);
+        f.render_widget(prompt, chunks[2]);
     }
     if w.quit_confirm {
         use ratatui::style::{Color, Modifier, Style};
@@ -117,6 +156,40 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         f.render_widget(cmd, chunks[1]);
     } else {
         footer::draw_footer(f, w, footer_chunk, terminal_image_capabilities);
+    }
+    if let Some(popup) = &mut w.playlist_rename_popup {
+        popup.draw(f, f.area());
+    }
+    if let Some(popup) = &mut w.playlist_edit_popup {
+        popup.draw(f, f.area());
+    }
+    if let Some(popup) = &mut w.playlist_details_popup {
+        popup.draw(f, f.area());
+    }
+    if w.delete_confirm.is_some() {
+        use ratatui::style::{Color, Modifier, Style};
+        use ratatui::widgets::{Clear, Paragraph};
+        use ratatui::layout::Alignment;
+        let area = f.area();
+        f.render_widget(Clear, area);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(40),
+                Constraint::Length(5),
+                Constraint::Length(3),
+                Constraint::Percentage(40),
+            ])
+            .split(area);
+        let title = w.delete_confirm.as_ref().map(|(_, t)| t.as_str()).unwrap_or("this playlist");
+        let text = Paragraph::new(format!("Delete \"{}\"?", title))
+            .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
+            .alignment(Alignment::Center);
+        f.render_widget(text, chunks[1]);
+        let prompt = Paragraph::new("This cannot be undone. Proceed? (y/N)")
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center);
+        f.render_widget(prompt, chunks[2]);
     }
     if let Some(popup) = &mut w.album_art_popup {
         popup.draw(f, f.area(), terminal_image_capabilities);

@@ -46,7 +46,7 @@ pub struct Browser {
     artist_search_browser: ArtistSearchBrowser,
     song_search_browser: SongSearchBrowser,
     album_search_browser: AlbumSearchBrowser,
-    library_browser: LibraryBrowser,
+    pub library_browser: LibraryBrowser,
     state_stack: Vec<BrowserSnapshot>,
     filter_editor: ViTextEditor,
     filter_active: bool,

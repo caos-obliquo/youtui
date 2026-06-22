@@ -60,6 +60,9 @@ pub mod config_editor_popup;
 pub mod playlist_save_popup;
 pub mod playlist_update_popup;
 pub mod playlist_editor_popup;
+pub mod playlist_rename_popup;
+pub mod playlist_edit_popup;
+pub mod playlist_details_popup;
 mod effect_handlers;
 pub mod effect_handlers_playlist;
 #[cfg(test)]
@@ -116,7 +119,7 @@ pub struct Playlist {
     /// Transient error message shown in playlist header (clears on next action)
     pub last_error: Option<String>,
     /// Pending chunks for multi-playlist split (video_ids, title, description, next_index)
-    pub pending_playlist_chunks: Option<(Vec<Vec<ytmapi_rs::common::VideoID<'static>>>, String, Option<String>)>,
+    pub pending_playlist_chunks: Option<(Vec<Vec<ytmapi_rs::common::VideoID<'static>>>, String, Option<String>, Option<ytmapi_rs::query::playlist::PrivacyStatus>)>,
     /// Stack of deleted songs for undo (song, original_index)
     pub undo_stack: Vec<Vec<(crate::app::structures::ListSong, usize)>>,
     pub visual_mode: bool,

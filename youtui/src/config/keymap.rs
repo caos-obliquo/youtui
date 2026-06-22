@@ -1101,6 +1101,26 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::CopySongUrl)),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('D')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::DeletePlaylist)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('R')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::RenamePlaylist)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('E')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::EditPlaylistDetails)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('t')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::RatePlaylist)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('i')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::GetPlaylistDetails)),
+                    ),
                 ],
                 "Context Menu".into(),
             ),

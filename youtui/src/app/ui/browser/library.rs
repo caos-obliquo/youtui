@@ -22,7 +22,7 @@ use async_callback_manager::{AsyncTask, FrontendEffect};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 use std::borrow::Cow;
-use ytmapi_rs::common::YoutubeID;
+use ytmapi_rs::common::{YoutubeID, LikeStatus};
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
 
@@ -763,6 +763,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
                     }
                 }
+                _ => warn!("Unsupported song action for liked songs: {:?}", action),
             },
             #[allow(unreachable_patterns)]
             LibraryCategory::Playlists => match action {
@@ -869,6 +870,44 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         self.sort.shown = !self.sort.shown;
                     }
                     return (AsyncTask::new_no_op(), None);
+                }
+                BrowserSongsAction::DeletePlaylist => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::ShowDeleteConfirm(pl.playlist_id.clone(), pl.title.clone())));
+                        }
+                    }
+                }
+                BrowserSongsAction::RenamePlaylist => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenRenamePopup(pl.playlist_id.clone(), pl.title.clone())));
+                        }
+                    }
+                }
+                BrowserSongsAction::EditPlaylistDetails => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenEditPopup(pl.playlist_id.clone(), pl.title.clone())));
+                        }
+                    }
+                }
+                BrowserSongsAction::RatePlaylist => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(
+                                pl.playlist_id.clone(),
+                                LikeStatus::Liked,
+                            )));
+                        }
+                    }
+                }
+                BrowserSongsAction::GetPlaylistDetails => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenDetailsPopup(pl.playlist_id.clone(), pl.title.clone())));
+                        }
+                    }
                 }
                 _ => warn!("Unsupported song action for playlists: {:?}", action),
             },

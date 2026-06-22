@@ -261,13 +261,19 @@ impl ViTextEditor {
                 self.visual_start = tmp;
             }
             // motions
-            crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left => {
+            crossterm::event::KeyCode::Char('h')
+            | crossterm::event::KeyCode::Char('H')
+            | crossterm::event::KeyCode::Left => {
                 if self.cursor > 0 { self.cursor -= 1; }
             }
-            crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right => {
+            crossterm::event::KeyCode::Char('l')
+            | crossterm::event::KeyCode::Char('L')
+            | crossterm::event::KeyCode::Right => {
                 if self.cursor < self.buffer.len() { self.cursor += 1; }
             }
-            crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down if self.multiline => {
+            crossterm::event::KeyCode::Char('j')
+            | crossterm::event::KeyCode::Char('J')
+            | crossterm::event::KeyCode::Down if self.multiline => {
                 let col = self.cursor_col();
                 let after = &self.buffer[self.cursor..];
                 if let Some(nl) = after.find('\n') {
@@ -277,7 +283,9 @@ impl ViTextEditor {
                     self.cursor += col.min(line_len);
                 }
             }
-            crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up if self.multiline => {
+            crossterm::event::KeyCode::Char('k')
+            | crossterm::event::KeyCode::Char('K')
+            | crossterm::event::KeyCode::Up if self.multiline => {
                 let col = self.cursor_col();
                 let before = &self.buffer[..self.cursor];
                 if let Some(nl) = before[..before.len().saturating_sub(1)].rfind('\n') {
@@ -363,7 +371,19 @@ impl ViTextEditor {
                 self.visual_start = tmp;
             }
             // motions
-            crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down if self.multiline => {
+            crossterm::event::KeyCode::Char('h')
+            | crossterm::event::KeyCode::Char('H')
+            | crossterm::event::KeyCode::Left => {
+                if self.cursor > 0 { self.cursor -= 1; }
+            }
+            crossterm::event::KeyCode::Char('l')
+            | crossterm::event::KeyCode::Char('L')
+            | crossterm::event::KeyCode::Right => {
+                if self.cursor < self.buffer.len() { self.cursor += 1; }
+            }
+            crossterm::event::KeyCode::Char('j')
+            | crossterm::event::KeyCode::Char('J')
+            | crossterm::event::KeyCode::Down if self.multiline => {
                 let col = self.cursor_col();
                 let after = &self.buffer[self.cursor..];
                 if let Some(nl) = after.find('\n') {
@@ -373,7 +393,9 @@ impl ViTextEditor {
                     self.cursor += col.min(line_len);
                 }
             }
-            crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up if self.multiline => {
+            crossterm::event::KeyCode::Char('k')
+            | crossterm::event::KeyCode::Char('K')
+            | crossterm::event::KeyCode::Up if self.multiline => {
                 let col = self.cursor_col();
                 let before = &self.buffer[..self.cursor];
                 if let Some(nl) = before[..before.len().saturating_sub(1)].rfind('\n') {
@@ -384,6 +406,30 @@ impl ViTextEditor {
                 } else {
                     self.cursor = 0;
                 }
+            }
+            crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
+                self.cursor = 0;
+            }
+            crossterm::event::KeyCode::Char('$') | crossterm::event::KeyCode::End => {
+                self.cursor = self.buffer.len();
+            }
+            crossterm::event::KeyCode::Char('w') => {
+                self.cursor = next_word_boundary(&self.buffer, self.cursor);
+            }
+            crossterm::event::KeyCode::Char('W') => {
+                self.cursor = next_big_word_boundary(&self.buffer, self.cursor);
+            }
+            crossterm::event::KeyCode::Char('b') => {
+                self.cursor = prev_word_boundary(&self.buffer, self.cursor);
+            }
+            crossterm::event::KeyCode::Char('B') => {
+                self.cursor = prev_big_word_boundary(&self.buffer, self.cursor);
+            }
+            crossterm::event::KeyCode::Char('e') => {
+                self.cursor = end_of_word(&self.buffer, self.cursor);
+            }
+            crossterm::event::KeyCode::Char('E') => {
+                self.cursor = end_of_big_word(&self.buffer, self.cursor);
             }
             crossterm::event::KeyCode::Char('g') => {
                 self.cursor = 0;

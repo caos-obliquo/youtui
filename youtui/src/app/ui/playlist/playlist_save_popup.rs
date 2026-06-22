@@ -9,6 +9,7 @@ use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use ytmapi_rs::common::VideoID;
+use ytmapi_rs::query::playlist::PrivacyStatus;
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -39,6 +40,7 @@ impl Action for PlaylistSavePopupAction {
 enum FocusedField {
     NameInput,
     DescriptionInput,
+    PrivacyField,
     SaveButton,
 }
 
@@ -55,6 +57,7 @@ pub struct PlaylistSavePopup {
     focused_field: FocusedField,
     playlist_name: String,
     playlist_description: String,
+    playlist_privacy: PrivacyStatus,
 }
 
 impl_youtui_component!(PlaylistSavePopup);
@@ -67,7 +70,8 @@ impl ActionHandler<PlaylistSavePopupAction> for PlaylistSavePopup {
             MoveUp => {
                 self.focused_field = match self.focused_field {
                     FocusedField::DescriptionInput => FocusedField::NameInput,
-                    FocusedField::SaveButton => FocusedField::DescriptionInput,
+                    FocusedField::PrivacyField => FocusedField::DescriptionInput,
+                    FocusedField::SaveButton => FocusedField::PrivacyField,
                     _ => self.focused_field,
                 };
                 (AsyncTask::new_no_op(), None)
@@ -75,7 +79,8 @@ impl ActionHandler<PlaylistSavePopupAction> for PlaylistSavePopup {
             MoveDown => {
                 self.focused_field = match self.focused_field {
                     FocusedField::NameInput => FocusedField::DescriptionInput,
-                    FocusedField::DescriptionInput => FocusedField::SaveButton,
+                    FocusedField::DescriptionInput => FocusedField::PrivacyField,
+                    FocusedField::PrivacyField => FocusedField::SaveButton,
                     _ => self.focused_field,
                 };
                 (AsyncTask::new_no_op(), None)
@@ -93,11 +98,13 @@ impl ActionHandler<PlaylistSavePopupAction> for PlaylistSavePopup {
                 };
                 let video_ids = self.video_ids.clone();
 
+                let privacy = Some(self.playlist_privacy.clone());
                 (
                     AsyncTask::new_no_op(),
                     Some(AppCallback::CreatePlaylistFromPopup {
                         title,
                         description,
+                        privacy,
                         video_ids,
                     }),
                 )
@@ -117,6 +124,7 @@ impl PlaylistSavePopup {
             focused_field: FocusedField::NameInput,
             playlist_name: String::new(),
             playlist_description: String::new(),
+            playlist_privacy: PrivacyStatus::Private,
         }
     }
 
@@ -148,6 +156,13 @@ impl PlaylistSavePopup {
                 }
                 (PopupMode::CreateNew, FocusedField::DescriptionInput) => {
                     self.mode = PopupMode::EditingDescription;
+                }
+                (PopupMode::CreateNew, FocusedField::PrivacyField) => {
+                    self.playlist_privacy = match self.playlist_privacy {
+                        PrivacyStatus::Private => PrivacyStatus::Public,
+                        PrivacyStatus::Public => PrivacyStatus::Unlisted,
+                        PrivacyStatus::Unlisted => PrivacyStatus::Private,
+                    };
                 }
             }
             return (AsyncTask::new_no_op(), None);
@@ -252,6 +267,7 @@ impl PlaylistSavePopup {
             .constraints([
                 Constraint::Length(3),
                 Constraint::Length(5),
+                Constraint::Length(3),
                 Constraint::Min(1),
                 Constraint::Length(3),
                 Constraint::Length(2),
@@ -306,10 +322,22 @@ impl PlaylistSavePopup {
         } else {
             Style::default().fg(Color::Green)
         };
+        let privacy_label = format!("Privacy: {}", self.playlist_privacy);
+        let privacy_style = if self.focused_field == FocusedField::PrivacyField {
+            Style::default().fg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::Cyan)
+        };
+        let privacy_widget = Paragraph::new(privacy_label)
+            .block(Block::default().title("Privacy").borders(Borders::ALL))
+            .style(privacy_style)
+            .alignment(Alignment::Center);
+        frame.render_widget(privacy_widget, chunks[2]);
+
         let save_button = Paragraph::new(button_text)
             .style(button_style)
             .alignment(Alignment::Center);
-        frame.render_widget(save_button, chunks[3]);
+        frame.render_widget(save_button, chunks[4]);
 
         let instructions = match self.mode {
             PopupMode::EditingName | PopupMode::EditingDescription => {
@@ -320,6 +348,6 @@ impl PlaylistSavePopup {
         let instructions_widget = Paragraph::new(instructions)
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(instructions_widget, chunks[4]);
+        frame.render_widget(instructions_widget, chunks[5]);
     }
 }
