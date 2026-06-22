@@ -61,6 +61,7 @@ pub mod playlist_update_popup;
 pub mod playlist_editor_popup;
 pub mod playlist_rename_popup;
 pub mod playlist_edit_popup;
+pub mod notes_popup;
 pub mod playlist_details_popup;
 mod effect_handlers;
 pub mod effect_handlers_playlist;

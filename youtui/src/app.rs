@@ -159,6 +159,7 @@ pub enum AppCallback {
     OpenRenamePopup(PlaylistID<'static>, String),
     OpenEditPopup(PlaylistID<'static>, String),
     OpenDetailsPopup(PlaylistID<'static>, String),
+    OpenUrl(String),
     DeletePlaylistFromLibrary(PlaylistID<'static>),
     RenamePlaylistFromLibrary {
         playlist_id: PlaylistID<'static>,
@@ -818,6 +819,10 @@ impl Youtui {
                     }
                     Err(e) => warn!("Failed to read config: {}", e),
                 }
+            }
+            AppCallback::OpenUrl(url) => {
+                let effect = self.window_state.play_yt_url(url);
+                self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::Back => {
                 self.window_state.browser.navigate_back();

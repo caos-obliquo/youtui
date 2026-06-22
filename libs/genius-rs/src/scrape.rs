@@ -2,17 +2,14 @@ use scraper::{Html, Selector};
 use serde_json::Value;
 
 /// Fetch a Genius song page and extract lyrics from the HTML.
-/// Returns (lyrics, final_url). Validates final URL matches expected slug path.
+/// Returns (lyrics, final_url). Checks final URL is on genius.com (rejects external redirects).
 pub async fn fetch_lyrics(
     client: &reqwest::Client,
     song_path: &str,
 ) -> Result<(String, String), String> {
     let (html, _, final_url) = fetch_page(client, song_path).await?;
-    // Check if the final URL matches the expected song path
-    let expected_base = format!("https://genius.com{}", song_path);
-    let expected_base_no_lyrics = format!("https://genius.com{}", song_path.trim_end_matches("-lyrics"));
-    if !final_url.starts_with(&expected_base) && !final_url.starts_with(&expected_base_no_lyrics) {
-        return Err(format!("Redirected to different page: {}", final_url));
+    if !final_url.contains("genius.com") {
+        return Err(format!("Redirected to non-Genius page: {}", final_url));
     }
     let lyrics = extract_lyrics(&html)?;
     Ok((lyrics, final_url))

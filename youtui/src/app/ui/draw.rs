@@ -56,7 +56,8 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         }
         WindowContext::PlaylistRenamePopup
         | WindowContext::PlaylistEditPopup
-        | WindowContext::PlaylistDetailsPopup => {
+        | WindowContext::PlaylistDetailsPopup
+        | WindowContext::Notes => {
             w.playlist
                 .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
         }
@@ -92,6 +93,9 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         popup.draw(f, f.area());
     }
     if let Some(popup) = &mut w.playlist_editor_popup {
+        popup.draw(f, f.area());
+    }
+    if let Some(popup) = &mut w.notes_popup {
         popup.draw(f, f.area());
     }
     if let Some((_, ref title)) = w.delete_confirm {
