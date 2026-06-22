@@ -22,9 +22,6 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, SetVideoID, YoutubeID, LikeStatus};
 use ytmapi_rs::query::playlist::PrivacyStatus;
-// NOTE: Fallback lyrics providers disabled in favor of Genius-only.
-// Uncomment these if you want to re-enable Musixmatch/bandcamp/lyr CLI:
-// use musixmatch_inofficial::Musixmatch;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong, GetPlaylistDetails};
 
 #[derive(PartialEq, Debug)]
@@ -60,6 +57,7 @@ pub struct SearchAlbums(pub String);
 #[derive(Debug, PartialEq)]
 pub struct GetArtistSongs(pub ArtistChannelID<'static>);
 #[derive(Debug, PartialEq)]
+// TODO: Wire batch playlist song streaming
 #[allow(dead_code)]
 pub struct GetPlaylistSongs {
     pub playlist_id: PlaylistID<'static>,
