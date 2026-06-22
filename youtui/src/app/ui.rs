@@ -87,6 +87,7 @@ pub struct YoutuiWindow {
     pub command_mode: bool,
     pub command_editor: ViTextEditor,
     pub count_prefix: usize,
+    pub last_esc_time: Option<std::time::Instant>,
     pub lyrics_inflight: HashSet<String>,
     pub lyrics_viewing_idx: Option<usize>,
     pub last_album_art: Option<std::rc::Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>>,
@@ -578,6 +579,7 @@ impl YoutuiWindow {
             command_mode: false,
             command_editor: ViTextEditor::new(),
             count_prefix: 0,
+            last_esc_time: None,
             lyrics_inflight: HashSet::new(),
             lyrics_viewing_idx: None,
             last_album_art: None,
@@ -878,6 +880,37 @@ impl YoutuiWindow {
     }
     pub fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
         use crossterm::event::KeyCode;
+
+        // Double-Esc: exit all search/filter/popups
+        if key_event.code == KeyCode::Esc {
+            let now = std::time::Instant::now();
+            if let Some(last) = self.last_esc_time {
+                if now.duration_since(last).as_millis() < 300 {
+                    // Double Esc — dismiss everything
+                    self.count_prefix = 0;
+                    self.key_stack.clear();
+                    self.dismiss_search();
+                    self.playlist_editor_popup = None;
+                    self.playlist_rename_popup = None;
+                    self.playlist_edit_popup = None;
+                    self.playlist_details_popup = None;
+                    self.playlist_save_popup = None;
+                    self.playlist_update_popup = None;
+                    self.lyrics_popup = None;
+                    self.song_info_popup = None;
+                    self.album_art_popup = None;
+                    self.config_editor_popup = None;
+                    self.command_mode = false;
+                    self.help.shown = false;
+                    self.last_esc_time = None;
+                    return YoutuiEffect::new_no_op();
+                }
+            }
+            self.last_esc_time = Some(now);
+        } else {
+            self.last_esc_time = None;
+        }
+
         // Count prefix: only active in scrollable list contexts
         let count_prefix_active = matches!(self.context, WindowContext::Playlist | WindowContext::Browser);
         if let KeyCode::Char(c) = key_event.code {

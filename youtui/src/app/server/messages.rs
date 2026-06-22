@@ -22,7 +22,9 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, SetVideoID, YoutubeID, LikeStatus};
 use ytmapi_rs::query::playlist::PrivacyStatus;
-use musixmatch_inofficial::Musixmatch;
+// NOTE: Fallback lyrics providers disabled in favor of Genius-only.
+// Uncomment these if you want to re-enable Musixmatch/bandcamp/lyr CLI:
+// use musixmatch_inofficial::Musixmatch;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong, GetPlaylistDetails};
 
 #[derive(PartialEq, Debug)]
@@ -690,171 +692,67 @@ impl BackendTask<ArcServer> for GetLyrics {
         async move {
             let artist = self.0;
             let title = self.1;
-            let genius_token = self.2;
+            let http = &http_client;
 
-            async fn genius_fetch_lyrics(
-                http_client: &reqwest::Client,
-                path: &str,
-            ) -> Option<String> {
-                match genius_rs::scrape::fetch_lyrics(http_client, path).await {
-                    Ok(lyrics) => {
-                        tracing::info!("Genius scraped lyrics: {} chars, {} lines",
-                            lyrics.len(), lyrics.lines().count());
-                        if lyrics.len() > 50 && lyrics.lines().count() > 2 {
-                            Some(lyrics)
-                        } else {
-                            tracing::info!("Genius scraped lyrics too short, falling through");
-                            None
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("Genius scraping failed: {}", e);
-                        None
+            // Primary: Genius (slug URL first, then API search)
+            let genius = genius_rs::GeniusClient::new(Some(self.2), http_client.clone());
+            match genius.find_and_fetch(&artist, &title).await {
+                Ok((_hit, lyrics)) => {
+                    tracing::info!("Genius lyrics: {} chars, {} lines",
+                        lyrics.len(), lyrics.lines().count());
+                    if lyrics.len() > 50 && lyrics.lines().count() > 2 {
+                        return Ok(lyrics);
                     }
                 }
+                Err(e) => tracing::warn!("Genius fetch failed: {}", e),
             }
 
-            // 1. Try Genius search with Bearer token (best search quality)
-            if !genius_token.is_empty() {
-                let search_url = format!("https://api.genius.com/search?q={}+{}",
-                    urlenc(&artist), urlenc(&title));
-                match http_client
-                    .get(&search_url)
-                    .header("Authorization", format!("Bearer {}", genius_token))
-                    .send().await
-                {
-                    Ok(resp) => {
-                        if let Ok(data) = resp.json::<serde_json::Value>().await {
-                            if let Some(hit) = data.pointer("/response/hits/0/result") {
-                                if let Some(id) = hit.get("id").and_then(|v| v.as_i64()) {
-                                    let path = hit.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                                    tracing::info!("Genius API: found song id={}, path={}", id, path);
-                                    if !path.is_empty() {
-                                        if let Some(lyrics) = genius_fetch_lyrics(&http_client, path).await {
-                                            return Ok(lyrics);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => tracing::warn!("Genius API search error: {}", e),
-                }
+            // Fallback 1: bandcamp-lyrics CLI (great for niche/underground music)
+            fn bc_slug(s: &str) -> String {
+                s.to_lowercase().chars()
+                    .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
+                    .collect::<String>()
+                    .split_whitespace().collect::<Vec<_>>().join("-")
             }
-
-            // Normalize title: lowercase, collapse whitespace, strip non-alphanumeric
-            fn normalize(s: &str) -> String {
-                s.to_lowercase()
-                    .split_whitespace()
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            }
-            tracing::info!("Lyrics fallback: artist='{}', title='{}'", &artist, &title);
-
-            // 2. Try Genius public search API + page scrape (no auth needed)
-            fn urlenc(s: &str) -> String {
-                s.split_whitespace().collect::<Vec<_>>().join("+")
-            }
-            let search_url = format!(
-                "https://genius.com/api/search/song?q={}+{}",
-                urlenc(&title),
-                urlenc(&artist)
-            );
-            match http_client.get(&search_url).send().await {
-                Ok(resp) => {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        if let Some(hit) = data.pointer("/response/sections/0/hits/0/result") {
-                            if let Some(id) = hit.get("id").and_then(|v| v.as_i64()) {
-                                let path = hit.get("path").and_then(|v| v.as_str()).unwrap_or("");
-                                tracing::info!("Genius search: found song id={}, path={}", id, path);
-                                if !path.is_empty() {
-                                    if let Some(lyrics) = genius_fetch_lyrics(&http_client, path).await {
-                                        return Ok(lyrics);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => tracing::warn!("Genius search failed: {}", e),
-            }
-
-            // Try musixmatch-inofficial (free tier may return partial lyrics)
-            match Musixmatch::builder().build() {
-                Ok(client) => match client.matcher_lyrics(&title, &artist).await {
-                    Ok(lyrics) => return Ok(lyrics.lyrics_body),
-                    Err(musixmatch_inofficial::Error::NotFound) => {
-                        tracing::info!("Musixmatch: lyrics not found, trying lyr fallback");
-                    }
-                    Err(e) => {
-                        tracing::warn!("Musixmatch error: {}, trying lyr fallback", e);
-                    }
-                },
-                Err(e) => {
-                    tracing::warn!("Failed to build Musixmatch client: {}", e);
-                }
-            }
-
-            // Try bandcamp with constructed URL before lyr CLI fallback
-            fn bc_slug(s: &str) -> (String, String) {
-                let with = s.to_lowercase().chars().filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-').collect::<String>()
-                    .split_whitespace().collect::<Vec<_>>().join("-");
-                let without = with.replace('-', "");
-                (with, without)
-            }
-            let (bc_artist_hyphen, bc_artist_none) = bc_slug(&artist);
-            let (bc_song_hyphen, _) = bc_slug(&title);
-            let bc_artists = [bc_artist_hyphen.as_str(), bc_artist_none.as_str()];
-            for artist_slug in &bc_artists {
+            let bc_artist = bc_slug(&artist);
+            let bc_title = bc_slug(&title);
+            let bc_variants = [&bc_artist as &str];
+            for artist_slug in &bc_variants {
                 for suffix in &["", "-2", "-3", "-4", "-5"] {
-                    let bc_url = format!("https://{}.bandcamp.com/track/{}{}", artist_slug, bc_song_hyphen, suffix);
-                    tracing::info!("Trying bandcamp URL: {}", bc_url);
-                    match tokio::process::Command::new("bandcamp-lyrics")
-                        .arg(&bc_url)
-                        .output()
-                        .await
+                    let bc_url = format!("https://{}.bandcamp.com/track/{}{}", artist_slug, bc_title, suffix);
+                    if let Ok(out) = tokio::process::Command::new("bandcamp-lyrics")
+                        .arg(&bc_url).output().await
                     {
-                        Ok(out) if out.status.success() => {
-                            let lyrics = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                            if !lyrics.is_empty() {
-                                tracing::info!("bandcamp found lyrics ({} chars)", lyrics.len());
-                                return Ok(lyrics);
+                        if out.status.success() {
+                            let l = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                            if !l.is_empty() {
+                                tracing::info!("bandcamp found lyrics ({} chars)", l.len());
+                                return Ok(l);
                             }
                         }
-                        _ => continue,
                     }
                 }
             }
 
-            // Fallback to lyr with original artist (try multiple variants)
-            let norm_artist = normalize(&artist);
-            let norm_title = normalize(&title);
-            let first_artist = artist.split(',').next().unwrap_or(&artist).trim().to_string();
-            let two_artists = artist.splitn(3, ',').take(2).collect::<Vec<_>>().join(" and ").trim().to_string();
-            let variants: Vec<(&str, &str)> = vec![
-                (&artist, &title),
-                (&first_artist, &title),
-                (&two_artists, &title),
-                (&first_artist, &norm_title),
-                (&norm_artist, &title),
-                (&norm_artist, &norm_title),
+            // Fallback 2: lyr CLI
+            let variants = [
+                (&artist as &str, &title as &str),
+                (artist.split(',').next().unwrap_or(&artist).trim(), &title),
             ];
-
-            for (artist_name, song_title) in &variants {
-                let output = tokio::process::Command::new("lyr")
-                    .args(["--artist", artist_name, "--title", song_title])
-                    .output()
-                    .await;
-                match output {
-                    Ok(out) if out.status.success() => {
+            for (artist_v, title_v) in &variants {
+                if let Ok(out) = tokio::process::Command::new("lyr")
+                    .args(["--artist", artist_v, "--title", title_v])
+                    .output().await
+                {
+                    if out.status.success() {
                         let raw = String::from_utf8_lossy(&out.stdout).to_string();
-                        let lyrics = raw.lines().skip(1).collect::<Vec<_>>().join("\n");
-                        let lyrics = lyrics.splitn(2, "Lyrics").nth(1).unwrap_or(&lyrics).trim().to_string();
-                        if !lyrics.is_empty() {
-                            return Ok(lyrics);
+                        let l = raw.lines().skip(1).collect::<Vec<_>>().join("\n");
+                        let l = l.splitn(2, "Lyrics").nth(1).unwrap_or(&l).trim().to_string();
+                        if !l.is_empty() {
+                            tracing::info!("lyr CLI found lyrics ({} chars)", l.len());
+                            return Ok(l);
                         }
                     }
-                    _ => continue,
                 }
             }
 
