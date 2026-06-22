@@ -215,12 +215,13 @@ pub fn delete_queue(name: &str) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn auto_save(playlist: &Playlist) -> Result<(), Box<dyn std::error::Error>> {
-    debug!("Auto-saving queue");
+    let count = playlist.list.get_list_iter().count();
+    info!("Saving queue ({} songs)", count);
     save_queue(playlist, AUTO_SAVE)
 }
 
 pub fn auto_load(playlist: &mut Playlist) -> Result<(), Box<dyn std::error::Error>> {
-    debug!("Auto-loading queue");
+    info!("Loading saved queue");
     load_queue(playlist, AUTO_SAVE)
 }
 

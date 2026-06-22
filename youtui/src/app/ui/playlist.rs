@@ -246,11 +246,17 @@ impl ActionHandler<PlaylistAction> for Playlist {
             PlaylistAction::ToggleSearch => (self.toggle_search(), None),
             PlaylistAction::ClearSearch => (self.clear_search(), None),
             PlaylistAction::SaveQueue => {
-                let _ = queue_persistence::auto_save(self);
+                match queue_persistence::auto_save(self) {
+                    Ok(_) => info!("Queue saved successfully"),
+                    Err(e) => warn!("Failed to save queue: {}", e),
+                }
                 (AsyncTask::new_no_op(), None)
             }
             PlaylistAction::LoadQueue => {
-                let _ = queue_persistence::auto_load(self);
+                match queue_persistence::auto_load(self) {
+                    Ok(_) => info!("Queue loaded successfully"),
+                    Err(e) => warn!("Failed to load queue: {}", e),
+                }
                 (AsyncTask::new_no_op(), None)
             }
             PlaylistAction::DeleteQueue => (AsyncTask::new_no_op(), None),
