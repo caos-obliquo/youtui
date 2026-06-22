@@ -162,7 +162,7 @@ async fn main() {
 
             match client.fetch_lyrics(&hit.path).await {
                 Ok(lyrics) => {
-                    let annotations = client.fetch_annotations(&hit.path).await.unwrap_or_default();
+                    let annotations = client.fetch_annotations_with_token(&hit.path, hit.id).await.unwrap_or_default();
                     if json {
                         let ann_list: Vec<serde_json::Value> = annotations.iter().map(|a| {
                             serde_json::json!({"fragment": a.fragment, "body": a.body})
