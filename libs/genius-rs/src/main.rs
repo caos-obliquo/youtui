@@ -10,7 +10,8 @@ async fn main() {
         eprintln!("Commands:");
         eprintln!("  fetch | lyrics <artist> <title>   Fetch lyrics");
         eprintln!("  search <artist> <title>            Search Genius for song");
-        eprintln!("  all | full <artist> <title>        Lyrics + annotations");
+        eprintln!("  annotations <artist> <title>        Fetch annotations only");
+        eprintln!("  all | full <artist> <title>         Lyrics + annotations");
         eprintln!("  slug <artist> <title>              Compute song URL only");
         eprintln!();
         eprintln!("Options:");
@@ -141,6 +142,35 @@ async fn main() {
                 Ok(None) => Err(format!("No results for '{} - {}'", artist, title)),
                 Err(e) => Err(e),
             }
+        }
+        "annotations" => {
+            let hit = match client.find_song(artist, title).await {
+                Ok(Some(h)) => h,
+                Ok(None) => { eprintln!("No results for '{} - {}'", artist, title); std::process::exit(1); }
+                Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+            };
+            let annotations = match client.fetch_annotations_with_token(&hit.path, hit.id).await {
+                Ok(a) => a,
+                Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+            };
+            if json {
+                let ann_list: Vec<serde_json::Value> = annotations.iter().map(|a| {
+                    serde_json::json!({"fragment": a.fragment, "body": a.body})
+                }).collect();
+                let j = serde_json::json!({
+                    "artist": hit.artist, "title": hit.title, "id": hit.id,
+                    "path": hit.path, "annotations": ann_list,
+                });
+                println!("{}", serde_json::to_string_pretty(&j).unwrap());
+            } else {
+                println!("=== {} - {} (id={}) ===", hit.artist, hit.title, hit.id);
+                println!("Annotations ({} total):", annotations.len());
+                for (i, ann) in annotations.iter().enumerate() {
+                    println!("\n[{}/{}] \"{}\"", i + 1, annotations.len(), ann.fragment);
+                    println!("{}", ann.body);
+                }
+            }
+            Ok(())
         }
         "all" | "full" => {
             let hit = match client.find_song(artist, title).await {
