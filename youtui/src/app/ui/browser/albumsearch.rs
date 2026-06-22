@@ -413,11 +413,15 @@ pub struct HandleSearchAlbumsOk;
 pub struct HandleSearchAlbumsError;
 
 impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<SearchResultAlbum>, AlbumSearchBrowser, |_, a: Vec<SearchResultAlbum>| {
+    let has_results = !a.is_empty();
     move |target: &mut AlbumSearchBrowser| {
         target.albums = a;
         target.album_selected = 0;
         target.search_popped = false;
         target.search = SearchBlock::default();
+        if has_results {
+            return target.play_selected_album().0;
+        }
         target.show_tracks = false;
         AsyncTask::new_no_op()
     }

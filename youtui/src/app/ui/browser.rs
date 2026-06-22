@@ -524,9 +524,11 @@ impl Browser {
             }
             NavTarget::Album { artist, album } => {
                 self.variant = BrowserVariant::Album;
-                let _ = self.album_search_browser.fetch_albums();
-                let (task, _) = self.album_search_browser.search_albums_query(format!("{artist} {album}"));
-                Some(task.map_frontend(|this: &mut Self| &mut this.album_search_browser))
+                let (fetch_task, _) = self.album_search_browser.fetch_albums();
+                drop(fetch_task);
+                let (search_task, _) = self.album_search_browser.search_albums_query(format!("{artist} {album}"));
+                // Return the search task; fetch_albums is no-op after first call
+                Some(search_task.map_frontend(|this: &mut Self| &mut this.album_search_browser))
             }
             NavTarget::ArtistChannel(channel_id) => {
                 self.variant = BrowserVariant::Artist;
