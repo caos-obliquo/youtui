@@ -32,7 +32,7 @@ impl AlbumArtPopup {
     pub fn draw(&mut self, f: &mut Frame, area: Rect, picker: &Picker) {
         f.render_widget(Clear, area);
         let inner = Rect { x: area.x + 1, y: area.y + 1, width: area.width.saturating_sub(2), height: area.height.saturating_sub(2) };
-        match picker.new_protocol(self.thumbnail.in_mem_image.clone(), inner, Resize::Fit(None)) {
+        match picker.new_protocol(self.thumbnail.in_mem_image.clone(), inner, Resize::Scale(None)) {
             Ok(protocol) => f.render_widget(Image::new(&protocol), inner),
             Err(_) => f.render_widget(Paragraph::new("Failed to load album art").centered(), area),
         }

@@ -42,8 +42,8 @@ enum BrowserVariant {
     Artist,
     Album,
     Song,
-    LibraryPlaylist,
     PlaylistSearch,
+    LibraryPlaylist,
 }
 
 pub struct Browser {
@@ -457,7 +457,7 @@ impl HasTabs for Browser {
         "Browser".into()
     }
     fn tab_items(&'_ self) -> impl IntoIterator<Item = impl Into<Cow<'_, str>>> + '_ {
-        ["Artists", "Albums", "Songs", "Library", "Playlists"]
+        ["Artists", "Albums", "Songs", "Playlists", "Library"]
     }
     fn selected_tab_idx(&self) -> usize {
         self.variant as usize
@@ -766,6 +766,10 @@ impl Browser {
                 None
             }
             BrowserVariant::Song => {
+                self.variant = BrowserVariant::PlaylistSearch;
+                None
+            }
+            BrowserVariant::PlaylistSearch => {
                 self.variant = BrowserVariant::LibraryPlaylist;
                 Some(
                     self.library_browser
@@ -774,10 +778,6 @@ impl Browser {
                 )
             }
             BrowserVariant::LibraryPlaylist => {
-                self.variant = BrowserVariant::PlaylistSearch;
-                None
-            }
-            BrowserVariant::PlaylistSearch => {
                 self.variant = BrowserVariant::Artist;
                 None
             }
@@ -839,7 +839,11 @@ mod tests {
     async fn artist_search_panel_search_suggestions_has_correct_keybinds() {
         let cfg = Config::default();
         let b = Browser::new();
-        let actual_kb = b.get_active_keybinds(&cfg);
+        // Toggle search to make search keybindings active
+        // (ArtistInputRouting defaults to List now)
+        let mut b2 = Browser::new();
+        b2.artist_search_browser.handle_toggle_search();
+        let actual_kb = b2.get_active_keybinds(&cfg);
         let expected_kb = (
             &Keybind::new(crossterm::event::KeyCode::Char('n'), crossterm::event::KeyModifiers::CONTROL),
             &KeyActionTree::new_key(AppAction::BrowserSearch(
@@ -857,6 +861,7 @@ mod tests {
         let mut b = Browser::new();
         b.apply_action(BrowserAction::ChangeSearchType);
         b.apply_action(BrowserAction::ChangeSearchType);
+        b.song_search_browser.handle_toggle_search();
         let actual_kb = b.get_active_keybinds(&cfg);
         let expected_kb = (
             &Keybind::new(crossterm::event::KeyCode::Char('n'), crossterm::event::KeyModifiers::CONTROL),

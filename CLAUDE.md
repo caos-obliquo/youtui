@@ -113,6 +113,17 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 - Save queue/load queue: proper info-level logging
 - TODO.md: added count-in-header standardization task
 
+## Session 2026-06-23 (This Session, Uncommitted)
+- **Footer album format**: Single-line footer `▶ Title - Artist - Album ↺ [s]` instead of separate artist/album lines. footer.rs
+- **Sixel tmux vanish fix**: Post-draw `flush_sixel()` re-sends sixel data with cursor positioning, gated behind `TERM=tmux*` env. app.rs, footer.rs, ui.rs, draw.rs
+- **Sixel `:` command clear**: Clear stale sixel data at top of `draw_app`; blanking sequence when footer hidden. draw.rs, footer.rs
+- **`[I]` mode indicator leak**: Songs `InputRouting::Search`→`List` default; Artists `ArtistInputRouting::Search`→`List` default; `BrowserSearchAction::Close` now resets `search_popped`. songsearch.rs, search_panel.rs, artistsearch.rs
+- **Browser tab order**: Changed from Artists/Albums/Songs/Library/Playlists to Artists/Albums/Songs/Playlists/Library. browser.rs
+- **Album global YTM search**: `handle_text_entry_action(Submit)` now calls `search_albums_query`; removed live-search-on-every-keystroke bug. albumsearch.rs
+- **`o.v` album art popup**: Fixed `ViewAlbumCover` to resolve thumbnail from current song or `last_album_art` fallback; uses `Resize::Scale` for fullscreen upscaled. app.rs, playlist.rs, album_art_popup.rs
+- **Albums right panel**: Always shows `draw_advanced_table` with column headers instead of hint when no album selected. draw.rs
+- **PlaylistSearch right panel**: Same treatment — always shows `draw_advanced_table` headers. draw.rs
+
 ## Known Issues
 - **Genius annotations w/o token**: `__INITIAL_STATE__` scraping fails on most pages. Need `GENIUS_TOKEN`.
 - **Annotations**: Only modern Genius pages with `__INITIAL_STATE__` JSON work.
@@ -120,6 +131,7 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 - **`AppCallback::Back`**: `#[allow(dead_code)]` at app.rs:158 -- TODO: Wire back navigation.
 - **`AppCallback::GetPlaylistDetailsFromLibrary`**: `#[allow(dead_code)]` at app.rs:177 -- rate toggle pending.
 - **`SearchPlaylists`/`GetPlaylistSongs`**: `#[allow(dead_code)]` at messages.rs:54,62 -- batch streaming.
+- **Album art popup**: Sixel fullscreen may fail on small terminals (width/height < image cells). Needs graceful fallback.
 
 ## Remaining
 - Genius annotations: page scrape fallback (no `__INITIAL_STATE__`)

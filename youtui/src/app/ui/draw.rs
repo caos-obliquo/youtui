@@ -14,6 +14,9 @@ use ratatui_image::picker::Picker;
 
 // Add tests to try and draw app with oddly sized windows.
 pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities: &Picker) {
+    // Clear sixel state; draw_footer will re-set if visible
+    w.sixel_data = None;
+    w.sixel_rect = None;
     let [header_chunk, window_chunk, footer_chunk] = Layout::default()
         .direction(Direction::Vertical)
         .margin(0)

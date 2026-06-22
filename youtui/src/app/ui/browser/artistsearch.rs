@@ -219,11 +219,12 @@ impl KeyRouter<AppAction> for ArtistSearchBrowser {
 
 impl ArtistSearchBrowser {
     pub fn text_editor_mode(&self) -> Option<String> {
-        match self.artist_search_panel.route {
-            search_panel::ArtistInputRouting::Search => {
-                Some(self.artist_search_panel.search.search_contents.mode_char().to_string())
-            }
-            _ => None,
+        if self.artist_search_panel.route == search_panel::ArtistInputRouting::Search
+            && self.artist_search_panel.search_popped
+        {
+            Some(self.artist_search_panel.search.search_contents.mode_char().to_string())
+        } else {
+            None
         }
     }
     pub fn new() -> Self {

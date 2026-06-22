@@ -16,8 +16,8 @@ use ytmapi_rs::parse::SearchResultArtist;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum ArtistInputRouting {
-    #[default]
     Search,
+    #[default]
     List,
 }
 

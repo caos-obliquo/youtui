@@ -122,9 +122,7 @@ pub enum AppCallback {
     ViewSongInfo {
         song: ListSong,
     },
-    ViewAlbumCover {
-        thumbnail: std::rc::Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>,
-    },
+    ViewAlbumCover,
     UpdateSongInfo {
         id: ListSongID,
         song: ListSong,
@@ -292,6 +290,7 @@ impl Youtui {
         }
     }
     pub async fn run(&mut self) -> Result<()> {
+        let is_tmux = std::env::var("TERM").ok().map_or(false, |t| t.starts_with("tmux"));
         // Initial draw before first event
         self.terminal.draw(|f| {
             ui::draw::draw_app(
@@ -300,6 +299,7 @@ impl Youtui {
                 &self.terminal_image_capabilities,
             );
         })?;
+        if is_tmux { self.flush_sixel()?; }
         if let Some(media_controls) = &mut self.media_controls {
             media_controls.update_controls(
                 ui::draw_media_controls::draw_app_media_controls(&self.window_state),
@@ -323,6 +323,7 @@ impl Youtui {
                             &self.terminal_image_capabilities,
                         );
                     })?;
+                    if is_tmux { self.flush_sixel()?; }
                     if let Some(media_controls) = &mut self.media_controls {
                         media_controls.update_controls(
                             ui::draw_media_controls::draw_app_media_controls(&self.window_state),
@@ -543,8 +544,23 @@ impl Youtui {
                 let effect = self.window_state.open_song_info_popup(song);
                 self.task_manager.spawn_task(&self.server, effect);
             }
-            AppCallback::ViewAlbumCover { thumbnail } => {
-                self.window_state.album_art_popup = Some(ui::playlist::album_art_popup::AlbumArtPopup::new(thumbnail));
+            AppCallback::ViewAlbumCover => {
+                use crate::app::structures::PlayState;
+                // Use current song's album art, fall back to last_album_art
+                let thumb = match &self.window_state.playlist.play_status {
+                    PlayState::Playing(id) | PlayState::Paused(id) |
+                    PlayState::Buffering(id) => {
+                        self.window_state.playlist.get_song_from_id(*id)
+                            .and_then(|s| match &s.album_art {
+                                crate::app::structures::AlbumArtState::Downloaded(t) => Some(t.clone()),
+                                _ => None,
+                            })
+                    }
+                    _ => None,
+                }.or_else(|| self.window_state.last_album_art.clone());
+                if let Some(thumb) = thumb {
+                    self.window_state.album_art_popup = Some(ui::playlist::album_art_popup::AlbumArtPopup::new(thumb));
+                }
             }
             AppCallback::UpdateSongInfo { id, song } => {
                 let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
@@ -807,6 +823,26 @@ impl Youtui {
                 self.window_state.browser.navigate_back();
             }
         }
+    }
+
+    fn flush_sixel(&mut self) -> Result<()> {
+        use std::io::Write;
+        let rect = self.window_state.sixel_rect;
+        if let Some((data, rect)) = self.window_state.sixel_data.as_ref().zip(rect) {
+            let mut stdout = io::stdout();
+            crossterm::execute!(&mut stdout, crossterm::cursor::MoveTo(rect.x, rect.y))?;
+            stdout.write_all(data.as_bytes())?;
+            stdout.flush()?;
+        } else if let Some(rect) = rect {
+            let mut stdout = io::stdout();
+            crossterm::execute!(&mut stdout, crossterm::cursor::MoveTo(rect.x, rect.y))?;
+            for _ in 0..rect.height {
+                write!(stdout, "\x1b[{}X\x1b[1B", rect.width)?;
+            }
+            write!(stdout, "\x1b[{}A", rect.height)?;
+            stdout.flush()?;
+        }
+        Ok(())
     }
 }
 

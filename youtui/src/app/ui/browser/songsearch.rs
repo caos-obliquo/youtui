@@ -109,8 +109,8 @@ impl Action for BrowserSongsAction {
 
 #[derive(Default)]
 pub enum InputRouting {
-    List,
     #[default]
+    List,
     Search,
     Filter,
     Sort,
@@ -224,7 +224,10 @@ impl ActionHandler<BrowserSearchAction> for SongSearchBrowser {
         match action {
             BrowserSearchAction::PrevSearchSuggestion => self.search.increment_list(-1),
             BrowserSearchAction::NextSearchSuggestion => self.search.increment_list(1),
-            BrowserSearchAction::Close => self.input_routing = InputRouting::List,
+            BrowserSearchAction::Close => {
+                self.search_popped = false;
+                self.input_routing = InputRouting::List;
+            }
         }
         AsyncTask::new_no_op()
     }
