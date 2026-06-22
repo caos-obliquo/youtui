@@ -12,6 +12,7 @@ If things break, rollback and re-apply one-by-one.
 - **Subagent stack**: `rustacean` for Rust code review, `akita` for architecture/tooling decisions.
 - **WHITESPACE** (critical): Keep cursor/indentation whitespace in the above preference block exactly as-is — leading spaces, trailing spaces, blank lines between items. This block is rendered verbatim in opencode prompts and must not drift.
 - **Consistency across windows**: Every browser tab (Artists, Songs, Albums, Library, Playlist) must share the same UI patterns: search (F1), advanced table columns with sort/filter, o-mode context menu, j/k/gg/G navigation. No tab should feel like a second-class citizen.
+- **No em-dashes**: Never use `—` (em-dash) in code. Use `-` (hyphen) instead for all display strings, log messages, comments, and docs. Bad practice, avoid entirely.
 - **Debug-First Rule**: Every new implementation starts by creating CLI debugging tools. CLI tools make tracing changes easier than UI-only debugging. Before wiring UI features, build CLI subcommands/tools that exercise the same backend code paths. Run them to verify correctness before integrating into the UI layer.
 - **Mail**: `caos_obliquo@outlook.com`
 

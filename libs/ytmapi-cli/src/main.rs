@@ -54,7 +54,7 @@ async fn main() {
 }
 
 fn print_usage() {
-    eprintln!("ytmapi — YouTube Music API CLI");
+    eprintln!("ytmapi - YouTube Music API CLI");
     eprintln!();
     eprintln!("USAGE:");
     eprintln!("  ytmapi [options] <command> [args...]");

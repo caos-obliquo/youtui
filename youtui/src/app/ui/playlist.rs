@@ -317,7 +317,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                         .skip(start).take(end - start + 1)
                         .map(|s| {
                             let artists = s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                            format!("{} — {}", artists, s.title)
+                            format!("{} - {}", artists, s.title)
                         })
                         .collect();
                     let _ = std::process::Command::new("wl-copy").arg(lines.join("\n")).spawn();
@@ -2522,7 +2522,7 @@ impl Playlist {
                 }
             }
             DownloadProgressUpdateType::Error => {
-                self.last_error = Some("Download failed — check yt-dlp".to_string());
+                self.last_error = Some("Download failed - check yt-dlp".to_string());
                 error!("download_error: song_id={}", video_id);
                 if let Some(idx) = self.get_index_from_id(id) {
                     if let Some(song) = self.list.get_list_iter_mut().nth(idx) {

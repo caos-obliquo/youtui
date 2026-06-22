@@ -12,6 +12,7 @@ use crate::app::view::draw::{draw_advanced_table, draw_list, draw_loadable, draw
 use crate::drawutils::{
     ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TEXT_COLOUR, below_left_rect, bottom_of_rect,
 };
+use crate::widgets::{ScrollingList, ScrollingListState};
 use vi_text_editor::ViTextEditor;
 use ratatui::Frame;
 use ratatui::prelude::{Constraint, Direction, Layout, Rect};
@@ -146,7 +147,7 @@ pub fn draw_album_search_browser(
     browser: &mut AlbumSearchBrowser,
     chunk: Rect,
     selected: bool,
-    _cur_tick: u64,
+    cur_tick: u64,
 ) {
     let [left_chunk, right_chunk] = Layout::new(
         Direction::Horizontal,
@@ -179,9 +180,11 @@ pub fn draw_album_search_browser(
         left_chunk
     };
 
-    // Left panel: album list (visible both when searching and not)
+    // Left panel: album list with count
+    let count = browser.albums.len();
+    let title_str = format!(" Albums - {} ", count);
     let left_block = Block::default()
-        .title(" Albums ")
+        .title(title_str.as_str())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(if left_selected { SELECTED_BORDER_COLOUR } else { ratatui::style::Color::DarkGray }));
     let left_inner = left_block.inner(left_album_chunk);
@@ -196,27 +199,26 @@ pub fn draw_album_search_browser(
         .alignment(ratatui::layout::Alignment::Center);
         f.render_widget(empty_msg, left_inner);
     } else {
-        let items: Vec<ListItem> = browser.albums.iter().enumerate().map(|(i, a)| {
-            let style = if i == browser.album_selected && left_selected {
-                Style::default().fg(ratatui::style::Color::Black).bg(ROW_HIGHLIGHT_COLOUR)
-            } else {
-                Style::default().fg(TEXT_COLOUR)
-            };
-            let label = if a.year.is_empty() {
-                format!("{} — {}", a.title, a.artist)
-            } else {
-                format!("{} — {} ({})", a.title, a.artist, a.year)
-            };
-            ListItem::new(Line::from(Span::styled(label, style)))
+        let items: Vec<String> = browser.albums.iter().enumerate().map(|(i, a)| {
+            let label = format!("{} - {}", a.title, a.artist);
+            label
         }).collect();
-        f.render_widget(List::new(items).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), left_inner);
+        browser.album_list_state.select(Some(browser.album_selected), cur_tick);
+        let scrolling_list = ScrollingList::new(items, cur_tick)
+            .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
+            .max_times_to_scroll(Some(2));
+        f.render_stateful_widget(
+            scrolling_list,
+            left_inner,
+            &mut browser.album_list_state,
+        );
     }
 
     // Right panel: tracks via advanced table, or hint when no album selected
     if show_tracks {
         draw_panel_mut(f, browser, right_chunk, right_selected, |t, f, chunk| {
             draw_loadable(f, t, chunk, |t, f, chunk| {
-                Some(draw_advanced_table(f, t, chunk, _cur_tick))
+                Some(draw_advanced_table(f, t, chunk, cur_tick))
             })
         });
     } else {
@@ -351,7 +353,7 @@ pub fn draw_library_browser(
                 .iter()
                 .enumerate()
                 .map(|(i, s)| {
-                    let label = format!("{} — {}", s.title, s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "));
+                    let label = format!("{} - {}", s.title, s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "));
                     if i == browser.cur_selected && right_selected {
                         ListItem::new(Line::from(Span::styled(
                             label,
@@ -486,7 +488,7 @@ pub fn draw_library_browser(
                 .iter()
                 .enumerate()
                 .map(|(i, a)| {
-                    let label = format!("{} — {}", a.title, a.artist);
+                    let label = format!("{} - {}", a.title, a.artist);
                     if i == browser.album_selected && right_selected {
                         ListItem::new(Line::from(Span::styled(
                             label,
