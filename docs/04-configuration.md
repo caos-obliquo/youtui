@@ -34,19 +34,25 @@ api_url = "https://libre.fm"
 api_key = ""
 api_secret = ""
 session_key = ""
+genius_token = ""
 ```
 
 ### keybinds
 
-TOML tables mapping key → action for each context. See [Keybindings](05-keybindings.md) for defaults.
+Organized by context as TOML tables. Key names are the literal key (e.g., `h`, `enter`, `space`, `C-n`, `F1`, `o.a`). Actions use the snake_case action name from the codebase.
 
-Example:
+See [Keybindings](05-keybindings.md) for all contexts, actions, and defaults.
+
+Override example (in `~/.config/youtui/config.toml`):
+
 ```toml
-[keybinds]
-"global.play_pause" = "space"
-"global.next_song" = "l"
-"playlist.up" = "k"
-"playlist.down" = "j"
+[keybinds.global]
+F1 = {action = "toggle_browser", visibility = "global"}
+space = "play_pause"
+
+[keybinds.playlist]
+"o.s" = "playlist.toggle_shuffle"
+"o.l" = "playlist.view_lyrics"
 ```
 
 ### mode_names
@@ -54,6 +60,8 @@ Example:
 Custom mode names for context menus. Rarely used.
 
 ## Example Config
+
+Minimal overrides (all keybinds use Rust defaults unless specified):
 
 ```toml
 auth_type = "browser"
@@ -66,12 +74,21 @@ api_url = "https://libre.fm"
 api_key = "your_api_key"
 api_secret = "your_api_secret"
 session_key = "your_session_key"
-
-[keybinds]
-"global.play_pause" = "space"
-"global.next_song" = "l"
-"global.prev_song" = "h"
 ```
+
+Custom keybind example (override specific keys):
+
+```toml
+[keybinds.browser]
+h = "browser.left"
+l = "browser.right"
+
+[keybinds.list]
+k = {action = "list.up", visibility = "hidden"}
+j = {action = "list.down", visibility = "hidden"}
+```
+
+See `config/config.toml.vim-example` in the source tree for a vim-navigation-only override example.
 
 ## Config Loading Sequence
 
