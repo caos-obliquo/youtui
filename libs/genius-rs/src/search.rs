@@ -1,0 +1,190 @@
+#[derive(Debug, Clone)]
+pub struct SongHit {
+    pub id: i64,
+    pub path: String,
+    pub title: String,
+    pub artist: String,
+    pub year: Option<i64>,
+    pub album: Option<String>,
+    pub thumbnail: Option<String>,
+}
+
+impl SongHit {
+    pub fn lyrics_url(&self) -> String {
+        format!("https://genius.com{}", self.path)
+    }
+}
+
+/// Search Genius for a song. Tries Bearer token first, falls back to public API.
+pub async fn search(
+    client: &reqwest::Client,
+    artist: &str,
+    title: &str,
+    token: Option<&str>,
+) -> Result<Vec<SongHit>, String> {
+    if let Some(tok) = token {
+        if !tok.is_empty() {
+            let url = format!(
+                "https://api.genius.com/search?q={}+{}",
+                urlenc(artist),
+                urlenc(title)
+            );
+            match client
+                .get(&url)
+                .header("Authorization", format!("Bearer {}", tok))
+                .send()
+                .await
+            {
+                Ok(resp) => {
+                    if let Ok(data) = resp.json::<serde_json::Value>().await {
+                        let hits = parse_hits(&data, "/response/hits");
+                        if !hits.is_empty() {
+                            return Ok(hits);
+                        }
+                    }
+                }
+                Err(e) => tracing::warn!("Genius Bearer search error: {}", e),
+            }
+        }
+    }
+
+    let url = format!(
+        "https://genius.com/api/search/song?q={}+{}",
+        urlenc(title),
+        urlenc(artist)
+    );
+    match client.get(&url).send().await {
+        Ok(resp) => {
+            if let Ok(data) = resp.json::<serde_json::Value>().await {
+                let hits = parse_hits(&data, "/response/sections/0/hits");
+                if !hits.is_empty() {
+                    return Ok(hits);
+                }
+            }
+            Err(format!("No results from Genius: {}", url))
+        }
+        Err(e) => Err(format!("Genius search request failed: {}", e)),
+    }
+}
+
+fn parse_hits(data: &serde_json::Value, pointer: &str) -> Vec<SongHit> {
+    let mut hits = Vec::new();
+    if let Some(arr) = data.pointer(pointer).and_then(|v| v.as_array()) {
+        for item in arr {
+            let result = match item.get("result") {
+                Some(r) => r,
+                None => continue,
+            };
+            let id = match result.get("id").and_then(|v| v.as_i64()) {
+                Some(id) => id,
+                None => continue,
+            };
+            let path = match result.get("path").and_then(|v| v.as_str()) {
+                Some(p) => p.to_string(),
+                None => continue,
+            };
+            let title = match result.get("title").and_then(|v| v.as_str()) {
+                Some(t) => t.to_string(),
+                None => continue,
+            };
+            let artist = result
+                .get("primary_artist")
+                .and_then(|a| a.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let year = result
+                .get("release_date_components")
+                .and_then(|c| c.get("year"))
+                .and_then(|v| v.as_i64());
+            let album = result
+                .get("album")
+                .and_then(|a| a.get("name"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let thumbnail = result
+                .get("song_art_image_thumbnail_url")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            hits.push(SongHit {
+                id,
+                path,
+                title,
+                artist,
+                year,
+                album,
+                thumbnail,
+            });
+        }
+    }
+    hits
+}
+
+fn urlenc(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join("+")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_hits_bearer() {
+        let json = serde_json::json!({
+            "response": {
+                "hits": [
+                    {
+                        "result": {
+                            "id": 2890914,
+                            "path": "/Fidlar-wasted-lyrics",
+                            "title": "Wasted",
+                            "primary_artist": {"name": "FIDLAR"},
+                            "release_date_components": {"year": 2013},
+                            "album": {"name": "Don't Fuck With Vol. 02"},
+                            "song_art_image_thumbnail_url": "https://images.genius.com/abc.jpg"
+                        }
+                    }
+                ]
+            }
+        });
+        let hits = parse_hits(&json, "/response/hits");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, 2890914);
+        assert_eq!(hits[0].path, "/Fidlar-wasted-lyrics");
+        assert_eq!(hits[0].title, "Wasted");
+        assert_eq!(hits[0].artist, "FIDLAR");
+        assert_eq!(hits[0].year, Some(2013));
+        assert_eq!(hits[0].album, Some("Don't Fuck With Vol. 02".to_string()));
+    }
+
+    #[test]
+    fn test_parse_hits_public() {
+        let json = serde_json::json!({
+            "response": {
+                "sections": [
+                    {
+                        "hits": [
+                            {
+                                "result": {
+                                    "id": 123,
+                                    "path": "/test-song-lyrics",
+                                    "title": "Test Song",
+                                    "primary_artist": {"name": "Test Artist"}
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+        let hits = parse_hits(&json, "/response/sections/0/hits");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, 123);
+    }
+
+    #[test]
+    fn test_parse_hits_empty() {
+        let hits = parse_hits(&serde_json::json!({"response": {}}), "/response/hits");
+        assert!(hits.is_empty());
+    }
+}

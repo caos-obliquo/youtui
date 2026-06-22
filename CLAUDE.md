@@ -70,7 +70,7 @@ Add new entries to `docs/09-roadmap.md` when annotating. Remove `#[allow]` when 
 ## Key Files
 
 | File | Lines | Purpose |
-|---|---|---|
+|---|---|---|---|
 | `app/server/messages.rs` | ~1280 | All backend tasks |
 | `app/ui/playlist.rs` | ~2440 | Queue, playback, scrobbling, visual mode |
 | `app/ui/playlist/effect_handlers_playlist.rs` | ~555 | Frontend effect handlers |
@@ -78,6 +78,7 @@ Add new entries to `docs/09-roadmap.md` when annotating. Remove `#[allow]` when 
 | `app/ui/browser.rs` | ~690 | Browser routing, tab dispatch |
 | `config/keymap.rs` | ~1982 | All keybindings by context |
 | `libs/vi-text-editor/src/lib.rs` | ~2260 | Vi-mode text editor |
+| `libs/genius-rs/src/lib.rs` | ~100 | Genius API client + HTML scraped lyrics/annotations |
 | `app/ui/playlist/playlist_rename_popup.rs` | ~85 | Rename popup (char buffer) |
 | `app/ui/playlist/playlist_edit_popup.rs` | ~165 | Edit popup (4 fields, tab cycle) |
 | `app/ui/playlist/playlist_details_popup.rs` | ~145 | Details popup (loading→display) |

@@ -1,4 +1,4 @@
-use crate::app::AppCallback;
+use crate::app::{AppCallback, NavTarget};
 use crate::app::component::actionhandler::{
     ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
@@ -220,7 +220,13 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
                     }
                 }
             }
-            BrowserSongsAction::GoToAlbum => {}
+            BrowserSongsAction::GoToAlbum => {
+                if let Some(song) = self.track_list.get_list_iter().nth(cur) {
+                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                    let album_name = song.album.as_ref().map(|a| a.name.clone()).unwrap_or_default();
+                    return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Album { artist, album: album_name })));
+                }
+            }
             _ => {}
         }
         (AsyncTask::new_no_op(), None)
@@ -273,9 +279,13 @@ impl TextHandler for AlbumSearchBrowser {
         self.search.search_contents.set_text(&text.into());
     }
     fn is_text_handling(&self) -> bool { self.search_popped }
-    fn handle_text_event_impl(&mut self, _event: &crossterm::event::Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> {
-        // Text events are handled by the SearchBlock/TextHandler dispatch
-        None
+    fn handle_text_event_impl(&mut self, event: &crossterm::event::Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> {
+        if self.search_popped {
+            self.search.handle_text_event_impl(event)
+                .map(|t| t.map_frontend(|this: &mut Self| &mut this.search))
+        } else {
+            None
+        }
     }
 }
 

@@ -523,10 +523,9 @@ impl Browser {
                 Some(effect.map_frontend(|this: &mut Self| &mut this.artist_search_browser))
             }
             NavTarget::Album { artist, album } => {
-                self.variant = BrowserVariant::Song;
-                self.song_search_browser.search.replace_text(format!("{artist} {album}"));
-                self.song_search_browser.handle_toggle_search();
-                None
+                self.variant = BrowserVariant::Album;
+                let (task, _) = self.album_search_browser.search_albums_query(format!("{artist} {album}"));
+                Some(task.map_frontend(|this: &mut Self| &mut this.album_search_browser))
             }
             NavTarget::ArtistChannel(channel_id) => {
                 self.variant = BrowserVariant::Artist;

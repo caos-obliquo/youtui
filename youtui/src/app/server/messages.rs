@@ -656,56 +656,25 @@ impl BackendTask<ArcServer> for GetLyrics {
             let title = self.1;
             let genius_token = self.2;
 
-            async fn genius_json_lyrics(
+            async fn genius_fetch_lyrics(
                 http_client: &reqwest::Client,
-                song_id: i64,
+                path: &str,
             ) -> Option<String> {
-                let lyrics_url = format!("https://genius.com/api/songs/{}/lyrics", song_id);
-                let resp = http_client.get(&lyrics_url).send().await.ok()?;
-                let data: serde_json::Value = resp.json().await.ok()?;
-                let html = data
-                    .pointer("/response/lyrics/lyrics/body/html")?
-                    .as_str()?;
-                let raw = html
-                    .replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n");
-                let mut text = String::new();
-                let mut in_tag = false;
-                for ch in raw.chars() {
-                    match ch {
-                        '<' => in_tag = true,
-                        '>' if in_tag => { in_tag = false; }
-                        _ if !in_tag => text.push(ch),
-                        _ => {}
-                    }
-                }
-                let cleaned = text
-                    .replace("&quot;", "\"").replace("&#x27;", "'")
-                    .replace("&#x2019;", "'").replace("&amp;", "&")
-                    .replace("&lt;", "<").replace("&gt;", ">")
-                    .replace("&#x2014;", "--").replace("&#x2013;", "-");
-                let raw_lines: Vec<&str> = cleaned.lines().collect();
-                let mut merged: Vec<String> = Vec::new();
-                for line in raw_lines {
-                    let t = line.trim();
-                    if t.is_empty() || t.contains("Contributors") || t.contains("You might also like") {
-                        continue;
-                    }
-                    if t == "(" || t == ")" || t.len() <= 2 && (t.contains('(') || t.contains(')')) {
-                        if let Some(last) = merged.last_mut() {
-                            if t == "(" { last.push_str(" ("); }
-                            else { last.push(')'); }
+                match genius_rs::scrape::fetch_lyrics(http_client, path).await {
+                    Ok(lyrics) => {
+                        tracing::info!("Genius scraped lyrics: {} chars, {} lines",
+                            lyrics.len(), lyrics.lines().count());
+                        if lyrics.len() > 50 && lyrics.lines().count() > 2 {
+                            Some(lyrics)
+                        } else {
+                            tracing::info!("Genius scraped lyrics too short, falling through");
+                            None
                         }
-                    } else {
-                        merged.push(t.to_string());
                     }
-                }
-                let result = merged.join("\n");
-                if result.len() > 50 && result.lines().count() > 2 {
-                    tracing::info!("Genius JSON lyrics: {} chars", result.len());
-                    Some(result)
-                } else {
-                    tracing::info!("Genius JSON lyrics too short ({} chars), falling through", result.len());
-                    None
+                    Err(e) => {
+                        tracing::warn!("Genius scraping failed: {}", e);
+                        None
+                    }
                 }
             }
 
@@ -722,9 +691,12 @@ impl BackendTask<ArcServer> for GetLyrics {
                         if let Ok(data) = resp.json::<serde_json::Value>().await {
                             if let Some(hit) = data.pointer("/response/hits/0/result") {
                                 if let Some(id) = hit.get("id").and_then(|v| v.as_i64()) {
-                                    tracing::info!("Genius API: found song id={}", id);
-                                    if let Some(lyrics) = genius_json_lyrics(&http_client, id).await {
-                                        return Ok(lyrics);
+                                    let path = hit.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                    tracing::info!("Genius API: found song id={}, path={}", id, path);
+                                    if !path.is_empty() {
+                                        if let Some(lyrics) = genius_fetch_lyrics(&http_client, path).await {
+                                            return Ok(lyrics);
+                                        }
                                     }
                                 }
                             }
@@ -743,7 +715,7 @@ impl BackendTask<ArcServer> for GetLyrics {
             }
             tracing::info!("Lyrics fallback: artist='{}', title='{}'", &artist, &title);
 
-            // 2. Try Genius public search API + JSON lyrics (no auth needed)
+            // 2. Try Genius public search API + page scrape (no auth needed)
             fn urlenc(s: &str) -> String {
                 s.split_whitespace().collect::<Vec<_>>().join("+")
             }
@@ -757,9 +729,12 @@ impl BackendTask<ArcServer> for GetLyrics {
                     if let Ok(data) = resp.json::<serde_json::Value>().await {
                         if let Some(hit) = data.pointer("/response/sections/0/hits/0/result") {
                             if let Some(id) = hit.get("id").and_then(|v| v.as_i64()) {
-                                tracing::info!("Genius search: found song id={}", id);
-                                if let Some(lyrics) = genius_json_lyrics(&http_client, id).await {
-                                    return Ok(lyrics);
+                                let path = hit.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                tracing::info!("Genius search: found song id={}, path={}", id, path);
+                                if !path.is_empty() {
+                                    if let Some(lyrics) = genius_fetch_lyrics(&http_client, path).await {
+                                        return Ok(lyrics);
+                                    }
                                 }
                             }
                         }
@@ -952,62 +927,27 @@ impl BackendTask<ArcServer> for GetAnnotations {
         async move {
             let artist = self.0;
             let title = self.1;
-            let token = self.2;
 
-            // Search Genius API for song
-            let search_url = format!("https://api.genius.com/search?q={}+{}",
-                artist.split_whitespace().collect::<Vec<_>>().join("+"),
-                title.split_whitespace().collect::<Vec<_>>().join("+"));
-            let resp = client.get(&search_url)
-                .header("Authorization", format!("Bearer {}", token))
-                .send().await.map_err(|e| anyhow::anyhow!("Genius API error: {}", e))?;
-            let data: serde_json::Value = resp.json().await.map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
-            let song_id = data.pointer("/response/hits/0/result/id")
-                .and_then(|id| id.as_u64())
+            // Use genius-rs to find song and scrape all annotations from page HTML
+            let genius = genius_rs::GeniusClient::new(None, client.clone());
+            let hit = genius.find_song(&artist, &title).await
+                .map_err(|e| anyhow::anyhow!("Genius search error: {}", e))?
                 .ok_or_else(|| anyhow::anyhow!("No Genius results"))?;
 
-            // Fetch referents (annotations) for this song
-            let ref_url = format!("https://api.genius.com/referents?song_id={}", song_id);
-            let ref_resp = client.get(&ref_url)
-                .header("Authorization", format!("Bearer {}", token))
-                .send().await.map_err(|e| anyhow::anyhow!("Referents error: {}", e))?;
-            let ref_data: serde_json::Value = ref_resp.json().await.map_err(|e| anyhow::anyhow!("JSON error: {}", e))?;
+            let annotations = genius.fetch_annotations(&hit.path).await
+                .map_err(|e| anyhow::anyhow!("Genius annotation fetch error: {}", e))?;
 
-            let mut annotations = Vec::new();
-            if let Some(refs) = ref_data.pointer("/response/referents").and_then(|r| r.as_array()) {
-                for referent in refs {
-                    let fragment = referent.get("fragment").and_then(|f| f.as_str()).unwrap_or("").to_string();
-                    let body = referent.pointer("/annotations/0/body/dom")
-                        .and_then(|d| extract_text_from_dom(d));
-                    if !fragment.is_empty() && !body.as_deref().unwrap_or("").is_empty() {
-                        annotations.push((fragment, body.unwrap_or_default()));
-                    }
-                }
-            }
-            tracing::info!("Fetched {} annotations for song {}", annotations.len(), song_id);
-            Ok(annotations)
+            let pairs: Vec<(String, String)> = annotations
+                .into_iter()
+                .map(|a| (a.fragment, a.body))
+                .collect();
+
+            tracing::info!("Fetched {} annotations for song {} via HTML scrape", pairs.len(), hit.id);
+            Ok(pairs)
         }
     }
 }
-fn extract_text_from_dom(dom: &serde_json::Value) -> Option<String> {
-    match dom {
-        serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Object(m) => {
-            if let Some(children) = m.get("children").and_then(|c| c.as_array()) {
-                let mut texts = Vec::new();
-                for child in children {
-                    if let Some(t) = extract_text_from_dom(child) {
-                        texts.push(t);
-                    }
-                }
-                if texts.is_empty() { None } else { Some(texts.join(" ")) }
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ValidatedMetadata {
     pub artist: Option<String>,
