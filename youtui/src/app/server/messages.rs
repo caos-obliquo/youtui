@@ -57,8 +57,6 @@ pub struct SearchAlbums(pub String);
 #[derive(Debug, PartialEq)]
 pub struct GetArtistSongs(pub ArtistChannelID<'static>);
 #[derive(Debug, PartialEq)]
-// TODO: Wire batch playlist song fetching for editor/export
-#[allow(dead_code)]
 #[allow(dead_code)]
 pub struct GetPlaylistSongs {
     pub playlist_id: PlaylistID<'static>,

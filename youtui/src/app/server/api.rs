@@ -516,6 +516,7 @@ fn get_artist_songs(
 }
 
 #[allow(dead_code)]
+#[allow(dead_code)]
 pub enum GetPlaylistSongsProgressUpdate {
     Loading,
     Songs(Vec<PlaylistItem>),

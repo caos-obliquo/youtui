@@ -33,7 +33,6 @@ pub enum LyricsPopupState {
     Loading,
     // TODO: Wire lyrics text display — currently set from async fetch
     #[allow(dead_code)]
-    #[allow(dead_code)]
     Loaded(String),
     Error(String),
 }
