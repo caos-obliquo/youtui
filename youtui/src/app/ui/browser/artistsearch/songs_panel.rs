@@ -61,6 +61,7 @@ pub enum BrowserArtistSongsAction {
     ToggleCategoryFilter,
     GoToArtist,
     GoToAlbum,
+    GetRelatedTracks,
 }
 
 impl Action for BrowserArtistSongsAction {
@@ -82,6 +83,7 @@ impl Action for BrowserArtistSongsAction {
             BrowserArtistSongsAction::ToggleCategoryFilter => "Toggle Category Filter",
             BrowserArtistSongsAction::GoToArtist => "Go to Artist",
             BrowserArtistSongsAction::GoToAlbum => "Go to Album",
+            BrowserArtistSongsAction::GetRelatedTracks => "Get Related Tracks",
         }
         .into()
     }

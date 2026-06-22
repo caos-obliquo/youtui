@@ -1,106 +1,99 @@
 # Roadmap
 
-## Completed (2026-06-21)
+## Completed (2026-06-22 — Day 1 + Day 2, 76 commits)
 
 | # | Feature | Files |
 |---|---------|-------|
-| 5 | `Enter` on timestamp line seeks | `lyrics_popup.rs` |
-| 6 | Annotations right-side panel | `lyrics_popup.rs` |
-| 7 | Config reload (`:reload`) | `app.rs`, `app/ui.rs` |
-| 17 | Eliminate 46 youtui warnings (0 remaining) | All youtui files |
-| 18 | Fix 10 ytmapi-rs fixture-drift test failures | 10 expected output files |
-| 19 | Annotate planned dead code with `#[allow]` + TODO | 12 files |
+| 1 | Library browser tab (playlist tracks, context menu, visual mode) | `library.rs`, `playlist.rs`, `keymap.rs` |
+| 2 | ViTextEditor complete (65 tests: f/F/t/T/;/,/%, w/b/e/W/B/E, 0/$/gg/G, r/~/J/./C-r, text objects, surround) | `libs/vi-text-editor/` |
+| 3 | Lyrics popup (visual mode, hybrid line numbers, pagination) | `lyrics_popup.rs` |
+| 4 | Album art 1920x1080 HD, decode loop guard, throttle | `album_art_popup.rs` |
+| 5 | Navigation hub (o→a/b, g→a/b, local search, go-to) | `songsearch.rs`, `albumsearch.rs`, `keymap.rs` |
+| 6 | Keybind standard across all tabs | `keymap.rs` |
+| 7 | Crossterm 0.29 migration, 15→0 warnings | All files |
+| 8 | Nerd icons removed (suckless) | 3 files |
+| 9 | Genius annotations (unified list, scraping, JSON API, right panel, Enter seeks) | `genius-rs/`, `messages.rs`, `lyrics_popup.rs` |
+| 10 | PlaylistEditor (:w/:q/:wq, :rename/:privacy/:rate) | `playlist_editor_popup.rs` |
+| 11 | NavigationController (:cmd parser, skip URL album split) | `shared_components.rs`, `albumsearch.rs` |
+| 12 | Lyrics n/p next/prev song, <> seek, ( ) nav, race guard, LRU cache | `lyrics_popup.rs`, `app/ui.rs` |
+| 13 | Queue sort (o.r cycles columns) | `playlist.rs` |
+| 14 | Genius-rs crate (CLI fetch/search/all/slug, 14 tests) | `libs/genius-rs/` (new) |
+| 15 | Albums tab (replaced Playlists, table columns, sort/filter, YTM search, LRU cache) | `albumsearch.rs`, `draw.rs`, `keymap.rs` |
+| 16 | 46 warnings eliminated, 10 ytmapi-rs fixtures regenerated | All files |
+| 17 | Batch-merge o.M context menu | `library.rs`, `keymap.rs`, `playlist_update_popup.rs` |
+| 18 | Config reload (:reload) + SeekTo callback | `app.rs`, `app/ui.rs` |
+| 19 | Playlist popups (rename, edit 4-field, details loading→display, save privacy) | `playlist_rename_popup.rs`, `playlist_edit_popup.rs`, `playlist_details_popup.rs`, `playlist_save_popup.rs` |
+| 20 | Visual mode Shift+HJKL + arrows in VL/VC + lyrics | `vi-text-editor/`, `lyrics_popup.rs` |
 
-## Completed (2026-06-22)
+## Completed (2026-06-22 — Day 3 Polish, 32 commits)
 
 | # | Feature | Files |
 |---|---------|-------|
-| 20 | `libs/genius-rs` crate — search, HTML scrape, annotations CLI | `libs/genius-rs/` (new) |
-| 21 | Genius lyrics pipeline: 403 fix via HTML scraping + `[Verse]` preservation | `messages.rs:659-710`, `scrape.rs` |
-| 22 | Genius annotations: ALL annotations from `__INITIAL_STATE__` (no pagination) | `scrape.rs`, `messages.rs:919-966` |
-| 23 | Fix `NavTarget::Album` → Albums tab with `GetAlbumQuery` | `browser.rs:525-529` |
-| 24 | Wire F1 search in Albums tab (`TextHandler` delegate to `SearchBlock`) | `albumsearch.rs:276-279` |
-| 25 | Wire `GoToAlbum` context menu in album track view | `albumsearch.rs:223-229` |
-| 26 | Remove tracks from playlist (`o.x`) | `library.rs`, `app.rs`, `messages.rs` |
-| 27 | Reorder tracks in playlist (`o.J`/`o.K`) | `library.rs`, `app.rs`, `keymap.rs` |
-| 28 | Playlist Editor Popup (7 methods wired into dispatch) | `playlist_editor_popup.rs`, `app/ui.rs` |
-| 29 | Albums draw quadrants consistency | `draw.rs` |
-| 30 | Artist subscribe/unsubscribe (`o.S`/`o.U`) | `messages.rs`, `app.rs`, `library.rs`, `keymap.rs` |
-| 31 | Back navigation wired | `app.rs` |
+| 21 | ytmapi-cli (live queries: search/search-artists/search-albums/playlist/album/artist/library/fixture) | `libs/ytmapi-cli/` |
+| 22 | Edit playlist 400 fix (privacy_status serialization) | `edit.rs` |
+| 23 | Genius annotations gate removed (always try) | `messages.rs` |
+| 24 | Album art centering (vertical) | `album_art_popup.rs` |
+| 25 | Comprehensive docs (5.4k-line reference, man pages) | `docs/` |
+| 26 | Final clean builds (0 warnings) | All workspace |
+
+## Completed (2026-06-23 — This Session, uncommitted)
 
 | # | Feature | Files |
 |---|---------|-------|
-| 5 | `Enter` on timestamp line seeks | `lyrics_popup.rs` |
-| 6 | Annotations right-side panel | `lyrics_popup.rs` |
-| 7 | Config reload (`:reload`) | `app.rs`, `app/ui.rs` |
-| 17 | Eliminate 46 youtui warnings (0 remaining) | All youtui files |
-| 18 | Fix 10 ytmapi-rs fixture-drift test failures | 10 expected output files |
-| 19 | Annotate planned dead code with `#[allow]` + TODO | 12 files across messages, api, UI |
+| 27 | ytmapi-rs locale parameterization (+3 tests) | `client.rs`, `auth.rs`, `lib.rs` |
+| 28 | ytmapi-cli watch-playlist subcommand (Debug-First) | `ytmapi-cli/main.rs` |
+| 29 | Metadata-provider crate extraction (19 tests, 8 files → 1 crate) | `libs/metadata-provider/` (new) |
+| 30 | Queue sort popup improvements (j/k nav, Enter/Esc, o.S) | `playlist.rs`, `keymap.rs` |
+| 31 | Lyrics race guard (generation: u64 counter) | `app/ui.rs` |
+| 32 | LRU lyrics cache + negative TTL (5-min error, cross-song) | `lyrics_popup.rs`, `app/ui.rs` |
+| 33 | **CRITICAL: PlaylistSearch tab fixed** (deprecated→real types, dispatch wired, keybindings populated) | `action.rs`, `app/ui.rs`, `keymap.rs` |
+| 34 | Recommendations o.r context menu (GetRelatedTracks → WatchPlaylistQuery) | `messages.rs`, `effect_handlers_playlist.rs`, `songsearch.rs`, `library.rs`, `keymap.rs` |
+| 35 | NavigationController: fix albumsearch GoToAlbum | `albumsearch.rs` |
+| 36 | Library refresh fixes (4 missing playlists_fetched = false) | `app.rs` |
+| 37 | Auth test infra (3 cookie path fallbacks) | `ytmapi-rs/tests/utils/mod.rs` |
+| 38 | 9 stale #[allow(dead_code)] annotations removed | 4 files |
+| 39 | Keybinding additions: o.q/o.L/o.Q/o.m/o.n (queue), o.r (library) | `keymap.rs` |
 
 ## Immediate (Next Session)
 
 | # | Feature | Est | Files |
 |---|---------|-----|-------|
-| 1 | Queue sort (`o.s` popup) | med | `playlist.rs`, `keymap.rs` |
-| 2 | Race guard (`generation: u64` on lyrics/validation) | med | `messages.rs`, `effect_handlers_playlist.rs` |
-| 3 | Inflight dedup (`HashSet` for lyrics requests) | med | `messages.rs` |
-| 4 | LRU lyrics cache with negative TTL | med | `messages.rs`, `lyrics_popup.rs` |
+| 1 | `AppCallback::Back` — wire back navigation | small | `app.rs` |
+| 2 | Genius annotations page scrape fallback (no `__INITIAL_STATE__`) | med | `genius-rs/`, `messages.rs` |
+| 3 | Genius lyrics Musixmatch integration | small | `lyrics_popup.rs` |
 
-## Short Term
+## Medium Term
 
 | # | Feature | Est | Notes |
 |---|---------|-----|-------|
-| 8 | NavigationController struct | small | Centralize GoToArtist/GoToAlbum (kopuz) |
-| 9 | Recommendations (`o.r` context menu) | med | New `GetRelatedTracks` backend task |
-| 10 | Library refresh fixes | small | Already exists as `r` key, review behavior |
+| 4 | audio-player crate extraction | large | Deep async_rodio_sink coupling |
+| 5 | ytmapi-cli more fixture types + streaming tests | small | `ytmapi-cli/main.rs` |
+| 6 | Rate toggle from details popup (parse like_status) | med | `messages.rs` |
+| 7 | Batch reorder (not just swap) in ytmapi-rs | large | `ytmapi-rs/` |
 
-## Visual Mode Enhancements
+## Crate Extraction Status
 
-| # | Feature | Est | Status |
-|---|---------|-----|--------|
-| 11 | H/J/K/L + arrows in VisualChar mode | tiny | Done |
-| 12 | Full VisualChar motion parity in VisualLine mode | small | Done |
-| 13 | H/L/arrows + 0/$ in lyrics normal mode | tiny | Done |
-| 14 | H/J/K/L/arrows/0/w/b/e in lyrics visual mode | small | Done |
-| 15 | Phase 3: Rate toggle (parse like_status) | med | Blocked (needs details response field) |
-| 16 | Phase 4: Reorder UI wiring | med | Blocked (needs setVideoId parsed) |
+| # | Crate | Status | Tests |
+|---|-------|--------|-------|
+| 1 | ytmapi-rs | ✅ Extracted | 85 lib + 28/52 auth |
+| 2 | json-crawler | ✅ Extracted | 8 |
+| 3 | async-callback-manager | ✅ Extracted | 15 |
+| 4 | vi-text-editor | ✅ Extracted | 65 |
+| 5 | genius-rs | ✅ Extracted | 14 |
+| 6 | ytmapi-cli | ✅ Extracted | 3 |
+| 7 | metadata-provider | ✅ Extracted | 19 |
+| 8 | audio-player | ❌ Blocked | Deep async_rodio_sink coupling |
 
-## Wiring Backlog (Remaining Dead Code)
+## ViTextEditor — Complete ✅
 
-Grep `TODO: Wire` for all remaining unconnected features:
+65 tests, all pass. Full feature set. See `libs/vi-text-editor/`.
 
-| # | Feature | Files | Notes |
-|---|---------|-------|-------|
-| 20 | Playlist search tab | `messages.rs`, `api.rs` | New browser tab for playlist search |
-| 21 | Batch playlist song streaming | `api.rs`, `messages.rs` | Stream all songs from playlist |
-| 28 | Queue column sort | `playlist.rs` | Header click sort |
-| 29 | Batch append for merge/reorder | `structures.rs` | Raw playlist item batch ops |
-| 30 | Albums tab caching | `albumsearch.rs` | Cache flag + fetch trigger |
-| 31 | Album search text input | `albumsearch.rs` | Search suggestions + routing |
-| 32 | Lyrics filter | `lyrics_popup.rs` | Filter text in lyrics view |
-| 34 | Artist subscription toggle | `library.rs` | Check current subscription status |
+## Browser Tabs Feature Parity
 
-## Medium Term — Crate Extraction
-
-| # | Crate | Files | Reason |
-|---|-------|-------|--------|
-| 11 | `search-block` | `browser/shared_components.rs` | Reuse for Libre.fm, Bandcamp |
-| 12 | `scrolling-table` + `scrolling-list` | `widgets/` | Generic TUI widgets |
-| 13 | `metadata-provider` trait | `app/server/providers/` | Swap YTM ↔ Bandcamp ↔ Libre.fm |
-| 14 | `audio-player` | `app/server/player.rs` | Standalone gapless player crate |
-
-## Long Term — Libre Source Stack
-
-| # | Project | Description |
-|---|---------|-------------|
-| 15 | **Bandcamp name-your-price** | Metadata provider + scraper for Bandcamp |
-| 16 | **Libre.fm client** | Scrobbling → full library management |
-| 17 | **Embedded music player** | Via already-decoupled `TaskManager` + `DecodeSong` pipeline |
-
-## ViTextEditor — All Complete ✅
-
-Everything from the [zsh-vi-mode + binvim comparison](02-crates/vi-text-editor.md) has been implemented and tested (65 tests, all pass).
-
-Items intentionally deferred:
-- **MotionKind enum** — not needed since `apply_motion_op` helper already DRYed the operator-pending handler
-- **Count prefix inside crate** — outer keymap system owns count routing; would conflict
+| Tab | Search | Columns | Sort/Filter | o Menu | Navigation | Fully Wired |
+|-----|--------|---------|-------------|--------|------------|-------------|
+| Artists | ✅ F1 | ✅ | ✅ | ✅ o.S/o.U | ✅ g→a/g→b | ✅ |
+| Albums | ✅ F1 | ✅ | ✅ | ✅ all actions | ✅ g→a/g→b | ✅ |
+| Songs | ✅ F1 | ✅ | ✅ | ✅ all actions | ✅ g→a/g→b | ✅ |
+| Library | ✅ F1 | ✅ | ✅ | ✅ all actions | ✅ g→a/g→b | ✅ |
+| PlaylistSearch | ✅ F1 | ✅ | ✅ | ✅ all actions | ✅ g→a/g→b | **✅ FIXED** |

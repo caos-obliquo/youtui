@@ -180,9 +180,7 @@ impl PostQuery for EditPlaylistQuery<'_> {
                 "addToTop" : add_to_top
             }))
         };
-        // NOTE: privacy_status is added above — duplicate at lines 154-159
         // TODO: Confirm if VL needs to be stripped / added from playlistId
-        // Confirmed!
         let serde_json::Value::Object(map) = json!({
             "playlistId" : self.id.get_raw(),
             "actions" : actions,

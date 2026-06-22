@@ -56,6 +56,7 @@ pub enum BrowserPlaylistSongsAction {
     CopySongUrl,
     GoToArtist,
     GoToAlbum,
+    GetRelatedTracks,
 }
 
 impl Action for BrowserPlaylistSongsAction {
@@ -74,6 +75,7 @@ impl Action for BrowserPlaylistSongsAction {
             BrowserPlaylistSongsAction::CopySongUrl => "Copy Song URL",
             BrowserPlaylistSongsAction::GoToArtist => "Go to Artist",
             BrowserPlaylistSongsAction::GoToAlbum => "Go to Album",
+            BrowserPlaylistSongsAction::GetRelatedTracks => "Get Related Tracks",
         }
         .into()
     }
@@ -221,6 +223,7 @@ impl PlaylistSongsPanel {
         self.get_filtered_list_iter().nth(idx)
     }
 
+    #[allow(dead_code)]
     pub fn go_to_first(&mut self) {
         match self.route {
             PlaylistSongsInputRouting::List => {
@@ -235,6 +238,7 @@ impl PlaylistSongsPanel {
         }
     }
 
+    #[allow(dead_code)]
     pub fn go_to_last(&mut self) {
         match self.route {
             PlaylistSongsInputRouting::List => {

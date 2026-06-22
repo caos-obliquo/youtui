@@ -4,16 +4,39 @@ use crate::app::component::actionhandler::{
 };
 use crate::app::server::SearchAlbums;
 use crate::app::component::actionhandler::Suggestable;
-use crate::app::structures::BrowserSongsList;
+use crate::app::structures::{
+    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage,
+};
 use crate::app::ui::action::{AppAction, TextEntryAction};
-use super::shared_components::{BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager};
-use super::songsearch::BrowserSongsAction;
+use crate::app::view::{
+    AdvancedTableView, BasicConstraint, HasTitle, Loadable, SortDirection,
+    TableFilterCommand, TableSortCommand, TableView,
+};
 use crate::config::Config;
 use crate::config::keymap::Keymap;
+use crate::widgets::ScrollingTableState;
+use super::shared_components::{
+    BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager, get_adjusted_list_column,
+};
+use super::songsearch::BrowserSongsAction;
+use anyhow::{Result, bail};
 use async_callback_manager::{AsyncTask, BackendTask};
-use tracing::info;
+use lru::LruCache;
+use std::borrow::Cow;
+use std::num::NonZeroUsize;
+use tracing::{info, warn};
+use vi_text_editor::ViTextEditor;
 use ytmapi_rs::parse::{SearchResultAlbum, AlbumSong, ParsedSongAlbum, ParsedSongArtist};
 use ytmapi_rs::common::{AlbumID, SearchSuggestion, Thumbnail, YoutubeID};
+
+#[derive(Default)]
+pub enum InputRouting {
+    List,
+    #[default]
+    Search,
+    Filter,
+    Sort,
+}
 
 pub struct AlbumSearchBrowser {
     pub albums: Vec<SearchResultAlbum>,
@@ -24,10 +47,14 @@ pub struct AlbumSearchBrowser {
     pub fetched: bool,
     pub album_year: String,
     pub album_artist: String,
+    pub input_routing: InputRouting,
+    pub widget_state: ScrollingTableState,
     pub sort: SortManager,
     pub filter: FilterManager,
     pub search: SearchBlock,
     pub search_popped: bool,
+    search_cache: LruCache<String, Vec<SearchResultAlbum>>,
+    last_search_query: Option<String>,
 }
 
 impl_youtui_component!(AlbumSearchBrowser);
@@ -47,6 +74,10 @@ impl AlbumSearchBrowser {
             filter: FilterManager::default(),
             search: SearchBlock::default(),
             search_popped: false,
+            input_routing: InputRouting::List,
+            widget_state: ScrollingTableState::default(),
+            search_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
+            last_search_query: None,
         }
     }
 
@@ -107,8 +138,6 @@ impl AlbumSearchBrowser {
         } else {
             self.search_popped = true;
             self.search = SearchBlock::default();
-            self.albums.clear();
-            self.album_selected = 0;
         }
     }
 
@@ -116,9 +145,10 @@ impl AlbumSearchBrowser {
         if self.search_popped {
             match action {
                 TextEntryAction::Submit => {
-                    let query = self.search.search_contents.get_text().to_string();
-                    if !query.is_empty() {
-                        return self.search_albums_query(query).0;
+                    self.search_popped = false;
+                    self.search = SearchBlock::default();
+                    if !self.albums.is_empty() {
+                        return self.play_selected_album().0;
                     }
                 }
                 TextEntryAction::DeleteWord => {
@@ -140,6 +170,13 @@ impl AlbumSearchBrowser {
     }
 
     pub fn search_albums_query(&mut self, query: String) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        if let Some(cached) = self.search_cache.get(&query) {
+            self.albums = cached.clone();
+            self.album_selected = 0;
+            self.show_tracks = false;
+            return (AsyncTask::new_no_op(), None);
+        }
+        self.last_search_query = Some(query.clone());
         let task = AsyncTask::new_future_try(
             SearchAlbums(query),
             HandleSearchAlbumsOk,
@@ -156,6 +193,208 @@ impl AlbumSearchBrowser {
         if self.show_tracks { self.track_selected = self.track_list.get_list_iter().count().saturating_sub(1); }
         else { self.album_selected = self.albums.len().saturating_sub(1); }
     }
+    fn subcolumns_of_vec() -> [ListSongDisplayableField; 4] {
+        [
+            ListSongDisplayableField::Song,
+            ListSongDisplayableField::Artists,
+            ListSongDisplayableField::Duration,
+            ListSongDisplayableField::Year,
+        ]
+    }
+    pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> + '_ {
+        self.track_list.get_list_iter().filter(move |ls| {
+            self.get_filter_commands()
+                .iter()
+                .fold(true, |acc, command| {
+                    let match_found = command.matches_row(
+                        ls,
+                        Self::subcolumns_of_vec(),
+                        self.get_filterable_columns(),
+                    );
+                    acc && match_found
+                })
+        })
+    }
+    pub fn apply_all_sort_commands(&mut self) -> Result<()> {
+        for c in self.sort.sort_commands.iter() {
+            if !self.get_sortable_columns().contains(&c.column) {
+                bail!(format!("Unable to sort column {}", c.column));
+            }
+            self.track_list.sort(
+                get_adjusted_list_column(c.column, Self::subcolumns_of_vec())?,
+                c.direction,
+            );
+        }
+        Ok(())
+    }
+    pub fn apply_filter(&mut self) {
+        self.filter.shown = false;
+        self.input_routing = InputRouting::List;
+        let Some(filter) = self.filter.get_text().map(|s| s.to_string()) else {
+            return;
+        };
+        let cmd = TableFilterCommand::All(crate::app::view::Filter::Contains(
+            crate::app::view::FilterString::case_insensitive(filter),
+        ));
+        self.filter.filter_commands.push(cmd);
+        let new_max_cur = self.get_filtered_list_iter().count().saturating_sub(1);
+        self.track_selected = self.track_selected.min(new_max_cur);
+    }
+    pub fn clear_filter(&mut self) {
+        self.filter.shown = false;
+        self.input_routing = InputRouting::List;
+        self.clear_filter_commands();
+    }
+    pub fn toggle_filter(&mut self) {
+        if !self.filter.shown {
+            self.filter.filter_text.clear();
+            self.input_routing = InputRouting::Filter;
+        } else {
+            self.clear_filter_commands();
+            self.input_routing = InputRouting::List;
+        }
+        self.filter.shown = !self.filter.shown;
+    }
+    pub fn close_sort(&mut self) {
+        self.sort.shown = false;
+        self.input_routing = InputRouting::List;
+    }
+    pub fn handle_pop_sort(&mut self) {
+        self.sort.cur = 0;
+        self.sort.shown = true;
+        self.input_routing = InputRouting::Sort;
+    }
+    pub fn handle_sort_cur_asc(&mut self) {
+        let Some(column) = self.sortable_columns().get(self.sort.cur) else {
+            warn!("Tried to index sortable columns but was out of range");
+            return;
+        };
+        if let Err(e) = self.push_sort_command(TableSortCommand {
+            column: *column,
+            direction: SortDirection::Asc,
+        }) {
+            warn!("Tried to sort a column that is not sortable - error {e}")
+        };
+        self.close_sort();
+    }
+    pub fn handle_sort_cur_desc(&mut self) {
+        let Some(column) = self.sortable_columns().get(self.sort.cur) else {
+            warn!("Tried to index sortable columns but was out of range");
+            return;
+        };
+        if let Err(e) = self.push_sort_command(TableSortCommand {
+            column: *column,
+            direction: SortDirection::Desc,
+        }) {
+            warn!("Tried to sort a column that is not sortable - error {e}")
+        };
+        self.close_sort();
+    }
+    fn sortable_columns(&self) -> &[usize] { &[0, 1, 3] }
+}
+
+impl Loadable for AlbumSearchBrowser {
+    fn is_loading(&self) -> bool {
+        matches!(self.track_list.state, ListStatus::Loading)
+    }
+}
+impl HasTitle for AlbumSearchBrowser {
+    fn get_title(&self) -> Cow<'_, str> {
+        if self.show_tracks {
+            let album = self.albums.get(self.album_selected);
+            let name = album.map_or("", |a| a.title.as_str());
+            format!(" {} — {} ", self.album_artist, name).into()
+        } else {
+            " Album Tracks ".into()
+        }
+    }
+}
+impl TableView for AlbumSearchBrowser {
+    fn get_selected_item(&self) -> usize {
+        self.track_selected
+    }
+    fn get_state(&self) -> &ScrollingTableState {
+        &self.widget_state
+    }
+    fn get_mut_state(&mut self) -> &mut ScrollingTableState {
+        &mut self.widget_state
+    }
+    fn get_layout(&self) -> &[BasicConstraint] {
+        &[
+            BasicConstraint::Percentage(Percentage(35)),
+            BasicConstraint::Percentage(Percentage(30)),
+            BasicConstraint::Length(8),
+            BasicConstraint::Length(6),
+        ]
+    }
+    fn get_highlighted_row(&self) -> Option<usize> {
+        None
+    }
+    fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
+        self.track_list
+            .get_list_iter()
+            .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
+    }
+    fn get_headings(&self) -> impl Iterator<Item = &'static str> {
+        ["Song", "Artist", "Duration", "Year"].into_iter()
+    }
+}
+impl AdvancedTableView for AlbumSearchBrowser {
+    fn get_filtered_count(&self) -> usize {
+        self.get_filtered_list_iter().count()
+    }
+    fn get_sortable_columns(&self) -> &[usize] {
+        &[0, 1, 3]
+    }
+    fn get_sort_commands(&self) -> &[TableSortCommand] {
+        &self.sort.sort_commands
+    }
+    fn push_sort_command(&mut self, sort_command: TableSortCommand) -> Result<()> {
+        if !self.get_sortable_columns().contains(&sort_command.column) {
+            bail!(format!("Unable to sort column {}", sort_command.column));
+        }
+        self.track_list.sort(
+            get_adjusted_list_column(sort_command.column, Self::subcolumns_of_vec())?,
+            sort_command.direction,
+        );
+        self.sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+        self.sort.sort_commands.push(sort_command);
+        Ok(())
+    }
+    fn clear_sort_commands(&mut self) {
+        self.sort.sort_commands.clear();
+    }
+    fn get_filter_commands(&self) -> &[TableFilterCommand] {
+        &self.filter.filter_commands
+    }
+    fn clear_filter_commands(&mut self) {
+        self.filter.filter_commands.clear()
+    }
+    fn get_filterable_columns(&self) -> &[usize] {
+        &[0, 1, 3]
+    }
+    fn get_sort_popup_cur(&self) -> usize {
+        self.sort.cur
+    }
+    fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
+        self.get_filtered_list_iter()
+            .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
+    }
+    fn sort_popup_shown(&self) -> bool {
+        self.sort.shown
+    }
+    fn filter_popup_shown(&self) -> bool {
+        self.filter.shown
+    }
+    fn get_sort_state(&self) -> &ratatui::widgets::ListState {
+        &self.sort.state
+    }
+    fn get_mut_sort_state(&mut self) -> &mut ratatui::widgets::ListState {
+        &mut self.sort.state
+    }
+    fn get_mut_filter_state(&mut self) -> &mut ViTextEditor {
+        &mut self.filter.filter_text
+    }
 }
 
 impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
@@ -163,6 +402,9 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
         let cur = self.track_selected;
         match action {
             BrowserSongsAction::PlaySong => {
+                if !self.show_tracks {
+                    return self.play_selected_album().into();
+                }
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
                     return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])));
                 }
@@ -219,10 +461,22 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
             }
             BrowserSongsAction::GoToAlbum => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                    let album_name = song.album.as_ref().map(|a| a.name.clone()).unwrap_or_default();
-                    return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Album { artist, album: album_name })));
+                    if let Some(cb) = super::shared_components::navigate_to_album(song) {
+                        return (AsyncTask::new_no_op(), Some(cb));
+                    }
+                    warn!("Song has no album data, cannot navigate to album");
                 }
+            }
+            BrowserSongsAction::GetRelatedTracks => {
+                if let Some(song) = self.track_list.get_list_iter().nth(cur) {
+                    return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+                }
+            }
+            BrowserSongsAction::Filter => {
+                self.toggle_filter();
+            }
+            BrowserSongsAction::Sort => {
+                self.handle_pop_sort();
             }
             _ => {}
         }
@@ -241,23 +495,39 @@ impl KeyRouter<AppAction> for AlbumSearchBrowser {
 
 impl Scrollable for AlbumSearchBrowser {
     fn increment_list(&mut self, amount: isize) {
-        let max = if self.show_tracks {
-            self.track_list.get_list_iter().count().saturating_sub(1)
-        } else {
-            self.albums.len().saturating_sub(1)
-        };
-        if self.show_tracks {
-            self.track_selected = self.track_selected.saturating_add_signed(amount).min(max);
-        } else {
-            self.album_selected = self.album_selected.saturating_add_signed(amount).min(max);
+        match self.input_routing {
+            InputRouting::List => {
+                let max = if self.show_tracks {
+                    self.track_list.get_list_iter().count().saturating_sub(1)
+                } else {
+                    self.albums.len().saturating_sub(1)
+                };
+                if self.show_tracks {
+                    self.track_selected = self.track_selected.saturating_add_signed(amount).min(max);
+                } else {
+                    self.album_selected = self.album_selected.saturating_add_signed(amount).min(max);
+                }
+            }
+            InputRouting::Sort => {
+                self.sort.cur = self
+                    .sort
+                    .cur
+                    .saturating_add_signed(amount)
+                    .min(self.get_sortable_columns().len().saturating_sub(1));
+            }
+            InputRouting::Search | InputRouting::Filter => {}
         }
     }
-    fn is_scrollable(&self) -> bool { true }
+    fn is_scrollable(&self) -> bool {
+        matches!(self.input_routing, InputRouting::List | InputRouting::Sort)
+    }
 }
 
 impl TextHandler for AlbumSearchBrowser {
     fn get_text(&self) -> Option<&str> {
-        if self.search_popped {
+        if matches!(self.input_routing, InputRouting::Filter) {
+            self.filter.get_text()
+        } else if self.search_popped {
             Some(self.search.search_contents.get_text())
         } else {
             None
@@ -275,12 +545,33 @@ impl TextHandler for AlbumSearchBrowser {
     fn replace_text(&mut self, text: impl Into<String>) {
         self.search.search_contents.set_text(&text.into());
     }
-    fn is_text_handling(&self) -> bool { self.search_popped }
+    fn is_text_handling(&self) -> bool {
+        self.search_popped || matches!(self.input_routing, InputRouting::Filter)
+    }
     fn handle_text_event_impl(&mut self, event: &crossterm::event::Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> {
         if self.search_popped {
-            tracing::info!("AlbumSearch key event: {:?}, search_popped={}", event, self.search_popped);
-            self.search.handle_text_event_impl(event)
-                .map(|t| t.map_frontend(|this: &mut Self| &mut this.search))
+            if let crossterm::event::Event::Key(k) = event {
+                if k.kind == crossterm::event::KeyEventKind::Press {
+                    match k.code {
+                        crossterm::event::KeyCode::Char(_) | crossterm::event::KeyCode::Backspace | crossterm::event::KeyCode::Delete => {
+                            self.search.handle_text_event_impl(event);
+                            let query = self.search.search_contents.get_text().to_string();
+                            if !query.is_empty() {
+                                let (task, _) = self.search_albums_query(query);
+                                return Some(task);
+                            }
+                            return None;
+                        }
+                        _ => {
+                            return self.search.handle_text_event_impl(event)
+                                .map(|t| t.map_frontend(|this: &mut Self| &mut this.search));
+                        }
+                    }
+                }
+            }
+            None
+        } else if matches!(self.input_routing, InputRouting::Filter) {
+            self.filter.handle_text_event_impl(event).map(|t| t.map_frontend(|this: &mut Self| &mut this.filter))
         } else {
             None
         }
@@ -412,16 +703,13 @@ pub struct HandleSearchAlbumsOk;
 pub struct HandleSearchAlbumsError;
 
 impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<SearchResultAlbum>, AlbumSearchBrowser, |_, a: Vec<SearchResultAlbum>| {
-    let has_results = !a.is_empty();
     move |target: &mut AlbumSearchBrowser| {
-        target.albums = a;
+        target.albums = a.clone();
         target.album_selected = 0;
-        target.search_popped = false;
-        target.search = SearchBlock::default();
-        if has_results {
-            return target.play_selected_album().0;
-        }
         target.show_tracks = false;
+        if let Some(query) = target.last_search_query.take() {
+            target.search_cache.put(query, a);
+        }
         AsyncTask::new_no_op()
     }
 });

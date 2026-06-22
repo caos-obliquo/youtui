@@ -766,6 +766,12 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
                     }
                 }
+                BrowserSongsAction::GetRelatedTracks => {
+                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                    if let Some(song) = songs.get(self.cur_selected) {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+                    }
+                }
                 _ => warn!("Unsupported song action for liked songs: {:?}", action),
             },
             #[allow(unreachable_patterns)]
@@ -862,6 +868,13 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         }
                     }
                 }
+                BrowserSongsAction::GetRelatedTracks => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+                        }
+                    }
+                }
                 BrowserSongsAction::Filter => {
                     if self.show_playlist_tracks {
                         self.filter.shown = !self.filter.shown;
@@ -951,6 +964,13 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                                     below.video_id.clone(),
                                 )));
                             }
+                        }
+                    }
+                }
+                BrowserSongsAction::MergePlaylist => {
+                    if !self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistMergePopup(pl.playlist_id.clone())));
                         }
                     }
                 }

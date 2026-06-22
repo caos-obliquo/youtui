@@ -9,6 +9,8 @@ use std::borrow::Cow;
 #[derive(Debug, Clone)]
 pub struct Client {
     inner: reqwest::Client,
+    pub language: String,
+    pub location: String,
 }
 /// Body that can be sent as a POST query using our client.
 pub enum Body {
@@ -57,20 +59,42 @@ impl Client {
     /// Utilises reqwest's default tls choice for the enabled set of options.
     pub fn new() -> Result<Self> {
         let inner = reqwest::Client::builder().http1_only().build()?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            language: "en".to_string(),
+            location: "US".to_string(),
+        })
     }
     #[cfg(feature = "native-tls")]
     #[cfg_attr(docsrs, doc(cfg(feature = "native-tls")))]
     /// Force the use of native-tls
     pub fn new_native_tls() -> Result<Self> {
         let inner = reqwest::Client::builder().use_native_tls().build()?;
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            language: "en".to_string(),
+            location: "US".to_string(),
+        })
     }
     #[cfg(feature = "reqwest")]
     #[cfg_attr(docsrs, doc(cfg(feature = "reqwest")))]
     /// Re-use a pre-existing reqwest::Client.
     pub fn new_from_reqwest_client(client: reqwest::Client) -> Self {
-        Self { inner: client }
+        Self {
+            inner: client,
+            language: "en".to_string(),
+            location: "US".to_string(),
+        }
+    }
+    /// Set the UI language (hl parameter, e.g. "en", "de", "ja").
+    pub fn with_language(mut self, lang: impl Into<String>) -> Self {
+        self.language = lang.into();
+        self
+    }
+    /// Set the geo location (gl parameter, e.g. "US", "DE", "JP").
+    pub fn with_location(mut self, loc: impl Into<String>) -> Self {
+        self.location = loc.into();
+        self
     }
     /// Run a POST query, with url, body, key/kalue params and headers.
     pub async fn post_query<'a, I>(

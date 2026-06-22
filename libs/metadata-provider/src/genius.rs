@@ -1,5 +1,4 @@
-use super::MetadataProvider;
-use crate::app::server::ValidatedMetadata;
+use crate::{MetadataProvider, ValidatedMetadata};
 use futures::future::BoxFuture;
 
 pub struct GeniusProvider {
@@ -38,13 +37,11 @@ impl MetadataProvider for GeniusProvider {
             let data: serde_json::Value = resp.json().await.ok()?;
             let hit = data.pointer("/response/hits/0/result")?;
 
-            // Extract release year from release_date_components
             let year = hit.get("release_date_components")
                 .and_then(|c| c.get("year"))
                 .and_then(|y| y.as_i64())
                 .map(|y| y.to_string());
 
-            // Extract album name if available
             let album = hit.get("album")
                 .and_then(|a| a.get("name"))
                 .and_then(|n| n.as_str())
@@ -107,7 +104,6 @@ mod tests {
             .and_then(|n| n.as_str())
             .map(|s| s.to_string());
         assert_eq!(album, None);
-        // Year also missing
         let year = hit.get("release_date_components")
             .and_then(|c| c.get("year"))
             .and_then(|y| y.as_i64())

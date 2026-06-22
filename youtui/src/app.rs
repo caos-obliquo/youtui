@@ -109,6 +109,7 @@ pub enum AppCallback {
     AddSongsToPlaylistAndPlay(Vec<ListSong>),
     OpenPlaylistSavePopup(Vec<VideoID<'static>>),
     OpenPlaylistUpdatePopup(Vec<VideoID<'static>>),
+    OpenPlaylistMergePopup(PlaylistID<'static>),
     AddVideosToPlaylistFromPopup {
         playlist_id: PlaylistID<'static>,
         video_ids: Vec<VideoID<'static>>,
@@ -147,6 +148,7 @@ pub enum AppCallback {
     PlayPrev,
     ReloadConfig,
     InsertNext(Vec<ListSong>),
+    GetRelatedTracks(ytmapi_rs::common::VideoID<'static>),
     OpenPlaylistEditor {
         playlist_id: ytmapi_rs::common::PlaylistID<'static>,
         playlist_title: String,
@@ -178,8 +180,6 @@ pub enum AppCallback {
     ReorderPlaylistItemFromLibrary(PlaylistID<'static>, VideoID<'static>, VideoID<'static>),
     SubscribeToArtistFromLibrary(ArtistChannelID<'static>),
     UnsubscribeFromArtistFromLibrary(Vec<ArtistChannelID<'static>>),
-    // TODO: Wire playlist merge — context menu entry pending
-    #[allow(dead_code)]
     AddPlaylistToPlaylistFromLibrary(PlaylistID<'static>, PlaylistID<'static>),
 }
 
@@ -238,7 +238,7 @@ impl Youtui {
                     task.type_debug, task.type_id, task.constraint
                 )
             });
-        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config));
+        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config, crate::get_config_dir().ok().map(|d| d.join("metadata_overrides.json"))));
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
         // The docs for this function state that it must be run after entering alternate
@@ -421,11 +421,30 @@ impl Youtui {
                 &self.server,
                 self.window_state.handle_insert_next(song_list),
             ),
+            AppCallback::GetRelatedTracks(video_id) => {
+                use crate::app::server::GetRelatedTracks;
+                use crate::app::ui::playlist::effect_handlers_playlist::{
+                    HandleGetRelatedTracksOk, HandleGetRelatedTracksErr,
+                };
+                let task: crate::app::component::actionhandler::ComponentEffect<crate::app::ui::YoutuiWindow> =
+                    AsyncTask::new_future_try(
+                        GetRelatedTracks(video_id),
+                        HandleGetRelatedTracksOk,
+                        HandleGetRelatedTracksErr,
+                        None,
+                    )
+                    .map_frontend(|this: &mut crate::app::ui::YoutuiWindow| &mut this.playlist);
+                self.task_manager.spawn_task(&self.server, task);
+            }
             AppCallback::OpenPlaylistSavePopup(video_ids) => {
                 self.window_state.open_playlist_save_popup(video_ids);
             }
             AppCallback::OpenPlaylistUpdatePopup(video_ids) => {
                 let effect = self.window_state.open_playlist_update_popup(video_ids);
+                self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::OpenPlaylistMergePopup(source_playlist_id) => {
+                let effect = self.window_state.open_playlist_merge_popup(source_playlist_id);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::AddVideosToPlaylistFromPopup {
@@ -434,6 +453,7 @@ impl Youtui {
                 overwrite,
             } => {
                 self.window_state.close_popup();
+                self.window_state.browser.library_browser.playlists_fetched = false;
                 let add_effect = AsyncTask::new_future_try(
                     AddSongsToPlaylist {
                         playlist_id: playlist_id.clone(),
@@ -457,6 +477,7 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::RemovePlaylistItemsFromLibrary(playlist_id, video_ids) => {
+                self.window_state.browser.library_browser.playlists_fetched = false;
                 let effect = AsyncTask::new_future_try(
                     server::RemovePlaylistItems {
                         playlist_id,
@@ -470,6 +491,7 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ReorderPlaylistItemFromLibrary(playlist_id, video_id, target_video_id) => {
+                self.window_state.browser.library_browser.playlists_fetched = false;
                 let effect = AsyncTask::new_future_try(
                     server::ReorderPlaylistItem {
                         playlist_id,
@@ -641,6 +663,7 @@ impl Youtui {
                 video_ids,
             } => {
                 self.window_state.close_popup();
+                self.window_state.browser.library_browser.playlists_fetched = false;
                 const MAX_YTM_SONGS: usize = 5000;
                 let total = video_ids.len();
                 if total > MAX_YTM_SONGS {

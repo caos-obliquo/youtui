@@ -1,4 +1,3 @@
-/// Normalize text for Last.fm API queries (replace & with "and", strip year suffixes)
 pub fn norm_for_lfm(s: &str) -> String {
     let mut out: &str = s.trim();
     let out_owned = out.replace(" & ", " and ").replace("&", "and");
@@ -20,12 +19,10 @@ pub fn norm_for_lfm(s: &str) -> String {
     }
     out = &result;
 
-    // Strip parenthesized blocks like " (2021 - Goregrind / Noisegrind)" or "(2000)"
     if let Some(pos) = out.find(" (") {
         out = out[..pos].trim();
     }
 
-    // Strip bracketed suffixes like " [grind]" or "[HD]"
     if let Some(pos) = out.find(" [") {
         out = out[..pos].trim();
     }
@@ -33,21 +30,18 @@ pub fn norm_for_lfm(s: &str) -> String {
     out.to_string()
 }
 
-/// Extract year from a date string. Handles "11 Nov 2007", "2007-11-11", "2007", etc.
 pub fn extract_year(s: &str) -> Option<String> {
     s.split(|c: char| !c.is_ascii_digit())
         .find(|part| part.len() == 4)
         .map(|s| s.to_string())
 }
 
-/// Extract duration from Last.fm JSON value (can be string "203" or int 203)
 pub fn extract_duration(v: &serde_json::Value) -> f64 {
     v.as_str().and_then(|s| s.parse::<f64>().ok())
         .or_else(|| v.as_f64())
         .unwrap_or(0.0)
 }
 
-/// Parse Discogs duration "M:SS" or "H:MM:SS" to seconds
 pub fn parse_discogs_duration(s: &str) -> f64 {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() == 2 {
@@ -61,19 +55,6 @@ pub fn parse_discogs_duration(s: &str) -> f64 {
     }
 }
 
-/// Rate limiter: at most 1 Discogs request per second (60 req/min)
-pub fn discogs_limiter() -> &'static tokio::sync::Semaphore {
-    static S: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
-    S.get_or_init(|| tokio::sync::Semaphore::new(1))
-}
-
-/// Rate limiter: at most 1 MusicBrainz request per second
-pub fn musicbrainz_limiter() -> &'static tokio::sync::Semaphore {
-    static S: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
-    S.get_or_init(|| tokio::sync::Semaphore::new(1))
-}
-
-/// URL-encode a string for API queries
 pub fn urlencoding(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -87,6 +68,16 @@ pub fn urlencoding(s: &str) -> String {
         }
     }
     out
+}
+
+pub fn discogs_limiter() -> &'static tokio::sync::Semaphore {
+    static S: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    S.get_or_init(|| tokio::sync::Semaphore::new(1))
+}
+
+pub fn musicbrainz_limiter() -> &'static tokio::sync::Semaphore {
+    static S: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    S.get_or_init(|| tokio::sync::Semaphore::new(1))
 }
 
 #[cfg(test)]

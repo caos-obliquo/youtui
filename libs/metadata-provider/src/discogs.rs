@@ -1,6 +1,5 @@
-use super::util;
-use super::MetadataProvider;
-use crate::app::server::{AlbumTrack, ValidatedMetadata};
+use crate::util;
+use crate::{AlbumTrack, MetadataProvider, ValidatedMetadata};
 use futures::future::BoxFuture;
 
 pub struct DiscogsProvider {
@@ -27,12 +26,6 @@ impl MetadataProvider for DiscogsProvider {
             if artist.is_empty() || title.is_empty() {
                 return None;
             }
-
-            // First try Last.fm album.getInfo for tracklist (may have year too)
-            // Discogs is only for tracklist+year when Last.fm fails
-            // But actually, this provider handles Discogs directly.
-            // The old pipeline tried Last.fm first in fetch_album_tracks.
-            // Here we only do Discogs.
 
             let search_url = format!(
                 "https://api.discogs.com/database/search?artist={}&album={}&type=master&format=album&format=cd",

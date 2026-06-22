@@ -132,7 +132,6 @@ pub struct Playlist {
     /// Sort state for queue
     pub sort_mode: bool,
     pub sort_column: usize,
-    #[allow(dead_code)]
     pub sort_direction: SortDirection,
 }
 
@@ -171,6 +170,7 @@ pub enum PlaylistAction {
     ToggleVisualMode,
     GoToArtist,
     GoToAlbum,
+    GetRelatedTracks,
     ToggleLike,
     ViewAlbumCover,
     ContextActions,
@@ -217,6 +217,7 @@ impl Action for PlaylistAction {
             PlaylistAction::ToggleVisualMode => "Toggle Visual Mode",
             PlaylistAction::GoToArtist => "Go to Artist",
             PlaylistAction::GoToAlbum => "Go to Album",
+            PlaylistAction::GetRelatedTracks => "Get Related Tracks",
             PlaylistAction::ToggleLike => "Like / Unlike",
             PlaylistAction::ViewAlbumCover => "View Album Cover",
             PlaylistAction::ContextActions => "Context Actions",
@@ -351,6 +352,13 @@ impl ActionHandler<PlaylistAction> for Playlist {
                         return (AsyncTask::new_no_op(), Some(cb));
                     }
                     warn!("Song has no album data, cannot navigate to album");
+                }
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::GetRelatedTracks => {
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                if let Some(song) = self.get_song_from_idx(actual_index) {
+                    return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
                 }
                 (AsyncTask::new_no_op(), None)
             },
@@ -510,7 +518,6 @@ fn sort_column_to_field(col: usize) -> ListSongDisplayableField {
     }
 }
 
-#[allow(dead_code)]
 fn sort_column_label(col: usize) -> &'static str {
     match col {
         0 => "Title",
@@ -608,25 +615,41 @@ impl TextHandler for Playlist {
 impl DrawableMut for Playlist {
     fn draw_mut_chunk(&mut self, f: &mut Frame, chunk: Rect, selected: bool, cur_tick: u64) {
         if self.sort_mode {
-            use ratatui::widgets::{Clear, Block, Borders, List, ListItem};
+            use ratatui::widgets::{Clear, Block, Borders, List, ListItem, Paragraph};
             use ratatui::style::{Color, Style};
-            let popup = crate::drawutils::centered_rect(4, 28, chunk);
+            use ratatui::text::Span;
+            let popup = crate::drawutils::centered_rect(6, 28, chunk);
             f.render_widget(Clear, popup);
             let items: Vec<ListItem> = (0..=3).map(|col| {
                 let label = if col == self.sort_column {
-                    format!("✓ {} {:?}", sort_column_label(col), self.sort_direction)
+                    format!("▸ {} {:?}", sort_column_label(col), self.sort_direction)
                 } else {
                     format!("  {}", sort_column_label(col))
                 };
                 ListItem::new(label).style(Style::default().fg(Color::White))
             }).collect();
+            let inner = ratatui::layout::Rect {
+                x: popup.x,
+                y: popup.y,
+                width: popup.width,
+                height: popup.height - 1,
+            };
             f.render_widget(
                 List::new(items)
                     .block(Block::default()
-                        .title("Sort Queue")
+                        .title(" Sort Queue ")
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(Color::Cyan))),
-                popup,
+                inner,
+            );
+            let help_y = popup.y + popup.height - 1;
+            let help_chunk = ratatui::layout::Rect { x: popup.x, y: help_y, width: popup.width, height: 1 };
+            f.render_widget(
+                Paragraph::new(Span::styled(
+                    "j/k col  Enter apply  Esc cancel",
+                    Style::default().fg(Color::DarkGray),
+                )),
+                help_chunk,
             );
             return;
         }
@@ -2007,6 +2030,12 @@ impl Playlist {
     }
 
     pub fn play_selected(&mut self) -> ComponentEffect<Self> {
+        if self.sort_mode {
+            let field = sort_column_to_field(self.sort_column);
+            self.list.sort(field, self.sort_direction);
+            self.sort_mode = false;
+            return AsyncTask::new_no_op();
+        }
         if self.list.get_list_iter().len() == 0 {
             return AsyncTask::new_no_op();
         }
@@ -2253,6 +2282,10 @@ impl Playlist {
     }
 
     pub fn clear_search(&mut self) -> ComponentEffect<Self> {
+        if self.sort_mode {
+            self.sort_mode = false;
+            return AsyncTask::new_no_op();
+        }
         self.search_text.clear();
         self.update_search_indices();
         self.cur_selected = self.cur_selected.min(self.get_max_visual_index());

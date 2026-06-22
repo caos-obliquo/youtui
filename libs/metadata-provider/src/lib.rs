@@ -1,24 +1,25 @@
-pub mod util;
-mod overrides;
-
-use super::ValidatedMetadata;
-use overrides::MetadataOverrides;
-use futures::future::BoxFuture;
-use lru::LruCache;
-use std::num::NonZeroUsize;
-use std::sync::Mutex;
-
 mod lastfm_album;
 mod lastfm_track;
 mod discogs;
 mod genius;
 mod musicbrainz;
+pub mod util;
+pub mod overrides;
 
 pub use lastfm_album::AlbumSearchProvider;
 pub use lastfm_track::TrackSearchProvider;
 pub use discogs::DiscogsProvider;
 pub use genius::GeniusProvider;
 pub use musicbrainz::MusicBrainzProvider;
+
+pub use validated_metadata::{AlbumTrack, ValidatedMetadata};
+mod validated_metadata;
+
+use futures::future::BoxFuture;
+use lru::LruCache;
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
+use std::sync::Mutex;
 
 pub trait MetadataProvider: Send + Sync {
     fn priority(&self) -> u8;
@@ -34,7 +35,8 @@ pub struct MetadataRegistry {
     providers: Vec<Box<dyn MetadataProvider>>,
     http_client: reqwest::Client,
     cache: Mutex<LruCache<String, ValidatedMetadata>>,
-    overrides: Mutex<MetadataOverrides>,
+    overrides: Mutex<overrides::MetadataOverrides>,
+    overrides_path: Option<PathBuf>,
 }
 
 impl MetadataRegistry {
@@ -43,6 +45,7 @@ impl MetadataRegistry {
         lastfm_key: Option<String>,
         discogs_token: Option<String>,
         genius_token: Option<String>,
+        overrides_path: Option<PathBuf>,
     ) -> Self {
         let mut providers: Vec<Box<dyn MetadataProvider>> = vec![
             Box::new(AlbumSearchProvider::new(lastfm_key.clone())),
@@ -56,7 +59,8 @@ impl MetadataRegistry {
             providers,
             http_client,
             cache: Mutex::new(LruCache::new(NonZeroUsize::new(200).unwrap())),
-            overrides: Mutex::new(MetadataOverrides::load()),
+            overrides: Mutex::new(overrides::MetadataOverrides::load(overrides_path.clone())),
+            overrides_path,
         }
     }
 
@@ -97,6 +101,8 @@ impl MetadataRegistry {
     pub fn save_override(&self, artist: &str, title: &str, meta: &ValidatedMetadata) {
         let mut overrides = self.overrides.lock().unwrap();
         overrides.set(artist, title, meta);
-        overrides.save();
+        if let Some(ref path) = self.overrides_path {
+            overrides.save_to(path);
+        }
     }
 }

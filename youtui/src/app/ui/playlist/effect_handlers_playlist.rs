@@ -14,6 +14,7 @@ use tracing::{error, info};
 use ytmapi_rs::common::{PlaylistID, YoutubeID};
 use ytmapi_rs::parse::LibraryPlaylist;
 use ytmapi_rs::parse::PlaylistSong;
+use ytmapi_rs::parse::WatchPlaylistTrack;
 
 #[derive(Debug, PartialEq)]
 pub struct HandleRateSongOk;
@@ -48,20 +49,16 @@ pub struct HandleGetPlaylistDetailsOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleGetPlaylistDetailsError;
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub struct HandleReorderPlaylistItemOk;
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub struct HandleReorderPlaylistItemError;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistError;
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub struct HandleRemovePlaylistItemsOk;
 #[derive(Debug, PartialEq)]
-#[allow(dead_code)]
 pub struct HandleRemovePlaylistItemsError;
 
 #[derive(Debug, PartialEq)]
@@ -911,6 +908,65 @@ impl_youtui_task_handler!(
     }
 );
 
+// GetRelatedTracks handler — converts WatchPlaylistTrack → ListSong and inserts next
+#[derive(Debug, PartialEq)]
+pub struct HandleGetRelatedTracksOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleGetRelatedTracksErr;
+
+impl_youtui_task_handler!(
+    HandleGetRelatedTracksOk,
+    Vec<WatchPlaylistTrack>,
+    Playlist,
+    |_, tracks: Vec<WatchPlaylistTrack>| {
+        move |this: &mut Playlist| {
+            let count = tracks.len();
+            let songs: Vec<crate::app::structures::ListSong> = tracks.into_iter().map(|t| {
+                crate::app::structures::ListSong {
+                    video_id: t.video_id,
+                    track_no: None,
+                    plays: String::new(),
+                    title: t.title,
+                    explicit: None,
+                    download_status: DownloadStatus::None,
+                    id: crate::app::structures::ListSongID(0),
+                    duration_string: t.duration,
+                    actual_duration: None,
+                    start_offset: None,
+                    year: None,
+                    album_art: AlbumArtState::None,
+                    genres: Vec::new(),
+                    styles: Vec::new(),
+                    artists: MaybeRc::Owned(vec![ListSongArtist {
+                        name: t.author,
+                        id: None,
+                    }]),
+                    thumbnails: MaybeRc::Owned(t.thumbnails),
+                    album: None,
+                    like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+                }
+            }).collect();
+            this.insert_next_song_list(songs);
+            info!("Inserted {} related tracks", count);
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleGetRelatedTracksErr,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("GetRelatedTracks failed: {}", msg);
+            this.last_error = Some(format!("Related tracks failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
 #[derive(Debug, PartialEq)]
 pub struct HandleSubscribeToArtistOk;
 #[derive(Debug, PartialEq)]
@@ -955,10 +1011,8 @@ impl_youtui_task_handler!(HandleUnsubscribeFromArtistsError, anyhow::Error, Play
 
 
 
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleAddPlaylistToPlaylistOk;
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleAddPlaylistToPlaylistError;
 

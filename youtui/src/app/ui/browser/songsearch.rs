@@ -68,6 +68,8 @@ pub enum BrowserSongsAction {
     MoveTrackDown,
     SubscribeToArtist,
     UnsubscribeFromArtist,
+    MergePlaylist,
+    GetRelatedTracks,
 }
 
 impl Action for BrowserSongsAction {
@@ -98,6 +100,8 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::MoveTrackDown => "Move Track Down",
             BrowserSongsAction::SubscribeToArtist => "Subscribe to Artist",
             BrowserSongsAction::UnsubscribeFromArtist => "Unsubscribe from Artist",
+            BrowserSongsAction::MergePlaylist => "Merge Playlist Into",
+            BrowserSongsAction::GetRelatedTracks => "Get Related Tracks",
         }
         .into()
     }
@@ -240,6 +244,7 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::CopySongUrl => return self.copy_song_url().into(),
             BrowserSongsAction::GoToArtist => return self.go_to_artist().into(),
             BrowserSongsAction::GoToAlbum => return self.go_to_album().into(),
+            BrowserSongsAction::GetRelatedTracks => return self.get_related_tracks().into(),
             _ => warn!("Unsupported action: {:?}", action),
         }
         YoutuiEffect::new_no_op()
@@ -649,6 +654,13 @@ impl SongSearchBrowser {
             return (AsyncTask::new_no_op(), None);
         }
         (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(song_list)))
+    }
+    pub fn get_related_tracks(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        if let Some(song) = self.get_song_from_idx(cur_idx) {
+            return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+        }
+        (AsyncTask::new_no_op(), None)
     }
     pub fn add_song_to_playlist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();

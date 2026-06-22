@@ -1,0 +1,17 @@
+[package]
+name = "metadata-provider"
+version = "0.1.0"
+edition = "2021"
+authors = ["nick42d"]
+license = "MIT"
+description = "Metadata provider trait and implementations for youtui"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.11", default-features = false, features = ["json"] }
+lru = "0.12"
+futures = "0.3"
+tokio = { version = "1", features = ["sync"] }
+tracing = "0.1"
+anyhow = "1"

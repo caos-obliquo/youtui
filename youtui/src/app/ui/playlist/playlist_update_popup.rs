@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use ytmapi_rs::common::VideoID;
+use ytmapi_rs::common::{PlaylistID, VideoID};
 use ytmapi_rs::parse::LibraryPlaylist;
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
@@ -45,6 +45,7 @@ pub enum PlaylistUpdatePopupState {
 
 pub struct PlaylistUpdatePopup {
     video_ids: Vec<VideoID<'static>>,
+    source_playlist_id: Option<PlaylistID<'static>>,
     pub state: PlaylistUpdatePopupState,
     pub selected_idx: usize,
     list_state: ListState,
@@ -106,12 +107,18 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
                 if let PlaylistUpdatePopupState::Loaded(playlists) = &self.state {
                     self.list_state.select(Some(self.selected_idx));
                     if let Some(playlist) = self.selected_playlist(playlists) {
-                        let playlist_id = playlist.playlist_id.clone();
-                        if self.video_ids.is_empty() {
+                        let target_id = playlist.playlist_id.clone();
+                        if let Some(source_id) = &self.source_playlist_id {
+                            // Merge mode: add source playlist to target playlist
+                            (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::AddPlaylistToPlaylistFromLibrary(source_id.clone(), target_id)),
+                            )
+                        } else if self.video_ids.is_empty() {
                             // Load mode: fetch playlist tracks into player
                             (
                                 AsyncTask::new_no_op(),
-                                Some(AppCallback::LoadPlaylistFromPopup(playlist_id)),
+                                Some(AppCallback::LoadPlaylistFromPopup(target_id)),
                             )
                         } else {
                             // Add to existing playlist mode
@@ -120,7 +127,7 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
                             (
                                 AsyncTask::new_no_op(),
                                 Some(AppCallback::AddVideosToPlaylistFromPopup {
-                                    playlist_id,
+                                    playlist_id: target_id,
                                     video_ids,
                                     overwrite,
                                 }),
@@ -146,6 +153,23 @@ impl PlaylistUpdatePopup {
         list_state.select(Some(0));
         Self {
             video_ids,
+            source_playlist_id: None,
+            state: PlaylistUpdatePopupState::Loading,
+            selected_idx: 0,
+            list_state,
+            search_text: String::new(),
+            search_active: false,
+            filtered_indices: Vec::new(),
+            overwrite: false,
+        }
+    }
+
+    pub fn new_merge(source_playlist_id: PlaylistID<'static>) -> Self {
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
+        Self {
+            video_ids: Vec::new(),
+            source_playlist_id: Some(source_playlist_id),
             state: PlaylistUpdatePopupState::Loading,
             selected_idx: 0,
             list_state,
@@ -259,7 +283,9 @@ impl PlaylistUpdatePopup {
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
         let mode_indicator = if self.overwrite { " [Replace]" } else { " [Append]" };
-        let title = if self.video_ids.is_empty() {
+        let title = if self.source_playlist_id.is_some() {
+            " Merge Playlist Into ".to_string()
+        } else if self.video_ids.is_empty() {
             " Load YouTube Music Playlist ".to_string()
         } else if self.search_active {
             format!(" Search Playlists [{}] ", self.search_text)
