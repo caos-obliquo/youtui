@@ -26,6 +26,20 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | [07-testing](07-testing.md) | Test structure, running, coverage |
 | [08-known-issues](08-known-issues.md) | Bugs, workarounds, version issues |
 | [09-roadmap](09-roadmap.md) | Future features, crate extraction |
+| [man/genius-rs.1](man/genius-rs.1) | Man page — genius-rs CLI (lyrics + annotations) |
+| [man/ytmapi-cli.1](man/ytmapi-cli.1) | Man page — ytmapi-cli (YTM API debug tool) |
+
+## Man Pages
+
+Man pages for CLI tools are in `docs/man/`. Install system-wide:
+
+```bash
+sudo install -m 644 docs/man/genius-rs.1 /usr/local/share/man/man1/
+sudo install -m 644 docs/man/ytmapi-cli.1 /usr/local/share/man/man1/
+# Then view:
+man genius-rs
+man ytmapi-cli
+```
 
 ## Quick Reference
 
