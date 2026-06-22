@@ -954,3 +954,26 @@ impl_youtui_task_handler!(HandleUnsubscribeFromArtistsError, anyhow::Error, Play
 });
 
 
+
+#[allow(dead_code)]
+#[derive(Debug, PartialEq)]
+pub struct HandleAddPlaylistToPlaylistOk;
+#[allow(dead_code)]
+#[derive(Debug, PartialEq)]
+pub struct HandleAddPlaylistToPlaylistError;
+
+impl_youtui_task_handler!(HandleAddPlaylistToPlaylistOk, (), Playlist, |_, _: ()| {
+    |_this: &mut Playlist| {
+        info!("Playlist merged successfully");
+        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+    }
+});
+
+impl_youtui_task_handler!(HandleAddPlaylistToPlaylistError, anyhow::Error, Playlist, |_, err: anyhow::Error| {
+    let msg = err.to_string();
+    move |this: &mut Playlist| {
+        error!("Failed to merge playlist: {}", msg);
+        this.last_error = Some(format!("Merge failed: {}", msg));
+        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+    }
+});
