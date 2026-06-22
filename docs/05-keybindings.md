@@ -2,6 +2,11 @@
 
 All default keybindings by context. Customizable in `config.toml`.
 
+## Global
+| Key | Action |
+|-----|--------|
+| `Esc` `Esc` (double) | Close all search/filter/popups/help |
+
 ## Global Context
 
 | Key | Action | Description |

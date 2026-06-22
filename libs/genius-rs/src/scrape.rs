@@ -233,11 +233,11 @@ fn clean_lyrics(raw: &str) -> String {
         {
             continue;
         }
-        let is_section_header = trimmed.starts_with('[') && trimmed.ends_with(']');
-        lines.push(trimmed);
-        if is_section_header {
+        if trimmed.starts_with('[') && trimmed.ends_with(']') && !lines.is_empty() {
+            // Blank line before section header = spacing between sections
             lines.push(String::new());
         }
+        lines.push(trimmed);
     }
 
     lines.join("\n")
