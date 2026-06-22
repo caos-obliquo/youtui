@@ -1,6 +1,15 @@
 use scraper::{Html, Selector};
 use serde_json::Value;
 
+/// Check if a Genius page exists at the given path (returns true if status 200).
+pub async fn page_exists(client: &reqwest::Client, song_path: &str) -> bool {
+    let url = format!("https://genius.com{}", song_path);
+    match client.get(&url).send().await {
+        Ok(resp) => resp.status().is_success(),
+        Err(_) => false,
+    }
+}
+
 /// Fetch a Genius song page and extract lyrics from the HTML.
 pub async fn fetch_lyrics(
     client: &reqwest::Client,
@@ -84,7 +93,7 @@ fn extract_container_text(element: &scraper::ElementRef) -> String {
                 let tag = el.name.local.as_ref();
                 match tag {
                     "br" => result.push('\n'),
-                    "a" | "i" | "b" => {
+                    "a" | "i" | "b" | "span" => {
                         if let Some(child) = scraper::ElementRef::wrap(node) {
                             result.push_str(&extract_container_text(&child));
                         }
@@ -224,7 +233,11 @@ fn clean_lyrics(raw: &str) -> String {
         {
             continue;
         }
+        let is_section_header = trimmed.starts_with('[') && trimmed.ends_with(']');
         lines.push(trimmed);
+        if is_section_header {
+            lines.push(String::new());
+        }
     }
 
     lines.join("\n")
