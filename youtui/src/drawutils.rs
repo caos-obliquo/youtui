@@ -61,7 +61,6 @@ pub fn bottom_of_rect(r: Rect) -> Rect {
 }
 /// Helper function to get `offset` of a list widget like `List` or `Table`
 /// after changing the size of the list.
-#[allow(dead_code)]
 pub fn middle_of_rect(r: Rect) -> Rect {
     Rect {
         x: r.x,

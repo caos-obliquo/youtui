@@ -187,33 +187,6 @@ fn normalize_and_load(playlist: &mut Playlist, saved: LegacySong, name: &str) ->
     load_compact_queue(playlist, compact)
 }
 
-#[allow(dead_code)]
-pub fn list_queues() -> Vec<String> {
-    let Ok(queue_dir) = get_queue_dir() else {
-        return Vec::new();
-    };
-    let Ok(dir) = fs::read_dir(queue_dir) else {
-        return Vec::new();
-    };
-    dir.filter_map(|e| e.ok())
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().to_string();
-            if name.ends_with(".json") && !name.starts_with("__") {
-                Some(name.trim_end_matches(".json").to_string())
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-#[allow(dead_code)]
-pub fn delete_queue(name: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let path = get_queue_dir()?.join(format!("{}.json", name));
-    fs::remove_file(path)?;
-    Ok(())
-}
-
 pub fn auto_save(playlist: &Playlist) -> Result<(), Box<dyn std::error::Error>> {
     let count = playlist.list.get_list_iter().count();
     info!("Saving queue ({} songs)", count);
