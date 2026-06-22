@@ -124,6 +124,35 @@ fn urlenc(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join("+")
 }
 
+/// Compute a Genius URL slug from artist and title.
+/// Used as a fallback when search API returns wrong results.
+/// e.g., ("Love Letter", "Love Letter") → "/love-letter-love-letter-lyrics"
+pub fn compute_path(artist: &str, title: &str) -> String {
+    let slug = |s: &str| -> String {
+        s.to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '-')
+            .collect::<String>()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join("-")
+    };
+    format!("/{}-{}-lyrics", slug(artist), slug(title))
+}
+
+/// Create a synthetic SongHit from a computed slug path (no API call needed).
+pub fn hit_from_path(artist: &str, title: &str) -> SongHit {
+    SongHit {
+        id: 0,
+        path: compute_path(artist, title),
+        title: title.to_string(),
+        artist: artist.to_string(),
+        year: None,
+        album: None,
+        thumbnail: None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,5 +215,12 @@ mod tests {
     fn test_parse_hits_empty() {
         let hits = parse_hits(&serde_json::json!({"response": {}}), "/response/hits");
         assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn test_compute_path() {
+        assert_eq!(compute_path("FIDLAR", "Wasted"), "/fidlar-wasted-lyrics");
+        assert_eq!(compute_path("Love Letter", "Love Letter"), "/love-letter-love-letter-lyrics");
+        assert_eq!(compute_path("Alice in Chains", "It Ain't Like That"), "/alice-in-chains-it-aint-like-that-lyrics");
     }
 }

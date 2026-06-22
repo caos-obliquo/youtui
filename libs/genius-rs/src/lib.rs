@@ -28,7 +28,12 @@ impl GeniusClient {
     }
 
     /// Search Genius for a song by artist and title.
+    /// Tries slug URL first (no API call), falls back to search API.
     pub async fn find_song(&self, artist: &str, title: &str) -> Result<Option<SongHit>, String> {
+        let slug_hit = search::hit_from_path(artist, title);
+        if scrape::page_exists(&self.client, &slug_hit.path).await {
+            return Ok(Some(slug_hit));
+        }
         let hits = search::search(&self.client, artist, title, self.token.as_deref()).await?;
         Ok(hits.into_iter().next())
     }
@@ -44,11 +49,17 @@ impl GeniusClient {
     }
 
     /// Search and fetch lyrics in one call.
+    /// Tries slug URL first, falls back to search API.
     pub async fn find_and_fetch(
         &self,
         artist: &str,
         title: &str,
     ) -> Result<(SongHit, String), String> {
+        let slug_hit = search::hit_from_path(artist, title);
+        match self.fetch_lyrics(&slug_hit.path).await {
+            Ok(lyrics) => return Ok((slug_hit, lyrics)),
+            Err(_) => {}
+        }
         let hit = self
             .find_song(artist, title)
             .await?
@@ -63,6 +74,14 @@ impl GeniusClient {
         artist: &str,
         title: &str,
     ) -> Result<(SongHit, String, Vec<Annotation>), String> {
+        let slug_hit = search::hit_from_path(artist, title);
+        match self.fetch_lyrics(&slug_hit.path).await {
+            Ok(lyrics) => {
+                let annotations = self.fetch_annotations(&slug_hit.path).await.unwrap_or_default();
+                return Ok((slug_hit, lyrics, annotations));
+            }
+            Err(_) => {}
+        }
         let hit = self
             .find_song(artist, title)
             .await?
