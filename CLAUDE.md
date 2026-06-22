@@ -121,14 +121,15 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 - Header dedup: Remove duplicate F1, colon, y/C-y CopySongUrl global keybinds
 - ytmapi-cli: Add search-playlists, playlist-songs subcommands (Debug-First)
 - dead_code cleanup: Remove stale annotations from SearchPlaylists, GetPlaylistSongs, api.rs methods (all now wired)
+- Genius hit validation: fetch_page returns final URL; find_and_fetch validates hits against query; redirects to wrong pages rejected. Song without Genius page shows clean "No lyrics found"
+- Genius CLI: Add annotations subcommand (Debug-First for testing annotation extraction)
 
 ## Known Issues
 - **Genius annotations w/o token**: `__INITIAL_STATE__` scraping fails on most pages. Need `GENIUS_TOKEN`.
-- **Annotations**: Only modern Genius pages with `__INITIAL_STATE__` JSON work.
 - **Auth tests**: 52 ytmapi-rs integration tests need cookie file.
 - **`AppCallback::Back`**: `#[allow(dead_code)]` at app.rs:158 -- TODO: Wire back navigation.
 - **`AppCallback::GetPlaylistDetailsFromLibrary`**: `#[allow(dead_code)]` at app.rs:177 -- rate toggle pending.
-- **`SearchPlaylists`/`GetPlaylistSongs`**: `#[allow(dead_code)]` at messages.rs:54,62 -- batch streaming.
+- **`SearchPlaylists`/`GetPlaylistSongs`**: `#[allow(dead_code)]` at messages.rs:54,62 -- batch streaming (now wired, stale annotation removed).
 - **Album art popup**: Sixel fullscreen may fail on small terminals (width/height < image cells). Needs graceful fallback.
 
 ## Remaining

@@ -31,11 +31,21 @@ impl GeniusClient {
     /// Search Genius for a song by artist and title.
     /// Tries slug URL first (no API call), falls back to search API.
     pub async fn find_song(&self, artist: &str, title: &str) -> Result<Option<SongHit>, String> {
+        // If Bearer token available, prefer API search (gives real song ID for annotations)
+        if self.token.as_deref().is_some_and(|t| !t.is_empty()) {
+            let hits = search::search(&self.client, artist, title, self.token.as_deref()).await
+                .unwrap_or_default();
+            if let Some(hit) = hits.into_iter().next() {
+                return Ok(Some(hit));
+            }
+        }
+        // Fallback: slug URL without API call
         let slug_hit = search::hit_from_path(artist, title);
         if scrape::page_exists(&self.client, &slug_hit.path).await {
             return Ok(Some(slug_hit));
         }
-        let hits = search::search(&self.client, artist, title, self.token.as_deref()).await?;
+        // Final fallback: public search API (no auth)
+        let hits = search::search(&self.client, artist, title, None).await?;
         Ok(hits.into_iter().next())
     }
 
