@@ -149,6 +149,7 @@ async fn main() {
                 Ok(None) => { eprintln!("No results for '{} - {}'", artist, title); std::process::exit(1); }
                 Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
             };
+
             let annotations = match client.fetch_annotations_with_token(&hit.path, hit.id).await {
                 Ok(a) => a,
                 Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }

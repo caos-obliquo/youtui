@@ -6,7 +6,7 @@ description = "Genius.com API client with HTML scraping for lyrics"
 license = "MIT"
 
 [dependencies]
-reqwest = { version = "0.11", default-features = false, features = ["json"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
