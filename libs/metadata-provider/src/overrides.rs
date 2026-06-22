@@ -1,13 +1,11 @@
-use crate::app::server::ValidatedMetadata;
+use crate::ValidatedMetadata;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct MetadataOverrides {
-    /// Keyed by "artist:title"
     pub entries: HashMap<String, OverrideEntry>,
-    /// Keyed by artist lowercase — applies to all songs by that artist
     pub artist_genres: HashMap<String, OverrideEntry>,
 }
 
@@ -38,14 +36,9 @@ impl OverrideEntry {
     }
 }
 
-fn overrides_path() -> Option<PathBuf> {
-    let dir = crate::get_config_dir().ok()?;
-    Some(dir.join("metadata_overrides.json"))
-}
-
 impl MetadataOverrides {
-    pub fn load() -> Self {
-        let path = match overrides_path() {
+    pub fn load(path: Option<PathBuf>) -> Self {
+        let path = match path {
             Some(p) => p,
             None => return Self::default(),
         };
@@ -60,14 +53,10 @@ impl MetadataOverrides {
         }
     }
 
-    pub fn save(&self) {
-        let path = match overrides_path() {
-            Some(p) => p,
-            None => return,
-        };
+    pub fn save_to(&self, path: &PathBuf) {
         match serde_json::to_string_pretty(self) {
             Ok(content) => {
-                if let Err(e) = std::fs::write(&path, &content) {
+                if let Err(e) = std::fs::write(path, &content) {
                     tracing::error!("Failed to write metadata_overrides.json: {}", e);
                 }
             }
@@ -77,7 +66,7 @@ impl MetadataOverrides {
 
     pub fn resolve(&self, artist: &str, title: &str) -> Option<ValidatedMetadata> {
         let mut keys = vec![format!("{}:{}", artist.to_lowercase(), title.to_lowercase())];
-        let norm = super::util::norm_for_lfm(title);
+        let norm = crate::util::norm_for_lfm(title);
         if norm != *title {
             keys.push(format!("{}:{}", artist.to_lowercase(), norm.to_lowercase()));
         }
@@ -88,7 +77,6 @@ impl MetadataOverrides {
                 }
             }
         }
-        // Fallback: artist-level genres apply to all songs by that artist
         let artist_key = artist.to_lowercase();
         if let Some(entry) = self.artist_genres.get(&artist_key) {
             if entry.has_data() {
@@ -114,7 +102,6 @@ impl MetadataOverrides {
         };
         self.entries.insert(key, entry);
 
-        // Also persist artist-level genres if set
         let has_genre_data = !meta.genres.is_empty() || !meta.styles.is_empty();
         if has_genre_data {
             let artist_entry = OverrideEntry {

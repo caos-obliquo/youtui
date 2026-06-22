@@ -1,6 +1,5 @@
-use super::util;
-use super::MetadataProvider;
-use crate::app::server::ValidatedMetadata;
+use crate::util;
+use crate::{MetadataProvider, ValidatedMetadata};
 use futures::future::BoxFuture;
 
 pub struct TrackSearchProvider {
@@ -27,7 +26,6 @@ impl MetadataProvider for TrackSearchProvider {
             let key = lastfm_key.as_deref()?;
             if key.is_empty() { return None; }
 
-            // Try exact track.getInfo first
             let info_url = format!(
                 "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={}&artist={}&track={}&format=json",
                 util::urlencoding(key), util::urlencoding(artist), util::urlencoding(title)
@@ -49,7 +47,6 @@ impl MetadataProvider for TrackSearchProvider {
                 }
             }
 
-            // Fallback: search by track name
             let search_url = format!(
                 "https://ws.audioscrobbler.com/2.0/?method=track.search&api_key={}&track={}&format=json&limit=5",
                 util::urlencoding(key), util::urlencoding(&util::norm_for_lfm(title))
@@ -116,7 +113,7 @@ mod tests {
         });
         let year = json.pointer("/track/wiki/published")
             .and_then(|p| p.as_str())
-            .and_then(|d| super::util::extract_year(d));
+            .and_then(|d| crate::util::extract_year(d));
         assert_eq!(year, Some("2007".to_string()));
     }
 
@@ -131,7 +128,7 @@ mod tests {
         });
         let year = json.pointer("/track/wiki/published")
             .and_then(|p| p.as_str())
-            .and_then(|d| super::util::extract_year(d));
+            .and_then(|d| crate::util::extract_year(d));
         assert_eq!(year, None);
     }
 

@@ -1,6 +1,6 @@
 use ytmapi_rs::{
     YtMusic,
-    common::{AlbumID, ArtistChannelID, PlaylistID, YoutubeID},
+    common::{AlbumID, ArtistChannelID, PlaylistID, VideoID, YoutubeID},
     process_json,
     query::{
         GetAlbumQuery, GetPlaylistTracksQuery,
@@ -70,6 +70,7 @@ fn print_usage() {
     eprintln!("  playlist <id>               Get playlist tracks");
     eprintln!("  album <id>                  Get album details");
     eprintln!("  artist <id>                 Get artist");
+    eprintln!("  watch-playlist <video_id>   Get related/watch playlist for a video");
     eprintln!("  library playlists           List library playlists");
     eprintln!("  library songs               List library songs");
     eprintln!();
@@ -151,6 +152,14 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                 Err(e) => eprintln!("Artist error: {}", e),
             }
         }
+        "watch-playlist" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi watch-playlist <video_id>"); return; }
+            let id = VideoID::from_raw(&args[0]);
+            match yt.get_watch_playlist_from_video_id(id).await {
+                Ok(result) => print_results(&result, json),
+                Err(e) => eprintln!("Watch playlist error: {}", e),
+            }
+        }
         "library" => {
             if args.is_empty() { eprintln!("Usage: ytmapi library <playlists|songs>"); return; }
             match args[0].as_str() {
@@ -230,5 +239,109 @@ fn print_results<T: std::fmt::Debug>(results: &T, json: bool) {
         println!("{}", serde_json::to_string(&format!("{:#?}", results)).unwrap());
     } else {
         println!("{:#?}", results);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_print_usage_does_not_panic() {
+        // Just ensure print_usage doesn't crash
+        print_usage();
+    }
+
+    #[test]
+    fn test_cmd_fixture_search_parse() {
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("ytmapi-rs/test_json/search_songs_20231226.json");
+        if !fixture_path.exists() {
+            eprintln!("Fixture not found at {:?}, skipping", fixture_path);
+            return;
+        }
+        let args = vec![
+            fixture_path.to_string_lossy().to_string(),
+            "--type".to_string(),
+            "search".to_string(),
+        ];
+        // Should not panic — just parse and print
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(cmd_fixture(&args, false));
+    }
+
+    #[test]
+    fn test_cmd_fixture_search_parse_json() {
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("ytmapi-rs/test_json/search_songs_20231226.json");
+        if !fixture_path.exists() {
+            eprintln!("Fixture not found at {:?}, skipping", fixture_path);
+            return;
+        }
+        let args = vec![
+            fixture_path.to_string_lossy().to_string(),
+            "--type".to_string(),
+            "search".to_string(),
+        ];
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(cmd_fixture(&args, true));
+    }
+
+    #[test]
+    fn test_cmd_fixture_playlist_parse() {
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("ytmapi-rs/test_json/get_playlist_20250604.json");
+        if !fixture_path.exists() {
+            eprintln!("Fixture not found at {:?}, skipping", fixture_path);
+            return;
+        }
+        let args = vec![
+            fixture_path.to_string_lossy().to_string(),
+            "--type".to_string(),
+            "playlist".to_string(),
+        ];
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(cmd_fixture(&args, false));
+    }
+
+    #[test]
+    fn test_cmd_fixture_album_parse() {
+        let fixture_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("ytmapi-rs/test_json/get_album_20240724.json");
+        if !fixture_path.exists() {
+            eprintln!("Fixture not found at {:?}, skipping", fixture_path);
+            return;
+        }
+        let args = vec![
+            fixture_path.to_string_lossy().to_string(),
+            "--type".to_string(),
+            "album".to_string(),
+        ];
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(cmd_fixture(&args, false));
+    }
+
+    #[test]
+    fn test_cmd_fixture_missing_file() {
+        let args = vec!["nonexistent.json".to_string()];
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // Should print error, not panic
+        rt.block_on(cmd_fixture(&args, false));
+    }
+
+    #[test]
+    fn test_cmd_fixture_no_args() {
+        let args: Vec<String> = vec![];
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // Should print usage, not panic
+        rt.block_on(cmd_fixture(&args, false));
     }
 }

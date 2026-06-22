@@ -36,6 +36,8 @@ pub struct ArtistSearchPanel {
 #[serde(rename_all = "snake_case")]
 pub enum BrowserArtistsAction {
     DisplaySelectedArtistAlbums,
+    SubscribeToArtist,
+    UnsubscribeFromArtist,
 }
 
 impl Action for BrowserArtistsAction {
@@ -45,6 +47,8 @@ impl Action for BrowserArtistsAction {
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match self {
             Self::DisplaySelectedArtistAlbums => "Display albums for selected artist",
+            Self::SubscribeToArtist => "Subscribe to artist",
+            Self::UnsubscribeFromArtist => "Unsubscribe from artist",
         }
         .into()
     }

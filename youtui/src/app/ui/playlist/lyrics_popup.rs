@@ -10,6 +10,7 @@ use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
+use std::time::Instant;
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -31,8 +32,6 @@ impl Action for LyricsPopupAction {
 
 pub enum LyricsPopupState {
     Loading,
-    // TODO: Wire lyrics text display — currently set from async fetch
-    #[allow(dead_code)]
     Loaded(String),
     Error(String),
 }
@@ -66,6 +65,8 @@ pub struct LyricsPopup {
     cursor_col: usize,
     ann_scroll_offset: usize,
     pub lyrics_cache: LruCache<String, String>,
+    /// Negative cache: stores error timestamps (TTL = 5 min)
+    pub error_cache: LruCache<String, Instant>,
     pub lyrics_cache_key: Option<String>,
     pub filter_active: bool,
     pub filter_text: String,
@@ -105,6 +106,7 @@ impl LyricsPopup {
             cursor_col: 0,
             ann_scroll_offset: 0,
             lyrics_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
+            error_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
             lyrics_cache_key: None,
             filter_active: false,
             filter_text: String::new(),
@@ -131,6 +133,10 @@ impl LyricsPopup {
 
     pub fn set_error(&mut self, error: String) {
         self.state = LyricsPopupState::Error(error);
+        // Cache error with timestamp for negative TTL
+        if let Some(key) = &self.lyrics_cache_key {
+            self.error_cache.put(key.clone(), Instant::now());
+        }
     }
 
     #[allow(dead_code)]
@@ -204,6 +210,48 @@ impl LyricsPopup {
         let mut end = None;
         for (i, c) in rest.char_indices() {
             let is_word = c.is_alphanumeric() || c == '_';
+            if !in_word && is_word { in_word = true; }
+            if in_word && is_word { end = Some(from + i); }
+            if in_word && !is_word { break; }
+        }
+        end
+    }
+
+    #[allow(non_snake_case)]
+    fn next_WORD_boundary(text: &str, from: usize) -> Option<usize> {
+        let rest = &text[from..];
+        let mut in_word = false;
+        for (i, c) in rest.char_indices() {
+            let is_word = !c.is_whitespace();
+            if !in_word && is_word { in_word = true; }
+            else if in_word && !is_word {
+                return Some(from + i);
+            }
+        }
+        None
+    }
+
+    #[allow(non_snake_case)]
+    fn prev_WORD_boundary(text: &str, from: usize) -> Option<usize> {
+        let before = &text[..from];
+        let mut in_word = false;
+        for (i, c) in before.char_indices().rev() {
+            let is_word = !c.is_whitespace();
+            if !in_word && is_word { in_word = true; }
+            else if in_word && !is_word {
+                return Some(i + 1);
+            }
+        }
+        if in_word { Some(0) } else { None }
+    }
+
+    #[allow(non_snake_case)]
+    fn next_WORD_end(text: &str, from: usize) -> Option<usize> {
+        let rest = &text[from..];
+        let mut in_word = false;
+        let mut end = None;
+        for (i, c) in rest.char_indices() {
+            let is_word = !c.is_whitespace();
             if !in_word && is_word { in_word = true; }
             if in_word && is_word { end = Some(from + i); }
             if in_word && !is_word { break; }
@@ -313,7 +361,7 @@ impl LyricsPopup {
                     self.cursor_to_scroll();
                     return (AsyncTask::new_no_op(), None);
                 }
-                KeyCode::Char('w') | KeyCode::Char('W') => {
+                KeyCode::Char('w') => {
                     self.reset_count();
                     if let Some(line) = self.lines.get(self.cursor_line) {
                         if let Some(pos) = Self::next_word_boundary(line, self.cursor_col) {
@@ -326,7 +374,20 @@ impl LyricsPopup {
                     self.cursor_to_scroll();
                     return (AsyncTask::new_no_op(), None);
                 }
-                KeyCode::Char('b') | KeyCode::Char('B') => {
+                KeyCode::Char('W') => {
+                    self.reset_count();
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        if let Some(pos) = Self::next_WORD_boundary(line, self.cursor_col) {
+                            self.cursor_col = pos;
+                        } else {
+                            self.cursor_line = (self.cursor_line + 1).min(self.total_lines().saturating_sub(1));
+                            self.cursor_col = 0;
+                        }
+                    }
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('b') => {
                     self.reset_count();
                     if self.cursor_col > 0 {
                         if let Some(line) = self.lines.get(self.cursor_line) {
@@ -350,10 +411,47 @@ impl LyricsPopup {
                     self.cursor_to_scroll();
                     return (AsyncTask::new_no_op(), None);
                 }
-                KeyCode::Char('e') | KeyCode::Char('E') => {
+                KeyCode::Char('B') => {
+                    self.reset_count();
+                    if self.cursor_col > 0 {
+                        if let Some(line) = self.lines.get(self.cursor_line) {
+                            if let Some(pos) = Self::prev_WORD_boundary(line, self.cursor_col) {
+                                self.cursor_col = pos;
+                            } else {
+                                self.cursor_col = 0;
+                            }
+                        }
+                    } else if self.cursor_line > 0 {
+                        self.cursor_line -= 1;
+                        if let Some(line) = self.lines.get(self.cursor_line) {
+                            self.cursor_col = line.len();
+                            if let Some(pos) = Self::prev_WORD_boundary(line, self.cursor_col) {
+                                self.cursor_col = pos;
+                            } else {
+                                self.cursor_col = 0;
+                            }
+                        }
+                    }
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('e') => {
                     self.reset_count();
                     if let Some(line) = self.lines.get(self.cursor_line) {
                         if let Some(pos) = Self::next_word_end(line, self.cursor_col) {
+                            self.cursor_col = pos;
+                        } else {
+                            self.cursor_line = (self.cursor_line + 1).min(self.total_lines().saturating_sub(1));
+                            self.cursor_col = 0;
+                        }
+                    }
+                    self.cursor_to_scroll();
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('E') => {
+                    self.reset_count();
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        if let Some(pos) = Self::next_WORD_end(line, self.cursor_col) {
                             self.cursor_col = pos;
                         } else {
                             self.cursor_line = (self.cursor_line + 1).min(self.total_lines().saturating_sub(1));
@@ -501,6 +599,19 @@ impl LyricsPopup {
                 self.cursor_to_scroll();
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('W') => {
+                self.reset_count();
+                if let Some(line) = self.lines.get(self.cursor_line) {
+                    if let Some(pos) = Self::next_WORD_boundary(line, self.cursor_col) {
+                        self.cursor_col = pos;
+                    } else {
+                        self.cursor_line = (self.cursor_line + 1).min(self.total_lines().saturating_sub(1));
+                        self.cursor_col = 0;
+                    }
+                }
+                self.cursor_to_scroll();
+                (AsyncTask::new_no_op(), None)
+            }
             KeyCode::Char('b') => {
                 self.reset_count();
                 if self.cursor_col > 0 {
@@ -525,10 +636,47 @@ impl LyricsPopup {
                 self.cursor_to_scroll();
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('B') => {
+                self.reset_count();
+                if self.cursor_col > 0 {
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        if let Some(pos) = Self::prev_WORD_boundary(line, self.cursor_col) {
+                            self.cursor_col = pos;
+                        } else {
+                            self.cursor_col = 0;
+                        }
+                    }
+                } else if self.cursor_line > 0 {
+                    self.cursor_line -= 1;
+                    if let Some(line) = self.lines.get(self.cursor_line) {
+                        self.cursor_col = line.len();
+                        if let Some(pos) = Self::prev_WORD_boundary(line, self.cursor_col) {
+                            self.cursor_col = pos;
+                        } else {
+                            self.cursor_col = 0;
+                        }
+                    }
+                }
+                self.cursor_to_scroll();
+                (AsyncTask::new_no_op(), None)
+            }
             KeyCode::Char('e') => {
                 self.reset_count();
                 if let Some(line) = self.lines.get(self.cursor_line) {
                     if let Some(pos) = Self::next_word_end(line, self.cursor_col) {
+                        self.cursor_col = pos;
+                    } else {
+                        self.cursor_line = (self.cursor_line + 1).min(self.total_lines().saturating_sub(1));
+                        self.cursor_col = 0;
+                    }
+                }
+                self.cursor_to_scroll();
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('E') => {
+                self.reset_count();
+                if let Some(line) = self.lines.get(self.cursor_line) {
+                    if let Some(pos) = Self::next_WORD_end(line, self.cursor_col) {
                         self.cursor_col = pos;
                     } else {
                         self.cursor_line = (self.cursor_line + 1).min(self.total_lines().saturating_sub(1));

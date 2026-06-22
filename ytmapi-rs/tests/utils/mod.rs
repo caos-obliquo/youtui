@@ -43,8 +43,14 @@ pub async fn new_standard_oauth_api() -> Result<YtMusic<OAuthToken>> {
         .get_or_init(|| async {
             let tok_str = if let Ok(tok) = env::var("youtui_test_oauth") {
                 tok
-            } else {
+            } else if let Ok(tok) = env::var("YOUTUI_OAUTH") {
+                tok
+            } else if Path::new(EXPIRED_OAUTH_PATH).exists() {
                 tokio::fs::read_to_string(EXPIRED_OAUTH_PATH).await.unwrap()
+            } else {
+                let home = env::var("HOME").unwrap_or_default();
+                let default_path = Path::new(&home).join(".cache/youtui/oauth.json");
+                tokio::fs::read_to_string(default_path).await.unwrap()
             };
             let tok: OAuthToken = serde_json::from_slice(tok_str.as_bytes()).unwrap();
             let client = Client::new().unwrap();
@@ -64,8 +70,14 @@ pub async fn new_standard_oauth_api() -> Result<YtMusic<OAuthToken>> {
 pub async fn new_standard_api() -> Result<YtMusic<BrowserToken>> {
     if let Ok(cookie) = env::var("youtui_test_cookie") {
         YtMusic::from_cookie(cookie).await
-    } else {
+    } else if let Ok(cookie) = env::var("YOUTUI_COOKIE") {
+        YtMusic::from_cookie(cookie).await
+    } else if Path::new(COOKIE_PATH).exists() {
         YtMusic::from_cookie_file(Path::new(COOKIE_PATH)).await
+    } else {
+        let home = env::var("HOME").unwrap_or_default();
+        let default_path = Path::new(&home).join(".cache/youtui/cookie.txt");
+        YtMusic::from_cookie_file(default_path).await
     }
 }
 

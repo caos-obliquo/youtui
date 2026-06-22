@@ -1,6 +1,5 @@
-use super::util;
-use super::MetadataProvider;
-use crate::app::server::ValidatedMetadata;
+use crate::util;
+use crate::{MetadataProvider, ValidatedMetadata};
 use futures::future::BoxFuture;
 
 pub struct MusicBrainzProvider;

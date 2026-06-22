@@ -129,8 +129,6 @@ pub mod simplified_queries;
 /// constructors. When using in a real environment, you will need to construct
 /// using a real token or cookie.
 pub struct YtMusic<A: AuthToken> {
-    // TODO: add language
-    // TODO: add location
     client: Client,
     token: A,
 }
@@ -263,6 +261,16 @@ impl<A: AuthToken> YtMusic<A> {
             .await?
             .process()
             .map(|processed| processed.json)
+    }
+    /// Set the UI language (hl parameter, e.g. "en", "de", "ja").
+    pub fn with_language(mut self, lang: impl Into<String>) -> Self {
+        self.client.language = lang.into();
+        self
+    }
+    /// Set the geo location (gl parameter, e.g. "US", "DE", "JP").
+    pub fn with_location(mut self, loc: impl Into<String>) -> Self {
+        self.client.location = loc.into();
+        self
     }
     /// Run a Query on the API returning its output.
     /// # Usage
@@ -427,4 +435,33 @@ pub fn process_json<Q: Query<A>, A: AuthToken>(
     query: impl Borrow<Q>,
 ) -> Result<Q::Output> {
     Q::Output::parse_from(RawResult::<Q, A>::from_raw(json, query.borrow()).process()?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_client_default_locale() {
+        let client = Client::new().unwrap();
+        assert_eq!(client.language, "en");
+        assert_eq!(client.location, "US");
+    }
+
+    #[test]
+    fn test_client_with_language() {
+        let client = Client::new().unwrap().with_language("de").with_location("DE");
+        assert_eq!(client.language, "de");
+        assert_eq!(client.location, "DE");
+    }
+
+    #[test]
+    fn test_ytmusic_with_language() {
+        // NoAuthToken doesn't need auth, can test builder methods
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let yt = rt.block_on(YtMusic::<NoAuthToken>::new_unauthenticated()).unwrap();
+        let yt = yt.with_language("ja").with_location("JP");
+        assert_eq!(yt.client.language, "ja");
+        assert_eq!(yt.client.location, "JP");
+    }
 }

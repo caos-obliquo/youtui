@@ -72,8 +72,8 @@ pub(crate) async fn raw_query_post<'a, A: AuthToken, Q: PostQuery>(
             "client" : {
                 "clientName" : "WEB_REMIX",
                 "clientVersion" : tok.client_version(),
-                "hl" : "en",
-                "gl" : "US",
+                "hl" : c.language,
+                "gl" : c.location,
             },
             "user" : {},
         }),

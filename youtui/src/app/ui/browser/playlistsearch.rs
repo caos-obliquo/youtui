@@ -1,5 +1,5 @@
 use super::shared_components::{BrowserSearchAction, FilterAction, SortAction};
-use crate::app::{AppCallback, NavTarget};
+use crate::app::AppCallback;
 use crate::app::component::actionhandler::{
     ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
@@ -180,6 +180,7 @@ impl ActionHandler<BrowserPlaylistSongsAction> for PlaylistSearchBrowser {
             BrowserPlaylistSongsAction::CopySongUrl => return self.copy_song_url().into(),
             BrowserPlaylistSongsAction::GoToArtist => return self.go_to_artist().into(),
             BrowserPlaylistSongsAction::GoToAlbum => return self.go_to_album().into(),
+            BrowserPlaylistSongsAction::GetRelatedTracks => return self.get_related_tracks().into(),
         }
         YoutuiEffect::new_no_op()
     }
@@ -410,6 +411,13 @@ impl PlaylistSearchBrowser {
         }
         (AsyncTask::new_no_op(), None)
     }
+    pub fn get_related_tracks(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.playlist_songs_panel.get_selected_item();
+        if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
+            return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+        }
+        (AsyncTask::new_no_op(), None)
+    }
     pub fn handle_search_playlist_error(
         &mut self,
         playlist_id: PlaylistID<'static>,
@@ -469,12 +477,15 @@ impl PlaylistSearchBrowser {
         self.prev_input_routing = mem::replace(&mut self.input_routing, input_routing);
     }
 
+    // TODO: Wire go_to_first — planned navigation shortcut
+    #[allow(dead_code)]
     pub fn go_to_first(&mut self) {
         match self.input_routing {
             InputRouting::Playlist => self.playlist_search_panel.go_to_first(),
             InputRouting::Song => self.playlist_songs_panel.go_to_first(),
         }
     }
+    #[allow(dead_code)]
     pub fn go_to_last(&mut self) {
         match self.input_routing {
             InputRouting::Playlist => self.playlist_search_panel.go_to_last(),

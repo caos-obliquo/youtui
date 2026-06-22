@@ -1,6 +1,5 @@
-use super::util;
-use super::MetadataProvider;
-use crate::app::server::{AlbumTrack, ValidatedMetadata};
+use crate::util;
+use crate::{AlbumTrack, MetadataProvider, ValidatedMetadata};
 use futures::future::BoxFuture;
 
 pub struct AlbumSearchProvider {
@@ -41,7 +40,6 @@ impl MetadataProvider for AlbumSearchProvider {
                 let match_artist = match_album.get("artist")?.as_str()?;
                 let match_name = match_album.get("name")?.as_str()?;
 
-                // Artist word filter
                 let artist_lower = artist.to_lowercase();
                 let match_lower = match_artist.to_lowercase();
                 let artist_words: Vec<&str> = artist_lower.split_whitespace().collect();

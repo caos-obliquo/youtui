@@ -132,8 +132,21 @@ impl ActionHandler<SortAction> for ArtistSearchBrowser {
 impl ActionHandler<BrowserArtistsAction> for ArtistSearchBrowser {
     fn apply_action(&mut self, action: BrowserArtistsAction) -> impl Into<YoutuiEffect<Self>> {
         match action {
-            BrowserArtistsAction::DisplaySelectedArtistAlbums => self.get_songs(),
+            BrowserArtistsAction::DisplaySelectedArtistAlbums => return self.get_songs().into(),
+            BrowserArtistsAction::SubscribeToArtist => {
+                let selected = self.artist_search_panel.get_selected_item();
+                if let Some(artist) = self.artist_search_panel.list.get(selected) {
+                    return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(artist.browse_id.clone()))).into();
+                }
+            }
+            BrowserArtistsAction::UnsubscribeFromArtist => {
+                let selected = self.artist_search_panel.get_selected_item();
+                if let Some(artist) = self.artist_search_panel.list.get(selected) {
+                    return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![artist.browse_id.clone()]))).into();
+                }
+            }
         }
+        YoutuiEffect::new_no_op()
     }
 }
 impl ActionHandler<BrowserSearchAction> for ArtistSearchBrowser {
@@ -174,6 +187,7 @@ impl ActionHandler<BrowserArtistSongsAction> for ArtistSearchBrowser {
             BrowserArtistSongsAction::CopySongUrl => return self.copy_song_url().into(),
             BrowserArtistSongsAction::GoToArtist => return self.go_to_artist().into(),
             BrowserArtistSongsAction::GoToAlbum => return self.go_to_album().into(),
+            BrowserArtistSongsAction::GetRelatedTracks => return self.get_related_tracks().into(),
             BrowserArtistSongsAction::ToggleCategoryFilter => {
                 self.album_songs_panel.handle_toggle_category_filter();
             }
@@ -408,6 +422,13 @@ impl ArtistSearchBrowser {
                 return (AsyncTask::new_no_op(), Some(cb));
             }
             warn!("Song has no album data, cannot navigate to album");
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn get_related_tracks(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.album_songs_panel.get_selected_item();
+        if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
+            return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
         }
         (AsyncTask::new_no_op(), None)
     }

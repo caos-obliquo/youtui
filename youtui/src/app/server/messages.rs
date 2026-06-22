@@ -1,4 +1,5 @@
 use super::ArcServer;
+use super::ValidatedMetadata;
 use ytmapi_rs::parse::SearchResultAlbum;
 use ytmapi_rs::parse::{TableListSong, LibraryArtist, LibraryPlaylist};
 use super::api::GetArtistSongsProgressUpdate;
@@ -338,6 +339,7 @@ impl BackendTask<ArcServer> for GetAllLibraryAlbums {
 }
 
 use ytmapi_rs::parse::PlaylistSong;
+use ytmapi_rs::parse::WatchPlaylistTrack;
 
 #[derive(Debug, PartialEq)]
 pub struct GetPlaylistTracks(pub PlaylistID<'static>);
@@ -375,6 +377,27 @@ impl BackendTask<ArcServer> for GetPlaylistTracks {
                     Err(anyhow::anyhow!("GetPlaylistTracks: {}", e))
                 }
             }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct GetRelatedTracks(pub ytmapi_rs::common::VideoID<'static>);
+
+impl BackendTask<ArcServer> for GetRelatedTracks {
+    type Output = Result<Vec<WatchPlaylistTrack>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::GetWatchPlaylistQuery;
+            use crate::app::server::api::query_api_with_retry;
+            let api_guard = backend.api.get_api().await?;
+            let query = GetWatchPlaylistQuery::new_from_video_id(self.0);
+            query_api_with_retry(&api_guard, query).await
         }
     }
 }
@@ -905,23 +928,6 @@ impl BackendTask<ArcServer> for GetAnnotations {
             Ok(pairs)
         }
     }
-}
-
-#[derive(Debug, Default, Clone, PartialEq)]
-pub struct ValidatedMetadata {
-    pub artist: Option<String>,
-    pub album: Option<String>,
-    pub year: Option<String>,
-    pub track_no: Option<usize>,
-    pub album_tracks: Vec<AlbumTrack>,
-    pub genres: Vec<String>,
-    pub styles: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct AlbumTrack {
-    pub title: String,
-    pub duration_secs: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
