@@ -12,8 +12,6 @@ use super::playlist::lyrics_popup::LyricsPopupAction;
 use super::playlist::playlist_save_popup::PlaylistSavePopupAction;
 use super::playlist::song_info_popup::SongInfoAction;
 use crate::app::component::actionhandler::{Action, ActionHandler, YoutuiEffect};
-use crate::app::ui::browser::playlistsearch::search_panel::BrowserPlaylistsAction;
-use crate::app::ui::browser::playlistsearch::songs_panel::BrowserPlaylistSongsAction;
 use anyhow::bail;
 use async_callback_manager::AsyncTask;
 use serde::de::{self};
@@ -48,11 +46,15 @@ pub enum AppAction {
     Sort(SortAction),
     Help(HelpAction),
     BrowserArtists(BrowserArtistsAction),
-    BrowserPlaylists(BrowserPlaylistsAction),
     BrowserSearch(BrowserSearchAction),
     BrowserArtistSongs(BrowserArtistSongsAction),
-    BrowserPlaylistSongs(BrowserPlaylistSongsAction),
     BrowserSongs(BrowserSongsAction),
+    #[allow(dead_code)]
+    #[serde(skip_serializing)]
+    BrowserPlaylists(BrowserPlaylistsDeprecated),
+    #[allow(dead_code)]
+    #[serde(skip_serializing)]
+    BrowserPlaylistSongs(BrowserPlaylistSongsDeprecated),
     BrowserLibrary(BrowserLibraryAction),
     Log(LoggerAction),
     Playlist(PlaylistAction),
@@ -68,6 +70,39 @@ pub enum AppAction {
 #[serde(rename_all = "snake_case")]
 pub enum HelpAction {
     Close,
+}
+
+#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
+pub enum BrowserPlaylistsDeprecated {
+    DisplaySelectedPlaylist,
+}
+
+impl Action for BrowserPlaylistsDeprecated {
+    fn context(&self) -> std::borrow::Cow<'_, str> { "Playlists (deprecated)".into() }
+    fn describe(&self) -> std::borrow::Cow<'_, str> { "Deprecated playlist action".into() }
+}
+
+#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[allow(dead_code)]
+pub enum BrowserPlaylistSongsDeprecated {
+    Filter,
+    Sort,
+    PlaySong,
+    PlaySongs,
+    AddSongToPlaylist,
+    AddSongsToPlaylist,
+    ViewLyrics,
+    CopySongUrl,
+    GoToArtist,
+    GoToAlbum,
+}
+
+impl Action for BrowserPlaylistSongsDeprecated {
+    fn context(&self) -> std::borrow::Cow<'_, str> { "Playlist Songs (deprecated)".into() }
+    fn describe(&self) -> std::borrow::Cow<'_, str> { "Deprecated playlist songs action".into() }
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -155,7 +190,9 @@ impl Action for AppAction {
             AppAction::TextEntry(a) => a.context(),
             AppAction::List(a) => a.context(),
             AppAction::BrowserSongs(a) => a.context(),
+            #[allow(dead_code)]
             AppAction::BrowserPlaylists(a) => a.context(),
+            #[allow(dead_code)]
             AppAction::BrowserPlaylistSongs(a) => a.context(),
             AppAction::BrowserLibrary(a) => a.context(),
         }
@@ -193,7 +230,9 @@ impl Action for AppAction {
             AppAction::TextEntry(a) => a.describe(),
             AppAction::List(a) => a.describe(),
             AppAction::BrowserSongs(a) => a.describe(),
+            #[allow(dead_code)]
             AppAction::BrowserPlaylists(a) => a.describe(),
+            #[allow(dead_code)]
             AppAction::BrowserPlaylistSongs(a) => a.describe(),
             AppAction::BrowserLibrary(a) => a.describe(),
         }

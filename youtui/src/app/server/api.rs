@@ -18,7 +18,7 @@ use ytmapi_rs::auth::noauth::NoAuthToken;
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID, LikeStatus, YoutubeID};
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,
-    SearchResultArtist, SearchResultPlaylist, SearchResultSong,
+    SearchResultAlbum, SearchResultArtist, SearchResultPlaylist, SearchResultSong,
 };
 use ytmapi_rs::continuations::ParseFromContinuable;
 use ytmapi_rs::query::{
@@ -61,8 +61,13 @@ impl Api {
     ) -> Result<(Vec<SearchSuggestion>, String)> {
         get_search_suggestions(self.get_api().await?, text).await
     }
+    // TODO: Wire playlist search tab in browser
+    #[allow(dead_code)]
     pub async fn search_playlists(&self, text: String) -> Result<Vec<SearchResultPlaylist>> {
         search_playlists(self.get_api().await?, text).await
+    }
+    pub async fn search_albums(&self, text: String) -> Result<Vec<SearchResultAlbum>> {
+        search_albums(self.get_api().await?, text).await
     }
     pub async fn search_artists(&self, text: String) -> Result<Vec<SearchResultArtist>> {
         search_artists(self.get_api().await?, text).await
@@ -75,8 +80,9 @@ impl Api {
         title: String,
         description: Option<String>,
         video_ids: Vec<VideoID<'static>>,
+        privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
     ) -> Result<PlaylistID<'static>> {
-        create_playlist_with_videos(self.get_api().await?, title, description, video_ids).await
+        create_playlist_with_videos(self.get_api().await?, title, description, video_ids, privacy).await
     }
     pub async fn add_playlist_items(
         &self,
@@ -93,6 +99,8 @@ impl Api {
         let api = self.get_api().await?;
         api.read().await.rate_song(video_id, rating).await
     }
+    // TODO: Wire batch playlist song streaming for editor/export
+    #[allow(dead_code)]
     pub fn get_playlist_songs(
         &self,
         playlist_id: PlaylistID<'static>,
@@ -243,6 +251,8 @@ where
     }
 }
 
+// TODO: Wire playlist search tab in browser
+#[allow(dead_code)]
 async fn search_playlists(api: ConcurrentApi, text: String) -> Result<Vec<SearchResultPlaylist>> {
     if text.trim().is_empty() {
         return Ok(Vec::new());
@@ -251,6 +261,19 @@ async fn search_playlists(api: ConcurrentApi, text: String) -> Result<Vec<Search
     let query = ytmapi_rs::query::SearchQuery::new_filtered(
         text,
         ytmapi_rs::query::search::PlaylistsFilter,
+    )
+    .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
+    query_api_with_retry(&api, query).await
+}
+
+async fn search_albums(api: ConcurrentApi, text: String) -> Result<Vec<SearchResultAlbum>> {
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    tracing::info!("Searching albums for {text}");
+    let query = ytmapi_rs::query::SearchQuery::new_filtered(
+        text,
+        ytmapi_rs::query::search::AlbumsFilter,
     )
     .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
     query_api_with_retry(&api, query).await
@@ -287,9 +310,11 @@ async fn create_playlist_with_videos(
     title: String,
     description: Option<String>,
     video_ids: Vec<VideoID<'static>>,
+    privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
 ) -> Result<PlaylistID<'static>> {
     tracing::info!("Creating playlist with {} videos: {}", video_ids.len(), title);
-    let query = CreatePlaylistQuery::new(&title, description.as_deref(), PrivacyStatus::Unlisted)
+    let privacy = privacy.unwrap_or(PrivacyStatus::Unlisted);
+    let query = CreatePlaylistQuery::new(&title, description.as_deref(), privacy)
         .with_video_ids(video_ids);
     query_api_with_retry(&api, query).await
 }
@@ -495,6 +520,8 @@ fn get_artist_songs(
     PanickingReceiverStream::new(rx, handle)
 }
 
+// TODO: Wire batch playlist song streaming for editor/export
+#[allow(dead_code)]
 pub enum GetPlaylistSongsProgressUpdate {
     Loading,
     Songs(Vec<PlaylistItem>),
@@ -509,6 +536,8 @@ pub enum GetPlaylistSongsProgressUpdate {
     AllSongsSent,
 }
 
+// TODO: Wire batch playlist song streaming for editor/export
+#[allow(dead_code)]
 fn get_playlist_songs(
     api: Arc<AsyncCell<Result<ConcurrentApi, DynamicApiError>>>,
     playlist_id: PlaylistID<'static>,

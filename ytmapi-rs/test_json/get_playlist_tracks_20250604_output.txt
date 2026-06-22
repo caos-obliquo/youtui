@@ -4,6 +4,9 @@
             video_id: VideoID(
                 "xUNqsfFUwhY",
             ),
+            set_video_id: SetVideoID(
+                "3421EBFA8EE85C02",
+            ),
             track_no: 1,
             album: ParsedSongAlbum {
                 name: "Abbey Road",
@@ -52,12 +55,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMxUNqsfFUwhY",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "HzvDofigTKQ",
+            ),
+            set_video_id: SetVideoID(
+                "4949B9D0837AA5B0",
             ),
             track_no: 2,
             album: ParsedSongAlbum {
@@ -107,12 +114,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMHzvDofigTKQ",
             ),
+            year: None,
         },
     ),
     Video(
         PlaylistVideo {
             video_id: VideoID(
                 "A_MjCqQoLLA",
+            ),
+            set_video_id: SetVideoID(
+                "52152B4946C2F73F",
             ),
             track_no: 3,
             duration: "8:10",
@@ -139,6 +150,9 @@
         PlaylistSong {
             video_id: VideoID(
                 "oolpPmuK2I8",
+            ),
+            set_video_id: SetVideoID(
+                "090796A75D153932",
             ),
             track_no: 4,
             album: ParsedSongAlbum {
@@ -188,12 +202,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMoolpPmuK2I8",
             ),
+            year: None,
         },
     ),
     Video(
         PlaylistVideo {
             video_id: VideoID(
                 "wXTJBr9tt8Q",
+            ),
+            set_video_id: SetVideoID(
+                "12EFB3B1C57DE4E1",
             ),
             track_no: 5,
             duration: "2:33",
@@ -221,6 +239,9 @@
             video_id: VideoID(
                 "YXe7GQnvzqY",
             ),
+            set_video_id: SetVideoID(
+                "A6D797176972C8A9",
+            ),
             track_no: 6,
             duration: "0:46",
             title: "On a Cherry Blossom Night (Very Short Movie)",
@@ -247,6 +268,9 @@
             video_id: VideoID(
                 "jenWdylTtzs",
             ),
+            set_video_id: SetVideoID(
+                "532BB0B422FBC7EC",
+            ),
             track_no: 7,
             duration: "2:37",
             title: "I Want To Hold Your Hand - Performed Live On The Ed Sullivan ...",
@@ -272,6 +296,9 @@
         PlaylistSong {
             video_id: VideoID(
                 "V1umGjoQzy8",
+            ),
+            set_video_id: SetVideoID(
+                "CACDD466B3ED1565",
             ),
             track_no: 8,
             album: ParsedSongAlbum {
@@ -317,12 +344,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMV1umGjoQzy8",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "Man4Xw8Xypo",
+            ),
+            set_video_id: SetVideoID(
+                "9495DFD78D359043",
             ),
             track_no: 9,
             album: ParsedSongAlbum {
@@ -372,12 +403,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMMan4Xw8Xypo",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "MKUex3fci5c",
+            ),
+            set_video_id: SetVideoID(
+                "F63CD4D04198B046",
             ),
             track_no: 10,
             album: ParsedSongAlbum {
@@ -427,12 +462,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMMKUex3fci5c",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "YBcdt6DsLQA",
+            ),
+            set_video_id: SetVideoID(
+                "476B0DC25D7DEE8A",
             ),
             track_no: 11,
             album: ParsedSongAlbum {
@@ -482,12 +521,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMYBcdt6DsLQA",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "NU4yWui_DFQ",
+            ),
+            set_video_id: SetVideoID(
+                "D0A0EF93DCE5742B",
             ),
             track_no: 12,
             album: ParsedSongAlbum {
@@ -537,12 +580,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMNU4yWui_DFQ",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "VWO3nEuWo4k",
+            ),
+            set_video_id: SetVideoID(
+                "984C584B086AA6D2",
             ),
             track_no: 13,
             album: ParsedSongAlbum {
@@ -592,12 +639,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMVWO3nEuWo4k",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "_J9NpHKrKMw",
+            ),
+            set_video_id: SetVideoID(
+                "30892D90EC0C5586",
             ),
             track_no: 14,
             album: ParsedSongAlbum {
@@ -647,12 +698,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM_J9NpHKrKMw",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "zx2TFk0vh1I",
+            ),
+            set_video_id: SetVideoID(
+                "5396A0119349808E",
             ),
             track_no: 15,
             album: ParsedSongAlbum {
@@ -702,12 +757,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMzx2TFk0vh1I",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "wbxTlxuECJA",
+            ),
+            set_video_id: SetVideoID(
+                "DAA551CF700844C3",
             ),
             track_no: 16,
             album: ParsedSongAlbum {
@@ -757,12 +816,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMwbxTlxuECJA",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "naoknj1ebqI",
+            ),
+            set_video_id: SetVideoID(
+                "5A65CE115B87358D",
             ),
             track_no: 17,
             album: ParsedSongAlbum {
@@ -812,12 +875,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMnaoknj1ebqI",
             ),
+            year: None,
         },
     ),
     Video(
         PlaylistVideo {
             video_id: VideoID(
                 "BGLGzRXY5Bw",
+            ),
+            set_video_id: SetVideoID(
+                "21D2A4324C732A32",
             ),
             track_no: 18,
             duration: "3:28",
@@ -844,6 +911,9 @@
         PlaylistSong {
             video_id: VideoID(
                 "oxwAB3SECtc",
+            ),
+            set_video_id: SetVideoID(
+                "9E8144A350F4408B",
             ),
             track_no: 19,
             album: ParsedSongAlbum {
@@ -893,12 +963,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMoxwAB3SECtc",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "0pGOFX1D_jg",
+            ),
+            set_video_id: SetVideoID(
+                "D458CC8D11735272",
             ),
             track_no: 20,
             album: ParsedSongAlbum {
@@ -948,12 +1022,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM0pGOFX1D_jg",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "QlgNMZnLsIQ",
+            ),
+            set_video_id: SetVideoID(
+                "208A2CA64C241A85",
             ),
             track_no: 21,
             album: ParsedSongAlbum {
@@ -1003,12 +1081,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMQlgNMZnLsIQ",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "RhoprlMxteE",
+            ),
+            set_video_id: SetVideoID(
+                "F3D73C336952E57D",
             ),
             track_no: 22,
             album: ParsedSongAlbum {
@@ -1058,12 +1140,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMRhoprlMxteE",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "10LSq_J5ol4",
+            ),
+            set_video_id: SetVideoID(
+                "3F342EBE842F2A34",
             ),
             track_no: 23,
             album: ParsedSongAlbum {
@@ -1113,12 +1199,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM10LSq_J5ol4",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "_7xMfIp-irg",
+            ),
+            set_video_id: SetVideoID(
+                "9750BB53E158A2E4",
             ),
             track_no: 24,
             album: ParsedSongAlbum {
@@ -1168,12 +1258,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM_7xMfIp-irg",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "vfxQ1oDiEJM",
+            ),
+            set_video_id: SetVideoID(
+                "C715F6D1FB204D0A",
             ),
             track_no: 25,
             album: ParsedSongAlbum {
@@ -1223,12 +1317,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMvfxQ1oDiEJM",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "2IbPn5j2YKk",
+            ),
+            set_video_id: SetVideoID(
+                "7125420930B2133F",
             ),
             track_no: 26,
             album: ParsedSongAlbum {
@@ -1278,12 +1376,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM2IbPn5j2YKk",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "0ArlUSVDQIw",
+            ),
+            set_video_id: SetVideoID(
+                "CCC2CF83843EF8F0",
             ),
             track_no: 27,
             album: ParsedSongAlbum {
@@ -1333,12 +1435,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM0ArlUSVDQIw",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "nGbWU8S3vzs",
+            ),
+            set_video_id: SetVideoID(
+                "2AA6CBD198537E6B",
             ),
             track_no: 28,
             album: ParsedSongAlbum {
@@ -1388,12 +1494,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMnGbWU8S3vzs",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "byUTLI1XjOg",
+            ),
+            set_video_id: SetVideoID(
+                "C2E8565AAFA60017",
             ),
             track_no: 29,
             album: ParsedSongAlbum {
@@ -1443,12 +1553,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMbyUTLI1XjOg",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "aXNY4NddrLo",
+            ),
+            set_video_id: SetVideoID(
+                "8279DAAEA617ED54",
             ),
             track_no: 30,
             album: ParsedSongAlbum {
@@ -1498,12 +1612,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMaXNY4NddrLo",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "TBSpmoA8V78",
+            ),
+            set_video_id: SetVideoID(
+                "748EE8094DE58F87",
             ),
             track_no: 31,
             album: ParsedSongAlbum {
@@ -1553,12 +1671,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMTBSpmoA8V78",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "YEESfv-11ng",
+            ),
+            set_video_id: SetVideoID(
+                "BC50DB7391B7A3A4",
             ),
             track_no: 32,
             album: ParsedSongAlbum {
@@ -1616,12 +1738,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMYEESfv-11ng",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "acxfOgPWUls",
+            ),
+            set_video_id: SetVideoID(
+                "3D0C8FC9C40694A3",
             ),
             track_no: 33,
             album: ParsedSongAlbum {
@@ -1671,12 +1797,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMacxfOgPWUls",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "Y_V6y1ZCg_8",
+            ),
+            set_video_id: SetVideoID(
+                "B0D629957746EECA",
             ),
             track_no: 34,
             album: ParsedSongAlbum {
@@ -1726,12 +1856,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMY_V6y1ZCg_8",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "ywZqBGHDTlA",
+            ),
+            set_video_id: SetVideoID(
+                "6128676B35F5529F",
             ),
             track_no: 35,
             album: ParsedSongAlbum {
@@ -1781,12 +1915,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMywZqBGHDTlA",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "CXlCLDP2Vr0",
+            ),
+            set_video_id: SetVideoID(
+                "9F3E08FCD6FABA75",
             ),
             track_no: 36,
             album: ParsedSongAlbum {
@@ -1836,12 +1974,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMCXlCLDP2Vr0",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "0soSE-RMH3s",
+            ),
+            set_video_id: SetVideoID(
+                "4A07556FC5C9B361",
             ),
             track_no: 37,
             album: ParsedSongAlbum {
@@ -1891,12 +2033,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM0soSE-RMH3s",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "90M60PzmxEE",
+            ),
+            set_video_id: SetVideoID(
+                "AF2C899DC46931B2",
             ),
             track_no: 38,
             album: ParsedSongAlbum {
@@ -1946,12 +2092,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM90M60PzmxEE",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "5tc0gLSSU1M",
+            ),
+            set_video_id: SetVideoID(
+                "1913C8AC5703C673",
             ),
             track_no: 39,
             album: ParsedSongAlbum {
@@ -2001,12 +2151,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM5tc0gLSSU1M",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "WoBLi5eE-wY",
+            ),
+            set_video_id: SetVideoID(
+                "F485675C6DF9EF19",
             ),
             track_no: 40,
             album: ParsedSongAlbum {
@@ -2056,12 +2210,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMWoBLi5eE-wY",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "TSpiwK5fig0",
+            ),
+            set_video_id: SetVideoID(
+                "3C1A7DF73EDAB20D",
             ),
             track_no: 41,
             album: ParsedSongAlbum {
@@ -2111,12 +2269,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMTSpiwK5fig0",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "xedn8vp6W20",
+            ),
+            set_video_id: SetVideoID(
+                "96ED591D7BAAA068",
             ),
             track_no: 42,
             album: ParsedSongAlbum {
@@ -2166,12 +2328,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMxedn8vp6W20",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "9BznFjbcBVs",
+            ),
+            set_video_id: SetVideoID(
+                "C6C0EB62B8BB841F",
             ),
             track_no: 43,
             album: ParsedSongAlbum {
@@ -2221,12 +2387,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM9BznFjbcBVs",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "wQA59IkCF5I",
+            ),
+            set_video_id: SetVideoID(
+                "CED0831C52E9FFF7",
             ),
             track_no: 44,
             album: ParsedSongAlbum {
@@ -2276,12 +2446,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMwQA59IkCF5I",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "t1Jm5epJr10",
+            ),
+            set_video_id: SetVideoID(
+                "53683709AEEE7C11",
             ),
             track_no: 45,
             album: ParsedSongAlbum {
@@ -2331,12 +2505,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMt1Jm5epJr10",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "kfSQkZuIx84",
+            ),
+            set_video_id: SetVideoID(
+                "2B6EFA1B1F897EAC",
             ),
             track_no: 46,
             album: ParsedSongAlbum {
@@ -2386,12 +2564,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMkfSQkZuIx84",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "vWW2SzoAXMo",
+            ),
+            set_video_id: SetVideoID(
+                "2ABE5EB35C671E9E",
             ),
             track_no: 47,
             album: ParsedSongAlbum {
@@ -2441,12 +2623,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMvWW2SzoAXMo",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "V8nLraecPRY",
+            ),
+            set_video_id: SetVideoID(
+                "4C4C8E4AF05B17C5",
             ),
             track_no: 48,
             album: ParsedSongAlbum {
@@ -2496,12 +2682,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMV8nLraecPRY",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "HCTunqv1Xt4",
+            ),
+            set_video_id: SetVideoID(
+                "5E3ADF02B9C57FF6",
             ),
             track_no: 49,
             album: ParsedSongAlbum {
@@ -2551,12 +2741,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMHCTunqv1Xt4",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "8Goxw7VgxfA",
+            ),
+            set_video_id: SetVideoID(
+                "D625AB40294D381D",
             ),
             track_no: 50,
             album: ParsedSongAlbum {
@@ -2606,12 +2800,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM8Goxw7VgxfA",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "AcQjM7gV6mI",
+            ),
+            set_video_id: SetVideoID(
+                "8C5FAE6B164813C8",
             ),
             track_no: 51,
             album: ParsedSongAlbum {
@@ -2661,12 +2859,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMAcQjM7gV6mI",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "VaBPY78D88g",
+            ),
+            set_video_id: SetVideoID(
+                "138030DF486135A9",
             ),
             track_no: 52,
             album: ParsedSongAlbum {
@@ -2716,12 +2918,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMVaBPY78D88g",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "NR0u_qjq2fM",
+            ),
+            set_video_id: SetVideoID(
+                "296FE3DCFF5C9D80",
             ),
             track_no: 53,
             album: ParsedSongAlbum {
@@ -2771,12 +2977,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMNR0u_qjq2fM",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "C56lDvKV8tk",
+            ),
+            set_video_id: SetVideoID(
+                "6C992A3B5EB60D08",
             ),
             track_no: 54,
             album: ParsedSongAlbum {
@@ -2826,12 +3036,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMC56lDvKV8tk",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "p-abNGP1BK4",
+            ),
+            set_video_id: SetVideoID(
+                "556D98A58E9EFBEA",
             ),
             track_no: 55,
             album: ParsedSongAlbum {
@@ -2881,12 +3095,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMp-abNGP1BK4",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "SHAqAO7w8M8",
+            ),
+            set_video_id: SetVideoID(
+                "74DB023C1A0DB0A7",
             ),
             track_no: 56,
             album: ParsedSongAlbum {
@@ -2936,12 +3154,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMSHAqAO7w8M8",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "8scSwaKbE64",
+            ),
+            set_video_id: SetVideoID(
+                "F6007F4A1F95C0C2",
             ),
             track_no: 57,
             album: ParsedSongAlbum {
@@ -2991,12 +3213,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM8scSwaKbE64",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "-8l3ntDR_lI",
+            ),
+            set_video_id: SetVideoID(
+                "BBA0D040905C6065",
             ),
             track_no: 58,
             album: ParsedSongAlbum {
@@ -3046,12 +3272,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM-8l3ntDR_lI",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "F_80s6S_7Vw",
+            ),
+            set_video_id: SetVideoID(
+                "04E51286FD35A7BE",
             ),
             track_no: 59,
             album: ParsedSongAlbum {
@@ -3101,12 +3331,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMF_80s6S_7Vw",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "De1LCQvbqV4",
+            ),
+            set_video_id: SetVideoID(
+                "0161C5AD254ECAFD",
             ),
             track_no: 60,
             album: ParsedSongAlbum {
@@ -3156,12 +3390,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMDe1LCQvbqV4",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "m8LbJfC0SYM",
+            ),
+            set_video_id: SetVideoID(
+                "31A22D0994588080",
             ),
             track_no: 61,
             album: ParsedSongAlbum {
@@ -3211,12 +3449,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMm8LbJfC0SYM",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "gBcdOFehNCg",
+            ),
+            set_video_id: SetVideoID(
+                "6C7A39AC43F44BD2",
             ),
             track_no: 62,
             album: ParsedSongAlbum {
@@ -3266,12 +3508,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMgBcdOFehNCg",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "vdvnOH060Qg",
+            ),
+            set_video_id: SetVideoID(
+                "59DD4764C5029292",
             ),
             track_no: 63,
             album: ParsedSongAlbum {
@@ -3321,12 +3567,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMvdvnOH060Qg",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "ELlLIwhvknk",
+            ),
+            set_video_id: SetVideoID(
+                "0F8E3C11550E3CEA",
             ),
             track_no: 64,
             album: ParsedSongAlbum {
@@ -3376,12 +3626,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMELlLIwhvknk",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "5en2JMLA8Z0",
+            ),
+            set_video_id: SetVideoID(
+                "B56E93FC6D885ED1",
             ),
             track_no: 65,
             album: ParsedSongAlbum {
@@ -3431,12 +3685,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM5en2JMLA8Z0",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "tAe2Q_LhY8g",
+            ),
+            set_video_id: SetVideoID(
+                "B57104458A731863",
             ),
             track_no: 66,
             album: ParsedSongAlbum {
@@ -3486,12 +3744,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMtAe2Q_LhY8g",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "EGlo9LzmOME",
+            ),
+            set_video_id: SetVideoID(
+                "DFE2A34310B6B169",
             ),
             track_no: 67,
             album: ParsedSongAlbum {
@@ -3541,12 +3803,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMEGlo9LzmOME",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "czw8eqepir8",
+            ),
+            set_video_id: SetVideoID(
+                "13F23DC418DD5404",
             ),
             track_no: 68,
             album: ParsedSongAlbum {
@@ -3596,12 +3862,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMczw8eqepir8",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "sDcDCZGcZj8",
+            ),
+            set_video_id: SetVideoID(
+                "6263132B04ADB7BE",
             ),
             track_no: 69,
             album: ParsedSongAlbum {
@@ -3651,12 +3921,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMsDcDCZGcZj8",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "BT5j9OQ7Sh0",
+            ),
+            set_video_id: SetVideoID(
+                "403D304A0EE8E30D",
             ),
             track_no: 70,
             album: ParsedSongAlbum {
@@ -3706,12 +3980,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMBT5j9OQ7Sh0",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "gH6i9JAdJrQ",
+            ),
+            set_video_id: SetVideoID(
+                "6E3B8C1DB7CEC256",
             ),
             track_no: 71,
             album: ParsedSongAlbum {
@@ -3761,12 +4039,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMgH6i9JAdJrQ",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "r95-7zfgtLw",
+            ),
+            set_video_id: SetVideoID(
+                "7C3B6FD72206626A",
             ),
             track_no: 72,
             album: ParsedSongAlbum {
@@ -3816,12 +4098,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMr95-7zfgtLw",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "uRQ7ecvU56k",
+            ),
+            set_video_id: SetVideoID(
+                "DBA7E2BA2DBAAA73",
             ),
             track_no: 73,
             album: ParsedSongAlbum {
@@ -3871,12 +4157,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMuRQ7ecvU56k",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "hL0tnrl2L_U",
+            ),
+            set_video_id: SetVideoID(
+                "2C98A09B9311E8B5",
             ),
             track_no: 74,
             album: ParsedSongAlbum {
@@ -3926,12 +4216,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMhL0tnrl2L_U",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "l0zaebtU-CA",
+            ),
+            set_video_id: SetVideoID(
+                "949CAAE98C101B50",
             ),
             track_no: 75,
             album: ParsedSongAlbum {
@@ -3981,12 +4275,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMl0zaebtU-CA",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "2tSIZLuCKUI",
+            ),
+            set_video_id: SetVideoID(
+                "17F6B5A8B63499C9",
             ),
             track_no: 76,
             album: ParsedSongAlbum {
@@ -4036,12 +4334,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM2tSIZLuCKUI",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "-XTB3bCYMK0",
+            ),
+            set_video_id: SetVideoID(
+                "EAF6C98EAC7FEFFE",
             ),
             track_no: 77,
             album: ParsedSongAlbum {
@@ -4091,12 +4393,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM-XTB3bCYMK0",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "TZip_br_v3w",
+            ),
+            set_video_id: SetVideoID(
+                "B0EAEBDFE250D593",
             ),
             track_no: 78,
             album: ParsedSongAlbum {
@@ -4146,12 +4452,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMTZip_br_v3w",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "7cqHtGb9WYM",
+            ),
+            set_video_id: SetVideoID(
+                "16224A4012D9B20D",
             ),
             track_no: 79,
             album: ParsedSongAlbum {
@@ -4201,12 +4511,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM7cqHtGb9WYM",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "xdcSFVXd3MU",
+            ),
+            set_video_id: SetVideoID(
+                "8A660A370EABB1D6",
             ),
             track_no: 80,
             album: ParsedSongAlbum {
@@ -4256,12 +4570,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMxdcSFVXd3MU",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "HsffxGyY4ck",
+            ),
+            set_video_id: SetVideoID(
+                "3A93F81E648E42C7",
             ),
             track_no: 81,
             album: ParsedSongAlbum {
@@ -4311,12 +4629,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMHsffxGyY4ck",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "UPBd8eHQqIw",
+            ),
+            set_video_id: SetVideoID(
+                "156A5D106AC1F290",
             ),
             track_no: 82,
             album: ParsedSongAlbum {
@@ -4366,12 +4688,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMUPBd8eHQqIw",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "28d_A_NuJ7A",
+            ),
+            set_video_id: SetVideoID(
+                "001F70D958CF5CDF",
             ),
             track_no: 83,
             album: ParsedSongAlbum {
@@ -4421,12 +4747,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM28d_A_NuJ7A",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "vqpEZuv29qE",
+            ),
+            set_video_id: SetVideoID(
+                "8A05A42E773EFC61",
             ),
             track_no: 84,
             album: ParsedSongAlbum {
@@ -4476,12 +4806,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMvqpEZuv29qE",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "b3zNKWyLfus",
+            ),
+            set_video_id: SetVideoID(
+                "82C6F5DBD97B625D",
             ),
             track_no: 85,
             album: ParsedSongAlbum {
@@ -4531,12 +4865,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMb3zNKWyLfus",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "mJag19WoAe0",
+            ),
+            set_video_id: SetVideoID(
+                "4716165A37EB7BE7",
             ),
             track_no: 86,
             album: ParsedSongAlbum {
@@ -4586,12 +4924,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMmJag19WoAe0",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "6B224XDJw6g",
+            ),
+            set_video_id: SetVideoID(
+                "D32CE50B0D9EEC00",
             ),
             track_no: 87,
             album: ParsedSongAlbum {
@@ -4641,12 +4983,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM6B224XDJw6g",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "Hz5jXwOXgKQ",
+            ),
+            set_video_id: SetVideoID(
+                "B1C476977DC9FF01",
             ),
             track_no: 88,
             album: ParsedSongAlbum {
@@ -4696,12 +5042,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMHz5jXwOXgKQ",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "BpndGZ71yww",
+            ),
+            set_video_id: SetVideoID(
+                "F00C6BF363DE2160",
             ),
             track_no: 89,
             album: ParsedSongAlbum {
@@ -4751,12 +5101,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMBpndGZ71yww",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "sGDuGybCRSE",
+            ),
+            set_video_id: SetVideoID(
+                "0AA4C382BFCF0B51",
             ),
             track_no: 90,
             album: ParsedSongAlbum {
@@ -4806,12 +5160,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMsGDuGybCRSE",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "6e01nNA02vw",
+            ),
+            set_video_id: SetVideoID(
+                "CB86D420EFBFE8EE",
             ),
             track_no: 91,
             album: ParsedSongAlbum {
@@ -4861,12 +5219,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM6e01nNA02vw",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "RXawa90YU2s",
+            ),
+            set_video_id: SetVideoID(
+                "23A2CE53B6FB0544",
             ),
             track_no: 92,
             album: ParsedSongAlbum {
@@ -4916,12 +5278,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMRXawa90YU2s",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "OsjTO0yZQjk",
+            ),
+            set_video_id: SetVideoID(
+                "DDCE598CD616C109",
             ),
             track_no: 93,
             album: ParsedSongAlbum {
@@ -4971,12 +5337,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMOsjTO0yZQjk",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "9rokS8Ao4nQ",
+            ),
+            set_video_id: SetVideoID(
+                "5D53F2ECF41B7755",
             ),
             track_no: 94,
             album: ParsedSongAlbum {
@@ -5026,12 +5396,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM9rokS8Ao4nQ",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "Uq0aeEYLkIE",
+            ),
+            set_video_id: SetVideoID(
+                "EF7F4337B6E2709F",
             ),
             track_no: 95,
             album: ParsedSongAlbum {
@@ -5081,12 +5455,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMUq0aeEYLkIE",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "12R4FzIhdoQ",
+            ),
+            set_video_id: SetVideoID(
+                "5822180C0862BBFB",
             ),
             track_no: 96,
             album: ParsedSongAlbum {
@@ -5136,12 +5514,16 @@
             playlist_id: PlaylistID(
                 "RDAMVM12R4FzIhdoQ",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "AWUTlM6hz0g",
+            ),
+            set_video_id: SetVideoID(
+                "B4F255A47F02503B",
             ),
             track_no: 97,
             album: ParsedSongAlbum {
@@ -5191,12 +5573,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMAWUTlM6hz0g",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "vzd_DfGGx0I",
+            ),
+            set_video_id: SetVideoID(
+                "D1BE74B44EB19F38",
             ),
             track_no: 98,
             album: ParsedSongAlbum {
@@ -5246,12 +5632,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMvzd_DfGGx0I",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "i5m-sgtwFck",
+            ),
+            set_video_id: SetVideoID(
+                "8B3B6DD63EA0D1CC",
             ),
             track_no: 99,
             album: ParsedSongAlbum {
@@ -5301,12 +5691,16 @@
             playlist_id: PlaylistID(
                 "RDAMVMi5m-sgtwFck",
             ),
+            year: None,
         },
     ),
     Song(
         PlaylistSong {
             video_id: VideoID(
                 "YgFo9STa70E",
+            ),
+            set_video_id: SetVideoID(
+                "F796E9CA3BC2BC2F",
             ),
             track_no: 101,
             album: ParsedSongAlbum {
@@ -5356,6 +5750,7 @@
             playlist_id: PlaylistID(
                 "RDAMVMYgFo9STa70E",
             ),
+            year: None,
         },
     ),
     UploadSong(
