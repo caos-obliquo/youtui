@@ -196,7 +196,37 @@ All CRUD ops exist. Gaps: batch reorder (swap only), single-song metadata, song 
 | Back navigation | ✅ | (backspace/browser back) |
 | Library auto-refresh | ✅ | After all playlist mutations |
 
-### Remaining dead code / feature gaps
+### Known Bugs (discovered 2026-06-22)
+- **Albums search not working**: F1 search opens but typing doesn't populate results. Album list shows "No albums found". Root cause: `fetch_albums()` task is discarded, search text handler doesn't properly propagate keystrokes to `SearchBlock`.
+- **Genius annotations return 0**: Without `GENIUS_TOKEN` env var, `__INITIAL_STATE__` scraping fails on most pages. API-based `fetch_annotations_with_token()` needs Bearer token.
+- **Annotations only work on modern Genius pages**: Pages without `__INITIAL_STATE__` JSON can't have annotations extracted. This is a structural limitation of the Genius website.
+
+### Remaining Feature Branches
+4 branches created on `main`, all need implementation:
+- `feat/playlist-search` — new browser tab for YTM playlist search (3-4 hrs)
+- `feat/batch-streaming` — `get_playlist_songs()` frontend dispatch (1 hr)
+- `feat/queue-sort` — sort popup UI ✅ **DONE (merged to main)**
+- `feat/batch-merge` — `AddPlaylistToPlaylist` backend + handlers ready, awaits AppCallback wiring
+
+All 4 branches independent — each merges to `main` on completion.
+
+### This Session (2026-06-22)
+#### Completed
+- Queue sort popup: `o.r` toggles column picker, j/k navigate, `o.r` applies sort
+- `o.E` edit playlist 400 fix: removed duplicate `privacy_status` action in `EditPlaylistQuery`
+- Genius annotations API: `fetch_annotations_with_token()` — API first, page scrape fallback
+- Batch-merge: `AddPlaylistToPlaylist` struct + BackendTask + handler structs
+- Batch-streaming: `GetPlaylistSongs` struct + streaming backend (frontend dispatch pending)
+- Double-Esc: 300ms window dismisses all popups
+- Section spacing: blank lines BETWEEN sections (not after headers)
+- 0 non-deprecation warnings
+- 120 youtui tests, 82 ytmapi-rs lib tests, 14 genius-rs tests all pass
+
+#### Remaining for tomorrow
+- Albums search fix (F1 typing doesn't work)
+- Annotations without Bearer token (need individual page scraping fallback)
+- Playlist search tab (new browser variant — largest remaining feature)
+- Wire batch-merge frontend dispatch (AppCallback + context menu)
 6 items needing feature-level work. Branches created on `main`:
 - `feat/playlist-search` — new browser tab for YTM playlist search
 - `feat/batch-streaming` — `get_playlist_songs()` to stream all playlist tracks

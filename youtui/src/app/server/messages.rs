@@ -173,6 +173,34 @@ pub struct ReorderPlaylistItem {
     pub target_video_id: VideoID<'static>,
 }
 
+// TODO: Wire playlist merge — frontend dispatch pending
+#[allow(dead_code)]
+#[derive(Debug, PartialEq)]
+pub struct AddPlaylistToPlaylist {
+    pub source_id: PlaylistID<'static>,
+    pub target_id: PlaylistID<'static>,
+}
+
+impl BackendTask<ArcServer> for AddPlaylistToPlaylist {
+    type Output = Result<()>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            use ytmapi_rs::query::EditPlaylistQuery;
+            use ytmapi_rs::common::ApiOutcome;
+            let api_guard = backend.api.get_api().await?;
+            let query = EditPlaylistQuery::add_playlist(self.target_id.clone(), self.source_id.clone());
+            let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+            tracing::info!("Added playlist {} to {}", self.target_id.get_raw(), self.source_id.get_raw());
+            Ok(())
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct GetAllLibraryPlaylists;
 
