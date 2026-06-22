@@ -15,10 +15,9 @@ use media_controls::MediaController;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui_image::picker::Picker;
-use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, CreatePlaylistWithVideos, RenamePlaylist, RemovePlaylistItems, DeletePlaylist, EditPlaylistDetails, RatePlaylistMessage, GetPlaylistDetailsMessage};
+use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, CreatePlaylistWithVideos, RenamePlaylist, DeletePlaylist, EditPlaylistDetails, RatePlaylistMessage, GetPlaylistDetailsMessage};
 use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleRenamePlaylistOk, HandleRenamePlaylistError,
-    HandleRemovePlaylistItemsOk, HandleRemovePlaylistItemsError,
     HandleDeletePlaylistOk, HandleDeletePlaylistError,
     HandleEditPlaylistDetailsOk, HandleEditPlaylistDetailsError,
     HandleRatePlaylistOk, HandleRatePlaylistError,
@@ -103,8 +102,10 @@ pub enum AppCallback {
     ChangeContext(WindowContext),
     AddSongsToPlaylist(Vec<ListSong>),
     AddSongsToPlaylistAndPlay(Vec<ListSong>),
+    // TODO: Wire save-to-playlist popup — dropdown playlist picker
     #[allow(dead_code)]
     OpenPlaylistSavePopup(Vec<VideoID<'static>>),
+    // TODO: Wire update-playlist popup — overwrite vs append
     #[allow(dead_code)]
     OpenPlaylistUpdatePopup(Vec<VideoID<'static>>),
     AddVideosToPlaylistFromPopup {
@@ -150,6 +151,7 @@ pub enum AppCallback {
         playlist_title: String,
         tracks: Vec<crate::app::structures::ListSong>,
     },
+    // TODO: Wire back navigation in browser context
     #[allow(dead_code)]
     Back,
     ShowDeleteConfirm(PlaylistID<'static>, String),
@@ -168,6 +170,8 @@ pub enum AppCallback {
         privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
     },
     RatePlaylistFromLibrary(PlaylistID<'static>, LikeStatus),
+    // TODO: Wire playlist details popup — parse like_status for rate toggle
+    #[allow(dead_code)]
     GetPlaylistDetailsFromLibrary(PlaylistID<'static>),
 }
 

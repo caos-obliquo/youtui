@@ -392,6 +392,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/_hN7Igku-lm8Ua85ptQ6CkZDok1MN_QsOsc2hQl7q_v1B_WjD4d2GeDUMCYquXgYUZLtDyXFUznRYaI=w120-h120-l90-rj",
                 },
             ],
+            year: None,
         },
         SearchResultSong {
             title: "Beaten",
@@ -422,6 +423,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/SV79XMu-sQjsgrRoP4mpeRUZSn3iqtg50s3YZPrBhKU7EcijWOqIb2ZYSPDFP424nxiBSUgNKMEODV0l=w120-h120-l90-rj",
                 },
             ],
+            year: None,
         },
         SearchResultSong {
             title: "Beat It",
@@ -452,6 +454,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/URvHCfI2iyGAlAwqqBFeaFhU9DeKk_iuX40OIIIj8Zp0wIT3BVsJ2JRMwLLbUB9EZS7t7oDlMrI2S3OvGA=w120-h120-l90-rj",
                 },
             ],
+            year: None,
         },
     ],
     videos: [

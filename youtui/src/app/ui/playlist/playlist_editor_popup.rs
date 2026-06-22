@@ -1,10 +1,7 @@
 use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffect, YoutuiEffect};
-use crate::app::server::{
-    ArcServer, TaskMetadata, RemovePlaylistItems, AddSongsToPlaylist,
-};
 use crate::app::structures::ListSong;
 use crate::app::ui::AppCallback;
-use async_callback_manager::{AsyncTask, FrontendEffect};
+use async_callback_manager::AsyncTask;
 use crossterm::event::KeyCode;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
@@ -12,8 +9,8 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use ytmapi_rs::common::{VideoID, PlaylistID, LikeStatus};
-use vi_text_editor::{ViMode, ViTextEditor};
+use ytmapi_rs::common::{VideoID, PlaylistID};
+use vi_text_editor::ViTextEditor;
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum PlaylistEditorAction {
@@ -42,6 +39,8 @@ pub struct PlaylistEditorPopup {
     pub command_editor: ViTextEditor,
     pub modified: bool,
     pub confirm_delete: bool,
+    // TODO: Wire playlist editor column sort
+    #[allow(dead_code)]
     pub sort_column: usize,
 }
 
@@ -61,10 +60,14 @@ impl PlaylistEditorPopup {
         }
     }
 
+    // TODO: Wire playlist editor mode indicator
+    #[allow(dead_code)]
     pub fn mode_char(&self) -> &'static str {
         if self.command_mode { ": " } else { "[N]" }
     }
 
+    // TODO: Wire playlist editor save
+    #[allow(dead_code)]
     fn save_tracks_callback(&self) -> Option<AppCallback> {
         let video_ids: Vec<VideoID<'static>> = self.tracks.iter()
             .map(|t| t.video_id.clone())
@@ -75,6 +78,8 @@ impl PlaylistEditorPopup {
         Some(AppCallback::OpenPlaylistUpdatePopup(video_ids))
     }
 
+    // TODO: Wire playlist editor commands
+    #[allow(dead_code)]
     fn execute_command(&mut self, cmd: &str) -> (ComponentEffect<Self>, Option<AppCallback>) {
         let parts: Vec<&str> = cmd.trim().split_whitespace().collect();
         match parts.first().copied().unwrap_or("") {
@@ -181,6 +186,8 @@ impl PlaylistEditorPopup {
         }
     }
 
+    // TODO: Wire playlist editor key input — dispatch to command mode or navigation
+    #[allow(dead_code)]
     pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
         if self.command_mode {
             match event.code {
@@ -291,6 +298,8 @@ impl PlaylistEditorPopup {
         }
     }
 
+    // TODO: Wire playlist editor rendering
+    #[allow(dead_code)]
     pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
         let popup_area = Self::centered_rect_fixed(90, 90, area);
         frame.render_widget(Clear, popup_area);
@@ -347,6 +356,8 @@ impl PlaylistEditorPopup {
         frame.render_widget(hint, chunks[1]);
     }
 
+    // TODO: Wire playlist editor layout
+    #[allow(dead_code)]
     fn centered_rect_fixed(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         let popup_layout = Layout::default()
             .direction(Direction::Vertical)

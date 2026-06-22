@@ -6,7 +6,7 @@ use super::{
 };
 use crate::common::{
     ApiOutcome, ArtistChannelID, ContinuationParams, EpisodeID, Explicit, LibraryManager,
-    LikeStatus, PlaylistID, SetVideoID, Thumbnail, UploadEntityID, VideoID,
+    LikeStatus, PlaylistID, SetVideoID, Thumbnail, UploadEntityID, VideoID, YoutubeID,
 };
 use crate::continuations::ParseFromContinuable;
 use crate::nav_consts::{
@@ -49,6 +49,7 @@ pub struct GetPlaylistDetails {
     // NOTE: Seem to be unable to distinguish when views is optional.
     pub views: Option<String>,
     pub thumbnails: Vec<Thumbnail>,
+    pub like_status: Option<LikeStatus>,
 }
 #[derive(PartialEq, Debug, Clone, Deserialize, Serialize)]
 /// Provides a SetVideoID and VideoID for each video added to the playlist.
@@ -73,6 +74,7 @@ pub struct WatchPlaylistTrack {
 // May need to be enum to track 'Not Available' case.
 pub struct PlaylistSong {
     pub video_id: VideoID<'static>,
+    pub set_video_id: SetVideoID<'static>,
     pub track_no: usize,
     pub album: ParsedSongAlbum,
     pub duration: String,
@@ -103,6 +105,7 @@ pub enum PlaylistItem {
 #[non_exhaustive]
 pub struct PlaylistVideo {
     pub video_id: VideoID<'static>,
+    pub set_video_id: SetVideoID<'static>,
     pub track_no: usize,
     pub duration: String,
     pub title: String,
@@ -302,6 +305,9 @@ pub(crate) fn parse_playlist_song(
         "/playNavigationEndpoint",
         WATCH_VIDEO_ID
     ))?;
+    let set_video_id: SetVideoID = data
+        .take_value_pointer("/playlistItemData/playlistSetVideoId")
+        .unwrap_or_else(|_| SetVideoID::from_raw(""));
     let library_management =
         parse_library_management_items_from_menu(data.borrow_pointer(MENU_ITEMS)?)?;
     let like_status = data.take_value_pointer(MENU_LIKE_STATUS)?;
@@ -347,6 +353,7 @@ pub(crate) fn parse_playlist_song(
     ))?;
     Ok(PlaylistSong {
         video_id,
+        set_video_id,
         track_no,
         duration,
         library_management,
@@ -457,6 +464,9 @@ pub(crate) fn parse_playlist_video(
         "/playNavigationEndpoint",
         WATCH_VIDEO_ID
     ))?;
+    let set_video_id: SetVideoID = data
+        .take_value_pointer("/playlistItemData/playlistSetVideoId")
+        .unwrap_or_else(|_| SetVideoID::from_raw(""));
     let like_status = data.take_value_pointer(MENU_LIKE_STATUS)?;
     let channel_name = parse_flex_column_item(&mut data, 1, 0)?;
     let channel_id = data
@@ -478,6 +488,7 @@ pub(crate) fn parse_playlist_video(
     ))?;
     Ok(PlaylistVideo {
         video_id,
+        set_video_id,
         track_no,
         duration,
         title,
@@ -620,6 +631,26 @@ fn get_playlist_details(json_crawler: JsonCrawlerOwned) -> Result<GetPlaylistDet
         .nth(4)
         .map(|mut item| item.take_value_pointer("/text"))
         .transpose()?;
+    let like_status: Option<LikeStatus> = header
+        .borrow_pointer("/buttons")
+        .ok()
+        .and_then(|b| b.try_into_iter().ok())
+        .and_then(|iter| {
+            iter.filter_map(|mut btn| {
+                let is_toggled: bool = btn
+                    .take_value_pointer("/toggleButtonRenderer/isToggled")
+                    .ok()?;
+                Some(is_toggled)
+            })
+            .next()
+        })
+        .map(|toggled| {
+            if toggled {
+                LikeStatus::Liked
+            } else {
+                LikeStatus::Indifferent
+            }
+        });
     let id = header
         .navigate_pointer("/buttons")?
         .try_into_iter()?
@@ -637,6 +668,7 @@ fn get_playlist_details(json_crawler: JsonCrawlerOwned) -> Result<GetPlaylistDet
         thumbnails,
         views,
         author_avatar_url,
+        like_status,
     })
 }
 

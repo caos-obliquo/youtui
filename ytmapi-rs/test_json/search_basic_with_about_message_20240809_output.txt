@@ -499,6 +499,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/RvX-sRBt7B1CPW2z0vIw7kGhq8xXf7FTFZIbOQscCYadjjErfZ4H0eM62m53ExzQTe1oMDma420HejwlVA=w120-h120-l90-rj",
                 },
             ],
+            year: None,
         },
         SearchResultSong {
             title: "Help! (Remastered 2009)",
@@ -529,6 +530,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/cHaRyci2upQidmt3iHYeAzbkFJ_c1vXEJbpVh-RZpAnbyMNOtOAeZdNMoJnUrRMZnjipmxfxvuvBeFzhWw=w120-h120-l90-rj",
                 },
             ],
+            year: None,
         },
         SearchResultSong {
             title: "The Long And Winding Road (Remastered 2009)",
@@ -559,6 +561,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/octdAIhLRBSYd5JKOeTsF5zNhQ4C0L3JtOnjUYPvHLtJaxXr68NVW8gUfsE05aarfaDmZe_ibrVMxo-y4g=w120-h120-l90-rj",
                 },
             ],
+            year: None,
         },
     ],
     videos: [

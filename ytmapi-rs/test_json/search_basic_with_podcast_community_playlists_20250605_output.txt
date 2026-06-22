@@ -409,6 +409,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/-YmkgDfUd9e-8_VXC90fpar-i-wa06PsUja6tb2qYR7CJLQGe8T_pJKyzW_AkuGqgQMSEMqI2VCjocM=w120-h120-l90-rj",
                 },
             ],
+            year: None,
         },
         SearchResultSong {
             title: "Sonne",
@@ -439,6 +440,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/VzLpbmiJJz1FeC7qHpu7VLQkreNqZwDDIEVFRch-6Mikd3z0VDKcLDpLb_qRPKHkIRmrULJp-GiX_3Oc=w120-h120-s-l90-rj",
                 },
             ],
+            year: None,
         },
         SearchResultSong {
             title: "Numb",
@@ -469,6 +471,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/Rqh2HDAD-Fj1-oHYqVklPGklMHIV3r6SMPMZmFE3FlLiWeBBnP3SCESfgeNdzQ-DmpCIvOGE4J0hzVxa=w120-h120-s-l90-rj",
                 },
             ],
+            year: None,
         },
     ],
     videos: [

@@ -50,6 +50,8 @@ pub struct GetSearchSuggestions(pub String);
 pub struct SearchArtists(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchSongs(pub String);
+// TODO: Wire playlist search tab in browser
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct SearchPlaylists(pub String);
 #[derive(Debug, PartialEq)]
@@ -57,6 +59,8 @@ pub struct SearchAlbums(pub String);
 #[derive(Debug, PartialEq)]
 pub struct GetArtistSongs(pub ArtistChannelID<'static>);
 #[derive(Debug, PartialEq)]
+// TODO: Wire batch playlist song fetching for editor/export
+#[allow(dead_code)]
 pub struct GetPlaylistSongs {
     pub playlist_id: PlaylistID<'static>,
     pub max_songs: usize,
@@ -99,6 +103,8 @@ pub struct RenamePlaylist {
     pub new_title: String,
 }
 
+// TODO: Wire remove songs UI in playlist context menu
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct RemovePlaylistItems {
     pub playlist_id: PlaylistID<'static>,
@@ -122,6 +128,8 @@ pub struct RatePlaylistMessage(pub PlaylistID<'static>, pub LikeStatus);
 #[derive(Debug, PartialEq)]
 pub struct GetPlaylistDetailsMessage(pub PlaylistID<'static>);
 
+// TODO: Wire drag-to-reorder in playlist visual mode
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct ReorderPlaylistItem {
     pub playlist_id: PlaylistID<'static>,

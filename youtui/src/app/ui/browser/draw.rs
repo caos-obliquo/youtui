@@ -150,7 +150,7 @@ pub fn draw_album_search_browser(
 
     // Left panel: search box or album list
     if browser.search_popped {
-        let [search_box_chunk, rest_chunk] = Layout::default()
+        let [search_box_chunk, _rest_chunk] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .areas(left_chunk);
@@ -191,7 +191,7 @@ pub fn draw_album_search_browser(
         };
         ListItem::new(Line::from(Span::styled(label, style)))
     }).collect();
-    let mut list_state = ListState::default().with_selected(Some(browser.album_selected));
+    let _list_state = ListState::default().with_selected(Some(browser.album_selected));
     f.render_widget(List::new(items).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), left_inner);
 
     // Right panel: album tracks or empty
@@ -264,7 +264,7 @@ pub fn draw_album_search_browser(
                 Sp::styled(format!(" {:>width$}", s.duration_string, width = dur_w.saturating_sub(1)), style),
             ])));
         }
-        let mut track_state = ListState::default().with_selected(Some(browser.track_selected));
+        let _track_state = ListState::default().with_selected(Some(browser.track_selected));
         f.render_widget(List::new(rows).highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR)), right_inner);
     }
 }

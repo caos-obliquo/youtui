@@ -61,6 +61,8 @@ impl Api {
     ) -> Result<(Vec<SearchSuggestion>, String)> {
         get_search_suggestions(self.get_api().await?, text).await
     }
+    // TODO: Wire playlist search tab in browser
+    #[allow(dead_code)]
     pub async fn search_playlists(&self, text: String) -> Result<Vec<SearchResultPlaylist>> {
         search_playlists(self.get_api().await?, text).await
     }
@@ -97,6 +99,8 @@ impl Api {
         let api = self.get_api().await?;
         api.read().await.rate_song(video_id, rating).await
     }
+    // TODO: Wire batch playlist song streaming for editor/export
+    #[allow(dead_code)]
     pub fn get_playlist_songs(
         &self,
         playlist_id: PlaylistID<'static>,
@@ -247,6 +251,8 @@ where
     }
 }
 
+// TODO: Wire playlist search tab in browser
+#[allow(dead_code)]
 async fn search_playlists(api: ConcurrentApi, text: String) -> Result<Vec<SearchResultPlaylist>> {
     if text.trim().is_empty() {
         return Ok(Vec::new());
@@ -514,6 +520,8 @@ fn get_artist_songs(
     PanickingReceiverStream::new(rx, handle)
 }
 
+// TODO: Wire batch playlist song streaming for editor/export
+#[allow(dead_code)]
 pub enum GetPlaylistSongsProgressUpdate {
     Loading,
     Songs(Vec<PlaylistItem>),
@@ -528,6 +536,8 @@ pub enum GetPlaylistSongsProgressUpdate {
     AllSongsSent,
 }
 
+// TODO: Wire batch playlist song streaming for editor/export
+#[allow(dead_code)]
 fn get_playlist_songs(
     api: Arc<AsyncCell<Result<ConcurrentApi, DynamicApiError>>>,
     playlist_id: PlaylistID<'static>,
