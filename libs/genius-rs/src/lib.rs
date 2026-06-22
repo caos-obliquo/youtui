@@ -1,3 +1,4 @@
+pub mod annotations;
 pub mod scrape;
 pub mod search;
 
@@ -68,7 +69,28 @@ impl GeniusClient {
         Ok((hit, lyrics))
     }
 
+    /// Fetch annotations using the Genius API with Bearer token.
+    /// Falls back to page scraping if API fails or no token available.
+    pub async fn fetch_annotations_with_token(
+        &self,
+        song_path: &str,
+        song_id: i64,
+    ) -> Result<Vec<Annotation>, String> {
+        // Try API first if token available
+        if let Some(ref token) = self.token {
+            if !token.is_empty() {
+                match annotations::fetch_from_api(&self.client, token, song_id).await {
+                    Ok(anns) => return Ok(anns),
+                    Err(e) => tracing::warn!("Annotation API failed: {}", e),
+                }
+            }
+        }
+        // Fallback: scrape from page HTML
+        self.fetch_annotations(song_path).await
+    }
+
     /// Search and fetch both lyrics and annotations in one call.
+    /// Uses API for annotations when token is available, falls back to page scrape.
     pub async fn find_fetch_all(
         &self,
         artist: &str,
@@ -77,7 +99,7 @@ impl GeniusClient {
         let slug_hit = search::hit_from_path(artist, title);
         match self.fetch_lyrics(&slug_hit.path).await {
             Ok(lyrics) => {
-                let annotations = self.fetch_annotations(&slug_hit.path).await.unwrap_or_default();
+                let annotations = self.fetch_annotations_with_token(&slug_hit.path, slug_hit.id).await.unwrap_or_default();
                 return Ok((slug_hit, lyrics, annotations));
             }
             Err(_) => {}
@@ -87,7 +109,7 @@ impl GeniusClient {
             .await?
             .ok_or_else(|| format!("No Genius result for '{} - {}'", artist, title))?;
         let lyrics = self.fetch_lyrics(&hit.path).await?;
-        let annotations = self.fetch_annotations(&hit.path).await.unwrap_or_default();
+        let annotations = self.fetch_annotations_with_token(&hit.path, hit.id).await.unwrap_or_default();
         Ok((hit, lyrics, annotations))
     }
 }

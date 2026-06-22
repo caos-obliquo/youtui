@@ -692,8 +692,6 @@ impl BackendTask<ArcServer> for GetLyrics {
         async move {
             let artist = self.0;
             let title = self.1;
-            let http = &http_client;
-
             // Primary: Genius (slug URL first, then API search)
             let genius = genius_rs::GeniusClient::new(Some(self.2), http_client.clone());
             match genius.find_and_fetch(&artist, &title).await {
@@ -861,14 +859,15 @@ impl BackendTask<ArcServer> for GetAnnotations {
         async move {
             let artist = self.0;
             let title = self.1;
+            let token = self.2;
 
-            // Use genius-rs to find song and scrape all annotations from page HTML
-            let genius = genius_rs::GeniusClient::new(None, client.clone());
+            // Use genius-rs with API-first annotations when token available
+            let genius = genius_rs::GeniusClient::new(Some(token), client.clone());
             let hit = genius.find_song(&artist, &title).await
                 .map_err(|e| anyhow::anyhow!("Genius search error: {}", e))?
                 .ok_or_else(|| anyhow::anyhow!("No Genius results"))?;
 
-            let annotations = genius.fetch_annotations(&hit.path).await
+            let annotations = genius.fetch_annotations_with_token(&hit.path, hit.id).await
                 .map_err(|e| anyhow::anyhow!("Genius annotation fetch error: {}", e))?;
 
             let pairs: Vec<(String, String)> = annotations
@@ -876,7 +875,7 @@ impl BackendTask<ArcServer> for GetAnnotations {
                 .map(|a| (a.fragment, a.body))
                 .collect();
 
-            tracing::info!("Fetched {} annotations for song {} via HTML scrape", pairs.len(), hit.id);
+            tracing::info!("Fetched {} annotations for song {} via API+scrape", pairs.len(), hit.id);
             Ok(pairs)
         }
     }
