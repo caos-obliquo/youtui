@@ -2,6 +2,7 @@ use self::browser::{Browser, BrowserAction};
 use self::logger::Logger;
 use self::playlist::Playlist;
 use self::playlist::album_art_popup::AlbumArtPopup;
+use self::playlist::notes_popup::NotesPopup;
 use self::playlist::config_editor_popup::ConfigEditorPopup;
 use self::playlist::playlist_editor_popup::PlaylistEditorPopup;
 use self::playlist::lyrics_popup::LyricsPopup;
@@ -60,6 +61,7 @@ pub enum WindowContext {
     PlaylistRenamePopup,
     PlaylistEditPopup,
     PlaylistDetailsPopup,
+    Notes,
 }
 
 pub struct YoutuiWindow {
@@ -78,6 +80,7 @@ pub struct YoutuiWindow {
     pub playlist_rename_popup: Option<PlaylistRenamePopup>,
     pub playlist_edit_popup: Option<PlaylistEditPopup>,
     pub playlist_details_popup: Option<PlaylistDetailsPopup>,
+    pub notes_popup: Option<NotesPopup>,
     pub delete_confirm: Option<(PlaylistID<'static>, String)>,
     pub config: Config,
     pub key_stack: Vec<KeyEvent>,
@@ -147,6 +150,7 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
                 WindowContext::PlaylistRenamePopup => true,
                 WindowContext::PlaylistEditPopup => true,
                 WindowContext::PlaylistDetailsPopup => true,
+                WindowContext::Notes => true,
             }
     }
 
@@ -198,6 +202,9 @@ impl DominantKeyRouter<AppAction> for YoutuiWindow {
             WindowContext::PlaylistDetailsPopup => Either::Right(Either::Right(
                 [&config.keybinds.help, &config.keybinds.list].into_iter(),
             )),
+            WindowContext::Notes => Either::Right(Either::Right(
+                [&config.keybinds.help, &config.keybinds.list].into_iter(),
+            )),
         }
     }
 }
@@ -228,6 +235,7 @@ impl Scrollable for YoutuiWindow {
             WindowContext::PlaylistRenamePopup => (),
             WindowContext::PlaylistEditPopup => (),
             WindowContext::PlaylistDetailsPopup => (),
+            WindowContext::Notes => (),
         }
     }
     fn is_scrollable(&self) -> bool {
@@ -244,6 +252,7 @@ impl Scrollable for YoutuiWindow {
                 WindowContext::PlaylistRenamePopup => false,
                 WindowContext::PlaylistEditPopup => false,
                 WindowContext::PlaylistDetailsPopup => false,
+                WindowContext::Notes => false,
             }
     }
 }
@@ -325,6 +334,10 @@ impl KeyRouter<AppAction> for YoutuiWindow {
                 let v: Vec<&Keymap<AppAction>> = kb.collect();
                 v.into_iter()
             }
+            WindowContext::Notes => {
+                let v: Vec<&Keymap<AppAction>> = kb.collect();
+                v.into_iter()
+            }
         }
     }
     fn get_all_keybinds<'a>(
@@ -358,6 +371,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistRenamePopup => false,
             WindowContext::PlaylistEditPopup => false,
             WindowContext::PlaylistDetailsPopup => false,
+            WindowContext::Notes => false,
         }
     }
     fn get_text(&self) -> std::option::Option<&str> {
@@ -373,6 +387,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistRenamePopup => None,
             WindowContext::PlaylistEditPopup => None,
             WindowContext::PlaylistDetailsPopup => None,
+            WindowContext::Notes => None,
         }
     }
     fn replace_text(&mut self, text: impl Into<String>) {
@@ -388,6 +403,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistRenamePopup => {}
             WindowContext::PlaylistEditPopup => {}
             WindowContext::PlaylistDetailsPopup => {}
+            WindowContext::Notes => {}
         }
     }
     fn clear_text(&mut self) -> bool {
@@ -403,6 +419,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistRenamePopup => false,
             WindowContext::PlaylistEditPopup => false,
             WindowContext::PlaylistDetailsPopup => false,
+            WindowContext::Notes => false,
         }
     }
     fn handle_text_event_impl(&mut self, event: &Event) -> Option<ComponentEffect<Self>> {
@@ -427,6 +444,7 @@ impl TextHandler for YoutuiWindow {
             WindowContext::PlaylistRenamePopup => None,
             WindowContext::PlaylistEditPopup => None,
             WindowContext::PlaylistDetailsPopup => None,
+            WindowContext::Notes => None,
         }
     }
 }
@@ -572,6 +590,7 @@ impl YoutuiWindow {
             playlist_rename_popup: None,
             playlist_edit_popup: None,
             playlist_details_popup: None,
+            notes_popup: None,
             delete_confirm: None,
             key_stack: Vec::new(),
             help: HelpMenu::new(),
@@ -625,6 +644,7 @@ impl YoutuiWindow {
             WindowContext::PlaylistRenamePopup => vec![],
             WindowContext::PlaylistEditPopup => vec![],
             WindowContext::PlaylistDetailsPopup => vec![],
+            WindowContext::Notes => vec![],
         };
         items.extend(get_visible_keybinds_as_readable_iter(
             std::iter::once(&self.config.keybinds.global)
@@ -987,6 +1007,7 @@ impl YoutuiWindow {
             WindowContext::PlaylistRenamePopup => {}
             WindowContext::PlaylistEditPopup => {}
             WindowContext::PlaylistDetailsPopup => {}
+            WindowContext::Notes => {}
                         }
                     }
                 }
@@ -1011,6 +1032,7 @@ impl YoutuiWindow {
             WindowContext::PlaylistRenamePopup => {}
             WindowContext::PlaylistEditPopup => {}
             WindowContext::PlaylistDetailsPopup => {}
+            WindowContext::Notes => {}
                         }
                     }
                 }
@@ -1040,6 +1062,7 @@ impl YoutuiWindow {
             WindowContext::PlaylistRenamePopup => AsyncTask::new_no_op(),
             WindowContext::PlaylistEditPopup => AsyncTask::new_no_op(),
             WindowContext::PlaylistDetailsPopup => AsyncTask::new_no_op(),
+            WindowContext::Notes => AsyncTask::new_no_op(),
         }
     }
     pub fn pauseplay(&mut self) -> ComponentEffect<Self> {
@@ -1207,7 +1230,7 @@ impl YoutuiWindow {
     pub fn handle_toggle_playlist(&mut self) {
         if self.context == WindowContext::Playlist {
             // Leave Playlist → restore where we were
-            if matches!(self.prev_context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup | WindowContext::PlaylistEditor) {
+            if matches!(self.prev_context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup | WindowContext::PlaylistEditor | WindowContext::Notes) {
                 // prev_context is a stale popup context — go to Browser instead
                 self.prev_context = WindowContext::Playlist;
                 self.context = WindowContext::Browser;
@@ -1444,11 +1467,12 @@ impl YoutuiWindow {
         self.playlist_rename_popup = None;
         self.playlist_edit_popup = None;
         self.playlist_details_popup = None;
+        self.notes_popup = None;
         self.delete_confirm = None;
         // Restore context from prev_context, but don't leave prev_context
         // as a stale popup context (would trap user on next toggle).
         self.context = self.prev_context;
-        if matches!(self.context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup | WindowContext::PlaylistEditor | WindowContext::PlaylistRenamePopup | WindowContext::PlaylistEditPopup | WindowContext::PlaylistDetailsPopup) {
+        if matches!(self.context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup | WindowContext::PlaylistEditor | WindowContext::PlaylistRenamePopup | WindowContext::PlaylistEditPopup | WindowContext::PlaylistDetailsPopup | WindowContext::Notes) {
             // prev_context was also a popup (nested) — fall back to safe context
             self.context = WindowContext::Playlist;
         }

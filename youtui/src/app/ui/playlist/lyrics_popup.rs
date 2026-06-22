@@ -928,12 +928,26 @@ impl LyricsPopup {
                     let ann_inner = ann_block.inner(ann_area);
                     frame.render_widget(ann_block, ann_area);
                     let ann_visible = (ann_inner.height as usize).saturating_sub(1);
+                    let ann_cursor = self.ann_scroll_offset;
+                    let ann_max_digits = self.annotations.len().max(1).to_string().len().max(3);
                     let mut ann_lines: Vec<ratatui::text::Line> = Vec::new();
-                    for a in self.annotations.iter().skip(self.ann_scroll_offset).take(ann_visible) {
+                    for (i, a) in self.annotations.iter().enumerate().skip(self.ann_scroll_offset).take(ann_visible) {
+                        let rel = (i as isize) - (ann_cursor as isize);
+                        let num_str = if i == ann_cursor {
+                            format!("{:>width$} ", i, width = ann_max_digits)
+                        } else {
+                            format!("{:>+width$} ", rel, width = ann_max_digits)
+                        };
+                        let is_cursor = !self.visual_mode && i == ann_cursor;
+                        let row_style = if is_cursor {
+                            Style::default().bg(ratatui::style::Color::Rgb(0x44, 0x44, 0x44))
+                        } else {
+                            Style::default()
+                        };
                         ann_lines.push(ratatui::text::Line::from(
                             ratatui::text::Span::styled(
-                                format!("── {}", a.fragment),
-                                Style::default().fg(Color::Cyan),
+                                format!("{}{}", num_str, a.fragment),
+                                if is_cursor { Style::default().fg(Color::Cyan).bg(ratatui::style::Color::Rgb(0x44, 0x44, 0x44)) } else { Style::default().fg(Color::Cyan) },
                             ),
                         ));
                         for expl_line in a.explanation.split('\n') {
