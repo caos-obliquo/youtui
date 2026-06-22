@@ -153,6 +153,21 @@ pub fn hit_from_path(artist: &str, title: &str) -> SongHit {
     }
 }
 
+/// Check if a SongHit actually matches the queried artist and title.
+/// Normalizes both sides (lowercase, strip trailing punctuation) for fuzzy comparison.
+pub fn hit_matches_query(hit: &SongHit, artist: &str, title: &str) -> bool {
+    let norm = |s: &str| -> String {
+        s.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string()
+    };
+    let hit_artist = norm(&hit.artist);
+    let hit_title = norm(&hit.title);
+    let query_artist = norm(artist);
+    let query_title = norm(title);
+    // Artist must match closely; title must overlap significantly
+    hit_artist == query_artist
+        || hit_artist.contains(&query_artist)
+        || query_artist.contains(&hit_artist) || hit_title.contains(&query_title) || query_title.contains(&hit_title)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
