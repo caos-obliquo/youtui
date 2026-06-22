@@ -9,6 +9,26 @@
 | 7 | Config reload (`:reload`) | `app.rs`, `app/ui.rs` |
 | 17 | Eliminate 46 youtui warnings (0 remaining) | All youtui files |
 | 18 | Fix 10 ytmapi-rs fixture-drift test failures | 10 expected output files |
+| 19 | Annotate planned dead code with `#[allow]` + TODO | 12 files |
+
+## Completed (2026-06-22)
+
+| # | Feature | Files |
+|---|---------|-------|
+| 20 | `libs/genius-rs` crate — search, HTML scrape, annotations CLI | `libs/genius-rs/` (new) |
+| 21 | Genius lyrics pipeline: 403 fix via HTML scraping + `[Verse]` preservation | `messages.rs:659-710`, `scrape.rs` |
+| 22 | Genius annotations: ALL annotations from `__INITIAL_STATE__` (no pagination) | `scrape.rs`, `messages.rs:919-966` |
+| 23 | Fix `NavTarget::Album` → Albums tab with `GetAlbumQuery` | `browser.rs:525-529` |
+| 24 | Wire F1 search in Albums tab (`TextHandler` delegate to `SearchBlock`) | `albumsearch.rs:276-279` |
+| 25 | Wire `GoToAlbum` context menu in album track view | `albumsearch.rs:223-229` |
+
+| # | Feature | Files |
+|---|---------|-------|
+| 5 | `Enter` on timestamp line seeks | `lyrics_popup.rs` |
+| 6 | Annotations right-side panel | `lyrics_popup.rs` |
+| 7 | Config reload (`:reload`) | `app.rs`, `app/ui.rs` |
+| 17 | Eliminate 46 youtui warnings (0 remaining) | All youtui files |
+| 18 | Fix 10 ytmapi-rs fixture-drift test failures | 10 expected output files |
 | 19 | Annotate planned dead code with `#[allow]` + TODO | 12 files across messages, api, UI |
 
 ## Immediate (Next Session)
