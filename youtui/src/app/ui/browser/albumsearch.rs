@@ -278,6 +278,7 @@ impl TextHandler for AlbumSearchBrowser {
     fn is_text_handling(&self) -> bool { self.search_popped }
     fn handle_text_event_impl(&mut self, event: &crossterm::event::Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> {
         if self.search_popped {
+            tracing::info!("AlbumSearch key event: {:?}, search_popped={}", event, self.search_popped);
             self.search.handle_text_event_impl(event)
                 .map(|t| t.map_frontend(|this: &mut Self| &mut this.search))
         } else {
