@@ -740,6 +740,7 @@ impl BackendTask<ArcServer> for GetLyrics {
             let artist = self.0;
             let title = self.1;
             // Primary: Genius (slug URL first, then API search)
+            // find_and_fetch validates hits via final URL check + hit matching
             let genius = genius_rs::GeniusClient::new(Some(self.2), http_client.clone());
             match genius.find_and_fetch(&artist, &title).await {
                 Ok((_hit, lyrics)) => {

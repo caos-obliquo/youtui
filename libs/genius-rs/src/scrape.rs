@@ -1,7 +1,34 @@
 use scraper::{Html, Selector};
 use serde_json::Value;
 
+/// Fetch a Genius song page and extract lyrics from the HTML.
+/// Returns (lyrics, final_url). Validates final URL matches expected slug path.
+pub async fn fetch_lyrics(
+    client: &reqwest::Client,
+    song_path: &str,
+) -> Result<(String, String), String> {
+    let (html, _, final_url) = fetch_page(client, song_path).await?;
+    // Check if the final URL matches the expected song path
+    let expected_base = format!("https://genius.com{}", song_path);
+    let expected_base_no_lyrics = format!("https://genius.com{}", song_path.trim_end_matches("-lyrics"));
+    if !final_url.starts_with(&expected_base) && !final_url.starts_with(&expected_base_no_lyrics) {
+        return Err(format!("Redirected to different page: {}", final_url));
+    }
+    let lyrics = extract_lyrics(&html)?;
+    Ok((lyrics, final_url))
+}
+
+/// Fetch a Genius song page and extract annotations from embedded JSON state.
+pub async fn fetch_annotations(
+    client: &reqwest::Client,
+    song_path: &str,
+) -> Result<Vec<Annotation>, String> {
+    let (html, _, _) = fetch_page(client, song_path).await?;
+    extract_annotations(&html)
+}
+
 /// Check if a Genius page exists at the given path (returns true if status 200).
+/// Does NOT validate content — use fetch_lyrics for that.
 pub async fn page_exists(client: &reqwest::Client, song_path: &str) -> bool {
     let url = format!("https://genius.com{}", song_path);
     match client.get(&url).send().await {
@@ -10,29 +37,12 @@ pub async fn page_exists(client: &reqwest::Client, song_path: &str) -> bool {
     }
 }
 
-/// Fetch a Genius song page and extract lyrics from the HTML.
-pub async fn fetch_lyrics(
-    client: &reqwest::Client,
-    song_path: &str,
-) -> Result<String, String> {
-    let (html, _) = fetch_page(client, song_path).await?;
-    extract_lyrics(&html)
-}
-
-/// Fetch a Genius song page and extract annotations from embedded JSON state.
-pub async fn fetch_annotations(
-    client: &reqwest::Client,
-    song_path: &str,
-) -> Result<Vec<Annotation>, String> {
-    let (html, _) = fetch_page(client, song_path).await?;
-    extract_annotations(&html)
-}
-
 /// Fetch page HTML (shared helper).
+/// Returns (html, status, final_url). Final URL may differ from requested if redirects occurred.
 async fn fetch_page(
     client: &reqwest::Client,
     song_path: &str,
-) -> Result<(String, reqwest::StatusCode), String> {
+) -> Result<(String, reqwest::StatusCode, String), String> {
     let url = format!("https://genius.com{}", song_path);
     let resp = client
         .get(&url)
@@ -40,6 +50,7 @@ async fn fetch_page(
         .await
         .map_err(|e| format!("Failed to fetch Genius page: {}", e))?;
     let status = resp.status();
+    let final_url = resp.url().to_string();
     if !status.is_success() {
         return Err(format!("Genius page returned {}", status));
     }
@@ -47,7 +58,7 @@ async fn fetch_page(
         .text()
         .await
         .map_err(|e| format!("Failed to read Genius page body: {}", e))?;
-    Ok((html, status))
+    Ok((html, status, final_url))
 }
 
 /// Extract lyrics from Genius HTML page string.

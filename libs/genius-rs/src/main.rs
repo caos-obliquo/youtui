@@ -98,7 +98,7 @@ async fn main() {
             }
 
             match client.fetch_lyrics(&hit.path).await {
-                Ok(lyrics) => {
+                Ok((lyrics, _)) => {
                     if json {
                         let out = serde_json::json!({
                             "artist": hit.artist, "title": hit.title, "id": hit.id,
@@ -161,7 +161,7 @@ async fn main() {
             }
 
             match client.fetch_lyrics(&hit.path).await {
-                Ok(lyrics) => {
+                Ok((lyrics, _)) => {
                     let annotations = client.fetch_annotations_with_token(&hit.path, hit.id).await.unwrap_or_default();
                     if json {
                         let ann_list: Vec<serde_json::Value> = annotations.iter().map(|a| {

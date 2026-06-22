@@ -40,7 +40,7 @@ impl GeniusClient {
     }
 
     /// Fetch lyrics for a song given its Genius path (e.g., "/Fidlar-wasted-lyrics").
-    pub async fn fetch_lyrics(&self, song_path: &str) -> Result<String, String> {
+    pub async fn fetch_lyrics(&self, song_path: &str) -> Result<(String, String), String> {
         scrape::fetch_lyrics(&self.client, song_path).await
     }
 
@@ -51,21 +51,31 @@ impl GeniusClient {
 
     /// Search and fetch lyrics in one call.
     /// Tries slug URL first, falls back to search API.
+    /// Returns (hit, lyrics). Validates hit matches query for search API results.
     pub async fn find_and_fetch(
         &self,
         artist: &str,
         title: &str,
     ) -> Result<(SongHit, String), String> {
         let slug_hit = search::hit_from_path(artist, title);
+        // Try slug URL: fetch_lyrics validates final URL matches expected path
         match self.fetch_lyrics(&slug_hit.path).await {
-            Ok(lyrics) => return Ok((slug_hit, lyrics)),
+            Ok((lyrics, _final_url)) => return Ok((slug_hit, lyrics)),
             Err(_) => {}
         }
+        // Slug failed or redirected — try search API
         let hit = self
             .find_song(artist, title)
             .await?
             .ok_or_else(|| format!("No Genius result for '{} - {}'", artist, title))?;
-        let lyrics = self.fetch_lyrics(&hit.path).await?;
+        // Validate search hit actually matches query
+        if !search::hit_matches_query(&hit, artist, title) {
+            return Err(format!(
+                "Genius hit '{} - {}' does not match query '{} - {}'",
+                hit.artist, hit.title, artist, title
+            ));
+        }
+        let (lyrics, _) = self.fetch_lyrics(&hit.path).await?;
         Ok((hit, lyrics))
     }
 
@@ -101,7 +111,7 @@ impl GeniusClient {
         let (lyrics, hit) = {
             let slug_hit = search::hit_from_path(artist, title);
             match self.fetch_lyrics(&slug_hit.path).await {
-                Ok(l) => {
+                Ok((l, _)) => {
                     // Try to get real song ID for annotations
                     let real_hit = self.find_song(artist, title).await?.unwrap_or(slug_hit);
                     (l, real_hit)
@@ -109,7 +119,7 @@ impl GeniusClient {
                 Err(_) => {
                     let h = self.find_song(artist, title).await?
                         .ok_or_else(|| format!("No Genius result for '{} - {}'", artist, title))?;
-                    let l = self.fetch_lyrics(&h.path).await?;
+                    let (l, _) = self.fetch_lyrics(&h.path).await?;
                     (l, h)
                 }
             }
