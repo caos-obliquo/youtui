@@ -77,18 +77,16 @@ pub fn draw_footer(
                 }
                 s.push_str(&artist.name);
             }
+            if let Some(album) = song.album.as_ref() {
+                let name = album.name.strip_prefix("Album: ").unwrap_or(&album.name);
+                if !name.is_empty() {
+                    s.push_str(" - ");
+                    s.push_str(name);
+                }
+            }
             s
         })
         .unwrap_or_default();
-    let album_title = cur_active_song
-        .and_then(|s| s.album.as_ref())
-        .map(|s| s.name.as_str())
-        .unwrap_or_default()
-        .strip_prefix("Album: ")
-        .unwrap_or_else(|| cur_active_song.and_then(|s| s.album.as_ref()).map(|s| s.name.as_str()).unwrap_or_default());
-    let scrobble_indicator = if w.playlist.scrobbling_config.enabled {
-        if w.playlist.scrobble_state.is_some() { " [Scrobble]" } else { " [s]" }
-    } else { "" };
     let repeat_icon = match w.playlist.repeat_mode {
         crate::app::structures::RepeatMode::All => " ↺",
         crate::app::structures::RepeatMode::One => " ↻₁",
@@ -96,17 +94,19 @@ pub fn draw_footer(
     };
     let radio_icon = if w.playlist.radio_mode { " ↻" } else { "" };
     let shuffle_icon = if w.playlist.shuffle_enabled { " ⇄" } else { "" };
+    let scrobble_indicator = if w.playlist.scrobbling_config.enabled {
+        if w.playlist.scrobble_state.is_some() { " [Scrobble]" } else { " [s]" }
+    } else { "" };
     let album_art = cur_active_song.map(|s| &s.album_art);
     let last_art = w.last_album_art.clone();
-    let album_str = if album_title.is_empty() {
-        String::new()
-    } else {
-        format!("Album: {} ", album_title)
-    };
-    let footer = Paragraph::new(vec![
-        Line::from(song_and_artists_string),
-        Line::from(format!("{}{}{}{}{}", album_str, repeat_icon, radio_icon, shuffle_icon, scrobble_indicator)),
-    ]);
+    let footer = Paragraph::new(Line::from(format!(
+        "{}{}{}{}{}",
+        song_and_artists_string,
+        repeat_icon,
+        radio_icon,
+        shuffle_icon,
+        scrobble_indicator,
+    )));
     let bar = Gauge::default()
         .label(bar_str)
         .gauge_style(
@@ -171,18 +171,29 @@ pub fn draw_footer(
                 ratatui_image::Resize::Fit(None),
             );
             match image {
-                Ok(protocol) => f.render_widget(Image::new(&protocol), album_art_chunk),
+                Ok(protocol) => {
+                    f.render_widget(Image::new(&protocol), album_art_chunk);
+                    w.sixel_rect = Some(album_art_chunk);
+                    if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
+                        w.sixel_data = Some(sixel.data.clone());
+                    } else {
+                        w.sixel_data = None;
+                    }
+                }
                 Err(_) => {
+                    w.sixel_data = None;
                     let fallback_album_widget = Paragraph::new("").centered();
                     f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
                 }
             }
         }
         Some(AlbumArtState::Error) => {
+            w.sixel_data = None;
             let fallback_album_widget = Paragraph::new("").centered();
             f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
         }
         _ => {
+            w.sixel_data = None;
             if let Some(last) = &last_art {
                 let image = terminal_image_capabilities.new_protocol(
                     last.in_mem_image.clone(),
@@ -195,7 +206,15 @@ pub fn draw_footer(
                     ratatui_image::Resize::Fit(None),
                 );
                 match image {
-                    Ok(protocol) => f.render_widget(Image::new(&protocol), album_art_chunk),
+                    Ok(protocol) => {
+                        f.render_widget(Image::new(&protocol), album_art_chunk);
+                        w.sixel_rect = Some(album_art_chunk);
+                        if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
+                            w.sixel_data = Some(sixel.data.clone());
+                        } else {
+                            w.sixel_data = None;
+                        }
+                    }
                     Err(_) => {
                         let fallback_album_widget = Paragraph::new("").centered();
                         f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));

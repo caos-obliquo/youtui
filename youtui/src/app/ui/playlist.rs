@@ -470,19 +470,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ViewAlbumCover => {
-                match &self.play_status {
-                    PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => {
-                        if let Some(song) = self.get_song_from_id(*id) {
-                            if let crate::app::structures::AlbumArtState::Downloaded(thumb) = &song.album_art {
-                                return (AsyncTask::new_no_op(), Some(AppCallback::ViewAlbumCover {
-                                    thumbnail: thumb.clone(),
-                                }));
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-                (AsyncTask::new_no_op(), None)
+                (AsyncTask::new_no_op(), Some(AppCallback::ViewAlbumCover))
             },
             PlaylistAction::SortQueue => {
                 if self.sort_mode {

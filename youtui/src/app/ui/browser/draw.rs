@@ -214,28 +214,12 @@ pub fn draw_album_search_browser(
         );
     }
 
-    // Right panel: tracks via advanced table, or hint when no album selected
-    if show_tracks {
-        draw_panel_mut(f, browser, right_chunk, right_selected, |t, f, chunk| {
-            draw_loadable(f, t, chunk, |t, f, chunk| {
-                Some(draw_advanced_table(f, t, chunk, cur_tick))
-            })
-        });
-    } else {
-        let right_block = Block::default()
-            .title(" Album Tracks ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(ratatui::style::Color::DarkGray));
-        let right_inner = right_block.inner(right_chunk);
-        f.render_widget(Clear, right_chunk);
-        f.render_widget(right_block, right_chunk);
-        let hint = Paragraph::new(Line::from(Span::styled(
-            "→ Select an album to view tracks",
-            Style::default().fg(ratatui::style::Color::DarkGray),
-        )))
-        .alignment(ratatui::layout::Alignment::Center);
-        f.render_widget(hint, right_inner);
-    }
+    // Right panel: tracks via advanced table, even when no album selected
+    draw_panel_mut(f, browser, right_chunk, right_selected, |t, f, chunk| {
+        draw_loadable(f, t, chunk, |t, f, chunk| {
+            Some(draw_advanced_table(f, t, chunk, cur_tick))
+        })
+    });
 }
 pub fn draw_library_browser(
     f: &mut Frame,
@@ -617,26 +601,14 @@ pub fn draw_playlist_search_browser(
         },
     );
 
-    // Right panel: songs table
-    draw_panel_mut(
+    // Right panel: songs table (always show headers)
+    let _ = draw_panel_mut(
         f,
         &mut browser.playlist_songs_panel,
         right_chunk,
         right_selected,
         |t, f, chunk| {
-            if t.list.get_list_iter().len() == 0 {
-                f.render_widget(
-                    Paragraph::new(Line::from(Span::styled(
-                        "→ Select a playlist to view songs",
-                        Style::default().fg(ratatui::style::Color::DarkGray),
-                    )))
-                    .alignment(ratatui::layout::Alignment::Center),
-                    chunk,
-                );
-            } else {
-                let _ = draw_advanced_table(f, t, chunk, _cur_tick);
-            }
-            None
+            Some(draw_advanced_table(f, t, chunk, _cur_tick))
         },
     );
 }

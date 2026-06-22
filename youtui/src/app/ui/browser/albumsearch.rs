@@ -147,10 +147,11 @@ impl AlbumSearchBrowser {
         if self.search_popped {
             match action {
                 TextEntryAction::Submit => {
+                    let query = self.search.search_contents.get_text().to_string();
                     self.search_popped = false;
                     self.search = SearchBlock::default();
-                    if !self.albums.is_empty() {
-                        return self.play_selected_album().0;
+                    if !query.is_empty() {
+                        return self.search_albums_query(query).0;
                     }
                 }
                 TextEntryAction::DeleteWord => {
@@ -553,26 +554,8 @@ impl TextHandler for AlbumSearchBrowser {
     }
     fn handle_text_event_impl(&mut self, event: &crossterm::event::Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> {
         if self.search_popped {
-            if let crossterm::event::Event::Key(k) = event {
-                if k.kind == crossterm::event::KeyEventKind::Press {
-                    match k.code {
-                        crossterm::event::KeyCode::Char(_) | crossterm::event::KeyCode::Backspace | crossterm::event::KeyCode::Delete => {
-                            self.search.handle_text_event_impl(event);
-                            let query = self.search.search_contents.get_text().to_string();
-                            if !query.is_empty() {
-                                let (task, _) = self.search_albums_query(query);
-                                return Some(task);
-                            }
-                            return None;
-                        }
-                        _ => {
-                            return self.search.handle_text_event_impl(event)
-                                .map(|t| t.map_frontend(|this: &mut Self| &mut this.search));
-                        }
-                    }
-                }
-            }
-            None
+            return self.search.handle_text_event_impl(event)
+                .map(|t| t.map_frontend(|this: &mut Self| &mut this.search));
         } else if matches!(self.input_routing, InputRouting::Filter) {
             self.filter.handle_text_event_impl(event).map(|t| t.map_frontend(|this: &mut Self| &mut this.filter))
         } else {

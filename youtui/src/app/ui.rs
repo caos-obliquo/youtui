@@ -92,6 +92,8 @@ pub struct YoutuiWindow {
     pub lyrics_generation: u64,
     pub lyrics_viewing_idx: Option<usize>,
     pub last_album_art: Option<std::rc::Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>>,
+    pub sixel_data: Option<String>,
+    pub sixel_rect: Option<ratatui::layout::Rect>,
 }
 impl_youtui_component!(YoutuiWindow);
 
@@ -583,6 +585,8 @@ impl YoutuiWindow {
             lyrics_generation: 0,
             lyrics_viewing_idx: None,
             last_album_art: None,
+            sixel_data: None,
+            sixel_rect: None,
         };
         let initial_effect = url.map(|u| this.play_yt_url(u));
         let mut combined = task.map_frontend(|this: &mut Self| &mut this.playlist);
