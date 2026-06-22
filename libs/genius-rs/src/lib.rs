@@ -96,19 +96,24 @@ impl GeniusClient {
         artist: &str,
         title: &str,
     ) -> Result<(SongHit, String, Vec<Annotation>), String> {
-        let slug_hit = search::hit_from_path(artist, title);
-        match self.fetch_lyrics(&slug_hit.path).await {
-            Ok(lyrics) => {
-                let annotations = self.fetch_annotations_with_token(&slug_hit.path, slug_hit.id).await.unwrap_or_default();
-                return Ok((slug_hit, lyrics, annotations));
+        // Get the real song ID from search API (needed for annotations API).
+        // Lyrics can come from slug URL (faster, no API call).
+        let (lyrics, hit) = {
+            let slug_hit = search::hit_from_path(artist, title);
+            match self.fetch_lyrics(&slug_hit.path).await {
+                Ok(l) => {
+                    // Try to get real song ID for annotations
+                    let real_hit = self.find_song(artist, title).await?.unwrap_or(slug_hit);
+                    (l, real_hit)
+                }
+                Err(_) => {
+                    let h = self.find_song(artist, title).await?
+                        .ok_or_else(|| format!("No Genius result for '{} - {}'", artist, title))?;
+                    let l = self.fetch_lyrics(&h.path).await?;
+                    (l, h)
+                }
             }
-            Err(_) => {}
-        }
-        let hit = self
-            .find_song(artist, title)
-            .await?
-            .ok_or_else(|| format!("No Genius result for '{} - {}'", artist, title))?;
-        let lyrics = self.fetch_lyrics(&hit.path).await?;
+        };
         let annotations = self.fetch_annotations_with_token(&hit.path, hit.id).await.unwrap_or_default();
         Ok((hit, lyrics, annotations))
     }
