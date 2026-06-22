@@ -84,7 +84,7 @@ pub fn upgrade_thumbnail_url(url: &str) -> String {
     // The downloader saves at 1920x1080; display should match.
     if let Some(eq_pos) = url.rfind('=') {
         let prefix = &url[..=eq_pos];
-        format!("{}w1920-h1080", prefix)
+        format!("{}w1920-h1200", prefix)
     } else {
         url.to_string()
     }
