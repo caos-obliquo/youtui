@@ -156,7 +156,7 @@ impl SongThumbnailDownloader {
 
         // Upgrade YTM thumbnail URL to request larger resolution.
         let url = if let Some(eq_pos) = thumbnail_url.rfind('=') {
-            reqwest::Url::parse(&format!("{}w1920-h1080", &thumbnail_url[..=eq_pos]))?
+            reqwest::Url::parse(&format!("{}w1920-h1200", &thumbnail_url[..=eq_pos]))?
         } else {
             reqwest::Url::parse(&thumbnail_url)?
         };
