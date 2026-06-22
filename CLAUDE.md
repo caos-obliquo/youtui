@@ -47,6 +47,7 @@ cargo test --release -p youtui --bin youtui       # 120 pass, 4 ignore
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 82 pass (no auth needed)
 cargo test --release -p ytmapi-rs                  # 28 pass / 52 fail (needs auth)
+cargo test --release -p genius-rs                  # 11 pass
 cargo test --release -p async-callback-manager     # 15 pass
 cargo test --release -p json-crawler               # 8 pass
 ```

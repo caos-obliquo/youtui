@@ -8,6 +8,8 @@
 | ViTextEditor | `cargo test --release -p vi-text-editor` | 65 | Unit + proptests |
 | ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 82 | All pass offline |
 | ytmapi-rs (full) | `cargo test --release -p ytmapi-rs` | 28 pass / 52 fail | Needs browser auth |
+| genius-rs | `cargo test --release -p genius-rs` | 11 | Unit tests for scraping + search |
+| ytmapi-cli | `cargo test --release -p ytmapi-cli` | 0 | Stub CLI, no tests yet |
 | async-callback-manager | `cargo test --release -p async-callback-manager` | 15 | Unit |
 | json-crawler | `cargo test --release -p json-crawler` | 8 | Unit |
 
