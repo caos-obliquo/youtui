@@ -50,8 +50,10 @@ impl AlbumSearchBrowser {
         }
     }
 
-    #[allow(dead_code)]
     pub fn fetch_albums(&mut self) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        if self.fetched {
+            return (AsyncTask::new_no_op(), None);
+        }
         self.fetched = true;
         let task = AsyncTask::new_future_try(
             crate::app::server::GetAllLibraryAlbums,

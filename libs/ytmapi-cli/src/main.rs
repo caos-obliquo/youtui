@@ -1,11 +1,7 @@
-use std::path::Path;
 use ytmapi_rs::{
-    auth::BrowserToken,
-    common::{AlbumID, ArtistChannelID, PlaylistID, VideoID, YoutubeID},
-    parse::{SearchResults, GetAlbum},
-    process_json,
+    common::{PlaylistID, YoutubeID},
     query::{
-        GetAlbumQuery, GetPlaylistTracksQuery,
+        GetPlaylistTracksQuery,
         SearchQuery, search::SongsFilter,
     },
 };
@@ -48,8 +44,8 @@ async fn cmd_search(args: &[String]) -> Result<(), String> {
     }
     let query_str = args.join(" ");
     // Use SongsFilter to get structured song results
-    let query = SearchQuery::new(&query_str).with_filter(SongsFilter);
-    let source = r#"{}"#.to_string();
+    let _query = SearchQuery::new(&query_str).with_filter(SongsFilter);
+    let _source = r#"{}"#.to_string();
     // For now, print the query we'd execute (live queries require auth)
     println!("Search query: {}", query_str);
     println!("Filter: Songs");
@@ -65,7 +61,7 @@ async fn cmd_playlist(args: &[String]) -> Result<(), String> {
     }
     let id = &args[0];
     let playlist_id = PlaylistID::from_raw(id);
-    let query = GetPlaylistTracksQuery::new(playlist_id);
+    let _query = GetPlaylistTracksQuery::new(playlist_id);
 
     // For now, show info about what we'd do
     println!("Playlist ID: {}", id);

@@ -524,6 +524,7 @@ impl Browser {
             }
             NavTarget::Album { artist, album } => {
                 self.variant = BrowserVariant::Album;
+                let _ = self.album_search_browser.fetch_albums();
                 let (task, _) = self.album_search_browser.search_albums_query(format!("{artist} {album}"));
                 Some(task.map_frontend(|this: &mut Self| &mut this.album_search_browser))
             }
