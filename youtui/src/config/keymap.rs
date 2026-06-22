@@ -1058,6 +1058,14 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
             KeyActionTree::new_key(AppAction::Browser(BrowserAction::LocalFilter)),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('K')),
+            KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::MoveTrackUp)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('J')),
+            KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::MoveTrackDown)),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('o')),
             KeyActionTree::new_mode(
                 [

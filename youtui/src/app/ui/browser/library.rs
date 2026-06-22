@@ -22,7 +22,8 @@ use async_callback_manager::{AsyncTask, FrontendEffect};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 use std::borrow::Cow;
-use ytmapi_rs::common::{YoutubeID, LikeStatus};
+use std::collections::HashSet;
+use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus};
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
 
@@ -314,6 +315,7 @@ pub struct LibraryBrowser {
     pub playlist_tracks: Vec<ListSong>,
     pub show_playlist_tracks: bool,
     pub playlist_tracks_selected: usize,
+    pub liked_playlists: HashSet<PlaylistID<'static>>,
     // Artists state
     pub artist_data: Vec<LibraryArtist>,
     pub artist_selected: usize,
@@ -348,6 +350,7 @@ impl LibraryBrowser {
             playlist_tracks: Vec::new(),
             show_playlist_tracks: false,
             playlist_tracks_selected: 0,
+            liked_playlists: HashSet::new(),
             artist_data: Default::default(),
             artist_selected: 0,
             album_data: Default::default(),
@@ -895,9 +898,11 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::RatePlaylist => {
                     if !self.show_playlist_tracks {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            let was_liked = !self.liked_playlists.insert(pl.playlist_id.clone());
+                            let rating = if was_liked { LikeStatus::Indifferent } else { LikeStatus::Liked };
                             return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(
                                 pl.playlist_id.clone(),
-                                LikeStatus::Liked,
+                                rating,
                             )));
                         }
                     }
