@@ -26,7 +26,7 @@ use async_callback_manager::{AsyncTask, FrontendEffect};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus};
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
@@ -120,6 +120,7 @@ impl Action for BrowserLibraryAction {
 pub enum LibraryEffect {
     SongsLoaded(Vec<ListSong>),
     PlaylistsLoaded(Vec<LibraryPlaylist>),
+    #[allow(dead_code)]
     PlaylistTracksLoaded(Vec<ListSong>),
     ArtistsLoaded(Vec<LibraryArtist>),
     AlbumsLoaded(Vec<SearchResultAlbum>),
@@ -255,7 +256,11 @@ struct HandleLibraryPlaylistTracksErr;
 impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, LibraryBrowser, |_, songs: Vec<PlaylistSong>| {
     use std::rc::Rc;
     use crate::app::structures::ListSongID;
+    let mut set_id_map = HashMap::new();
     let list_songs: Vec<ListSong> = songs.into_iter().map(|s| {
+        let vid = s.video_id.get_raw().to_string();
+        let sid = s.set_video_id.get_raw().to_string();
+        set_id_map.insert(vid, sid);
         let artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist { name: a.name, id: None }).collect());
         let album = Some(MaybeRc::Owned(ListSongAlbum {
             name: s.album.name.clone(),
@@ -287,7 +292,20 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             like_status: s.like_status,
         }
     }).collect();
-    LibraryEffect::PlaylistTracksLoaded(list_songs)
+    // The effect handler will populate track_set_ids from the songs
+    // We chain it via the effect
+    struct PopulateSetIds(Vec<ListSong>, HashMap<String, String>);
+    impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::TaskMetadata> for PopulateSetIds {
+        fn apply(self, target: &mut LibraryBrowser) -> impl Into<ComponentEffect<LibraryBrowser>> {
+            target.playlist_tracks = self.0;
+            target.playlist_tracks_selected = 0;
+            target.show_playlist_tracks = true;
+            target.input_routing = InputRouting::Content;
+            target.track_set_ids = self.1;
+            AsyncTask::new_no_op()
+        }
+    }
+    PopulateSetIds(list_songs, set_id_map)
 });
 impl_youtui_task_handler!(HandleLibraryPlaylistTracksErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     tracing::error!("Error loading playlist tracks: {}", err);
@@ -322,6 +340,7 @@ pub struct LibraryBrowser {
     pub show_playlist_tracks: bool,
     pub playlist_tracks_selected: usize,
     pub liked_playlists: HashSet<PlaylistID<'static>>,
+    pub track_set_ids: HashMap<String, String>,
     pub tracks_widget_state: ScrollingTableState,
     pub tracks_sort: SortManager,
     pub tracks_filter: FilterManager,
@@ -364,6 +383,7 @@ impl LibraryBrowser {
             show_playlist_tracks: false,
             playlist_tracks_selected: 0,
             liked_playlists: HashSet::new(),
+            track_set_ids: HashMap::new(),
             tracks_widget_state: Default::default(),
             tracks_sort: SortManager::new(),
             tracks_filter: Default::default(),
@@ -1092,9 +1112,13 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     if self.show_playlist_tracks {
                         if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
                             if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                                let raw = self.track_set_ids.get(song.video_id.get_raw())
+                                    .cloned()
+                                    .unwrap_or_else(|| song.video_id.get_raw().to_string());
+                                let set_id = ytmapi_rs::common::SetVideoID::from_raw(raw);
                                 return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(
                                     pl.playlist_id.clone(),
-                                    vec![song.video_id.clone()],
+                                    vec![set_id],
                                 )));
                             }
                         }
@@ -1146,12 +1170,23 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::DeleteSelected => {
                     if self.show_playlist_tracks {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            let ids: Vec<_> = if self.tracks_visual_mode {
+                            let make_ids = |tracks: &[ListSong]| -> Vec<ytmapi_rs::common::SetVideoID<'static>> {
+                                tracks.iter().map(|s| {
+                                    let raw = self.track_set_ids.get(s.video_id.get_raw())
+                                        .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
+                                    ytmapi_rs::common::SetVideoID::from_raw(raw)
+                                }).collect()
+                            };
+                            let ids = if self.tracks_visual_mode {
                                 let start = self.tracks_visual_start.min(self.playlist_tracks_selected);
                                 let end = self.tracks_visual_start.max(self.playlist_tracks_selected);
-                                self.playlist_tracks[start..=end].iter().map(|s| s.video_id.clone()).collect()
+                                make_ids(&self.playlist_tracks[start..=end])
                             } else {
-                                self.playlist_tracks.get(self.playlist_tracks_selected).map(|s| vec![s.video_id.clone()]).unwrap_or_default()
+                                self.playlist_tracks.get(self.playlist_tracks_selected).map(|s| {
+                                    let raw = self.track_set_ids.get(s.video_id.get_raw())
+                                        .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
+                                    vec![ytmapi_rs::common::SetVideoID::from_raw(raw)]
+                                }).unwrap_or_default()
                             };
                             self.tracks_visual_mode = false;
                             return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
@@ -1161,7 +1196,11 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::DeleteToTop => {
                     if self.show_playlist_tracks {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            let ids: Vec<_> = self.playlist_tracks[..self.playlist_tracks_selected].iter().map(|s| s.video_id.clone()).collect();
+                            let ids: Vec<_> = self.playlist_tracks[..self.playlist_tracks_selected].iter().map(|s| {
+                                let raw = self.track_set_ids.get(s.video_id.get_raw())
+                                    .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
+                                ytmapi_rs::common::SetVideoID::from_raw(raw)
+                            }).collect();
                             return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
                         }
                     }
@@ -1171,7 +1210,11 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
                             let start = self.playlist_tracks_selected + 1;
                             if start < self.playlist_tracks.len() {
-                                let ids: Vec<_> = self.playlist_tracks[start..].iter().map(|s| s.video_id.clone()).collect();
+                                let ids: Vec<_> = self.playlist_tracks[start..].iter().map(|s| {
+                                    let raw = self.track_set_ids.get(s.video_id.get_raw())
+                                        .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
+                                    ytmapi_rs::common::SetVideoID::from_raw(raw)
+                                }).collect();
                                 return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
                             }
                         }

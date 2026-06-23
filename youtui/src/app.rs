@@ -170,7 +170,7 @@ pub enum AppCallback {
     },
     RatePlaylistFromLibrary(PlaylistID<'static>, ytmapi_rs::common::LikeStatus),
 
-    RemovePlaylistItemsFromLibrary(PlaylistID<'static>, Vec<VideoID<'static>>),
+    RemovePlaylistItemsFromLibrary(PlaylistID<'static>, Vec<ytmapi_rs::common::SetVideoID<'static>>),
     ReorderPlaylistItemFromLibrary(PlaylistID<'static>, VideoID<'static>, VideoID<'static>),
     SubscribeToArtistFromLibrary(ArtistChannelID<'static>),
     UnsubscribeFromArtistFromLibrary(Vec<ArtistChannelID<'static>>),
@@ -480,12 +480,12 @@ impl Youtui {
 
                 self.task_manager.spawn_task(&self.server, effect);
             }
-            AppCallback::RemovePlaylistItemsFromLibrary(playlist_id, video_ids) => {
+            AppCallback::RemovePlaylistItemsFromLibrary(playlist_id, set_video_ids) => {
                 self.window_state.browser.library_browser.playlists_fetched = false;
                 let effect = AsyncTask::new_future_try(
                     server::RemovePlaylistItems {
                         playlist_id,
-                        video_ids,
+                        video_ids: set_video_ids,
                     },
                     HandleRemovePlaylistItemsOk,
                     HandleRemovePlaylistItemsError,

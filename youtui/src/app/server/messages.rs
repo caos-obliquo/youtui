@@ -145,7 +145,7 @@ pub struct RenamePlaylist {
 #[derive(Debug, PartialEq)]
 pub struct RemovePlaylistItems {
     pub playlist_id: PlaylistID<'static>,
-    pub video_ids: Vec<VideoID<'static>>,
+    pub video_ids: Vec<ytmapi_rs::common::SetVideoID<'static>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -513,8 +513,7 @@ impl BackendTask<ArcServer> for RemovePlaylistItems {
         async move {
             use ytmapi_rs::query::RemovePlaylistItemsQuery;
             let api_guard = backend.api.get_api().await?;
-            let set_ids: Vec<_> = self.video_ids.iter().map(|id| ytmapi_rs::common::SetVideoID::from_raw(id.get_raw().to_string())).collect();
-            let query = RemovePlaylistItemsQuery::new(self.playlist_id, set_ids);
+            let query = RemovePlaylistItemsQuery::new(self.playlist_id, self.video_ids);
             api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
             tracing::info!("Playlist items removed");
             Ok(())
