@@ -142,8 +142,16 @@ impl NotesPopup {
                 }
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('y') if self.editor.mode == ViMode::VisualBlock => {
+                self.editor.handle_key(event.code, false, false);
+                let text = self.editor.get_clipboard();
+                if !text.is_empty() {
+                    let _ = std::process::Command::new("wl-copy").arg(&text).spawn();
+                }
+                (AsyncTask::new_no_op(), None)
+            }
             _ => {
-                self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), false);
+                self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), event.modifiers.contains(KeyModifiers::CONTROL));
                 (AsyncTask::new_no_op(), None)
             }
         }
