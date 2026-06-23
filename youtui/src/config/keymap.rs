@@ -840,6 +840,13 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('Y')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Playlist(PlaylistAction::CopyAlbumUrl),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('n')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Playlist(PlaylistAction::NextSearchResult),
@@ -887,6 +894,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::CopySongUrl)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('Y')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::CopyAlbumUrl)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('v')),
@@ -1085,12 +1096,40 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
             KeyActionTree::new_key(AppAction::Browser(BrowserAction::LocalFilter)),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Esc),
+            KeyActionTree::new_key(AppAction::BrowserLibrary(BrowserLibraryAction::DismissTracks)),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('K')),
             KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::MoveTrackUp)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('J')),
             KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::MoveTrackDown)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('V')),
+            KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::ToggleVisualMode)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+            KeyActionTree::new_mode(
+                [
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::DeleteSelected)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::DeleteToTop)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::DeleteToBottom)),
+                    ),
+                ],
+                "Delete".into(),
+            ),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('o')),

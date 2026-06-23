@@ -14,9 +14,22 @@ use ratatui_image::picker::Picker;
 
 // Add tests to try and draw app with oddly sized windows.
 pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities: &Picker) {
+    // Clear sixel from terminal before any draw (prevents stale data from corrupting display)
+    use std::io::Write;
+    let _ = std::io::stdout().write_all(b"\x1bP0p\x1b\\");
+    let _ = std::io::stdout().flush();
     // Clear sixel state; draw_footer will re-set if visible
     w.sixel_data = None;
     w.sixel_rect = None;
+
+    // Album art popup: draw full-screen without main window (avoids sixel corruption)
+    if w.album_art_popup.is_some() {
+        if let Some(popup) = &mut w.album_art_popup {
+            popup.draw(f, f.area(), terminal_image_capabilities);
+        }
+        return;
+    }
+
     let [header_chunk, window_chunk, footer_chunk] = Layout::default()
         .direction(Direction::Vertical)
         .margin(0)

@@ -103,26 +103,33 @@ impl ConfigEditorPopup {
             .border_style(Style::default().fg(Color::Cyan));
         let inner = block.inner(popup_area);
         frame.render_widget(block, popup_area);
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(inner);
-        let display = self.editor.render_simple("");
-        let text = Paragraph::new(display)
-            .style(Style::default().fg(Color::White))
-            .wrap(Wrap { trim: false });
-        frame.render_widget(text, chunks[0]);
+        let [text_area, footer_area] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
+        let mark = self.editor.cursor_marker();
+        let cur_line = self.editor.cursor_line();
+        let cur_col = self.editor.cursor_col();
+        let mut lines: Vec<ratatui::text::Line> = Vec::new();
+        for (i, line_text) in self.editor.get_text().split('\n').enumerate() {
+            if i == cur_line {
+                let (before, after) = line_text.split_at(cur_col.min(line_text.len()));
+                lines.push(ratatui::text::Line::from(vec![
+                    ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White)),
+                    ratatui::text::Span::styled(mark.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
+                    ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White)),
+                ]));
+            } else {
+                lines.push(ratatui::text::Line::from(
+                    ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White)),
+                ));
+            }
+        }
+        frame.render_widget(
+            Paragraph::new(lines).wrap(Wrap { trim: false }),
+            text_area,
+        );
         let hint = Paragraph::new("Ctrl+s: Save | Esc: Cancel | i: Insert | h/j/k/l: Move")
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center);
-        frame.render_widget(hint, chunks[1]);
-        // Position hardware cursor
-        let cur_col = self.editor.cursor_col() as u16;
-        let cur_line = self.editor.cursor_line() as u16;
-        frame.set_cursor_position((
-            inner.x + 1 + cur_col,
-            inner.y + 1 + cur_line,
-        ));
+        frame.render_widget(hint, footer_area);
     }
 
     fn centered_rect_fixed(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

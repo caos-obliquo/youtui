@@ -135,12 +135,7 @@ Annotations display their index and reference count: `[N annotations for this li
 
 ### Component Isolation (Critical)
 
-Lyrics and annotations are **separate interactive components** that communicate via shared state. When either panel is focused, the other panel's commands are disabled:
-
-- **Annotations focused**: `Enter` opens URL, `(`/`)`/`<`/`>` seek commands **do not work**. Only annotation-scoped commands available.
-- **Lyrics focused**: `(`/`)` seek queue, `<`/`>` seek position, `Enter` seeks timestamp. Annotation commands disabled.
-
-This prevents accidental seeks while reading annotations. Toggle `a` to close annotations, focus returns to lyrics.
+Lyrics and annotations are **separate interactive components** that communicate via shared state. `Tab`/`l`/`h` switches scroll/navigation focus between panels. Seek commands `( ) < > [ ]` are global playback controls that work regardless of focus — they always fire.
 
 ### Relative Line Numbers
 

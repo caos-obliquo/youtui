@@ -9145,6 +9145,8 @@ dependencies = [
 name = "ytmapi-cli"
 version = "0.1.0"
 dependencies = [
+ "metadata-provider",
+ "reqwest 0.11.27",
  "serde_json",
  "tokio",
  "tracing",

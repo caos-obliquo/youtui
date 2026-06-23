@@ -32,6 +32,7 @@ impl Action for LyricsPopupAction {
 
 pub enum LyricsPopupState {
     Loading,
+    #[allow(dead_code)]
     Loaded(String),
     Error(String),
 }

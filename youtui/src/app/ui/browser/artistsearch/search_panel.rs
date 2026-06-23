@@ -30,6 +30,7 @@ pub struct ArtistSearchPanel {
     pub search_popped: bool,
     pub search: SearchBlock,
     pub widget_state: ScrollingListState,
+    pub local_filter_text: String,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -63,6 +64,7 @@ impl ArtistSearchPanel {
             search_popped: false,
             search: SearchBlock::default(),
             widget_state: Default::default(),
+            local_filter_text: String::new(),
         }
     }
     pub fn open_search(&mut self) {

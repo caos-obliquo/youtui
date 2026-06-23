@@ -2,7 +2,7 @@ use crate::app::component::actionhandler::{
     Action, ComponentEffect, KeyRouter, Scrollable, TextHandler,
 };
 use crate::app::structures::{
-    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent,
+    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent, fuzzy_match,
 };
 use crate::app::ui::action::AppAction;
 use crate::app::ui::browser::get_sort_keybinds;
@@ -40,6 +40,7 @@ pub struct PlaylistSongsPanel {
     pub filter: FilterManager,
     cur_selected: usize,
     pub widget_state: ScrollingTableState,
+    pub local_filter_text: String,
 }
 impl_youtui_component!(PlaylistSongsPanel);
 
@@ -89,6 +90,7 @@ impl PlaylistSongsPanel {
             sort: SortManager::new(),
             filter: FilterManager::new(),
             widget_state: Default::default(),
+            local_filter_text: String::new(),
         }
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
@@ -114,9 +116,19 @@ impl PlaylistSongsPanel {
         Ok(())
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
+        let filter_text = self.local_filter_text.clone();
         self.list.get_list_iter().filter(move |ls| {
-            // Naive implementation.
-            // TODO: Do this in a single pass and optimise.
+            let fuzzy_pass = if filter_text.is_empty() {
+                true
+            } else {
+                let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
+                let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
+                let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
+                fuzzy_match(&filter_text, &title).is_some()
+                    || fuzzy_match(&filter_text, &album).is_some()
+                    || fuzzy_match(&filter_text, &artist).is_some()
+            };
+            if !fuzzy_pass { return false; }
             self.get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
@@ -124,7 +136,7 @@ impl PlaylistSongsPanel {
                         ls,
                         Self::subcolumns_of_vec(),
                         self.get_filterable_columns(),
-                    ); // If we find a match for each filter, can display the row.
+                    );
                     acc && match_found
                 })
         })

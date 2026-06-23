@@ -38,7 +38,14 @@ pub struct PlaylistEditorPopup {
     pub command_mode: bool,
     pub command_editor: ViTextEditor,
     pub modified: bool,
-    pub confirm_delete: bool,
+    pub delete_mode: bool,
+    pub yank_mode: bool,
+    pub pending_count: usize,
+    pub undo_stack: Vec<Vec<ListSong>>,
+    pub redo_stack: Vec<Vec<ListSong>>,
+    pub yank_buffer: Vec<ListSong>,
+    pub visual_mode: bool,
+    pub visual_start: usize,
 }
 
 impl PlaylistEditorPopup {
@@ -52,12 +59,167 @@ impl PlaylistEditorPopup {
             command_mode: false,
             command_editor: ViTextEditor::new(),
             modified: false,
-            confirm_delete: false,
+            delete_mode: false,
+            yank_mode: false,
+            pending_count: 0,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            yank_buffer: Vec::new(),
+            visual_mode: false,
+            visual_start: 0,
         }
     }
 
-    pub fn mode_char(&self) -> &'static str {
-        if self.command_mode { ": " } else { "[N]" }
+    fn save_state(&mut self) {
+        self.undo_stack.push(self.tracks.clone());
+        self.redo_stack.clear();
+        if self.undo_stack.len() > 100 {
+            self.undo_stack.remove(0);
+        }
+    }
+
+    fn remove_range(&mut self, start: usize, end: usize) {
+        let end = end.min(self.tracks.len());
+        if start >= end { return; }
+        self.save_state();
+        for _ in start..end {
+            self.tracks.remove(start);
+        }
+        self.cursor = start.min(self.tracks.len().saturating_sub(1));
+        self.modified = true;
+    }
+
+    fn delete_cursor_to_start(&mut self) {
+        if self.cursor == 0 { return; }
+        self.save_state();
+        for _ in 0..self.cursor {
+            self.tracks.remove(0);
+        }
+        self.cursor = 0;
+        self.modified = true;
+    }
+
+    fn delete_cursor_to_end(&mut self) {
+        if self.cursor >= self.tracks.len().saturating_sub(1) { return; }
+        self.save_state();
+        let len = self.tracks.len();
+        for _ in self.cursor..len {
+            self.tracks.remove(self.cursor);
+        }
+        self.modified = true;
+    }
+
+    fn run_yank_op(&mut self, mode: &str, count: usize) {
+        match mode {
+            "line" => {
+                let end = (self.cursor + count).min(self.tracks.len());
+                self.yank_buffer = self.tracks[self.cursor..end].to_vec();
+            }
+            "down" => {
+                let end = (self.cursor + count).min(self.tracks.len());
+                if end > self.cursor {
+                    self.yank_buffer = self.tracks[self.cursor + 1..=end].to_vec();
+                }
+            }
+            "up" => {
+                let start = self.cursor.saturating_sub(count);
+                if self.cursor > start {
+                    self.yank_buffer = self.tracks[start..self.cursor].to_vec();
+                }
+            }
+            "to_start" => {
+                if self.cursor > 0 {
+                    self.yank_buffer = self.tracks[0..self.cursor].to_vec();
+                }
+            }
+            "to_end" => {
+                if self.cursor + 1 < self.tracks.len() {
+                    self.yank_buffer = self.tracks[self.cursor + 1..].to_vec();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn insert_paste(&mut self, above: bool) {
+        if self.yank_buffer.is_empty() { return; }
+        self.save_state();
+        let pos = if above {
+            self.cursor
+        } else {
+            (self.cursor + 1).min(self.tracks.len())
+        };
+        for (i, song) in self.yank_buffer.iter().enumerate() {
+            self.tracks.insert(pos + i, song.clone());
+        }
+        self.cursor = if above {
+            pos
+        } else {
+            pos + self.yank_buffer.len().saturating_sub(1)
+        };
+        self.modified = true;
+    }
+
+    fn get_visual_range(&self) -> (usize, usize) {
+        let start = self.visual_start.min(self.cursor);
+        let end = self.visual_start.max(self.cursor);
+        (start, end)
+    }
+
+    fn visual_delete(&mut self) {
+        let (start, end) = self.get_visual_range();
+        self.visual_mode = false;
+        self.remove_range(start, end + 1);
+    }
+
+    fn visual_yank(&mut self) {
+        let (start, end) = self.get_visual_range();
+        self.yank_buffer = self.tracks[start..=end].to_vec();
+        self.visual_mode = false;
+    }
+
+    pub fn mode_char(&self) -> String {
+        if self.command_mode {
+            ": ".to_string()
+        } else if self.visual_mode {
+            format!("[V{}]", if self.pending_count > 0 { self.pending_count.to_string() } else { String::new() })
+        } else if self.delete_mode {
+            format!("[DELETE{}]", if self.pending_count > 0 { format!(" {}", self.pending_count) } else { String::new() })
+        } else if self.yank_mode {
+            format!("[YANK{}]", if self.pending_count > 0 { format!(" {}", self.pending_count) } else { String::new() })
+        } else if self.pending_count > 0 {
+            format!("[{}]", self.pending_count)
+        } else {
+            "[N]".to_string()
+        }
+    }
+
+    pub fn capacity_blocks(&self) -> String {
+        const MAX_TRACKS: usize = 5000;
+        const BLOCKS: usize = 4;
+        let block_size = MAX_TRACKS / BLOCKS;
+        let total = self.tracks.len();
+        let mut s = String::from("Tracks: ");
+        s.push_str(&format!("{}/{} ", total, MAX_TRACKS));
+        for b in 0..BLOCKS {
+            let filled = total.saturating_sub(b * block_size).min(block_size);
+            let pct = filled as f64 / block_size as f64;
+            let bar_len = 4;
+            let filled_chars = (pct * bar_len as f64).round() as usize;
+            s.push('[');
+            for i in 0..bar_len {
+                if i < filled_chars {
+                    s.push('■');
+                } else {
+                    s.push('□');
+                }
+            }
+            s.push(']');
+            if b < BLOCKS - 1 {
+                s.push(' ');
+            }
+        }
+        s
     }
 
     fn save_tracks_callback(&self) -> Option<AppCallback> {
@@ -82,8 +244,7 @@ impl PlaylistEditorPopup {
                 (AsyncTask::new_no_op(), self.save_tracks_callback())
             }
             "q" => {
-                let cb = if self.modified { AppCallback::ClosePopup } else { AppCallback::ClosePopup };
-                (AsyncTask::new_no_op(), Some(cb))
+                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
             }
             "q!" => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
             "d" | "delete" => {
@@ -91,6 +252,7 @@ impl PlaylistEditorPopup {
                     if let Ok(n) = parts[1].parse::<usize>() {
                         let idx = n.saturating_sub(1);
                         if idx < self.tracks.len() {
+                            self.save_state();
                             self.tracks.remove(idx);
                             self.cursor = self.cursor.min(self.tracks.len().saturating_sub(1));
                             self.modified = true;
@@ -105,6 +267,7 @@ impl PlaylistEditorPopup {
                         let fi = from.saturating_sub(1);
                         let ti = to.saturating_sub(1);
                         if fi < self.tracks.len() && ti < self.tracks.len() {
+                            self.save_state();
                             let song = self.tracks.remove(fi);
                             self.tracks.insert(ti, song);
                             self.cursor = ti;
@@ -200,90 +363,262 @@ impl PlaylistEditorPopup {
             }
         }
 
+        // Visual mode: motions extend selection, d/y act on selection
+        if self.visual_mode {
+            match event.code {
+                KeyCode::Esc | KeyCode::Char('V') => {
+                    self.visual_mode = false;
+                    return (AsyncTask::new_no_op(), None);
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    let c = self.pending_count.max(1);
+                    self.pending_count = 0;
+                    let max = self.tracks.len().saturating_sub(1);
+                    self.cursor = (self.cursor + c).min(max);
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    let c = self.pending_count.max(1);
+                    self.pending_count = 0;
+                    self.cursor = self.cursor.saturating_sub(c);
+                }
+                KeyCode::Char('g') => {
+                    self.pending_count = 0;
+                    self.cursor = 0;
+                }
+                KeyCode::Char('G') => {
+                    self.pending_count = 0;
+                    self.cursor = self.tracks.len().saturating_sub(1);
+                }
+                KeyCode::Char('d') | KeyCode::Char('x') => {
+                    self.visual_delete();
+                }
+                KeyCode::Char('y') => {
+                    self.visual_yank();
+                }
+                KeyCode::Char('p') => {
+                    self.visual_yank();
+                    self.insert_paste(false);
+                }
+                KeyCode::Char('P') => {
+                    self.visual_yank();
+                    self.insert_paste(true);
+                }
+                _ => {}
+            }
+            return (AsyncTask::new_no_op(), None);
+        }
+
+        // Operator modes (d, y) - waiting for motion
+        if self.delete_mode {
+            match event.code {
+                KeyCode::Char('0') | KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3')
+                    | KeyCode::Char('4') | KeyCode::Char('5') | KeyCode::Char('6')
+                    | KeyCode::Char('7') | KeyCode::Char('8') | KeyCode::Char('9') => {
+                    if let Some(d) = event.code.to_string().parse::<usize>().ok() {
+                        self.pending_count = self.pending_count * 10 + d;
+                    }
+                    return (AsyncTask::new_no_op(), None);
+                }
+                _ => {}
+            }
+            self.delete_mode = false;
+            let c = self.pending_count.max(1);
+            self.pending_count = 0;
+            match event.code {
+                KeyCode::Char('d') => self.remove_range(self.cursor, self.cursor + c),
+                KeyCode::Char('j') | KeyCode::Down => self.remove_range(self.cursor, self.cursor + c),
+                KeyCode::Char('k') | KeyCode::Up => {
+                    let start = self.cursor.saturating_sub(c);
+                    self.remove_range(start, self.cursor);
+                }
+                KeyCode::Char('g') => self.delete_cursor_to_start(),
+                KeyCode::Char('G') => self.delete_cursor_to_end(),
+                KeyCode::Esc => {}
+                _ => {}
+            }
+            return (AsyncTask::new_no_op(), None);
+        }
+
+        if self.yank_mode {
+            match event.code {
+                KeyCode::Char('0') | KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3')
+                    | KeyCode::Char('4') | KeyCode::Char('5') | KeyCode::Char('6')
+                    | KeyCode::Char('7') | KeyCode::Char('8') | KeyCode::Char('9') => {
+                    if let Some(d) = event.code.to_string().parse::<usize>().ok() {
+                        self.pending_count = self.pending_count * 10 + d;
+                    }
+                    return (AsyncTask::new_no_op(), None);
+                }
+                _ => {}
+            }
+            self.yank_mode = false;
+            let c = self.pending_count.max(1);
+            self.pending_count = 0;
+            match event.code {
+                KeyCode::Char('y') => self.run_yank_op("line", c),
+                KeyCode::Char('j') | KeyCode::Down => self.run_yank_op("down", c),
+                KeyCode::Char('k') | KeyCode::Up => self.run_yank_op("up", c),
+                KeyCode::Char('g') => self.run_yank_op("to_start", 0),
+                KeyCode::Char('G') => self.run_yank_op("to_end", 0),
+                KeyCode::Esc => {}
+                _ => {}
+            }
+            return (AsyncTask::new_no_op(), None);
+        }
+
+        // Normal mode
         match event.code {
             KeyCode::Esc => {
-                if !self.modified {
+                if self.visual_mode {
+                    self.visual_mode = false;
+                } else if !self.modified {
                     return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
                 }
-                (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('q') => {
-                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
+                return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
             }
             KeyCode::Char(':') => {
                 self.command_mode = true;
                 self.command_editor.clear();
-                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('0') | KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3')
+                | KeyCode::Char('4') | KeyCode::Char('5') | KeyCode::Char('6')
+                | KeyCode::Char('7') | KeyCode::Char('8') | KeyCode::Char('9') => {
+                if let Some(d) = event.code.to_string().parse::<usize>().ok() {
+                    self.pending_count = self.pending_count * 10 + d;
+                }
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                let n = 1;
+                let c = self.pending_count.max(1);
+                self.pending_count = 0;
                 let max = self.tracks.len().saturating_sub(1);
-                self.cursor = (self.cursor + n).min(max);
+                self.cursor = (self.cursor + c).min(max);
                 self.scroll_offset = self.scroll_offset.max(self.cursor.saturating_sub(10));
-                (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                let n = 1;
-                self.cursor = self.cursor.saturating_sub(n);
+                let c = self.pending_count.max(1);
+                self.pending_count = 0;
+                self.cursor = self.cursor.saturating_sub(c);
                 self.scroll_offset = self.scroll_offset.min(self.cursor);
-                (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('g') => {
-                self.cursor = 0;
+                let c = self.pending_count.max(1);
+                self.pending_count = 0;
+                self.cursor = c.saturating_sub(1).min(self.tracks.len().saturating_sub(1));
                 self.scroll_offset = 0;
-                (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('G') => {
-                self.cursor = self.tracks.len().saturating_sub(1);
-                (AsyncTask::new_no_op(), None)
-            }
-            KeyCode::Char('d') if self.confirm_delete => {
-                self.confirm_delete = false;
-                if !self.tracks.is_empty() && self.cursor < self.tracks.len() {
-                    self.tracks.remove(self.cursor);
-                    self.cursor = self.cursor.min(self.tracks.len().saturating_sub(1));
-                    self.modified = true;
+                let c = self.pending_count.max(1);
+                self.pending_count = 0;
+                if c > 1 {
+                    self.cursor = (c.saturating_sub(1)).min(self.tracks.len().saturating_sub(1));
+                } else {
+                    self.cursor = self.tracks.len().saturating_sub(1);
                 }
-                (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('d') => {
-                self.confirm_delete = true;
-                (AsyncTask::new_no_op(), None)
+                self.delete_mode = true;
+            }
+            KeyCode::Char('y') => {
+                self.yank_mode = true;
+            }
+            KeyCode::Char('Y') => {
+                let c = self.pending_count.max(1);
+                self.pending_count = 0;
+                self.run_yank_op("line", c);
+            }
+            KeyCode::Char('D') => {
+                self.pending_count = 0;
+                self.delete_cursor_to_end();
+            }
+            KeyCode::Char('p') => {
+                self.pending_count = 0;
+                self.insert_paste(false);
+            }
+            KeyCode::Char('P') => {
+                self.pending_count = 0;
+                self.insert_paste(true);
+            }
+            KeyCode::Char('V') => {
+                self.visual_mode = true;
+                self.visual_start = self.cursor;
+                self.pending_count = 0;
             }
             KeyCode::Char('J') => {
-                if self.cursor + 1 < self.tracks.len() {
-                    self.tracks.swap(self.cursor, self.cursor + 1);
-                    self.cursor += 1;
-                    self.modified = true;
+                let c = self.pending_count.max(1);
+                self.pending_count = 0;
+                self.save_state();
+                for _ in 0..c {
+                    if self.cursor + 1 < self.tracks.len() {
+                        self.tracks.swap(self.cursor, self.cursor + 1);
+                        self.cursor += 1;
+                        self.modified = true;
+                    }
                 }
-                (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('K') => {
-                if self.cursor > 0 {
-                    self.tracks.swap(self.cursor, self.cursor - 1);
-                    self.cursor -= 1;
-                    self.modified = true;
+                let c = self.pending_count.max(1);
+                self.pending_count = 0;
+                self.save_state();
+                for _ in 0..c {
+                    if self.cursor > 0 {
+                        self.tracks.swap(self.cursor, self.cursor - 1);
+                        self.cursor -= 1;
+                        self.modified = true;
+                    }
                 }
-                (AsyncTask::new_no_op(), None)
-            }
-            KeyCode::Char('/') => {
-                (AsyncTask::new_no_op(), None)
-            }
-            KeyCode::Char('o') => {
-                // Context menu: currently just o.E for save
-                (AsyncTask::new_no_op(), None)
-            }
-            KeyCode::Char('E') => {
-                // Save to existing playlist (same as :w)
-                let cb = self.save_tracks_callback();
-                if cb.is_some() { self.modified = false; }
-                (AsyncTask::new_no_op(), cb)
             }
             KeyCode::Char('u') => {
-                (AsyncTask::new_no_op(), None)
+                if let Some(prev) = self.undo_stack.pop() {
+                    self.redo_stack.push(self.tracks.clone());
+                    self.tracks = prev;
+                    self.cursor = self.cursor.min(self.tracks.len().saturating_sub(1));
+                }
             }
-            _ => (AsyncTask::new_no_op(), None),
+            KeyCode::Char('o') => {
+                let c = self.pending_count.max(1);
+                self.pending_count = 0;
+                if self.tracks.is_empty() { return (AsyncTask::new_no_op(), None); }
+                self.save_state();
+                let blank = {
+                    let mut s = self.tracks[self.cursor].clone();
+                    s.title = String::new();
+                    s
+                };
+                let pos = (self.cursor + 1).min(self.tracks.len());
+                for _ in 0..c {
+                    self.tracks.insert(pos, blank.clone());
+                }
+                self.cursor = pos + c.saturating_sub(1);
+                self.modified = true;
+            }
+            KeyCode::Char('O') => {
+                let c = self.pending_count.max(1);
+                self.pending_count = 0;
+                if self.tracks.is_empty() { return (AsyncTask::new_no_op(), None); }
+                self.save_state();
+                let blank = {
+                    let mut s = self.tracks[self.cursor].clone();
+                    s.title = String::new();
+                    s
+                };
+                for _ in 0..c {
+                    self.tracks.insert(self.cursor, blank.clone());
+                }
+                self.modified = true;
+            }
+            KeyCode::Char('/') => {
+                tracing::info!("Playlist editor: search not yet implemented");
+            }
+            KeyCode::Char('E') => {
+                let cb = self.save_tracks_callback();
+                if cb.is_some() { self.modified = false; }
+                return (AsyncTask::new_no_op(), cb);
+            }
+            _ => {}
         }
+        (AsyncTask::new_no_op(), None)
     }
 
     pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
@@ -299,9 +634,15 @@ impl PlaylistEditorPopup {
         frame.render_widget(block, popup_area);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .constraints([Constraint::Length(1), Constraint::Min(1), Constraint::Length(1)])
             .split(inner);
-        let visible = (chunks[0].height as usize).saturating_sub(1);
+        let capacity_text = self.capacity_blocks();
+        frame.render_widget(
+            Paragraph::new(capacity_text)
+                .style(Style::default().fg(Color::DarkGray)),
+            chunks[0],
+        );
+        let visible = (chunks[1].height as usize).saturating_sub(1);
         let max_digits = self.tracks.len().max(1).to_string().len().max(2);
         let list_lines: Vec<ratatui::text::Line> = self.tracks.iter()
             .enumerate()
@@ -314,7 +655,17 @@ impl PlaylistEditorPopup {
                 let line = format!("{}{:>width$}  {:<40} {:<25} {}",
                     cursor_mark, num, song.title, artist_str, song.duration_string,
                     width = max_digits);
-                let style = if i == self.cursor {
+                let style = if self.visual_mode {
+                    let (vs, ve) = self.get_visual_range();
+                    let in_visual = i >= vs && i <= ve;
+                    if i == self.cursor {
+                        Style::default().fg(Color::Black).bg(Color::Cyan)
+                    } else if in_visual {
+                        Style::default().fg(Color::Black).bg(Color::Rgb(0x00, 0x5f, 0x5f))
+                    } else {
+                        Style::default().fg(Color::White)
+                    }
+                } else if i == self.cursor {
                     Style::default().fg(Color::Black).bg(Color::Cyan)
                 } else {
                     Style::default().fg(Color::White)
@@ -322,24 +673,34 @@ impl PlaylistEditorPopup {
                 ratatui::text::Line::from(ratatui::text::Span::styled(line, style))
             })
             .collect();
-        frame.render_widget(Paragraph::new(list_lines).wrap(Wrap { trim: false }), chunks[0]);
+        frame.render_widget(Paragraph::new(list_lines).wrap(Wrap { trim: false }), chunks[1]);
         let hint = if self.command_mode {
             let display = self.command_editor.render_simple(":");
             Paragraph::new(display)
                 .style(Style::default().fg(Color::Yellow))
+        } else if self.visual_mode {
+            Paragraph::new("j/k: Extend | d/x: Delete | y: Yank | p/P: Paste | Esc: Exit Visual")
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Center)
+        } else if self.delete_mode {
+            Paragraph::new("j/k: Delete down/up | d: dd | g: top | G: bottom | Esc: Cancel")
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Center)
+        } else if self.yank_mode {
+            Paragraph::new("j/k: Yank down/up | y: yy | g: top | G: bottom | Esc: Cancel")
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Center)
         } else {
-            let hint_text = if self.confirm_delete {
-                "Press d again to confirm delete"
-            } else if self.modified {
-                "j/k: Move | dd: Delete | J/K: Reorder | :: Command | u: Undo | q: Close [Modified]"
+            let hint_text = if self.modified {
+                "j/k: Move | gg/G: Jump | dd/y: Del/Yank | d+y+motion | p/P: Paste | u: Undo | J/K: Reorder | V: Visual | :: Cmd | q: Close [Modified]"
             } else {
-                "j/k: Move | dd: Delete | J/K: Reorder | :: Command | u: Undo | q: Close"
+                "j/k: Move | gg/G: Jump | dd/y: Del/Yank | d+y+motion | p/P: Paste | u: Undo | J/K: Reorder | V: Visual | :: Cmd | q: Close"
             };
             Paragraph::new(hint_text)
                 .style(Style::default().fg(Color::DarkGray))
                 .alignment(Alignment::Center)
         };
-        frame.render_widget(hint, chunks[1]);
+        frame.render_widget(hint, chunks[2]);
     }
 
     fn centered_rect_fixed(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

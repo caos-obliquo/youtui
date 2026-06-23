@@ -11,9 +11,13 @@ use crate::app::server::{
     GetPlaylistTracks,
 };
 use crate::app::structures::{
-    BrowserSongsList, ListSong, ListSongArtist, ListStatus, MaybeRc,
-    DownloadStatus, AlbumArtState,
+    BrowserSongsList, ListSong, ListSongArtist, ListSongDisplayableField, ListStatus, MaybeRc,
+    DownloadStatus, AlbumArtState, fuzzy_match, Percentage,
 };
+use crate::app::view::{
+    AdvancedTableView, BasicConstraint, TableFilterCommand, TableSortCommand, TableView,
+};
+use crate::app::ui::browser::shared_components::get_adjusted_list_column;
 use crate::app::ui::action::AppAction;
 use crate::config::Config;
 use crate::config::keymap::Keymap;
@@ -90,6 +94,7 @@ pub enum BrowserLibraryAction {
     FocusContent,
     FocusCategory,
     ActivateSelected,
+    DismissTracks,
     ReloadCategory,
 }
 
@@ -104,6 +109,7 @@ impl Action for BrowserLibraryAction {
             BrowserLibraryAction::FocusContent => "Focus content panel",
             BrowserLibraryAction::FocusCategory => "Focus category list",
             BrowserLibraryAction::ActivateSelected => "Activate selected",
+            BrowserLibraryAction::DismissTracks => "Go back from tracks",
             BrowserLibraryAction::ReloadCategory => "Reload category",
         }
         .into()
@@ -316,6 +322,11 @@ pub struct LibraryBrowser {
     pub show_playlist_tracks: bool,
     pub playlist_tracks_selected: usize,
     pub liked_playlists: HashSet<PlaylistID<'static>>,
+    pub tracks_widget_state: ScrollingTableState,
+    pub tracks_sort: SortManager,
+    pub tracks_filter: FilterManager,
+    pub tracks_visual_mode: bool,
+    pub tracks_visual_start: usize,
     // Artists state
     pub artist_data: Vec<LibraryArtist>,
     pub artist_selected: usize,
@@ -334,6 +345,7 @@ pub struct LibraryBrowser {
     pub search_active: bool,
     pub search: SearchBlock,
     pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
+    pub local_filter_text: String,
 }
 
 impl LibraryBrowser {
@@ -352,6 +364,11 @@ impl LibraryBrowser {
             show_playlist_tracks: false,
             playlist_tracks_selected: 0,
             liked_playlists: HashSet::new(),
+            tracks_widget_state: Default::default(),
+            tracks_sort: SortManager::new(),
+            tracks_filter: Default::default(),
+            tracks_visual_mode: false,
+            tracks_visual_start: 0,
             artist_data: Default::default(),
             artist_selected: 0,
             album_data: Default::default(),
@@ -365,6 +382,7 @@ impl LibraryBrowser {
             search_active: false,
             search: SearchBlock::default(),
             cur_playing_video_id: None,
+            local_filter_text: String::new(),
         }
     }
 
@@ -570,6 +588,147 @@ impl LibraryBrowser {
     #[allow(dead_code)]
     pub fn is_search_active(&self) -> bool {
         self.search_active
+    }
+}
+
+// -- Tracks table view --
+impl LibraryBrowser {
+    pub fn tracks_subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
+        [
+            ListSongDisplayableField::TrackNo,
+            ListSongDisplayableField::Artists,
+            ListSongDisplayableField::Album,
+            ListSongDisplayableField::Song,
+            ListSongDisplayableField::Duration,
+            ListSongDisplayableField::Year,
+        ]
+    }
+
+    pub fn get_tracks_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
+        let filter_text = self.local_filter_text.clone();
+        self.playlist_tracks.iter().filter(move |ls| {
+            if filter_text.is_empty() {
+                return true;
+            }
+            let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
+            let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
+            let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
+            fuzzy_match(&filter_text, &title).is_some()
+                || fuzzy_match(&filter_text, &album).is_some()
+                || fuzzy_match(&filter_text, &artist).is_some()
+        })
+    }
+}
+
+// -- Tracks table traits --
+impl TableView for LibraryBrowser {
+    fn get_selected_item(&self) -> usize {
+        self.playlist_tracks_selected
+    }
+    fn get_state(&self) -> &ScrollingTableState {
+        &self.tracks_widget_state
+    }
+    fn get_mut_state(&mut self) -> &mut ScrollingTableState {
+        &mut self.tracks_widget_state
+    }
+    fn get_layout(&self) -> &[BasicConstraint] {
+        &[
+            BasicConstraint::Length(6),
+            BasicConstraint::Percentage(Percentage(25)),
+            BasicConstraint::Percentage(Percentage(30)),
+            BasicConstraint::Percentage(Percentage(30)),
+            BasicConstraint::Length(8),
+            BasicConstraint::Length(5),
+        ]
+    }
+    fn get_highlighted_row(&self) -> Option<usize> {
+        if self.tracks_visual_mode {
+            Some(self.tracks_visual_start)
+        } else {
+            None
+        }
+    }
+    fn get_visual_range(&self) -> Option<(usize, usize)> {
+        if self.tracks_visual_mode {
+            let start = self.tracks_visual_start.min(self.playlist_tracks_selected);
+            let end = self.tracks_visual_start.max(self.playlist_tracks_selected);
+            Some((start, end))
+        } else {
+            None
+        }
+    }
+    fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
+        self.playlist_tracks
+            .iter()
+            .map(|ls| ls.get_fields(Self::tracks_subcolumns_of_vec()).into_iter())
+    }
+    fn get_headings(&self) -> impl Iterator<Item = &'static str> {
+        ["#", "Artist", "Album", "Song", "Duration", "Year"].into_iter()
+    }
+}
+
+impl AdvancedTableView for LibraryBrowser {
+    fn get_filtered_count(&self) -> usize {
+        self.get_tracks_filtered_list_iter().count()
+    }
+    fn get_sortable_columns(&self) -> &[usize] {
+        &[0, 1, 2, 3]
+    }
+    fn push_sort_command(&mut self, sort_command: TableSortCommand) -> anyhow::Result<()> {
+        if !self.get_sortable_columns().contains(&sort_command.column) {
+            anyhow::bail!("Unable to sort column {}", sort_command.column);
+        }
+        let field = get_adjusted_list_column(sort_command.column, Self::tracks_subcolumns_of_vec())?;
+        self.playlist_tracks.sort_by(|a, b| match sort_command.direction {
+            crate::app::view::SortDirection::Asc => a
+                .get_field(field)
+                .partial_cmp(&b.get_field(field))
+                .unwrap_or(std::cmp::Ordering::Equal),
+            crate::app::view::SortDirection::Desc => b
+                .get_field(field)
+                .partial_cmp(&a.get_field(field))
+                .unwrap_or(std::cmp::Ordering::Equal),
+        });
+        self.tracks_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+        self.tracks_sort.sort_commands.push(sort_command);
+        Ok(())
+    }
+    fn clear_sort_commands(&mut self) {
+        self.tracks_sort.sort_commands.clear();
+    }
+    fn get_sort_commands(&self) -> &[TableSortCommand] {
+        &self.tracks_sort.sort_commands
+    }
+    fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
+        self.get_tracks_filtered_list_iter()
+            .map(|ls| ls.get_fields(Self::tracks_subcolumns_of_vec()).into_iter())
+    }
+    fn get_filterable_columns(&self) -> &[usize] {
+        &[1, 2, 3]
+    }
+    fn get_filter_commands(&self) -> &[TableFilterCommand] {
+        &self.tracks_filter.filter_commands
+    }
+    fn clear_filter_commands(&mut self) {
+        self.tracks_filter.filter_commands.clear();
+    }
+    fn get_sort_popup_cur(&self) -> usize {
+        self.tracks_sort.cur
+    }
+    fn sort_popup_shown(&self) -> bool {
+        self.tracks_sort.shown
+    }
+    fn filter_popup_shown(&self) -> bool {
+        self.tracks_filter.shown
+    }
+    fn get_sort_state(&self) -> &ratatui::widgets::ListState {
+        &self.tracks_sort.state
+    }
+    fn get_mut_sort_state(&mut self) -> &mut ratatui::widgets::ListState {
+        &mut self.tracks_sort.state
+    }
+    fn get_mut_filter_state(&mut self) -> &mut vi_text_editor::ViTextEditor {
+        &mut self.tracks_filter.filter_text
     }
 }
 
@@ -976,6 +1135,48 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         }
                     }
                 }
+                BrowserSongsAction::ToggleVisualMode => {
+                    if self.show_playlist_tracks {
+                        self.tracks_visual_mode = !self.tracks_visual_mode;
+                        if self.tracks_visual_mode {
+                            self.tracks_visual_start = self.playlist_tracks_selected;
+                        }
+                    }
+                }
+                BrowserSongsAction::DeleteSelected => {
+                    if self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            let ids: Vec<_> = if self.tracks_visual_mode {
+                                let start = self.tracks_visual_start.min(self.playlist_tracks_selected);
+                                let end = self.tracks_visual_start.max(self.playlist_tracks_selected);
+                                self.playlist_tracks[start..=end].iter().map(|s| s.video_id.clone()).collect()
+                            } else {
+                                self.playlist_tracks.get(self.playlist_tracks_selected).map(|s| vec![s.video_id.clone()]).unwrap_or_default()
+                            };
+                            self.tracks_visual_mode = false;
+                            return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
+                        }
+                    }
+                }
+                BrowserSongsAction::DeleteToTop => {
+                    if self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            let ids: Vec<_> = self.playlist_tracks[..self.playlist_tracks_selected].iter().map(|s| s.video_id.clone()).collect();
+                            return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
+                        }
+                    }
+                }
+                BrowserSongsAction::DeleteToBottom => {
+                    if self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            let start = self.playlist_tracks_selected + 1;
+                            if start < self.playlist_tracks.len() {
+                                let ids: Vec<_> = self.playlist_tracks[start..].iter().map(|s| s.video_id.clone()).collect();
+                                return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
+                            }
+                        }
+                    }
+                }
                 _ => warn!("Unsupported song action for playlists: {:?}", action),
             },
             LibraryCategory::Artists => match action {
@@ -1069,19 +1270,20 @@ impl ActionHandler<BrowserLibraryAction> for LibraryBrowser {
                         return self.play_selected_song();
                     }
                     LibraryCategory::Playlists => {
-                        if !self.playlist_tracks.is_empty() {
-                            if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                                return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistEditor {
-                                    playlist_id: pl.playlist_id.clone(),
-                                    playlist_title: pl.title.clone(),
-                                    tracks: self.playlist_tracks.clone(),
-                                }));
+                        if self.show_playlist_tracks {
+                            if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                                return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])));
                             }
+                        } else {
+                            return (self.fetch_playlist_tracks(), None);
                         }
-                        return (self.fetch_playlist_tracks(), None);
                     }
                     _ => {}
                 }
+            }
+            BrowserLibraryAction::DismissTracks => {
+                self.show_playlist_tracks = false;
+                return (AsyncTask::new_no_op(), None);
             }
             BrowserLibraryAction::ReloadCategory => {
                 return (self.reload_category(), None);

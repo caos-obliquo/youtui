@@ -551,11 +551,21 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                         }
                         if let Some(ref year) = data.year {
                             song.year = Some(Rc::new(year.clone()));
+                        } else if let Some(ref album) = data.album {
+                            // Fallback: extract year from album name
+                            if let Some(y) = album.split(|c: char| !c.is_ascii_digit())
+                                .find(|p| p.len() == 4)
+                                .and_then(|p| p.parse::<u16>().ok())
+                                .filter(|y| (1900..2100).contains(y))
+                            {
+                                song.year = Some(Rc::new(y.to_string()));
+                            }
                         }
                         if let Some(ref artist) = data.artist {
+                            let normalized = crate::app::structures::normalize_artist_name(artist);
                             song.artists = crate::app::structures::MaybeRc::Owned(vec![
                                 crate::app::structures::ListSongArtist {
-                                    name: artist.clone(),
+                                    name: normalized,
                                     id: None,
                                 },
                             ]);
@@ -920,7 +930,7 @@ impl_youtui_task_handler!(
                     like_status: ytmapi_rs::common::LikeStatus::Indifferent,
                 }
             }).collect();
-            this.insert_next_song_list(songs);
+            let _task = this.insert_next_song_list(songs);
             info!("Inserted {} related tracks", count);
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }

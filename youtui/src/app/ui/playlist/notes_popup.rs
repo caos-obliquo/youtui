@@ -11,6 +11,7 @@ use std::borrow::Cow;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum NotesAction {
+    #[allow(dead_code)]
     Close,
 }
 

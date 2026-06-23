@@ -50,6 +50,7 @@ async fn main() {
 
     match command.as_str() {
         "fixture" => cmd_fixture(rest, json_output).await,
+        "debug" => cmd_debug(rest).await,
         _ => cmd_live(command, rest, cookie_file.as_deref(), json_output).await,
     }
 }
@@ -84,6 +85,12 @@ fn print_usage() {
     eprintln!();
     eprintln!("COMMANDS (offline, no auth):");
     eprintln!("  fixture <file> [--type search|playlist|album]");
+    eprintln!("  debug meta <title> [artist]    Test title cleaning + artist normalization");
+    eprintln!("  debug clean <title>            Test title cleaning only");
+    eprintln!("  debug artist <name>            Test artist normalization only");
+    eprintln!("  debug resolve <artist> <title>  Test full resolution pipeline");
+    eprintln!("  debug genre <genre>            Test genre normalization");
+    eprintln!("  debug genre-list [filter]      List known genres");
     eprintln!();
     eprintln!("AUTH:");
     eprintln!("  Export cookies from https://music.youtube.com to a file:");
@@ -278,6 +285,229 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
         _ => {
             eprintln!("Unknown command: {}. See ytmapi --help", command);
         }
+    }
+}
+
+fn normalize_artist_name(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.is_empty() { return String::new(); }
+    let mut chars = trimmed.chars();
+    let first = chars.next().unwrap().to_uppercase().to_string();
+    first + chars.as_str()
+}
+
+fn clean_title(title: &str, artist: &str) -> String {
+    // Strip "{artist} - " prefix
+    let artist_prefix = format!("{} - ", artist);
+    let s = if title.to_lowercase().starts_with(&artist_prefix.to_lowercase()) {
+        title[artist_prefix.len().min(title.len())..].to_string()
+    } else {
+        title.to_string()
+    };
+    // Strip noise tags
+    let noise_tags: &[&str] = &[
+        "official audio", "official video", "lyric video", "lyrics",
+        "legendado", "c legendado", "c legenda", "com legenda",
+        "com legendado", "legendado pt", "legendado pt-br",
+        "subtitle", "subtitles",
+    ];
+    let mut s = s;
+    loop {
+        let lower = s.to_lowercase().trim().to_string();
+        let mut found = false;
+        for tag in noise_tags {
+            if let Some(pos) = lower.rfind(tag) {
+                // Find the '(' before the tag, if any
+                let before = &s[..pos];
+                let cut = if let Some(paren) = before.rfind('(') {
+                    // Check if tag is inside parenthesized suffix
+                    if s[paren..].to_lowercase().contains(tag) {
+                        // Strip the entire parenthesized suffix including paren
+                        s[..paren].trim().to_string()
+                    } else {
+                        // Strip from tag position
+                        s[..pos].trim().to_string()
+                    }
+                } else {
+                    s[..pos].trim().to_string()
+                };
+                if cut.len() < s.len() {
+                    s = cut.trim().to_string();
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if !found {
+            s = s.trim_end_matches(|c| c == '(').trim().to_string();
+            break;
+        }
+    }
+    // Strip album suffix tags
+    let lower = s.to_lowercase();
+    let album_tags = ["full album", "full ep", "full lp", "full demo", "full single", "album", "demo", "ep", "single", "singles"];
+    let pos = album_tags.iter().filter_map(|t| lower.rfind(t)).max();
+    if let Some(pos) = pos {
+        let start = s[..pos].rfind('(').unwrap_or(pos);
+        s = if start > 0 { s[..start].trim().to_string() } else { s[..pos].trim().to_string() };
+    } else if let Some(pos) = s.find("  (") {
+        s = s[..pos].trim().to_string();
+    }
+    s.trim().to_string()
+}
+
+async fn cmd_debug(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: ytmapi debug <subcommand>");
+        eprintln!("  meta <title> [artist]    Test title cleaning + artist normalization");
+        eprintln!("  clean <title>            Test title cleaning only");
+        eprintln!("  artist <name>            Test artist normalization only");
+        eprintln!("  resolve <artist> <title>  Test metadata pipeline for a song");
+        eprintln!("  genre <genre>             Test genre normalization");
+        eprintln!("  genre-list [filter]       List known genres (optionally filtered)");
+        return;
+    }
+    match args[0].as_str() {
+        "meta" => cmd_debug_meta(&args[1..]).await,
+        "clean" => {
+            let title = args.get(1).map(|s| s.as_str()).unwrap_or("");
+            if title.is_empty() { eprintln!("Usage: ytmapi debug clean <title>"); return; }
+            let cleaned = clean_title(title, "Unknown");
+            println!("Original: '{}'", title);
+            println!("Cleaned:  '{}'", cleaned);
+        }
+        "artist" => {
+            let name = args.get(1).map(|s| s.as_str()).unwrap_or("");
+            if name.is_empty() { eprintln!("Usage: ytmapi debug artist <name>"); return; }
+            let normalized = normalize_artist_name(name);
+            println!("Original:  '{}'", name);
+            println!("Normalized: '{}'", normalized);
+        }
+        "resolve" => cmd_debug_resolve(&args[1..]).await,
+        "genre" => {
+            let name = args.get(1).map(|s| s.as_str()).unwrap_or("");
+            if name.is_empty() { eprintln!("Usage: ytmapi debug genre <genre>"); return; }
+            let normalized = metadata_provider::genre_map::normalize_genre(name);
+            let known = metadata_provider::genre_map::is_known_genre(name);
+            println!("Input:  '{}'", name);
+            println!("Normalized: '{}'", normalized);
+            println!("Known: {}", known);
+        }
+        "genre-list" => {
+            let filter = args.get(1).map(|s| s.to_lowercase());
+            let all = metadata_provider::genre_map::all_genres();
+            for g in &all {
+                if let Some(ref f) = filter {
+                    if !g.to_lowercase().contains(f) { continue; }
+                }
+                println!("{}", g);
+            }
+            println!("Total: {}", all.len());
+        }
+        _ => eprintln!("Unknown debug subcommand: {}. Use: meta, clean, artist, resolve, genre, genre-list", args[0]),
+    }
+}
+
+async fn cmd_debug_resolve(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("Usage: ytmapi debug resolve <artist> <title>");
+        return;
+    }
+    let artist = &args[0];
+    let title = &args[1];
+    
+    println!("=== Metadata Pipeline Test ===");
+    println!("Artist: '{}'", artist);
+    println!("Title:  '{}'", title);
+    println!();
+    
+    // Test title cleaning
+    let cleaned = clean_title(title, artist);
+    println!("Cleaned title: '{}'", cleaned);
+    println!();
+    
+    // Test artist normalization
+    let normalized = normalize_artist_name(artist);
+    println!("Normalized artist: '{}'", normalized);
+    println!();
+    
+    // Test the metadata registry directly
+    use metadata_provider::MetadataRegistry;
+    
+    let http_client = reqwest::Client::builder()
+        .user_agent("Youtui/0.1 (test)")
+        .build()
+        .unwrap();
+    
+    // Get API keys from env
+    let lastfm_key = std::env::var("LASTFM_API_KEY").ok().filter(|s| !s.is_empty());
+    let discogs_token = std::env::var("DISCOGS_TOKEN").ok().filter(|s| !s.is_empty());
+    let genius_token = std::env::var("GENIUS_TOKEN").ok().filter(|s| !s.is_empty());
+    
+    let registry = MetadataRegistry::new(
+        http_client,
+        lastfm_key,
+        discogs_token,
+        genius_token,
+        None,
+    );
+    
+    println!("Resolving metadata...");
+    match registry.resolve(normalized.as_str(), cleaned.as_str()).await {
+        Ok(meta) => {
+            println!();
+            println!("=== Result ===");
+            println!("Artist: {:?}", meta.artist);
+            println!("Album:  {:?}", meta.album);
+            println!("Year:   {:?}", meta.year);
+            println!("Track#: {:?}", meta.track_no);
+            println!("Tracks: {} entries", meta.album_tracks.len());
+            if !meta.album_tracks.is_empty() {
+                println!("First 3 tracks:");
+                for (i, t) in meta.album_tracks.iter().take(3).enumerate() {
+                    println!("  {}. {} ({:.0}s)", i + 1, t.title, t.duration_secs);
+                }
+            }
+            println!("Genres: {:?}", meta.genres);
+            println!("Styles: {:?}", meta.styles);
+        }
+        Err(e) => eprintln!("Resolution error: {}", e),
+    }
+}
+
+async fn cmd_debug_meta(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: ytmapi debug meta <title> [artist]");
+        eprintln!("  Tests title cleaning and artist name normalization.");
+        eprintln!("  Provide a title and optional artist.");
+        return;
+    }
+
+    let title = &args[0];
+    let artist = if args.len() > 1 { &args[1] } else { "Unknown" };
+    
+    println!("=== Metadata Pipeline Debug ===");
+    println!("Input title:  '{}'", title);
+    println!("Input artist: '{}'", artist);
+    println!();
+    
+    let cleaned = clean_title(title, artist);
+    println!("Cleaned title: '{}'", cleaned);
+    println!();
+    
+    let normalized = normalize_artist_name(artist);
+    println!("Normalized artist: '{}'", normalized);
+    println!();
+    
+    if cleaned != *title {
+        println!("✅ Title was modified");
+    } else {
+        println!("⏺ Title unchanged");
+    }
+    if normalized != *artist {
+        println!("✅ Artist was modified");
+    } else {
+        println!("⏺ Artist unchanged");
     }
 }
 

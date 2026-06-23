@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use tracing::info;
 use ytmapi_rs::common::{PlaylistID, VideoID};
 use ytmapi_rs::parse::LibraryPlaylist;
 
@@ -109,6 +110,11 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
                     if let Some(playlist) = self.selected_playlist(playlists) {
                         let target_id = playlist.playlist_id.clone();
                         if let Some(source_id) = &self.source_playlist_id {
+                            if *source_id == target_id {
+                                // Can't merge playlist into itself
+                                info!("Rejecting merge of playlist into itself");
+                                return (AsyncTask::new_no_op(), None);
+                            }
                             // Merge mode: add source playlist to target playlist
                             (
                                 AsyncTask::new_no_op(),
