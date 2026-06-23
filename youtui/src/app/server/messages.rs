@@ -172,8 +172,6 @@ pub struct ReorderPlaylistItem {
     pub target_video_id: VideoID<'static>,
 }
 
-// TODO: Wire playlist merge — context menu entry pending
-#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct AddPlaylistToPlaylist {
     pub source_id: PlaylistID<'static>,
@@ -416,8 +414,8 @@ impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
             let total = all_ids.len();
             tracing::info!("Creating playlist with {total} videos: {title}");
 
-            // YouTube Music: 5000 songs max per playlist, API accepts all at once
-            let max_per_playlist: usize = 5000;
+            // YouTube Music: max 5000 per playlist. Batch smaller for API reliability
+            let max_per_playlist: usize = 1000;
             let mut remaining: Vec<VideoID<'static>> = all_ids;
 
             let mut first_playlist_id: Option<PlaylistID<'static>> = None;
@@ -426,10 +424,10 @@ impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
             while !remaining.is_empty() {
                 let playlist_songs: Vec<VideoID<'static>> = remaining.drain(..remaining.len().min(max_per_playlist)).collect();
 
-                let playlist_title = if playlist_index == 0 {
+                let playlist_title = if total <= max_per_playlist {
                     title.clone()
                 } else {
-                    format!("{} pt. {}", title, playlist_index + 1)
+                    format!("{} pt{}", title, playlist_index)
                 };
                 playlist_index += 1;
 
@@ -585,7 +583,10 @@ impl BackendTask<ArcServer> for RatePlaylistMessage {
         async move {
             use ytmapi_rs::query::RatePlaylistQuery;
             let api_guard = backend.api.get_api().await?;
+            let pid = self.0.get_raw().to_string();
+            let rating = format!("{:?}", self.1);
             let query = RatePlaylistQuery::new(self.0, self.1);
+            tracing::info!("RatePlaylist: id={}, rating={}", pid, rating);
             api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
             tracing::info!("Playlist rated");
             Ok(())
@@ -753,6 +754,7 @@ impl BackendTask<ArcServer> for GetLyrics {
                 Err(e) => tracing::warn!("Genius fetch failed: {}", e),
             }
 
+            tracing::info!("Genius failed, trying fallback CLI providers");
             // Fallback 1: bandcamp-lyrics CLI (great for niche/underground music)
             fn bc_slug(s: &str) -> String {
                 s.to_lowercase().chars()
