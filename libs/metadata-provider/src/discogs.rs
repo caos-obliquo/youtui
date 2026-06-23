@@ -31,15 +31,35 @@ impl MetadataProvider for DiscogsProvider {
                 "https://api.discogs.com/database/search?q={}+{}&type=master&format=album&format=cd",
                 util::urlencoding(artist), util::urlencoding(title)
             );
-            let mut req = client.get(&search_url)
-                .header("User-Agent", "Youtui/0.1 +https://github.com/caos-obliquo/youtui");
-            if let Some(ref t) = token {
-                req = req.header("Authorization", format!("Discogs token={}", t));
-            }
-            let resp = req.send().await.ok()?;
-            let data: serde_json::Value = resp.json().await.ok()?;
-            let results = data.get("results")?.as_array()?;
-            let first = results.first()?;
+            let results: Vec<serde_json::Value> = {
+                let mut req = client.get(&search_url)
+                    .header("User-Agent", "Youtui/0.1 +https://github.com/caos-obliquo/youtui");
+                if let Some(ref t) = token {
+                    req = req.header("Authorization", format!("Discogs token={}", t));
+                }
+                let r = req.send().await.ok()?;
+                let d: serde_json::Value = r.json().await.ok()?;
+                d.get("results").and_then(|a| a.as_array()).cloned().unwrap_or_default()
+            };
+
+            // If exact search found nothing, try broader artist-only search
+            let first = if results.is_empty() {
+                tracing::debug!("Discogs exact search found nothing for {} - {}, trying artist fallback", artist, title);
+                let fb_url = format!(
+                    "https://api.discogs.com/database/search?q={}&type=master&format=album&format=cd",
+                    util::urlencoding(artist)
+                );
+                let mut fb_req = client.get(&fb_url)
+                    .header("User-Agent", "Youtui/0.1 +https://github.com/caos-obliquo/youtui");
+                if let Some(ref t) = token {
+                    fb_req = fb_req.header("Authorization", format!("Discogs token={}", t));
+                }
+                let fb_resp = fb_req.send().await.ok()?;
+                let fb_data: serde_json::Value = fb_resp.json().await.ok()?;
+                fb_data.get("results")?.as_array()?.first()?.clone()
+            } else {
+                results.first()?.clone()
+            };
             let year = first.get("year").and_then(|y| y.as_i64()).map(|y| y.to_string());
             let master_id = first.get("master_id")?.as_i64()?;
 
