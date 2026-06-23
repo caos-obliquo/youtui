@@ -12,6 +12,13 @@ use tracing::{info, warn, error};
 
 const PORT: u16 = 5000;
 const MA_BASE: &str = "https://www.metal-archives.com";
+const CDP_PORT: u16 = 9222;
+const COOKIE_FILE: &str = "ma_cookie";
+
+fn cookie_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    std::path::PathBuf::from(home).join(".config").join("youtui").join(COOKIE_FILE)
+}
 
 struct AppState {
     browser: Arc<Mutex<Option<Browser>>>,
@@ -20,8 +27,13 @@ struct AppState {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    info!("Metal Archives Rust proxy on port {}", PORT);
 
+    // If --get-cookie flag, extract from Chromium and exit
+    if std::env::args().any(|a| a == "--get-cookie") {
+        return cmd_get_cookie().await;
+    }
+
+    info!("Metal Archives Rust proxy on port {}", PORT);
     let browser_state = match spawn_browser().await {
         Ok(b) => { info!("Chrome ready"); Arc::new(Mutex::new(Some(b))) }
         Err(e) => { warn!("Chrome unavailable: {}", e); Arc::new(Mutex::new(None)) }
@@ -216,3 +228,58 @@ fn parse_search_results(html: &str) -> Vec<serde_json::Value> {
 
 fn strip_html(s: &str) -> String { Regex::new(r"<[^>]*>").unwrap().replace_all(s, "").trim().to_string() }
 fn urlencode(s: &str) -> String { s.as_bytes().iter().map(|&c| match c { b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (c as char).to_string(), b' ' => "+".to_string(), _ => format!("%{:02X}", c) }).collect() }
+
+/// --get-cookie: extract cf_clearance from running Chromium via CDP.
+/// Start Chromium with: chromium --remote-debugging-port=9222
+/// Then open metal-archives.com and complete the Cloudflare challenge.
+/// Run this tool to extract and save the cookie.
+async fn cmd_get_cookie() -> Result<()> {
+    println!("Connecting to Chromium on port {}...", CDP_PORT);
+    println!("Make sure Chromium is running with: chromium --remote-debugging-port={}", CDP_PORT);
+    println!("And you have metal-archives.com open with the challenge completed.");
+    println!();
+
+    // Try to connect to Chromium via CDP
+    let ws_url = format!("http://localhost:{}/json/version", CDP_PORT);
+    let resp = reqwest::get(&ws_url).await.map_err(|e| {
+        anyhow::anyhow!("Cannot connect to Chromium.\n\
+            Start Chromium with:\n  chromium --remote-debugging-port={}\n\
+            Then open metal-archives.com.\nError: {}", CDP_PORT, e)
+    })?;
+
+    let info: serde_json::Value = resp.json().await?;
+    let debug_url = info.get("webSocketDebuggerUrl")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("No WebSocket URL from Chromium"))?;
+
+    let (browser, mut handler) = Browser::connect(debug_url).await?;
+    tokio::spawn(async move { while let Some(_) = handler.next().await {} });
+
+    // Navigate to MA and get cookies
+    let page = browser.new_page("about:blank").await?;
+    page.goto("https://www.metal-archives.com/").await?;
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+    let cookies = page.get_cookies().await.unwrap_or_default();
+    for c in &cookies {
+        if c.name == "cf_clearance" {
+            let val = format!("cf_clearance={}", c.value);
+            let path = cookie_path();
+            if let Some(parent) = path.parent() {
+                let _ = tokio::fs::create_dir_all(parent).await;
+            }
+            tokio::fs::write(&path, &val).await?;
+            println!("✅ Cookie saved to {:?}", path);
+            println!("   Expires: {:?}", c.expires);
+            println!();
+            println!("The cookie persists across youtui restarts.");
+            println!("Refresh it with: cargo run --release -p metal-proxy -- --get-cookie");
+            return Ok(());
+        }
+    }
+
+    println!("❌ No cf_clearance cookie found.");
+    println!("   Make sure metal-archives.com is open in Chromium");
+    println!("   and the Cloudflare challenge has been completed.");
+    Ok(())
+}
