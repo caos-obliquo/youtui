@@ -3974,6 +3974,7 @@ dependencies = [
  "chromiumoxide",
  "futures",
  "regex",
+ "reqwest 0.11.27",
  "scraper 0.21.0",
  "serde",
  "serde_json",
