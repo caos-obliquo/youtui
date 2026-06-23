@@ -244,7 +244,12 @@ impl PlaylistEditorPopup {
                 (AsyncTask::new_no_op(), self.save_tracks_callback())
             }
             "q" => {
-                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
+                if self.modified {
+                    tracing::info!(":q with modified tracks — use :q! to force quit");
+                } else {
+                    return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
+                }
+                (AsyncTask::new_no_op(), None)
             }
             "q!" => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
             "d" | "delete" => {
@@ -474,9 +479,13 @@ impl PlaylistEditorPopup {
                 } else if !self.modified {
                     return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
                 }
+                // If modified, show hint. Use :w then :q, or :q! to force quit.
             }
             KeyCode::Char('q') => {
-                return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
+                if !self.modified {
+                    return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
+                }
+                // If modified, show hint. Use :q! to force quit.
             }
             KeyCode::Char(':') => {
                 self.command_mode = true;
