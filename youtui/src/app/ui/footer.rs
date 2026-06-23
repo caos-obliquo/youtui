@@ -70,13 +70,16 @@ pub fn draw_footer(
     };
     let song_and_artists_string = cur_active_song
         .map(|song| {
-            let mut s = format!("{} {} - ", w.playlist.play_status.list_icon(), song.title,);
+            let mut s = w.playlist.play_status.list_icon().to_string();
+            s.push(' ');
             for (i, artist) in song.artists.iter().enumerate() {
                 if i > 0 {
                     s.push_str(", ");
                 }
                 s.push_str(&artist.name);
             }
+            s.push_str(" - ");
+            s.push_str(&song.title);
             if let Some(album) = song.album.as_ref() {
                 let name = album.name.strip_prefix("Album: ").unwrap_or(&album.name);
                 if !name.is_empty() {

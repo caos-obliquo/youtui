@@ -134,6 +134,8 @@ pub struct Playlist {
     pub sort_mode: bool,
     pub sort_column: usize,
     pub sort_direction: SortDirection,
+    /// Set true by playlist mutation handlers to signal library needs refresh
+    pub library_playlist_mutated: bool,
 }
 
 impl_youtui_component!(Playlist);
@@ -692,7 +694,7 @@ impl TableView for Playlist {
 
     fn get_layout(&self) -> &[BasicConstraint] {
         &[
-            BasicConstraint::Length(3),
+            BasicConstraint::Length(6),
             BasicConstraint::Length(6),
             BasicConstraint::Length(3),
             BasicConstraint::Percentage(Percentage(33)),
@@ -884,6 +886,7 @@ impl Playlist {
             sort_mode: false,
             sort_column: 0,
             sort_direction: SortDirection::Asc,
+            library_playlist_mutated: false,
         };
 
         (playlist, task)
@@ -1121,7 +1124,7 @@ impl Playlist {
             let s = clean_title.as_str();
             // Strip album/suffix tags like (Full Album), (Full EP), (Demo), (Single)
             let lower = s.to_lowercase();
-            let tags = ["full album", "full ep", "full lp", "full demo", "demo", "ep", "single", "singles"];
+            let tags = ["full album", "full ep", "full lp", "full demo", "full single", "album", "demo", "ep", "single", "singles"];
             let pos = tags.iter().filter_map(|t| lower.find(t)).min();
             if let Some(pos) = pos {
                 // Try to find the opening paren before the tag to strip the whole suffix

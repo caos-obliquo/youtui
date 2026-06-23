@@ -1,10 +1,11 @@
 use ytmapi_rs::{
     YtMusic,
-    common::{AlbumID, ArtistChannelID, PlaylistID, VideoID, YoutubeID},
+    common::{AlbumID, ArtistChannelID, LikeStatus, PlaylistID, SetVideoID, VideoID, YoutubeID},
     process_json,
     query::{
-        GetAlbumQuery, GetPlaylistTracksQuery,
+        EditPlaylistQuery, GetAlbumQuery, GetPlaylistTracksQuery,
         SearchQuery, search::{SongsFilter},
+        playlist::PrivacyStatus,
     },
 };
 
@@ -64,17 +65,22 @@ fn print_usage() {
     eprintln!("  --json              Machine-readable JSON output");
     eprintln!();
     eprintln!("COMMANDS (live, requires auth):");
-    eprintln!("  search <query>              Search songs");
-    eprintln!("  search-artists <query>      Search artists");
-    eprintln!("  search-albums <query>       Search albums");
-    eprintln!("  search-playlists <query>     Search playlists");
-    eprintln!("  playlist <id>               Get playlist tracks");
-    eprintln!("  playlist-songs <id>         Get playlist tracks (streaming debug)");
-    eprintln!("  album <id>                  Get album details");
-    eprintln!("  artist <id>                 Get artist");
-    eprintln!("  watch-playlist <video_id>   Get related/watch playlist for a video");
-    eprintln!("  library playlists           List library playlists");
-    eprintln!("  library songs               List library songs");
+    eprintln!("  search <query>                Search songs");
+    eprintln!("  search-artists <query>        Search artists");
+    eprintln!("  search-albums <query>         Search albums");
+    eprintln!("  search-playlists <query>      Search playlists");
+    eprintln!("  playlist <id>                 Get playlist tracks");
+    eprintln!("  playlist-songs <id>           Get playlist tracks (streaming debug)");
+    eprintln!("  album <id>                    Get album details");
+    eprintln!("  artist <id>                   Get artist");
+    eprintln!("  watch-playlist <video_id>     Get related/watch playlist for a video");
+    eprintln!("  library playlists             List library playlists");
+    eprintln!("  library songs                 List library songs");
+    eprintln!("  delete-playlist <id>          Delete a playlist");
+    eprintln!("  edit-playlist <id> [opts]     Edit playlist (--title/--description/--privacy)");
+    eprintln!("  rate-playlist <id> <rating>   Rate playlist (like/indifferent/dislike)");
+    eprintln!("  remove-items <id> <vid...>    Remove items from playlist");
+    eprintln!("  add-to-playlist <id> <vid...> Add items to playlist");
     eprintln!();
     eprintln!("COMMANDS (offline, no auth):");
     eprintln!("  fixture <file> [--type search|playlist|album]");
@@ -191,6 +197,82 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                     Err(e) => eprintln!("Library error: {}", e),
                 },
                 _ => eprintln!("Unknown library subcommand: {}. Use 'playlists' or 'songs'", args[0]),
+            }
+        }
+        "delete-playlist" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi delete-playlist <playlist_id>"); return; }
+            let id = PlaylistID::from_raw(&args[0]);
+            match yt.delete_playlist(id).await {
+                Ok(_) => println!("Playlist deleted successfully"),
+                Err(e) => eprintln!("Delete error: {}", e),
+            }
+        }
+        "rate-playlist" => {
+            if args.len() < 2 { eprintln!("Usage: ytmapi rate-playlist <playlist_id> <like|indifferent|dislike>"); return; }
+            let id = PlaylistID::from_raw(&args[0]);
+            let rating = match args[1].as_str() {
+                "like" => LikeStatus::Liked,
+                "indifferent" => LikeStatus::Indifferent,
+                "dislike" => LikeStatus::Disliked,
+                _ => { eprintln!("Invalid rating. Use: like, indifferent, or dislike"); return; }
+            };
+            match yt.rate_playlist(id, rating).await {
+                Ok(_) => println!("Playlist rated successfully"),
+                Err(e) => eprintln!("Rate error: {}", e),
+            }
+        }
+        "edit-playlist" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi edit-playlist <playlist_id> [--title <t>] [--description <d>] [--privacy <private|public|unlisted>]"); return; }
+            let id = PlaylistID::from_raw(&args[0]);
+            let mut title: Option<String> = None;
+            let mut desc: Option<String> = None;
+            let mut privacy: Option<PrivacyStatus> = None;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--title" => { i += 1; title = Some(args.get(i).cloned().unwrap_or_default()); }
+                    "--description" => { i += 1; desc = Some(args.get(i).cloned().unwrap_or_default()); }
+                    "--privacy" => {
+                        i += 1;
+                        privacy = Some(match args.get(i).map(|s| s.as_str()) {
+                            Some("private") => PrivacyStatus::Private,
+                            Some("public") => PrivacyStatus::Public,
+                            Some("unlisted") => PrivacyStatus::Unlisted,
+                            _ => { eprintln!("Invalid privacy. Use: private, public, or unlisted"); return; }
+                        });
+                    }
+                    _ => { eprintln!("Unknown flag: {}", args[i]); return; }
+                }
+                i += 1;
+            }
+            let mut query = if let Some(t) = title {
+                EditPlaylistQuery::new_title(&id, t)
+            } else {
+                EditPlaylistQuery::new_title(&id, "")
+            };
+            if let Some(d) = desc { query = query.with_new_description(d); }
+            if let Some(p) = privacy { query = query.with_new_privacy_status(p); }
+            match yt.edit_playlist(query).await {
+                Ok(_) => println!("Playlist edited successfully"),
+                Err(e) => eprintln!("Edit error: {}", e),
+            }
+        }
+        "remove-items" => {
+            if args.len() < 2 { eprintln!("Usage: ytmapi remove-items <playlist_id> <video_id>..."); return; }
+            let id = PlaylistID::from_raw(&args[0]);
+            let set_ids: Vec<SetVideoID<'_>> = args[1..].iter().map(|v| SetVideoID::from_raw(v.clone())).collect();
+            match yt.remove_playlist_items(id, set_ids).await {
+                Ok(_) => println!("Items removed successfully"),
+                Err(e) => eprintln!("Remove error: {}", e),
+            }
+        }
+        "add-to-playlist" => {
+            if args.len() < 2 { eprintln!("Usage: ytmapi add-to-playlist <playlist_id> <video_id>..."); return; }
+            let id = PlaylistID::from_raw(&args[0]);
+            let video_ids: Vec<VideoID<'_>> = args[1..].iter().map(|v| VideoID::from_raw(v.clone())).collect();
+            match yt.add_video_items_to_playlist(id, video_ids).await {
+                Ok(results) => println!("Added {} items", results.len()),
+                Err(e) => eprintln!("Add error: {}", e),
             }
         }
         _ => {

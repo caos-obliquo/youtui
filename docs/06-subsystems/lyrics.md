@@ -98,15 +98,56 @@ File: `app/ui/playlist/lyrics_popup.rs` — `LyricsPopup` struct.
 
 ```
 ┌─── Lyrics ───────────────────────┬─── Annotations (a: N) ──────┐
-│  0 Lyric line                    │ ── fragment                 │
-│ +1 Next line                     │    explanation text         │
-│ +2 Next line                     │                              │
+│  0 Lyric line                    │ [1] ── fragment             │
+│ +1 Next line                     │     explanation text        │
+│ +2 Next line                     │     wraps multiple lines    │
 │ ...                              │                              │
-└──────────────────────────────────┴──────────────────────────────┘
-└─── Esc/q: Close | a: Toggle annotations  j/k scroll ────────────┘
+│                                  │ [2] ── next fragment        │
+│                                  │     explanation             │
+│                                  │                              │
+│   ~                              │     ~                        │
+│                                  │                              │
+├──────────────────────────────────┴──────────────────────────────┤
+│ Esc/q: Close | a: Toggle annot  | Tab/l/h: Switch panel focus  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 When `a` is pressed and annotations exist, the view splits 55/45 between lyrics and annotations. `Tab`/`l`/`h` switches focus between panels.
+
+### Annotations Panel (Separate Component)
+
+Annotations panel has its own cursor state and vim navigation independent of lyrics:
+
+| Key | Action |
+|-----|--------|
+| `j`/`Down`/`J` | Scroll annotation text down |
+| `k`/`Up`/`K` | Scroll annotation text up |
+| `g` | Jump to first annotation |
+| `G` | Jump to last annotation |
+| `0` | Line start within annotation |
+| `$` | Line end within annotation |
+| `w`/`W`/`b`/`B`/`e`/`E` | Word motions within annotation |
+| `v` | Enter visual mode in annotation |
+| `y` | Yank annotation text to clipboard |
+| `Enter` | Open annotation URL (if linked) |
+
+Annotations display their index and reference count: `[N annotations for this line]`.
+
+### Component Isolation (Critical)
+
+Lyrics and annotations are **separate interactive components** that communicate via shared state. When either panel is focused, the other panel's commands are disabled:
+
+- **Annotations focused**: `Enter` opens URL, `(`/`)`/`<`/`>` seek commands **do not work**. Only annotation-scoped commands available.
+- **Lyrics focused**: `(`/`)` seek queue, `<`/`>` seek position, `Enter` seeks timestamp. Annotation commands disabled.
+
+This prevents accidental seeks while reading annotations. Toggle `a` to close annotations, focus returns to lyrics.
+
+### Relative Line Numbers
+
+Both panels display relative line numbers:
+
+- **Lyrics**: `0` for current line, `+N`/`-N` for lines above/below
+- **Annotations**: `[N]` for annotation index within the popup
 
 ### Navigation
 

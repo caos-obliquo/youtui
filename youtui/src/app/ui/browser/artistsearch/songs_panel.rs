@@ -374,7 +374,7 @@ impl TableView for AlbumSongsPanel {
     }
     fn get_layout(&self) -> &[BasicConstraint] {
         &[
-            BasicConstraint::Length(4),
+            BasicConstraint::Length(6),
             BasicConstraint::Percentage(Percentage(50)),
             BasicConstraint::Percentage(Percentage(50)),
             BasicConstraint::Length(8),

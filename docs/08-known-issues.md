@@ -12,6 +12,7 @@
 
 | Issue | File | Description |
 |-------|------|-------------|
+| **Enter = primary action (ncspot-style)**: Enter NEVER opens sub-menu. Enter ALWAYS plays/activates selection directly. `o` menu for context actions. All 5 browser tabs follow this. | `keymap.rs`, all browser files | Max speed navigation: Enter = play song, display artist albums, load tracks, focus content. No confirmation dialogs. |
 | `o.a` conflict | `browser_artist_songs` | `o.a` = PlayAlbum (not GoToArtist). All other views use `o.a` = GoToArtist |
 | `o.A` only in browser_artist_songs | `keymap.rs` | `o.A` = AddAlbumToPlaylist only works in artist songs view |
 | `/` = local filter in all views | `keymap.rs` | Not API search — intentional since F1 rewrite |
@@ -20,6 +21,7 @@
 
 | Issue | File | Description |
 |-------|------|-------------|
+| **VL prefix behavior critical**: read ops need VL, mutation ops strip VL | `ytmapi-rs/src/query/playlist/*`, `rate.rs` | Python ytmusicapi `validate_playlist_id()` strips VL from delete, edit, add/remove, rate. Browse/get endpoints need VL prefixed. All 4 mutation PostQuery impls now strip VL. |
 | Genius annotations w/o token | `genius-rs/` | `__INITIAL_STATE__` scraping fails on most pages. Need `GENIUS_TOKEN` env |
 | ytmapi-rs: 52/108 integration tests fail | `ytmapi-rs/` | Integration tests require browser auth. 85 lib tests pass offline |
 | ytmapi-cli: fixture mode | `libs/ytmapi-cli/` | Parses saved JSON fixtures. Live queries need auth |
@@ -30,6 +32,7 @@
 
 | Issue | File | Description |
 |-------|------|-------------|
+| **Annotations component isolation**: When annotations focused, lyrics seek/nav disabled. `Tab`/`l`/`h` to switch. Verified working. | `lyrics_popup.rs` | Core design — prevents accidental seeks while reading annotations. |
 | Library tab missing playing indicator | `library.rs` | No second highlight (purple/green) showing which song is currently playing, unlike the local queue view |
 | `>` key crash guard | `draw_media_controls.rs` | `duration == 0` check prevents division by zero |
 | Last annotation cut off | `lyrics_popup.rs` | Height calculation doesn't account for bottom border |
