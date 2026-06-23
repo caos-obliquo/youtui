@@ -7,10 +7,11 @@ use futures::future::BoxFuture;
 ///
 /// Tries sources in order:
 ///   1. https://metal-api.dev/ — approved community REST API (primary)
-///   2. http://localhost:5000/ — optional Playwright sidecar proxy (bypasses Cloudflare)
+///   2. http://localhost:5000/ — optional Rust proxy (bypasses Cloudflare via Chromium)
 ///
-/// The local proxy can be started with:
-///   python scripts/metal-archives-proxy.py
+/// The Rust proxy is in libs/metal-proxy/ — run with:
+///   cargo run --release -p metal-proxy
+/// (requires Chromium installed)
 pub struct MetalApiProvider;
 
 impl MetalApiProvider {

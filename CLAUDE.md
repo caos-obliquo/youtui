@@ -70,7 +70,8 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `genius-rs` | Genius lyrics/annotations | 14 |
 | `async-callback-manager` | Async task dispatch | 15 |
 | `json-crawler` | JSON path parser | 8 |
-| `ytmapi-cli` | CLI debug tool | 3 |
+| `ytmapi-cli` | CLI debug tool | 7 |
+| `metal-proxy` | Metallum Chrome proxy | 0 |
 
 ## 5 Browser Tabs Fully Wired
 | Tab | Search | Table | Sort/Filter | o Menu | Nav | Status |

@@ -43,13 +43,32 @@ async fn main() -> Result<()> {
 }
 
 async fn spawn_browser() -> Result<Browser> {
-    let config = BrowserConfig::builder()
-        .no_sandbox()
+    let chrome = find_chrome();
+    let builder = BrowserConfig::builder().no_sandbox();
+    let builder = if let Some(ref path) = chrome {
+        info!("Using browser at: {}", path.display());
+        builder.chrome_executable(path)
+    } else {
+        warn!("No Chrome/Chromium found, trying auto-detect");
+        builder
+    };
+    let config = builder
         .build()
         .map_err(|e| anyhow::anyhow!("Browser config: {}", e))?;
     let (browser, mut handler) = Browser::launch(config).await?;
     tokio::spawn(async move { while let Some(_) = handler.next().await {} });
     Ok(browser)
+}
+
+fn find_chrome() -> Option<std::path::PathBuf> {
+    for name in &["chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"] {
+        if let Ok(path) = std::process::Command::new(name).arg("--version").output() {
+            if path.status.success() {
+                return Some(std::path::PathBuf::from(name));
+            }
+        }
+    }
+    None
 }
 
 async fn handle_client(stream: tokio::net::TcpStream, state: Arc<AppState>) -> Result<()> {
