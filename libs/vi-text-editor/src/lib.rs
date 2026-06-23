@@ -372,7 +372,7 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('v') => {
                 self.mode = ViMode::Normal;
             }
-            crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down if self.multiline => {
+            crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Char('J') | crossterm::event::KeyCode::Down if self.multiline => {
                 let max = self.buffer.matches('\n').count();
                 let cur = self.cursor_line();
                 if cur < max {
@@ -380,17 +380,17 @@ impl ViTextEditor {
                     self.cursor = line_start_to(&self.buffer, cur + 1) + col.min(line_len(&self.buffer, cur + 1));
                 }
             }
-            crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up if self.multiline => {
+            crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Char('K') | crossterm::event::KeyCode::Up if self.multiline => {
                 let cur = self.cursor_line();
                 if cur > 0 {
                     let col = self.cursor_col();
                     self.cursor = line_start_to(&self.buffer, cur - 1) + col.min(line_len(&self.buffer, cur - 1));
                 }
             }
-            crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left => {
+            crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Char('H') | crossterm::event::KeyCode::Left => {
                 if self.cursor > 0 { self.cursor -= 1; }
             }
-            crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right => {
+            crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Char('L') | crossterm::event::KeyCode::Right => {
                 if self.cursor < self.buffer.len() { self.cursor += 1; }
             }
             crossterm::event::KeyCode::Char('y') => {

@@ -970,23 +970,7 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
-            KeyActionTree::new_mode(
-                [
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::PlaySelected)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('n')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SaveToNewPlaylist)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::CopySongUrl)),
-                    ),
-                ],
-                "Playlist Action".into(),
-            ),
+            KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::PlaySelected)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
