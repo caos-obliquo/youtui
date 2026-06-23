@@ -43,15 +43,22 @@ async fn main() -> Result<()> {
 }
 
 async fn spawn_browser() -> Result<Browser> {
+    let tmp_dir = std::env::temp_dir().join("chromiumoxide-runner");
+    let _ = tokio::fs::remove_dir_all(&tmp_dir).await;
+
     let chrome = find_chrome();
-    let builder = BrowserConfig::builder().no_sandbox();
-    let builder = if let Some(ref path) = chrome {
+    let mut builder = BrowserConfig::builder()
+        .no_sandbox()
+        // Disable automation detection flags
+        .arg("--disable-blink-features=AutomationControlled")
+        .arg("--disable-web-security")
+        .arg("--allow-running-insecure-content");
+    if let Some(ref path) = chrome {
         info!("Using browser at: {}", path.display());
-        builder.chrome_executable(path)
+        builder = builder.chrome_executable(path);
     } else {
         warn!("No Chrome/Chromium found, trying auto-detect");
-        builder
-    };
+    }
     let config = builder
         .build()
         .map_err(|e| anyhow::anyhow!("Browser config: {}", e))?;
@@ -61,10 +68,25 @@ async fn spawn_browser() -> Result<Browser> {
 }
 
 fn find_chrome() -> Option<std::path::PathBuf> {
-    for name in &["chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"] {
-        if let Ok(path) = std::process::Command::new(name).arg("--version").output() {
-            if path.status.success() {
-                return Some(std::path::PathBuf::from(name));
+    // Try to find chromium/chrome binary
+    // First check full paths for known locations
+    for path in &[
+        "/usr/bin/chromium", "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
+        "/usr/bin/chrome",
+    ] {
+        if std::path::Path::new(path).exists() {
+            return Some(std::path::PathBuf::from(path));
+        }
+    }
+    // Fallback: search PATH for the binary
+    if let Ok(paths) = std::env::var("PATH") {
+        for name in &["chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome"] {
+            for dir in paths.split(':') {
+                let full = std::path::Path::new(dir).join(name);
+                if full.exists() {
+                    return Some(full);
+                }
             }
         }
     }
@@ -229,8 +251,21 @@ async fn fetch_page(state: &Arc<AppState>, url: &str) -> Option<String> {
     let mut guard = state.browser.lock().await;
     let browser = guard.as_mut()?;
     let page = browser.new_page("about:blank").await.ok()?;
-    page.goto(url).await.ok()?;
+
+    // First navigate to MA homepage to establish session/cookies
+    page.goto("https://www.metal-archives.com/").await.ok()?;
     tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+    // Then navigate to the target URL
+    page.goto(url).await.ok()?;
+    for _ in 0..12 {
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        if let Ok(html) = page.content().await {
+            if html.len() > 2000 && !html.contains("Just a moment") && !html.contains("challenge-form") {
+                return Some(html);
+            }
+        }
+    }
     page.content().await.ok()
 }
 
