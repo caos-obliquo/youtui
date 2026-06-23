@@ -252,6 +252,7 @@ impl PostQuery for RemovePlaylistItemsQuery<'_> {
                 json!(
                 {
                     "setVideoId" : v,
+                    "videoId" : v,
                     "action" : "ACTION_REMOVE_VIDEO",
                 })
             })
