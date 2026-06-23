@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 use crate::{util, AlbumTrack, MetadataProvider, ValidatedMetadata};
 use futures::future::BoxFuture;
+use regex::Regex;
+use scraper::{Html, Selector};
 
 /// Provider for Encyclopaedia Metallum (Metal Archives) data.
 /// Priority 5 (highest) — catches metal bands before any other provider.
@@ -35,13 +37,20 @@ async fn do_lookup(artist: &str, title: &str, client: &reqwest::Client) -> Optio
     let band = artist.trim();
     if band.is_empty() { return None; }
 
-    // 1. Try metal-api.dev (official approved API)
+    // 1. Try metal-api.dev (approved community REST API)
     let result = try_metal_api(band, title, client).await;
     if result.is_some() { return result; }
 
     tracing::debug!("metal-api.dev unavailable, trying local proxy");
-    // 2. Try local Playwright proxy (optional sidecar)
-    try_local_proxy(band, title, client).await
+
+    // 2. Try local Chromium proxy (bypasses Cloudflare via headless browser)
+    let result = try_local_proxy(band, title, client).await;
+    if result.is_some() { return result; }
+
+    tracing::debug!("local proxy unavailable, trying direct MA access");
+
+    // 3. Try direct MA access with cf_clearance cookie from env
+    try_direct_ma(band, title).await
 }
 
 async fn try_metal_api(artist: &str, title: &str, client: &reqwest::Client) -> Option<ValidatedMetadata> {
@@ -155,4 +164,185 @@ fn normalize_artist(name: &str) -> String {
     let mut chars = trimmed.chars();
     let first = chars.next().unwrap().to_uppercase().to_string();
     first + chars.as_str()
+}
+
+/// Try direct Metal Archives access using a cf_clearance cookie.
+/// Checks MA_COOKIE env var first, then ~/.config/youtui/ma_cookie file.
+async fn try_direct_ma(artist: &str, _title: &str) -> Option<ValidatedMetadata> {
+    let _cookie = std::env::var("MA_COOKIE").ok().filter(|c| !c.is_empty())
+        .or_else(|| load_cookie_file());
+
+    let cookie_val = _cookie?;
+    save_cookie(&cookie_val);
+    tracing::info!("Trying direct MA access with cookie");
+
+    // Build a reqwest client that mimics a real browser
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
+        .default_headers({
+            let mut h = reqwest::header::HeaderMap::new();
+            h.insert(reqwest::header::COOKIE, reqwest::header::HeaderValue::from_str(&cookie_val).ok()?);
+            h.insert(reqwest::header::ACCEPT, "application/json, text/plain, */*".parse().ok()?);
+            h.insert(reqwest::header::ACCEPT_LANGUAGE, "en-US,en;q=0.9".parse().ok()?);
+            h
+        })
+        .build()
+        .ok()?;
+
+    // Search for ALL albums by this artist (no album filter, get all matches)
+    let search_url = format!(
+        "https://www.metal-archives.com/search/ajax-advanced/searching/albums/?sEcho=1&iColumns=4&exactBandMatch=1&bandName={}",
+        crate::util::urlencoding(artist),
+    );
+
+    let resp = client.get(&search_url).send().await.ok()?;
+    if !resp.status().is_success() {
+        tracing::debug!("Direct MA search returned {}", resp.status());
+        return None;
+    }
+
+    let text = resp.text().await.ok()?;
+    let data: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let rows = data.get("aaData")?.as_array()?;
+    if rows.is_empty() { return None; }
+
+    // Find the best matching album: prefer exact album title match, else first result
+    let clean_title = util::norm_for_lfm(_title);
+    let matching_row = {
+        let mut best = None;
+        for row in rows {
+            if let Some(r) = row.as_array() {
+                if let Some(album_html) = r.get(1).and_then(|v| v.as_str()) {
+                    let album_name = Regex::new(r"<[^>]*>").unwrap().replace_all(album_html, "");
+                    let album_name = album_name.trim();
+                    let nl = util::norm_for_lfm(album_name);
+                    if nl.contains(&clean_title) || clean_title.contains(&nl) {
+                        best = Some(row);
+                        break;
+                    }
+                    if best.is_none() { best = Some(row); }
+                }
+            }
+        }
+        best
+    };
+
+    let row_arr = matching_row?.as_array()?;
+    if row_arr.len() < 4 { return None; }
+
+    let album_html = row_arr[1].as_str().unwrap_or("");
+    let url_re = Regex::new(r#"href="([^"]+)""#).unwrap();
+    let album_url = url_re.captures(album_html)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str())?;
+
+    let date_raw = row_arr[3].as_str().unwrap_or("");
+    // MA dates come as: "<!-- 2024-01-15 -->January 15th, 2024" or "<!-- 2024 -->April 1st, 2024"
+    let year = Regex::new(r"<!--\s*(\d{4})").unwrap().captures(date_raw)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+        .or_else(|| Regex::new(r"\d{4}").unwrap().find(date_raw).map(|m| m.as_str().to_string()));
+
+    // Extract band URL from search result (row[0]) for genre info
+    let band_html = row_arr[0].as_str().unwrap_or("");
+    let band_url_re = Regex::new(r#"href="([^"]+)""#).unwrap();
+    let _band_url = band_url_re.captures(band_html).and_then(|c| c.get(1)).map(|m| m.as_str().to_string());
+
+    // Get album details and extract tracks (in a block so doc drops before next async)
+    let (album_name, artist_name, tracks) = {
+        let album_resp = client.get(album_url).send().await.ok()?;
+        let album_html = album_resp.text().await.ok()?;
+        let _doc = Html::parse_document(&album_html);
+
+        let sel_h1 = Selector::parse("h1.album_name").ok()?;
+        let sel_h2 = Selector::parse("h2.band_name a").ok()?;
+        let album_name = _doc.select(&sel_h1).next()
+            .map(|e| e.text().collect::<String>().trim().to_string())?;
+        let artist_name = _doc.select(&sel_h2).next()
+            .map(|e| e.text().collect::<String>().trim().to_string())
+            .unwrap_or_else(|| artist.to_string());
+
+        let row_sel = Selector::parse("table.table_lyrics tr").ok()?;
+        let td_sel = Selector::parse("td").ok()?;
+        let mut tracks = Vec::new();
+        for row in _doc.select(&row_sel) {
+            if !row.inner_html().contains("wrapWords") { continue; }
+            let cells: Vec<_> = row.select(&td_sel).collect();
+            if cells.len() >= 3 {
+                let title = cells[1].text().collect::<String>().trim().to_string();
+                let length = cells[2].text().collect::<String>().trim().to_string();
+                if !title.is_empty() {
+                    let dur = if length.contains(':') {
+                        let p: Vec<&str> = length.split(':').collect();
+                        if p.len() == 2 {
+                            Some(p[0].parse::<f64>().ok()? * 60.0 + p[1].parse::<f64>().ok()?)
+                        } else { None }
+                    } else { None };
+                    tracks.push(AlbumTrack { title, duration_secs: dur.unwrap_or(0.0) });
+                }
+            }
+        }
+        if tracks.is_empty() { return None; }
+        (album_name, artist_name, tracks)
+    };
+
+    // Now fetch band page for genres (album_html/doc is no longer needed)
+    let mut genres: Vec<String> = Vec::new();
+    if let Some(ref band_url) = _band_url {
+        if let Ok(band_resp) = client.get(band_url).send().await {
+            if let Ok(band_html) = band_resp.text().await {
+                let dt_re = Regex::new(r"(?i)<dt[^>]*>Genre:</dt>\s*<dd[^>]*>(.*?)</dd>").unwrap();
+                if let Some(caps) = dt_re.captures(&band_html) {
+                    let genre_str = Regex::new(r"<[^>]*>").unwrap().replace_all(caps.get(1).unwrap().as_str(), "");
+                    for g in genre_str.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                        genres.push(g.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    tracing::info!("Direct MA access resolved: album={:?}, year={:?}, tracks={}, genres={:?}",
+        album_name, year, tracks.len(), genres);
+    Some(ValidatedMetadata {
+        artist: Some(normalize_artist(&artist_name)),
+        album: Some(album_name),
+        year,
+        track_no: None,
+        album_tracks: tracks,
+        genres,
+        styles: vec![],
+    })
+}
+
+fn cookie_file_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var("HOME").ok().or_else(|| std::env::var("USERPROFILE").ok())?;
+    Some(std::path::PathBuf::from(home).join(".config").join("youtui").join("ma_cookie"))
+}
+
+fn load_cookie_file() -> Option<String> {
+    let path = cookie_file_path()?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    let trimmed = content.trim().to_string();
+    if trimmed.is_empty() { None } else { Some(trimmed) }
+}
+
+/// Save a successful cookie to the config file for future use.
+pub fn save_cookie(cookie: &str) {
+    if let Some(path) = cookie_file_path() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match std::fs::write(&path, cookie) {
+            Ok(_) => tracing::info!("MA cookie saved to {:?}", path),
+            Err(e) => tracing::warn!("Failed to save MA cookie: {}", e),
+        }
+    }
+}
+
+/// Delete expired cookie file.
+pub fn clear_cookie() {
+    if let Some(path) = cookie_file_path() {
+        let _ = std::fs::remove_file(&path);
+    }
 }
