@@ -227,30 +227,59 @@ Context menu is exclusively via `o`.
 - **enmet Python lib** (github.com/lukjak/enmet) accesses MA — not used (Rust-only rule).
 
 ## Session 2026-06-23 (This Session, Committed)
-- Footer album format: Single-line `Title - Artist - Album_ [s]` instead of separate album line
-- Sixel tmux vanish fix: Post-draw flush_sixel() re-sends sixel data with cursor positioning, gated behind TERM=tmux* env
-- Sixel `:` command: Clear stale sixel data in draw_app; blanking sequence when footer hidden
-- `[I]` mode indicator leak: Songs InputRouting default List; Artists ArtistInputRouting default List; BrowserSearchAction::Close resets search_popped
-- Browser tab order: Artists/Albums/Songs/Playlists/Library (Library last)
-- Album global YTM search: handle_text_entry_action(Submit) calls search_albums_query; removed live-search-on-every-keystroke bug
-- `o.v` album art popup: ViewAlbumCover resolves thumbnail from current song or last_album_art; uses Resize::Scale for fullscreen
-- Albums right panel: Always shows draw_advanced_table headers instead of hint
-- PlaylistSearch right panel: Always shows draw_advanced_table headers
-- Config cleanup: Strip defaults, keep only overrides; docs updated
-- Header dedup: Remove duplicate F1, colon, y/C-y CopySongUrl global keybinds
-- ytmapi-cli: Add search-playlists, playlist-songs subcommands (Debug-First)
-- dead_code cleanup: Remove stale annotations from SearchPlaylists, GetPlaylistSongs, api.rs methods (all now wired)
-- Genius hit validation: fetch_page returns final URL; find_and_fetch validates hits against query; redirects to wrong pages rejected
-- Genius CLI: Add annotations subcommand (Debug-First for testing annotation extraction)
-- Notes popup (`:notes`): Vim-driven text editor for URLs and notes, plain text persistence
-- VTE Esc fix: Removed `cursor -= 1` on Esc from insert mode (non-standard vim behavior)
-- Visual line mode in Notes: `V` + `j/k` with cyan highlight, `y` yanks to system clipboard
-- Visual block mode: `C-v` for rectangular selection, `y` yanks block text
-- `o`/`O` in normal mode: Open new line below/above, enter insert mode
-- Library playing indicator: Green highlight on currently playing song in Liked Songs list
-- Enter behavior: Playlist (queue) Enter now direct play (no sub-menu)
-- Album split detection: Expanded to catch Full EP, Full LP, demo, single, singles patterns
-- Docs: New `docs/subsystems/notes.md` — full arch decisions, keybinds, design rationale
+### Core UI
+- **Album art popup**: `o.v` opens full-screen centered image via `centered_rect_fixed(90,90)` + `Resize::Fit(None)`. Early return in `draw_app` skips main window (no sixel corruption). Sixel clear at start of every draw. Known bug: centering not perfect, sixel persistence after close.
+- **Footer 2-line metadata**: Artist-Song on line 1, Album indented gray on line 2. Truncation with `...`. Fallback album art position fixed (was `Rect { x:0, y:0 }`).
+- **Playlist editor nvim-driven**: undo stack (100-level), yank/paste (yy/p/P), visual mode (V->j/k->d/y), D=dG, Y=yy, o/O insert blank line, count prefix for all motions/ops, delete/yank operator modes. 4-block capacity bar (`Tracks: N/5000 [■■■■]...`). Visual selection color changed from teal to cyan.
+- **Library playlist tracks inline**: uses `draw_advanced_table` with proper columns (#, Artist, Album, Song, Duration, Year). Left category panel hidden when showing tracks. Enter plays song, Esc goes back (DismissTracks action + keybinding). Visual mode, dd/dg/dG delete.
+- **Copy Album URL**: `o.Y` / global `Y` copies `https://music.youtube.com/browse/{album_id}`.
+- **P0 bugs fixed**: merge-into-self guard (source==target silent no-op), album art sixel min-size guard, ConfigEditorPopup cursor style (teal marker via Line+Span).
+
+### Library Tracks Refactor (Phase A+B)
+- **Delete re-routed** to LibraryBrowser (was routing to Playlist/queue, zero feedback). `HandleLibraryRemoveItemsOk`/`Err` created targeting LibraryBrowser.
+- **Filtered/sorted indices** — all delete handlers (`RemoveTrackFromPlaylist`, `DeleteSelected`, `DeleteToTop`, `DeleteToBottom`) now use `get_tracks_filtered_list_iter()` for correct track selection when sort/filter active.
+- **Local removal** — deleted tracks removed from `playlist_tracks` via `video_id` match (not raw index) for immediate feedback.
+- **Visual mode range** — uses filtered list for correct visual range when sorted/filtered.
+- **DismissTracks** resets `tracks_visual_mode`, `tracks_visual_start`.
+- **MoveTrackUp/Down** — uses filtered indices, swaps locally for immediate visual feedback. Re-routed to LibraryBrowser handlers.
+- **Reorder re-routed** to LibraryBrowser (`HandleLibraryReorderItemsOk`/`Err`).
+
+### Metadata Pipeline
+- **Title cleaning**: strips `(Official Audio)`, `(Official Video)`, `c legenda`, `Legendado`, `subtitle` etc. from titles before metadata lookup. Strips bare artist prefix when no ` - ` separator. Strips extracted years `(2000)` from title before ValidateMetadata.
+- **Artist normalization**: `normalize_artist_name()` capitalizes first letter. Applied in `From<ParsedSongArtist>`, `MetadataEffect::Validated`, and `insert_album_tracks`.
+- **Discogs artist fix**: was returning `artist: None`, now extracts `artists[0].name` from Discogs Master API response.
+- **Discogs search fix**: was using broken `artist=&album=` structured search (ignored album param, returned random albums). Changed to `q=` combined search which matches both terms.
+- **Discogs fallback**: when exact `q=artist+album` search returns nothing, falls back to `q=artist` artist-only search to ensure obscure/underground albums still split.
+- **CRITICAL: url_added removed** — `play_yt_url()` set `url_added = true` which caused `MetadataEffect::Validated` to skip album splitting for URL-added songs. Removed `url_added` field entirely. URL-added songs now split correctly.
+- **Metal API provider**: queries `https://metal-api.dev/` (approved MA REST API) at priority 5. Returns band name, album, year, tracklist. API returns 500 (backend crash). Falls back to local proxy + MA_COOKIE.
+- **MA_COOKIE direct access** (Cookie-based Metallum access):
+  - Reads `MA_COOKIE` env var, then `~/.config/youtui/ma_cookie` file
+  - Makes direct HTTP requests to Metal Archives AJAX API (bypasses Cloudflare)
+  - Returns artist, album, year (from `<!-- 2024 -->` comments), full tracklist, genre (from band page)
+  - Cookie auto-saved to config file for persistence. Expires ~30 min, refresh via `--get-cookie`
+- **metal-proxy** (`libs/metal-proxy/`):
+  - Pure background HTTP server on port 5000. No headless browser, no window, no Python — Rust-only.
+  - Reads saved cookie, serves MA data via direct HTTP.
+  - Background task refreshes cookie from running Chromium via CDP (every 15 min).
+  - `--get-cookie` flag: launches Chromium with debug port, tries headless=new first, falls back to visible.
+  - Optional: configured via `MA_COOKIE` env var or `~/.config/youtui/ma_cookie` file.
+- **Genre aliasing**: 3,713 genres from MusicBee hierarchy (MusicBrainz + Discogs + RYM + Wikidata). `genre_map::normalize_genre()` normalizes provider genres. Integrated into `MetadataRegistry.resolve()`. 26 tests pass.
+- **Year fallback**: extract 4-digit year from album name when providers return `None`.
+- **CLI debug tool**: `ytmapi debug resolve <artist> <title>` tests full pipeline. `ytmapi debug genre <genre>` / `genre-list [filter]` test genre normalization.
+
+### Bug Fixes
+- **Log viewer toggle**: F11 -> ViewLogs now correctly toggles off (was always entering logs, couldn't exit). Esc restore works.
+- **Discogs provider**: was returning wrong albums for all queries due to broken `artist=&album=` API parameters. Changed to `q=` combined search.
+- **Playlist editor**: Esc and `:q` now warn when modified. `:q!` force quits. Visual selection color fixed from teal to cyan.
+- **VL prefix**: `RemovePlaylistItemsQuery` was missing VL prefix stripping (other mutation queries had it). Added.
+- **setVideoId**: library tracks now track `SetVideoID` from API response for correct track removal. Falls back to `video_id` when empty.
+- **RemovePlaylistItems endpoint**: changed from `browse/edit_playlist` (metadata edits) to `playlist/edit` (content mutations).
+
+### Known Issues
+- **Album art popup**: Sixel centering not perfect, sixel persistence after close. Known bug.
+- **MA cookie**: `cf_clearance` expires ~30 min. Refresh via `cargo run --release -p metal-proxy -- --get-cookie`.
+- **Sort/filter popups**: Column sort and filter popups not wired for library tracks view (Phase C).
+- **[SEARCH] indicator**: Missing for library tracks `/` filter (Phase D).
 
 ## Session 2026-06-22 (Committed)
 - `fix:` lyrics help text — `( ) Prev/Next Lyric | <> Prev/Next Song | [] Seek | Esc/q: Close`
@@ -294,12 +323,16 @@ Context menu is exclusively via `o`.
 - **Back navigation (remaining gap)**: `BrowserAction::Back` + `state_stack` works for `Navigate()` but `handle_change_search_type()` (F7 tab cycle) doesn't push snapshots. Stack can restore wrong tab.
 - **Playlist overwrite mode**: `app.rs:481` — fetch current tracks + remove before add
 - **Annotations integration**: verify Tab/l/h switching is fully wired
+- **Playlist editor**: Auto-open after track fetch replaced by inline tracks view (library shows tracks via `draw_advanced_table`).
 
 ### P2 — Polish
 - FFT footer bars (roadmap)
 - Fix test counts in docs (json-crawler 8→2, async-callback-manager 15→14)
 - Footer: upgrade indicator icons (shuffle/repeat/scrobble) to monochrome, show explicitly in footer space
 - Album art popup: fix sixel centering and reuse (known bug)
+- **Library tracks: Sort/filter popups** — `Filter`/`Sort` key handlers toggle `self.filter`/`self.sort` (LikedSongs) instead of `tracks_filter`/`tracks_sort`. Need to wire for tracks view (Phase C).
+- **Library tracks: `[SEARCH]` indicator** — `/` filter works silently without indicator. Need `HasTitle` impl showing `[SEARCH: text (N/M)]` (Phase D).
+- **Library tracks: Selection highlight** — `get_selected_item()` returns raw index, highlight lands on wrong row when filter active (Phase D).
 
 ### P3 — Tech debt
 - Genius annotations fallback (page scrape)
