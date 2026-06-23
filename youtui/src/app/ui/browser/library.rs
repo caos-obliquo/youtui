@@ -24,7 +24,7 @@ use crate::config::keymap::Keymap;
 use crate::widgets::ScrollingTableState;
 use async_callback_manager::{AsyncTask, FrontendEffect};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus};
@@ -124,6 +124,10 @@ pub enum LibraryEffect {
     PlaylistTracksLoaded(Vec<ListSong>),
     ArtistsLoaded(Vec<LibraryArtist>),
     AlbumsLoaded(Vec<SearchResultAlbum>),
+    RemoveItemsSuccess,
+    RemoveItemsError(String),
+    ReorderItemsSuccess,
+    ReorderItemsError(String),
     LoadError(String),
 }
 
@@ -190,6 +194,26 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 target.loading = false;
                 target.error = Some(msg);
             }
+            LibraryEffect::RemoveItemsSuccess => {
+                info!("Library playlist items removed successfully");
+                target.loading = false;
+                target.tracks_visual_mode = false;
+                target.playlists_fetched = false;
+            }
+            LibraryEffect::RemoveItemsError(msg) => {
+                error!("Failed to remove playlist items: {}", msg);
+                target.loading = false;
+                target.error = Some(msg);
+            }
+            LibraryEffect::ReorderItemsSuccess => {
+                info!("Library playlist items reordered successfully");
+                target.loading = false;
+            }
+            LibraryEffect::ReorderItemsError(msg) => {
+                error!("Failed to reorder playlist items: {}", msg);
+                target.loading = false;
+                target.error = Some(msg);
+            }
         }
         AsyncTask::new_no_op()
     }
@@ -211,6 +235,14 @@ pub struct HandleLibraryArtistsErr;
 pub struct HandleLibraryAlbumsOk;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandleLibraryAlbumsErr;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandleLibraryRemoveItemsOk;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandleLibraryRemoveItemsErr;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandleLibraryReorderItemsOk;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandleLibraryReorderItemsErr;
 
 impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrowser, |_, raw: Vec<TableListSong>| {
     let songs: Vec<ListSong> = raw.into_iter().map(|ts| {
@@ -324,6 +356,18 @@ impl_youtui_task_handler!(HandleLibraryAlbumsOk, Vec<SearchResultAlbum>, Library
 });
 impl_youtui_task_handler!(HandleLibraryAlbumsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     LibraryEffect::LoadError(err.to_string())
+});
+impl_youtui_task_handler!(HandleLibraryRemoveItemsOk, (), LibraryBrowser, |_, _: ()| {
+    LibraryEffect::RemoveItemsSuccess
+});
+impl_youtui_task_handler!(HandleLibraryRemoveItemsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
+    LibraryEffect::RemoveItemsError(err.to_string())
+});
+impl_youtui_task_handler!(HandleLibraryReorderItemsOk, (), LibraryBrowser, |_, _: ()| {
+    LibraryEffect::ReorderItemsSuccess
+});
+impl_youtui_task_handler!(HandleLibraryReorderItemsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
+    LibraryEffect::ReorderItemsError(err.to_string())
 });
 
 pub struct LibraryBrowser {
@@ -1112,14 +1156,17 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 }
                 BrowserSongsAction::RemoveTrackFromPlaylist => {
                     if self.show_playlist_tracks {
-                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                        // Use filtered list to find correct track by visual position
+                        let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
+                        if let Some(song) = filtered.get(self.playlist_tracks_selected) {
                             if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
                                 let raw = self.track_set_ids.get(song.video_id.get_raw())
                                     .cloned()
                                     .unwrap_or_else(|| song.video_id.get_raw().to_string());
                                 let set_id = ytmapi_rs::common::SetVideoID::from_raw(raw);
-                                // Remove from local list for immediate feedback
-                                self.playlist_tracks.remove(self.playlist_tracks_selected);
+                                // Remove from local list by video_id match
+                                let vid = song.video_id.get_raw().to_string();
+                                self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
                                 self.playlist_tracks_selected = self.playlist_tracks_selected
                                     .min(self.playlist_tracks.len().saturating_sub(1));
                                 return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(
@@ -1176,52 +1223,71 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::DeleteSelected => {
                     if self.show_playlist_tracks {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            let make_ids = |tracks: &[ListSong]| -> Vec<ytmapi_rs::common::SetVideoID<'static>> {
-                                tracks.iter().map(|s| {
-                                    let raw = self.track_set_ids.get(s.video_id.get_raw())
-                                        .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
-                                    ytmapi_rs::common::SetVideoID::from_raw(raw)
-                                }).collect()
-                            };
-                            let ids = if self.tracks_visual_mode {
+                            let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
+                            let (ids, to_remove): (Vec<_>, Vec<_>) = if self.tracks_visual_mode {
                                 let start = self.tracks_visual_start.min(self.playlist_tracks_selected);
                                 let end = self.tracks_visual_start.max(self.playlist_tracks_selected);
-                                make_ids(&self.playlist_tracks[start..=end])
-                            } else {
-                                self.playlist_tracks.get(self.playlist_tracks_selected).map(|s| {
+                                filtered[start..=end].iter().map(|s| {
                                     let raw = self.track_set_ids.get(s.video_id.get_raw())
                                         .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
-                                    vec![ytmapi_rs::common::SetVideoID::from_raw(raw)]
+                                    (ytmapi_rs::common::SetVideoID::from_raw(raw), s.video_id.get_raw().to_string())
+                                }).unzip()
+                            } else {
+                                filtered.get(self.playlist_tracks_selected).map(|s| {
+                                    let raw = self.track_set_ids.get(s.video_id.get_raw())
+                                        .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
+                                    (vec![ytmapi_rs::common::SetVideoID::from_raw(raw)], vec![s.video_id.get_raw().to_string()])
                                 }).unwrap_or_default()
                             };
                             self.tracks_visual_mode = false;
-                            return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
+                            // Remove from local list by video_id
+                            for vid in &to_remove {
+                                self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
+                            }
+                            self.playlist_tracks_selected = self.playlist_tracks_selected
+                                .min(self.playlist_tracks.len().saturating_sub(1));
+                            if !ids.is_empty() {
+                                return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
+                            }
                         }
                     }
                 }
                 BrowserSongsAction::DeleteToTop => {
                     if self.show_playlist_tracks {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            let ids: Vec<_> = self.playlist_tracks[..self.playlist_tracks_selected].iter().map(|s| {
+                            let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
+                            let (ids, to_remove): (Vec<_>, Vec<_>) = filtered[..self.playlist_tracks_selected].iter().map(|s| {
                                 let raw = self.track_set_ids.get(s.video_id.get_raw())
                                     .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
-                                ytmapi_rs::common::SetVideoID::from_raw(raw)
-                            }).collect();
-                            return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
+                                (ytmapi_rs::common::SetVideoID::from_raw(raw), s.video_id.get_raw().to_string())
+                            }).unzip();
+                            for vid in &to_remove {
+                                self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
+                            }
+                            self.playlist_tracks_selected = 0;
+                            if !ids.is_empty() {
+                                return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
+                            }
                         }
                     }
                 }
                 BrowserSongsAction::DeleteToBottom => {
                     if self.show_playlist_tracks {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
                             let start = self.playlist_tracks_selected + 1;
-                            if start < self.playlist_tracks.len() {
-                                let ids: Vec<_> = self.playlist_tracks[start..].iter().map(|s| {
+                            if start < filtered.len() {
+                                let (ids, to_remove): (Vec<_>, Vec<_>) = filtered[start..].iter().map(|s| {
                                     let raw = self.track_set_ids.get(s.video_id.get_raw())
                                         .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
-                                    ytmapi_rs::common::SetVideoID::from_raw(raw)
-                                }).collect();
-                                return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
+                                    (ytmapi_rs::common::SetVideoID::from_raw(raw), s.video_id.get_raw().to_string())
+                                }).unzip();
+                                for vid in &to_remove {
+                                    self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
+                                }
+                                if !ids.is_empty() {
+                                    return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
+                                }
                             }
                         }
                     }
@@ -1332,6 +1398,8 @@ impl ActionHandler<BrowserLibraryAction> for LibraryBrowser {
             }
             BrowserLibraryAction::DismissTracks => {
                 self.show_playlist_tracks = false;
+                self.tracks_visual_mode = false;
+                self.tracks_visual_start = 0;
                 return (AsyncTask::new_no_op(), None);
             }
             BrowserLibraryAction::ReloadCategory => {
