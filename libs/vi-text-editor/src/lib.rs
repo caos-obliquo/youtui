@@ -44,6 +44,7 @@ pub enum ViMode {
     Insert,
     VisualLine,
     VisualChar,
+    VisualBlock,
     OperatorPending(char),
     TextObjectPending(char, char), // (i/a, operator)
     SurroundAddPending(char), // (operator) — awaiting motion/text-object + char
@@ -86,13 +87,29 @@ impl ViTextEditor {
         }
     }
 
-    /// Get the visual selection line range (start, end), or None if not in visual line mode
+    /// Get the visual selection line range (start, end), or None if not in visual line/block mode
     pub fn visual_line_range(&self) -> Option<(usize, usize)> {
         match self.mode {
             ViMode::VisualLine => {
                 let start = self.buffer[..self.visual_start].matches('\n').count();
                 let end = self.cursor_line();
                 if start <= end { Some((start, end)) } else { Some((end, start)) }
+            }
+            ViMode::VisualBlock => {
+                let s = self.block_start_line();
+                let e = self.cursor_line();
+                Some((s.min(e), s.max(e)))
+            }
+            _ => None,
+        }
+    }
+
+    /// Get block selection range: (top, left, bottom, right) in visual block mode
+    pub fn visual_block_range(&self) -> Option<(usize, usize, usize, usize)> {
+        match self.mode {
+            ViMode::VisualBlock => {
+                let ((top, left), (bot, right)) = self.block_range();
+                Some((top, left, bot, right))
             }
             _ => None,
         }
@@ -204,6 +221,7 @@ impl ViTextEditor {
             ViMode::Insert => "[I]",
             ViMode::VisualLine => "[V]",
             ViMode::VisualChar => "[v]",
+            ViMode::VisualBlock => "[VB]",
             ViMode::OperatorPending(_) => "[OP]",
             ViMode::TextObjectPending(_, _) => "[TO]",
             ViMode::SurroundAddPending(_) => "[SA]",
@@ -226,6 +244,7 @@ impl ViTextEditor {
             ViMode::Normal => self.handle_normal(key, shift, ctrl),
             ViMode::VisualLine => self.handle_visual_line(key),
             ViMode::VisualChar => self.handle_visual_char(key),
+            ViMode::VisualBlock => self.handle_visual_block(key),
             ViMode::OperatorPending(op) => self.handle_operator_pending(key, op),
             ViMode::TextObjectPending(kind, op) => self.handle_text_object(key, kind, op),
             ViMode::SurroundAddPending(op) => self.handle_surround_add(key, op),
@@ -346,6 +365,78 @@ impl ViTextEditor {
             _ => self.mode = ViMode::Normal,
         }
         false
+    }
+
+    fn handle_visual_block(&mut self, key: crossterm::event::KeyCode) -> bool {
+        match key {
+            crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('v') => {
+                self.mode = ViMode::Normal;
+            }
+            crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down if self.multiline => {
+                let max = self.buffer.matches('\n').count();
+                let cur = self.cursor_line();
+                if cur < max {
+                    let col = self.cursor_col();
+                    self.cursor = line_start_to(&self.buffer, cur + 1) + col.min(line_len(&self.buffer, cur + 1));
+                }
+            }
+            crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Up if self.multiline => {
+                let cur = self.cursor_line();
+                if cur > 0 {
+                    let col = self.cursor_col();
+                    self.cursor = line_start_to(&self.buffer, cur - 1) + col.min(line_len(&self.buffer, cur - 1));
+                }
+            }
+            crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left => {
+                if self.cursor > 0 { self.cursor -= 1; }
+            }
+            crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right => {
+                if self.cursor < self.buffer.len() { self.cursor += 1; }
+            }
+            crossterm::event::KeyCode::Char('y') => {
+                self.clipboard = self.collect_block_text();
+                self.mode = ViMode::Normal;
+            }
+            _ => self.mode = ViMode::Normal,
+        }
+        false
+    }
+
+    fn block_start_line(&self) -> usize {
+        self.buffer[..self.visual_start].matches('\n').count()
+    }
+
+    fn block_start_col(&self) -> usize {
+        let last_nl = self.buffer[..self.visual_start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        self.visual_start - last_nl
+    }
+
+    fn block_range(&self) -> ((usize, usize), (usize, usize)) {
+        let s_line = self.block_start_line();
+        let s_col = self.block_start_col();
+        let e_line = self.cursor_line();
+        let e_col = self.cursor_col();
+        let top = s_line.min(e_line);
+        let bot = s_line.max(e_line);
+        let left = s_col.min(e_col);
+        let right = s_col.max(e_col);
+        ((top, left), (bot, right))
+    }
+
+    fn collect_block_text(&self) -> String {
+        let ((top, left), (bot, right)) = self.block_range();
+        let mut result = String::new();
+        for line in top..=bot {
+            let start = line_start_to(&self.buffer, line);
+            let end = start + line_len(&self.buffer, line);
+            let line_str = &self.buffer[start..end];
+            let cols = right.min(line_str.len());
+            if cols > left {
+                if !result.is_empty() { result.push('\n'); }
+                result.push_str(&line_str[left..cols]);
+            }
+        }
+        result
     }
 
     fn handle_visual_line(&mut self, key: crossterm::event::KeyCode) -> bool {
@@ -705,6 +796,10 @@ impl ViTextEditor {
                     self.buffer.truncate(self.cursor);
                     self.last_change = LastChange::DeleteToEnd;
                 }
+            }
+            crossterm::event::KeyCode::Char('v') if ctrl => {
+                self.visual_start = self.cursor;
+                self.mode = ViMode::VisualBlock;
             }
             crossterm::event::KeyCode::Char('v') => {
                 self.visual_start = self.cursor;
@@ -1574,6 +1669,23 @@ fn find_char(text: &str, cursor: usize, ch: char, dir: FindDir, till: bool) -> u
             0
         }
     }
+}
+
+fn line_start_to(text: &str, line: usize) -> usize {
+    let mut pos = 0;
+    for _ in 0..line {
+        if let Some(nl) = text[pos..].find('\n') {
+            pos += nl + 1;
+        } else {
+            break;
+        }
+    }
+    pos
+}
+
+fn line_len(text: &str, line: usize) -> usize {
+    let start = line_start_to(text, line);
+    text[start..].find('\n').unwrap_or(text.len() - start)
 }
 
 #[cfg(test)]
