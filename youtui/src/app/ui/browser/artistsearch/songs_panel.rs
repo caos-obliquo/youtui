@@ -2,7 +2,7 @@ use crate::app::component::actionhandler::{
     Action, ComponentEffect, KeyRouter, Scrollable, TextHandler,
 };
 use crate::app::structures::{
-    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent,
+    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent, fuzzy_match,
 };
 use crate::app::ui::action::AppAction;
 use crate::app::ui::browser::get_sort_keybinds;
@@ -42,6 +42,7 @@ pub struct AlbumSongsPanel {
     pub widget_state: ScrollingTableState,
     pub category_filter: Option<&'static str>,
     filtered_cache: Vec<ListSong>,
+    pub local_filter_text: String,
 }
 impl_youtui_component!(AlbumSongsPanel);
 
@@ -99,6 +100,7 @@ impl AlbumSongsPanel {
             widget_state: Default::default(),
             category_filter: None,
             filtered_cache: Vec::new(),
+            local_filter_text: String::new(),
         }
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
@@ -124,6 +126,7 @@ impl AlbumSongsPanel {
         Ok(())
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
+        let filter_text = self.local_filter_text.clone();
         self.list.get_list_iter().filter(move |ls| {
             if let Some(cat) = self.category_filter {
                 let album_name = ls.album.as_ref().map(|a| a.name.as_str()).unwrap_or("");
@@ -131,6 +134,17 @@ impl AlbumSongsPanel {
                     return false;
                 }
             }
+            let fuzzy_pass = if filter_text.is_empty() {
+                true
+            } else {
+                let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
+                let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
+                let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
+                fuzzy_match(&filter_text, &title).is_some()
+                    || fuzzy_match(&filter_text, &album).is_some()
+                    || fuzzy_match(&filter_text, &artist).is_some()
+            };
+            if !fuzzy_pass { return false; }
             self.get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {

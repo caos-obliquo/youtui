@@ -4,6 +4,8 @@
 One feature at a time. Implement -> test (user validates) -> commit -> next. Never batch changes.
 If things break, rollback and re-apply one-by-one.
 
+**`/` = global fuzzy search**: `/` everywhere triggers local fuzzy filter across visible items. Identical behavior in queue, all 5 browser tabs, and any list view. Never dead/incomplete. Fuzzy mathches across title/artist/album. Shows `[SEARCH: text (N/M)]`. No exceptions. If `/` exists in a context, it must filter. If it doesn't filter, don't bind it.
+
 ## Workflow (User-Defined)
 - **One feat per time**: user tests, validates, then proceeds. No batching.
 - **User chooses priority**: items listed, user picks. Always one.
@@ -83,15 +85,18 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | File | Lines | Purpose |
 |---|---|---|
 | `app/server/messages.rs` | ~1350 | All backend tasks |
-| `app/ui/playlist.rs` | ~2812 | Queue, playback, album splitting, visual mode |
-| `app/ui/browser.rs` | ~890 | Browser routing, 5-tab dispatch |
-| `app/ui/browser/draw.rs` | ~673 | All browser draw functions |
-| `app/ui/browser/library.rs` | ~1107 | Library (4th tab) |
+| `app/ui/playlist.rs` | ~2835 | Queue, playback, album splitting, visual mode |
+| `app/ui/browser.rs` | ~932 | Browser routing, 5-tab dispatch |
+| `app/ui/browser/draw.rs` | ~657 | All browser draw functions |
+| `app/ui/browser/library.rs` | ~1269 | Library (4th tab) with inline tracks view |
 | `app/ui/browser/albumsearch.rs` | ~705 | Albums tab (refactored) |
-| `config/keymap.rs` | ~2060 | All keybindings by context |
+| `config/keymap.rs` | ~2079 | All keybindings by context |
 | `app/ui.rs` | ~1584 | Main window, event routing |
 | `libs/metadata-provider/` | 19 tests | Metadata trait + 5 provider impls |
 | `app/ui/playlist/notes_popup.rs` | ~272 | Vim-driven notes text editor |
+| `app/ui/playlist/playlist_editor_popup.rs` | ~484 | Playlist editor (nvim-driven) |
+| `app/ui/playlist/album_art_popup.rs` | ~41 | Album art sixel popup |
+| `app/ui/playlist/config_editor_popup.rs` | ~146 | Config file editor |
 | `docs/subsystems/notes.md` | ~100 | Notes popup architecture doc |
 
 ## Playlist Features Status
@@ -101,11 +106,66 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 
 Album splitting: Detects full-album/EP/LP/demo/single entries (tags: full album, full ep, full lp, full demo, full single, album, demo, ep, single, singles). Triggers `ValidateMetadata` which identifies tracks → `insert_album_tracks` splits into individual entries with offsets, durations, metadata. Arc-sharing for audio data.
 
+## Playlist Editor Keybindings (nvim-driven, line-based list)
+See `playlist_editor_popup.rs` for implementation.
+
+### Motions
+- `j`/`k` — move down/up (with `Nj`/`Nk` count prefix)
+- `g`/`gg` — go to first line (or `Ng` to line N)
+- `G` — go to last line (or `NG` to line N)
+
+### Delete (d operator)
+- `dd`/`Ndd` — delete N lines
+- `dN`+`j` — delete N lines down
+- `dN`+`k` — delete N lines up
+- `dg` — delete to top
+- `dG`/`D` — delete to end
+
+### Yank (y operator)
+- `yy`/`Nyy` — yank N lines
+- `yj` — yank line below
+- `yk` — yank line above
+- `ygg` — yank to top
+- `yG` — yank to end
+- `Y` — yank current line
+
+### Paste
+- `p` — paste below cursor
+- `P` — paste above cursor
+
+### Visual mode
+- `V` — toggle visual line selection
+- `j`/`k` — extend selection
+- `d`/`x` — delete selection
+- `y` — yank selection
+- `p`/`P` — paste over selection
+
+### Undo/Redo
+- `u` — undo (100-level stack)
+- `C-r` — redo slot (unbound yet)
+
+### Insert/Reorder
+- `o`/`O` — insert blank line below/above
+- `J`/`K` — move line down/up (swap, with undo)
+
+### Other
+- `:` — command mode (`:w` save, `:wq` save+quit, `:q` quit, `:q!` force quit, `:d N` delete, `:m N M` move, `:rename`, `:privacy`, `:rate`)
+- `q`/`Esc` — close
+- `E` — save to existing playlist
+- Capacity bar at top: `Tracks: N/5000 [■■■■] [□□□□] [□□□□] [□□□□]` (4 blocks × 1250)
+- Pending count shows in mode indicator: `[5]`, `[DELETE 3]`, `[V]`
+
+### Architecture
+- `save_state()` pushes full track snapshot to `undo_stack` before every mutation
+- `yank_buffer: Vec<ListSong>` stores copied lines
+- `delete_mode`/`yank_mode` are operator-mode flags (like vim's d/y waiting for motion)
+- `visual_mode` + `visual_start` for visual line selection
+
 ## Notes Popup Keybindings
 `:w` Save | `:wq` Save+Quit | `:q` Quit | `Esc` Close | Enter on URL: Open | `i` Insert | `V` visual line | `C-v` visual block | `y` yank | All VTE motions (j/k/h/l/gg/G/w/b/dd/yy/p/P/u/C-r/o/O)
 
 ## Queue Keybindings (o menu)
-`o.s` shuffle, `o.r`/`o.S` sort, `o.R` get related, `o.q` save, `o.L` load, `o.Q` delete, `o.m` romaji, `o.n` new playlist, `o.E` existing playlist, `o.d` delete, `o.D` delete all, `o.A` best quality, `o.c` category filter, `o.I` song info, `o.z` repeat, `o.t` like, `o.l` lyrics, `o.a` artist, `o.b` album, `o.v` album cover, `o.y`/`y` copy url.
+`o.s` shuffle, `o.r`/`o.S` sort, `o.R` get related, `o.q` save, `o.L` load, `o.Q` delete, `o.m` romaji, `o.n` new playlist, `o.E` existing playlist, `o.d` delete, `o.D` delete all, `o.A` best quality, `o.c` category filter, `o.I` song info, `o.z` repeat, `o.t` like, `o.l` lyrics, `o.a` artist, `o.b` album, `o.v` album cover, `o.y`/`y` copy url, `o.Y`/`Y` copy album url.
 
 ## Enter Key Behavior (ncspot-style)
 Enter NEVER opens a sub-menu. Enter ALWAYS does the primary action:
@@ -131,19 +191,20 @@ Context menu is exclusively via `o`.
 - Library refresh: 4 missing playlists_fetched = false paths
 
 ## Session 2026-06-23 (This Session, Not Committed)
-- p# column Length(3)→Length(6) playlist, Length(4)→Length(6) albumsearch/playlistsearch/artistsearch songs_panels
-- Footer format: `Artist - Song - Album` instead of `Song - Artist - Album`
-- Frontend chunking removed (single CreatePlaylistWithVideos call, backend handles splitting)
-- Backend chunk naming fixed: pt0/pt1/pt2 instead of `pt0 pt. 2`
-- Batch size 5000→1000 for API reliability
-- Enter keybinding for Library Playlist category
-- ytmapi-cli: 5 new debug subcommands (delete-playlist, edit-playlist, rate-playlist, remove-items, add-to-playlist)
-- CRITICAL: VL prefix stripping REVERTED in ytmapi-rs. All endpoints (delete/edit/additems/rate) now send playlistIds as-is with VL prefix, matching ytmusicapi Python behavior. Stripping VL caused delete/rename to return fake-200s (YTM returns 200 for invalid IDs) while actually doing nothing.
-- CRITICAL: Library auto-refresh after playlist mutations. Added `library_playlist_mutated` flag set by HandleDeletePlaylistOk/HandleRenamePlaylistOk/HandleEditPlaylistDetailsOk/HandleRatePlaylistOk/HandleCreatePlaylistOk. Checked in app.rs `handle_effect` after mutation, triggers `library_browser.reload_category()`.
-- CRITICAL: `reload_category()` bug fix. Changed `self.loading = true` → `self.loading = false` before `fetch_current_category()` call. Pre-existing bug: setting loading=true blocked fetch because `fetch_current_category()` checks loading first and returns no-op. Caused library to freeze in "Loading..." state after any mutation.
-- Debug logging preference added to CLAUDE.md
-- Genius lyrics: simplified slug URL fallback for parenthetical song titles. `simplify_title()` strips `(...)` and `[...]` content. Tried as intermediate step before search API.
-- Debug logging added throughout genius-rs fetch pipeline (slug attempts, search API calls, hit validation).
+- **Album art popup**: `o.v` opens full-screen centered image via `centered_rect_fixed(90,90)` + `Resize::Fit(None)`. Issues with sixel persistence/centering documented as known bug.
+- **Footer 2-line metadata**: Artist-Song on line 1, Album indented gray on line 2. Overflow truncation with `...`. Fallback album art position fixed (was using hardcoded `Rect { x:0, y:0 }`).
+- **Playlist editor nvim-driven**: undo stack (100-level), yank/paste (yy/p/P), visual mode (V->j/k->d/y), D=dG, Y=yy, o/O insert blank line, count prefix for all motions/ops, delete/yank operator modes. 4-block capacity bar (`Tracks: N/5000 [■■■■]...`).
+- **Library playlist tracks inline**: uses `draw_advanced_table` with proper columns (#, Artist, Album, Song, Duration, Year). Left category panel hidden. Enter plays song, Esc goes back. Tracks sortable/filterable.
+- **Vim motions in library tracks**: V visual mode, dd/dg/dG delete, D dismiss tracks.
+- **Copy Album URL**: `o.Y` / global `Y` copies `https://music.youtube.com/browse/{album_id}`.
+- **P0 bugs fixed**: merge-into-self guard (source==target silent no-op), album art sixel min-size guard, ConfigEditorPopup cursor style (teal marker via Line+Span).
+- **Warnings**: 0 across workspace.
+- **Title cleaning**: strips `(Official Audio)`, `(Official Video)`, `c legenda`, `Legendado`, `subtitle` etc. from titles before metadata lookup. Also strips bare artist prefix when no ` - ` separator.
+- **Artist normalization**: `normalize_artist_name()` capitalizes first letter. Applied in `From<ParsedSongArtist>`, `MetadataEffect::Validated`, and `insert_album_tracks`.
+- **Discogs artist fix**: was returning `artist: None`, now extracts `artists[0].name` from Discogs Master API response.
+- **Metal API provider**: new `metal_api.rs` in metadata-provider crate. Queries `https://metal-api.dev/` (approved Metal Archives API) at priority 5. Returns band name, album, year, tracklist. Currently API returns 500 errors (backend crash).
+- **Year fallback**: extract 4-digit year from album name when metadata providers return `None`.
+- **CLI debug tool**: `ytmapi debug resolve <artist> <title>` tests full metadata pipeline (title cleaning -> normalization -> provider cascade).
 
 ## Session 2026-06-23 (This Session, Committed)
 - Footer album format: Single-line `Title - Artist - Album_ [s]` instead of separate album line
@@ -180,16 +241,6 @@ Context menu is exclusively via `o`.
 - `chore:` cleanup — added `library_playlist_mutated = true` to merge success handler
 - Album split tags expanded: `full single`, `album` added to strip list
 
-## Session 2026-06-23 (This Session, Not Committed)
-- **VL prefix confirmed**: ytmusicapi Python `validate_playlist_id()` at `parsers/playlists.py:270` strips `VL` from all mutation endpoints (delete, edit, add/remove items, rate). Browse/read endpoints need VL. Pattern: read=add VL, mutate=strip VL.
-- **Delete/Rename/Edit fixed**: All mutation endpoints (`playlist/delete`, `browse/edit_playlist`) now strip VL prefix. 400 "invalid argument" resolved.
-- **Rate playlist fixed**: `like/like` endpoint also needs VL stripped. 404 "entity not found" resolved by stripping VL prefix from rate query.
-- **Playlist editor empty tracks fix**: `library.rs:1071` condition checked `playlist_data` (always populated from library listing) instead of `playlist_tracks`. Fixed: check `playlist_tracks.is_empty()` first, fetch if empty.
-- **Tmux icon**: Changed to `♫⃠` (anti-music combining symbol)
-- **Library auto-refresh**: Confirmed working after all playlist mutations.
-- **Annotations component isolation**: Annotations panel separate component with own vim nav. Tab/l/h switch, a toggle.
-- **Enter = primary action (ncspot-style)**: Never sub-menu. Direct play/load/focus.
-
 ## Notes Popup Features
 - Vim-driven text editor for storing URLs, song links, personal notes
 - File: `~/.config/youtui/notes.txt` — plain text, persists across sessions
@@ -210,18 +261,13 @@ Context menu is exclusively via `o`.
 - **Genius annotations w/o token**: `__INITIAL_STATE__` scraping fails on most pages. Need `GENIUS_TOKEN`.
 - **Genius lyrics**: `find_and_fetch` slug URL fails for songs with parenthetical/bracketed title extras (e.g., "(Japanese Bonus Track)"). Simplified slug fallback added but may not match all cases.
 - **Auth tests**: 52 ytmapi-rs integration tests need cookie file.
-- **Playlist editor**: 2-Enter flow: first fetches tracks, second opens editor. Auto-open after fetch not yet implemented.
-- **Album art popup**: Sixel fullscreen may fail on small terminals (width/height < image cells). Needs graceful fallback.
-- **Playlist merge into self**: `AddPlaylistToPlaylist` with identical source/target IDs causes 400 error. UI should prevent selecting same playlist. `effect_handlers_playlist.rs:1029`
-- **Cursor style in editor popups**: Notes popup cursor matches search box (`▎` character). ConfigEditorPopup and other editor popups lack cursor style.
+- **Album art popup**: Sixel centering/sizing not fully correct. Image may appear small or off-center. Sixel persistence after popup close can corrupt main window. Known bug - needs dedicated sixel layer management.
+- **Playlist merge into self**: Guard added against identical source/target in `playlist_update_popup.rs`.
+- **Cursor style**: Notes popup + ConfigEditorPopup now render cursor with teal background via line-by-line `Span` approach.
+- **Metal-API (metal-api.dev)**: Approved REST API for Metal Archives. Currently returns 500 errors (backend crash). Provider code is written and tested with CLI tool, but API must be back online for production use.
+- **Year metadata**: Some tracks still show `None` for year when no metadata provider returns a year and album name has no year string. Fallback extracts from album name `(YYYY)`.
 
 ## Remaining
-### P0 — User-visible bugs
-- Playlist editor auto-open after track fetch (2-Enter flow)
-- Merge into self guard (selecting same playlist → 400)
-- Album art sixel fallback on small terminals
-- Cursor style in ConfigEditorPopup etc. (notes popup works)
-
 ### P1 — Missing features (wired backend, need frontend)
 - **Like status in details popup**: `GetPlaylistDetails.like_status` already parsed, just not rendered. Details popup `playlist_details_popup.rs:draw()` — add 1 line showing rating.
 - **Back navigation (remaining gap)**: `BrowserAction::Back` + `state_stack` works for `Navigate()` but `handle_change_search_type()` (F7 tab cycle) doesn't push snapshots. Stack can restore wrong tab.
@@ -230,8 +276,9 @@ Context menu is exclusively via `o`.
 
 ### P2 — Polish
 - FFT footer bars (roadmap)
-- Remove remaining 25 dead_code items (see prior audit)
 - Fix test counts in docs (json-crawler 8→2, async-callback-manager 15→14)
+- Footer: upgrade indicator icons (shuffle/repeat/scrobble) to monochrome, show explicitly in footer space
+- Album art popup: fix sixel centering and reuse (known bug)
 
 ### P3 — Tech debt
 - Genius annotations fallback (page scrape)
@@ -241,3 +288,4 @@ Context menu is exclusively via `o`.
 - Count-in-header standardization
 - Album browser j/k routing when show_tracks
 - ytmapi-rs: 150 pre-existing TODOs (parse/search.rs, parse/artist.rs type safety)
+- **Metadata pipeline**: Improve year coverage - add more fallback sources for year extraction. Metal-API provider needs backend fix at metal-api.dev.

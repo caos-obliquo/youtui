@@ -11,8 +11,9 @@ use crate::app::server::{
     TaskMetadata, ValidateMetadata, AlbumTrack,
 };
 use crate::app::structures::{
-    fuzzy_match, AlbumArtState, AudioQuality, BrowserSongsList, DownloadStatus, ListSong,
-    ListSongDisplayableField, ListSongID, Percentage, PlayState, SongListComponent, Thumbnail,
+    fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
+    ListSong, ListSongDisplayableField, ListSongID, Percentage, PlayState, SongListComponent,
+    Thumbnail,
 };
 use std::collections::VecDeque;
 use crate::app::ui::playlist::effect_handlers::{
@@ -161,6 +162,7 @@ pub enum PlaylistAction {
     NextSearchResult,
     PrevSearchResult,
     CopySongUrl,
+    CopyAlbumUrl,
     OpenUrl,
     ToggleRomaji,
     ToggleRepeat,
@@ -208,6 +210,7 @@ impl Action for PlaylistAction {
             PlaylistAction::NextSearchResult => "Next Match",
             PlaylistAction::PrevSearchResult => "Prev Match",
             PlaylistAction::CopySongUrl => "Copy Song URL",
+            PlaylistAction::CopyAlbumUrl => "Copy Album URL",
             PlaylistAction::OpenUrl => "Open URL",
             PlaylistAction::ToggleRomaji => "Toggle Romaji",
             PlaylistAction::ToggleRepeat => "Toggle Repeat Mode",
@@ -339,6 +342,21 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
                     let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
                     info!("Copied URL: {}", raw_url);
+                }
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::CopyAlbumUrl => {
+                let actual_index = self.visual_to_actual_index(self.cur_selected);
+                if let Some(song) = self.get_song_from_idx(actual_index) {
+                    if let Some(album) = &song.album {
+                        let raw = match &album.id {
+                            AlbumOrUploadAlbumID::Album(id) => id.get_raw(),
+                            AlbumOrUploadAlbumID::UploadAlbum(id) => id.get_raw(),
+                        };
+                        let raw_url = format!("https://music.youtube.com/browse/{}", raw);
+                        let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                        info!("Copied album URL: {}", raw_url);
+                    }
                 }
                 (AsyncTask::new_no_op(), None)
             },
@@ -921,9 +939,9 @@ impl Playlist {
         let (video_raw, album_artist, album_year, src_arc) = {
             let Some(src_song) = self.get_song_from_idx(src_idx) else { return None; };
             let video_raw = src_song.video_id.get_raw().to_string();
-            let album_artist = artist.clone().unwrap_or_else(|| {
+            let album_artist = crate::app::structures::normalize_artist_name(&artist.clone().unwrap_or_else(|| {
                 src_song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
-            });
+            }));
             // Use validated year, fallback to yt-dlp year on original entry
             let album_year = year.clone().or_else(|| {
                 src_song.year.as_ref().map(|y| y.to_string())
@@ -1111,13 +1129,62 @@ impl Playlist {
         let year = year.or(title_year);
 
         // Strip "{artist} - " prefix from title (case-insensitive) for clean metadata
-        let artist_prefix = format!("{} - ", artist);
-        let title_lower = title.to_lowercase();
-        let prefix_lower = artist_prefix.to_lowercase();
-        let clean_title = if title_lower.starts_with(&prefix_lower) {
-            title[artist_prefix.len().min(title.len())..].to_string()
-        } else {
-            title.clone()
+        // Also strip bare artist prefix when no separator (e.g. "Artist Song Title")
+        let clean_title = {
+            let lower = title.to_lowercase();
+            let art_lower = artist.to_lowercase();
+            if lower.starts_with(&format!("{} - ", art_lower)) {
+                title[artist.len() + 3..].trim().to_string()
+            } else if lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
+                // Title starts with artist name without separator
+                // Only strip if what follows isn't also the artist name (avoid over-stripping)
+                title[artist.len()..].trim().to_string()
+            } else {
+                title.to_string()
+            }
+        };
+        // Strip YouTube noise patterns from title end for metadata lookup
+        let clean_title = {
+            let noise_tags = [
+                "official audio", "official video", "lyric video", "lyrics",
+                "legendado", "c legendado", "c legenda", "com legenda",
+                "com legendado", "legendado pt", "legendado pt-br",
+                "subtitle", "subtitles",
+            ];
+            let mut s = clean_title;
+            // Repeatedly strip noise patterns from end (after stripping parenthesized variants too)
+            loop {
+                let lower = s.to_lowercase().trim().to_string();
+                let mut found = false;
+                for tag in &noise_tags {
+                    if let Some(pos) = lower.rfind(tag) {
+                        // Check if we can strip from this position to end
+                        let before = &s[..pos].trim();
+                        // Strip parenthesized variant like "(Official Audio)" 
+                        let cut = if let Some(paren_start) = before.rfind('(') {
+                            let between = &before[paren_start..];
+                            if between.to_lowercase().contains(tag) {
+                                &before[..paren_start.max(1).saturating_sub(1)]
+                            } else {
+                                &s[..pos]
+                            }
+                        } else {
+                            &s[..pos]
+                        };
+                        if cut.len() < s.len() {
+                            s = cut.trim().to_string();
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if !found {
+                    // Trim any dangling open-paren left after strip
+                    s = s.trim_end_matches(|c| c == '(').trim().to_string();
+                    break;
+                }
+            }
+            s.trim().to_string()
         };
         // Further clean album-related suffixes from title for metadata validation
         let clean_title = {
@@ -1886,6 +1953,14 @@ impl Playlist {
 
     pub fn get_mut_song_from_id(&mut self, id: ListSongID) -> Option<&mut ListSong> {
         self.list.get_list_iter_mut().find(|s| s.id == id)
+    }
+
+    pub fn get_selected_album_art(&self) -> Option<std::rc::Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>> {
+        let actual = self.visual_to_actual_index(self.cur_selected);
+        self.get_song_from_idx(actual).and_then(|s| match &s.album_art {
+            crate::app::structures::AlbumArtState::Downloaded(t) => Some(t.clone()),
+            _ => None,
+        })
     }
 
     pub fn get_song_from_id(&self, id: ListSongID) -> Option<&ListSong> {

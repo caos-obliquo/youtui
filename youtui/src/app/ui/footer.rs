@@ -5,7 +5,7 @@ use crate::drawutils::{
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
 use ratatui_image::Image;
@@ -68,26 +68,20 @@ pub fn draw_footer(
         | PlayState::Buffering(id) => w.playlist.get_song_from_id(id),
         PlayState::NotPlaying | PlayState::Stopped => None,
     };
-    let song_and_artists_string = cur_active_song
+    let (song_artist_line, album_line) = cur_active_song
         .map(|song| {
-            let mut s = w.playlist.play_status.list_icon().to_string();
-            s.push(' ');
+            let icon = w.playlist.play_status.list_icon().to_string();
+            let mut artist_song = String::new();
             for (i, artist) in song.artists.iter().enumerate() {
-                if i > 0 {
-                    s.push_str(", ");
-                }
-                s.push_str(&artist.name);
+                if i > 0 { artist_song.push_str(", "); }
+                artist_song.push_str(&artist.name);
             }
-            s.push_str(" - ");
-            s.push_str(&song.title);
-            if let Some(album) = song.album.as_ref() {
-                let name = album.name.strip_prefix("Album: ").unwrap_or(&album.name);
-                if !name.is_empty() {
-                    s.push_str(" - ");
-                    s.push_str(name);
-                }
-            }
-            s
+            artist_song.push_str(" - ");
+            artist_song.push_str(&song.title);
+            let album = song.album.as_ref()
+                .map(|a| a.name.strip_prefix("Album: ").unwrap_or(&a.name).to_string())
+                .filter(|n| !n.is_empty());
+            (format!("{} {}", icon, artist_song), album.unwrap_or_default())
         })
         .unwrap_or_default();
     let repeat_icon = match w.playlist.repeat_mode {
@@ -102,14 +96,7 @@ pub fn draw_footer(
     } else { "" };
     let album_art = cur_active_song.map(|s| &s.album_art);
     let last_art = w.last_album_art.clone();
-    let footer = Paragraph::new(Line::from(format!(
-        "{}{}{}{}{}",
-        song_and_artists_string,
-        repeat_icon,
-        radio_icon,
-        shuffle_icon,
-        scrobble_indicator,
-    )));
+    let status_suffix = format!("{}{}{}{}", repeat_icon, radio_icon, shuffle_icon, scrobble_indicator);
     let bar = Gauge::default()
         .label(bar_str)
         .gauge_style(
@@ -200,12 +187,7 @@ pub fn draw_footer(
             if let Some(last) = &last_art {
                 let image = terminal_image_capabilities.new_protocol(
                     last.in_mem_image.clone(),
-                    Rect {
-                        x: 0,
-                        y: 0,
-                        width: ALBUM_ART_WIDTH,
-                        height: ALBUM_ART_WIDTH - 1,
-                    },
+                    album_art_chunk,
                     ratatui_image::Resize::Fit(None),
                 );
                 match image {
@@ -235,5 +217,29 @@ pub fn draw_footer(
     f.render_widget(left_arrow, left_arrow_chunk);
     f.render_widget(right_arrow, right_arrow_chunk);
     f.render_widget(block, chunk);
-    f.render_widget(footer, song_text_chunk);
+    // Two-line metadata: Artist - Song on line 1, Album on line 2
+    let [line1, line2] = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(song_text_chunk);
+    let avail1 = line1.width.saturating_sub(status_suffix.len() as u16) as usize;
+    let line1_text = if song_artist_line.len() > avail1 {
+        let mut s = song_artist_line[..avail1.saturating_sub(3).max(1)].to_string();
+        s.push_str("...");
+        format!("{}{}", s, status_suffix)
+    } else {
+        format!("{}{}", song_artist_line, status_suffix)
+    };
+    f.render_widget(Paragraph::new(Line::from(line1_text)), line1);
+    if !album_line.is_empty() {
+        let avail2 = line2.width.saturating_sub(3) as usize;
+        let line2_text = if album_line.len() > avail2 {
+            let mut s = format!("   {}", &album_line[..avail2.saturating_sub(6).max(1)]);
+            s.push_str("...");
+            s
+        } else {
+            format!("   {}", album_line)
+        };
+        f.render_widget(
+            Paragraph::new(Line::from(line2_text)).style(Style::default().fg(Color::DarkGray)),
+            line2,
+        );
+    }
 }

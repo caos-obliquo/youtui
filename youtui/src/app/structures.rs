@@ -116,6 +116,7 @@ pub struct ListSongAlbum {
 impl From<ParsedSongArtist> for ListSongArtist {
     fn from(value: ParsedSongArtist) -> Self {
         let ParsedSongArtist { name, id } = value;
+        let name = normalize_artist_name(&name);
         Self {
             name,
             id: id.map(ArtistOrUploadArtistID::Artist),
@@ -126,11 +127,20 @@ impl From<ParsedSongArtist> for ListSongArtist {
 impl From<ParsedUploadArtist> for ListSongArtist {
     fn from(value: ParsedUploadArtist) -> Self {
         let ParsedUploadArtist { name, id } = value;
+        let name = normalize_artist_name(&name);
         Self {
             name,
             id: id.map(ArtistOrUploadArtistID::UploadArtist),
         }
     }
+}
+
+pub fn normalize_artist_name(name: &str) -> String {
+    let trimmed = name.trim();
+    if trimmed.is_empty() { return String::new(); }
+    let mut chars = trimmed.chars();
+    let first = chars.next().unwrap().to_uppercase().to_string();
+    first + chars.as_str()
 }
 
 impl From<ParsedSongAlbum> for ListSongAlbum {

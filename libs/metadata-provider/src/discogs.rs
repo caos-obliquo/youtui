@@ -73,7 +73,12 @@ impl MetadataProvider for DiscogsProvider {
                     .unwrap_or_default();
                 tracing::info!("DiscogsProvider: {} tracks, {} genres, {} styles for {} - {}", tracks.len(), genres.len(), styles.len(), artist, title);
                 Some(ValidatedMetadata {
-                    artist: None,
+                    artist: mdata.get("artists")
+                        .and_then(|a| a.as_array())
+                        .and_then(|a| a.first())
+                        .and_then(|a| a.get("name"))
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string()),
                     album: album_name,
                     year,
                     track_no: None,

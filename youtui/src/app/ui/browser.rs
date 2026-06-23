@@ -56,6 +56,7 @@ pub struct Browser {
     state_stack: Vec<BrowserSnapshot>,
     filter_editor: ViTextEditor,
     filter_active: bool,
+    filter_text: String,
 }
 
 #[derive(Clone)]
@@ -398,14 +399,17 @@ impl TextHandler for Browser {
                 if k.kind == crossterm::event::KeyEventKind::Press {
                     match k.code {
                         crossterm::event::KeyCode::Esc => {
+                            self.filter_text.clear();
                             self.filter_active = false;
                             self.filter_editor.clear();
+                            self.sync_local_filter();
                         }
                         crossterm::event::KeyCode::Enter => {
                             self.filter_active = false;
                         }
                         _ => {
                             self.filter_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
+                            self.sync_local_filter();
                         }
                     }
                 }
@@ -449,6 +453,7 @@ impl DrawableMut for Browser {
         selected: bool,
         cur_tick: u64,
     ) {
+        self.sync_local_filter();
         draw_browser(f, self, chunk, selected, cur_tick);
     }
 }
@@ -584,6 +589,29 @@ impl Browser {
             state_stack: Vec::new(),
             filter_editor: ViTextEditor::new(),
             filter_active: false,
+            filter_text: String::new(),
+        }
+    }
+    pub fn sync_local_filter(&mut self) {
+        let text = if self.filter_active {
+            let t = self.filter_editor.get_text().to_string();
+            self.filter_text = t.clone();
+            t
+        } else {
+            self.filter_text.clone()
+        };
+        match self.variant {
+            BrowserVariant::Artist => {
+                self.artist_search_browser.artist_search_panel.local_filter_text = text.clone();
+                self.artist_search_browser.album_songs_panel.local_filter_text = text;
+            }
+            BrowserVariant::Song => self.song_search_browser.local_filter_text = text,
+            BrowserVariant::Album => self.album_search_browser.local_filter_text = text,
+            BrowserVariant::LibraryPlaylist => self.library_browser.local_filter_text = text,
+            BrowserVariant::PlaylistSearch => {
+                self.playlist_search_browser.playlist_search_panel.local_filter_text = text.clone();
+                self.playlist_search_browser.playlist_songs_panel.local_filter_text = text;
+            }
         }
     }
     pub fn navigate_to(&mut self, target: NavTarget) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
@@ -640,7 +668,11 @@ impl Browser {
     }
     pub fn text_editor_mode(&self) -> Option<String> {
         if self.filter_active {
-            return Some(self.filter_editor.mode_char().to_string());
+            let mode = self.filter_editor.mode_char();
+            return Some(format!("{} SEARCH: {}", mode, self.filter_editor.get_text()));
+        }
+        if !self.filter_text.is_empty() {
+            return Some(format!("SEARCH: {}", self.filter_text));
         }
         match self.variant {
             BrowserVariant::Artist => self.artist_search_browser.text_editor_mode(),
@@ -713,11 +745,16 @@ impl Browser {
         }
     }
     pub fn handle_toggle_local_filter(&mut self) {
-        self.filter_active = !self.filter_active;
-        if self.filter_active {
-            self.filter_editor = ViTextEditor::new();
+        if self.filter_text.is_empty() {
+            self.filter_active = !self.filter_active;
+            if self.filter_active {
+                self.filter_editor = ViTextEditor::new();
+            }
         } else {
+            self.filter_text.clear();
+            self.filter_active = false;
             self.filter_editor.clear();
+            self.sync_local_filter();
         }
     }
     pub fn dismiss_search(&mut self) {

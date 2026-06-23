@@ -61,6 +61,7 @@ pub struct PlaylistSearchPanel {
     pub search_popped: bool,
     pub search: SearchBlock,
     pub widget_state: ScrollingListState,
+    pub local_filter_text: String,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -90,6 +91,7 @@ impl PlaylistSearchPanel {
             search_popped: false,
             search: SearchBlock::default(),
             widget_state: Default::default(),
+            local_filter_text: String::new(),
         }
     }
     pub fn open_search(&mut self) {

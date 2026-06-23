@@ -40,6 +40,7 @@ pub struct SongSearchBrowser {
     pub widget_state: ScrollingTableState,
     pub sort: SortManager,
     pub filter: FilterManager,
+    pub local_filter_text: String,
 }
 impl_youtui_component!(SongSearchBrowser);
 
@@ -70,6 +71,10 @@ pub enum BrowserSongsAction {
     UnsubscribeFromArtist,
     MergePlaylist,
     GetRelatedTracks,
+    ToggleVisualMode,
+    DeleteSelected,
+    DeleteToTop,
+    DeleteToBottom,
 }
 
 impl Action for BrowserSongsAction {
@@ -102,6 +107,10 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::UnsubscribeFromArtist => "Unsubscribe from Artist",
             BrowserSongsAction::MergePlaylist => "Merge Playlist Into",
             BrowserSongsAction::GetRelatedTracks => "Get Related Tracks",
+            BrowserSongsAction::ToggleVisualMode => "Toggle Visual Mode",
+            BrowserSongsAction::DeleteSelected => "Delete Selected",
+            BrowserSongsAction::DeleteToTop => "Delete to Top",
+            BrowserSongsAction::DeleteToBottom => "Delete to Bottom",
         }
         .into()
     }
@@ -388,18 +397,25 @@ impl AdvancedTableView for SongSearchBrowser {
 }
 impl HasTitle for SongSearchBrowser {
     fn get_title(&self) -> std::borrow::Cow<'_, str> {
+        let search_tag = if !self.local_filter_text.is_empty() {
+            let count = self.get_filtered_list_iter().count();
+            format!(" [SEARCH: {} ({})]", self.local_filter_text, count)
+        } else {
+            String::new()
+        };
         match self.song_list.state {
-            ListStatus::New => "Songs".into(),
-            ListStatus::Loading => "Songs - loading".into(),
+            ListStatus::New => format!("Songs{}", search_tag).into(),
+            ListStatus::Loading => format!("Songs - loading{}", search_tag).into(),
             ListStatus::InProgress => format!(
-                "Songs - {} results - loading",
-                self.song_list.get_list_iter().len()
+                "Songs - {} results - loading{}",
+                self.song_list.get_list_iter().len(),
+                search_tag
             )
             .into(),
             ListStatus::Loaded => {
-                format!("Songs - {} results", self.song_list.get_list_iter().len()).into()
+                format!("Songs - {} results{}", self.song_list.get_list_iter().len(), search_tag).into()
             }
-            ListStatus::Error => "Songs - Error receieved".into(),
+            ListStatus::Error => format!("Songs - Error receieved{}", search_tag).into(),
         }
     }
 }
@@ -421,6 +437,7 @@ impl SongSearchBrowser {
             sort: Default::default(),
             filter: Default::default(),
             cur_selected: Default::default(),
+            local_filter_text: String::new(),
         }
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
@@ -446,9 +463,19 @@ impl SongSearchBrowser {
         Ok(())
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> + '_ {
+        let filter_text = self.local_filter_text.clone();
         self.song_list.get_list_iter().filter(move |ls| {
-            // Naive implementation.
-            // TODO: Do this in a single pass and optimise.
+            let fuzzy_pass = if filter_text.is_empty() {
+                true
+            } else {
+                let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
+                let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
+                let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
+                crate::app::structures::fuzzy_match(&filter_text, &title).is_some()
+                    || crate::app::structures::fuzzy_match(&filter_text, &album).is_some()
+                    || crate::app::structures::fuzzy_match(&filter_text, &artist).is_some()
+            };
+            if !fuzzy_pass { return false; }
             self.get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
@@ -456,7 +483,7 @@ impl SongSearchBrowser {
                         ls,
                         Self::subcolumns_of_vec(),
                         self.get_filterable_columns(),
-                    ); // If we find a match for each filter, can display the row.
+                    );
                     acc && match_found
                 })
         })

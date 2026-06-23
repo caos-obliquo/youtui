@@ -141,13 +141,13 @@ Every playlist mutation (delete, rename, edit, rate) must trigger library playli
 5. Test `:w` save, `:wq` save+quit, `:q` quit
 6. Test `:rename`, `:privacy`, `:rate` commands
 
-### Annotations/Lyrics Component Isolation Test
+### Annotations/Lyrics Panel Focus Test
 
 1. Open lyrics popup (`o.l`)
 2. Press `a` to toggle annotations on
 3. Verify view splits 55/45 lyrics/annotations
 4. Press `Tab`/`l` to focus annotations panel
-5. Verify lyrics seek commands (`(`/`)`/`<`/`>`) do nothing while annotations focused
+5. Verify j/k/gg/G scroll annotations, seek commands `( ) < > [ ]` still work (global controls)
 6. Press `Tab`/`h` to return focus to lyrics
-7. Verify seek commands work again
+7. Verify j/k/gg/G scroll lyrics, seek commands still work
 8. Press `a` to toggle annotations off — focus returns to lyrics full width

@@ -15,7 +15,7 @@ use media_controls::MediaController;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui_image::picker::Picker;
-use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, CreatePlaylistWithVideos, RenamePlaylist, DeletePlaylist, EditPlaylistDetails, RatePlaylistMessage, GetPlaylistDetailsMessage};
+use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, RenamePlaylist, DeletePlaylist, EditPlaylistDetails, RatePlaylistMessage};
 use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleRenamePlaylistOk, HandleRenamePlaylistError,
     HandleDeletePlaylistOk, HandleDeletePlaylistError,
@@ -50,7 +50,6 @@ use ui::{
     playlist::effect_handlers_playlist::{
         HandleAddSongsOk, HandleAddSongsError,
         HandleGetPlaylistTracksAppendOk, HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
-        HandleCreatePlaylistOk, HandleCreatePlaylistError,
     },
 };
 
@@ -146,6 +145,7 @@ pub enum AppCallback {
     ReloadConfig,
     InsertNext(Vec<ListSong>),
     GetRelatedTracks(ytmapi_rs::common::VideoID<'static>),
+    #[allow(dead_code)]
     OpenPlaylistEditor {
         playlist_id: ytmapi_rs::common::PlaylistID<'static>,
         playlist_title: String,
@@ -549,18 +549,20 @@ impl Youtui {
             }
             AppCallback::ViewAlbumCover => {
                 use crate::app::structures::PlayState;
-                // Use current song's album art, fall back to last_album_art
-                let thumb = match &self.window_state.playlist.play_status {
-                    PlayState::Playing(id) | PlayState::Paused(id) |
-                    PlayState::Buffering(id) => {
-                        self.window_state.playlist.get_song_from_id(*id)
-                            .and_then(|s| match &s.album_art {
-                                crate::app::structures::AlbumArtState::Downloaded(t) => Some(t.clone()),
-                                _ => None,
-                            })
-                    }
-                    _ => None,
-                }.or_else(|| self.window_state.last_album_art.clone());
+                // Selected song first, then playing song, then last album art
+                let thumb = self.window_state.playlist.get_selected_album_art()
+                    .or_else(|| match &self.window_state.playlist.play_status {
+                        PlayState::Playing(id) | PlayState::Paused(id) |
+                        PlayState::Buffering(id) => {
+                            self.window_state.playlist.get_song_from_id(*id)
+                                .and_then(|s| match &s.album_art {
+                                    crate::app::structures::AlbumArtState::Downloaded(t) => Some(t.clone()),
+                                    _ => None,
+                                })
+                        }
+                        _ => None,
+                    })
+                    .or_else(|| self.window_state.last_album_art.clone());
                 if let Some(thumb) = thumb {
                     self.window_state.album_art_popup = Some(ui::playlist::album_art_popup::AlbumArtPopup::new(thumb));
                 }

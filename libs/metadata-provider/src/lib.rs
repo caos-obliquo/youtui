@@ -3,6 +3,8 @@ mod lastfm_track;
 mod discogs;
 mod genius;
 mod musicbrainz;
+mod metal_api;
+pub mod genre_map;
 pub mod util;
 pub mod overrides;
 
@@ -11,6 +13,7 @@ pub use lastfm_track::TrackSearchProvider;
 pub use discogs::DiscogsProvider;
 pub use genius::GeniusProvider;
 pub use musicbrainz::MusicBrainzProvider;
+pub use metal_api::MetalApiProvider;
 
 pub use validated_metadata::{AlbumTrack, ValidatedMetadata};
 mod validated_metadata;
@@ -48,6 +51,7 @@ impl MetadataRegistry {
         overrides_path: Option<PathBuf>,
     ) -> Self {
         let mut providers: Vec<Box<dyn MetadataProvider>> = vec![
+            Box::new(MetalApiProvider::new()),
             Box::new(AlbumSearchProvider::new(lastfm_key.clone())),
             Box::new(TrackSearchProvider::new(lastfm_key.clone())),
             Box::new(DiscogsProvider::new(discogs_token.clone())),
@@ -90,6 +94,14 @@ impl MetadataRegistry {
                         "Metadata resolved by provider priority {} for {} - {}",
                         provider.priority(), artist, title
                     );
+                    // Normalize genre names using the MusicBee hierarchy
+                    let mut meta = meta;
+                    if !meta.genres.is_empty() {
+                        meta.genres = crate::genre_map::normalize_genres(&meta.genres);
+                    }
+                    if !meta.styles.is_empty() {
+                        meta.styles = crate::genre_map::normalize_genres(&meta.styles);
+                    }
                     self.cache.lock().unwrap().put(cache_key, meta.clone());
                     return Ok(meta);
                 }

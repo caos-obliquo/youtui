@@ -32,7 +32,7 @@
 
 | Issue | File | Description |
 |-------|------|-------------|
-| **Annotations component isolation**: When annotations focused, lyrics seek/nav disabled. `Tab`/`l`/`h` to switch. Verified working. | `lyrics_popup.rs` | Core design — prevents accidental seeks while reading annotations. |
+| **Annotations component isolation**: `Tab`/`l`/`h` switches scroll/nav focus between panels. Seek commands `( ) < > [ ]` are global playback controls, always work. | `lyrics_popup.rs` | Verified working. |
 | Library tab missing playing indicator | `library.rs` | No second highlight (purple/green) showing which song is currently playing, unlike the local queue view |
 | `>` key crash guard | `draw_media_controls.rs` | `duration == 0` check prevents division by zero |
 | Last annotation cut off | `lyrics_popup.rs` | Height calculation doesn't account for bottom border |

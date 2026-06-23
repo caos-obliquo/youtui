@@ -1,11 +1,11 @@
-use crate::app::{AppCallback, NavTarget};
+use crate::app::AppCallback;
 use crate::app::component::actionhandler::{
     ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
 use crate::app::server::SearchAlbums;
 use crate::app::component::actionhandler::Suggestable;
 use crate::app::structures::{
-    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage,
+    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, fuzzy_match,
 };
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{
@@ -56,10 +56,12 @@ pub struct AlbumSearchBrowser {
     pub album_list_state: ScrollingListState,
     search_cache: LruCache<String, Vec<SearchResultAlbum>>,
     last_search_query: Option<String>,
+    pub local_filter_text: String,
 }
 
 impl_youtui_component!(AlbumSearchBrowser);
 
+#[allow(dead_code)]
 impl AlbumSearchBrowser {
     pub fn new() -> Self {
         Self {
@@ -80,6 +82,7 @@ impl AlbumSearchBrowser {
             album_list_state: ScrollingListState::default(),
             search_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
             last_search_query: None,
+            local_filter_text: String::new(),
         }
     }
 
@@ -205,7 +208,19 @@ impl AlbumSearchBrowser {
         ]
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> + '_ {
+        let filter_text = self.local_filter_text.clone();
         self.track_list.get_list_iter().filter(move |ls| {
+            let fuzzy_pass = if filter_text.is_empty() {
+                true
+            } else {
+                let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
+                let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
+                let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
+                fuzzy_match(&filter_text, &title).is_some()
+                    || fuzzy_match(&filter_text, &album).is_some()
+                    || fuzzy_match(&filter_text, &artist).is_some()
+            };
+            if !fuzzy_pass { return false; }
             self.get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
@@ -218,6 +233,7 @@ impl AlbumSearchBrowser {
                 })
         })
     }
+    #[allow(dead_code)]
     pub fn apply_all_sort_commands(&mut self) -> Result<()> {
         for c in self.sort.sort_commands.iter() {
             if !self.get_sortable_columns().contains(&c.column) {
@@ -230,6 +246,7 @@ impl AlbumSearchBrowser {
         }
         Ok(())
     }
+    #[allow(dead_code)]
     pub fn apply_filter(&mut self) {
         self.filter.shown = false;
         self.input_routing = InputRouting::List;
@@ -243,6 +260,7 @@ impl AlbumSearchBrowser {
         let new_max_cur = self.get_filtered_list_iter().count().saturating_sub(1);
         self.track_selected = self.track_selected.min(new_max_cur);
     }
+    #[allow(dead_code)]
     pub fn clear_filter(&mut self) {
         self.filter.shown = false;
         self.input_routing = InputRouting::List;
