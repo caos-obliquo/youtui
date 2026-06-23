@@ -238,8 +238,10 @@ impl<A: LoggedIn> Query<A> for RemovePlaylistItemsQuery<'_> {
 }
 impl PostQuery for RemovePlaylistItemsQuery<'_> {
     fn header(&self) -> serde_json::Map<String, serde_json::Value> {
+        let raw = self.id.get_raw();
+        let clean_id = raw.strip_prefix("VL").unwrap_or(raw);
         let serde_json::Value::Object(mut map) = json!({
-            "playlistId": self.id,
+            "playlistId": clean_id,
         }) else {
             unreachable!()
         };

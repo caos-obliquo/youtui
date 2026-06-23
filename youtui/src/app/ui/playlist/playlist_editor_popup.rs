@@ -661,7 +661,7 @@ impl PlaylistEditorPopup {
                     if i == self.cursor {
                         Style::default().fg(Color::Black).bg(Color::Cyan)
                     } else if in_visual {
-                        Style::default().fg(Color::Black).bg(Color::Rgb(0x00, 0x5f, 0x5f))
+                        Style::default().fg(Color::White).bg(Color::Cyan)
                     } else {
                         Style::default().fg(Color::White)
                     }
