@@ -1118,6 +1118,10 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                                     .cloned()
                                     .unwrap_or_else(|| song.video_id.get_raw().to_string());
                                 let set_id = ytmapi_rs::common::SetVideoID::from_raw(raw);
+                                // Remove from local list for immediate feedback
+                                self.playlist_tracks.remove(self.playlist_tracks_selected);
+                                self.playlist_tracks_selected = self.playlist_tracks_selected
+                                    .min(self.playlist_tracks.len().saturating_sub(1));
                                 return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(
                                     pl.playlist_id.clone(),
                                     vec![set_id],
