@@ -60,7 +60,7 @@ Frontend (UI) -> TaskManager -> Backend (Server)
 ```
 See `docs/` for full reference (5.4k lines, 20 files).
 
-## 8 Workspace Crates (49k+ LOC)
+## 9 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
 | `youtui` | Main binary | 103 |
@@ -71,7 +71,8 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `async-callback-manager` | Async task dispatch | 15 |
 | `json-crawler` | JSON path parser | 8 |
 | `ytmapi-cli` | CLI debug tool | 7 |
-| `metal-proxy` | Metallum Chrome proxy | 0 |
+| `metal-proxy` | Metal Archives direct proxy | 0 |
+| `libs/metal-proxy/` | ~250 | Chromium-free background proxy (cookie-based)
 
 ## 5 Browser Tabs Fully Wired
 | Tab | Search | Table | Sort/Filter | o Menu | Nav | Status |
@@ -99,6 +100,7 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `app/ui/playlist/album_art_popup.rs` | ~41 | Album art sixel popup |
 | `app/ui/playlist/config_editor_popup.rs` | ~146 | Config file editor |
 | `docs/subsystems/notes.md` | ~100 | Notes popup architecture doc |
+| `libs/metal-proxy/src/main.rs` | ~275 | Metal Archives cookie-based proxy |
 
 ## Playlist Features Status
 All CRUD wired: Create, Delete, Rename, Edit details, Edit privacy, Add/Remove items, Reorder (swap), Rate, Get details, Get tracks, Library playlists, Batch-merge.
@@ -192,20 +194,37 @@ Context menu is exclusively via `o`.
 - Library refresh: 4 missing playlists_fetched = false paths
 
 ## Session 2026-06-23 (This Session, Not Committed)
-- **Album art popup**: `o.v` opens full-screen centered image via `centered_rect_fixed(90,90)` + `Resize::Fit(None)`. Issues with sixel persistence/centering documented as known bug.
-- **Footer 2-line metadata**: Artist-Song on line 1, Album indented gray on line 2. Overflow truncation with `...`. Fallback album art position fixed (was using hardcoded `Rect { x:0, y:0 }`).
+- **Album art popup**: `o.v` opens full-screen centered image via `centered_rect_fixed(90,90)` + `Resize::Fit(None)`. Early return in `draw_app` skips main window (no sixel corruption). Sixel clear at start of every draw. Known bug: centering not perfect, sixel persistence after close.
+- **Footer 2-line metadata**: Artist-Song on line 1, Album indented gray on line 2. Truncation with `...`. Fallback album art position fixed (was `Rect { x:0, y:0 }`).
 - **Playlist editor nvim-driven**: undo stack (100-level), yank/paste (yy/p/P), visual mode (V->j/k->d/y), D=dG, Y=yy, o/O insert blank line, count prefix for all motions/ops, delete/yank operator modes. 4-block capacity bar (`Tracks: N/5000 [■■■■]...`).
-- **Library playlist tracks inline**: uses `draw_advanced_table` with proper columns (#, Artist, Album, Song, Duration, Year). Left category panel hidden. Enter plays song, Esc goes back. Tracks sortable/filterable.
-- **Vim motions in library tracks**: V visual mode, dd/dg/dG delete, D dismiss tracks.
+- **Library playlist tracks inline**: uses `draw_advanced_table` with proper columns (#, Artist, Album, Song, Duration, Year). Left category panel hidden when showing tracks. Enter plays song, Esc goes back (DismissTracks action + keybinding). Visual mode, dd/dg/dG delete.
 - **Copy Album URL**: `o.Y` / global `Y` copies `https://music.youtube.com/browse/{album_id}`.
 - **P0 bugs fixed**: merge-into-self guard (source==target silent no-op), album art sixel min-size guard, ConfigEditorPopup cursor style (teal marker via Line+Span).
-- **Warnings**: 0 across workspace.
-- **Title cleaning**: strips `(Official Audio)`, `(Official Video)`, `c legenda`, `Legendado`, `subtitle` etc. from titles before metadata lookup. Also strips bare artist prefix when no ` - ` separator.
+- **Warnings**: 0 across workspace (were 15).
+- **Title cleaning**: strips `(Official Audio)`, `(Official Video)`, `c legenda`, `Legendado`, `subtitle` etc. from titles before metadata lookup. Strips bare artist prefix when no ` - ` separator. Fixes dangling paren after strip.
 - **Artist normalization**: `normalize_artist_name()` capitalizes first letter. Applied in `From<ParsedSongArtist>`, `MetadataEffect::Validated`, and `insert_album_tracks`.
 - **Discogs artist fix**: was returning `artist: None`, now extracts `artists[0].name` from Discogs Master API response.
-- **Metal API provider**: new `metal_api.rs` in metadata-provider crate. Queries `https://metal-api.dev/` (approved Metal Archives API) at priority 5. Returns band name, album, year, tracklist. Currently API returns 500 errors (backend crash).
-- **Year fallback**: extract 4-digit year from album name when metadata providers return `None`.
-- **CLI debug tool**: `ytmapi debug resolve <artist> <title>` tests full metadata pipeline (title cleaning -> normalization -> provider cascade).
+- **Metal API provider**: queries `https://metal-api.dev/` (approved MA REST API) at priority 5. Returns band name, album, year, tracklist. API returns 500 (backend crash). Falls back to local proxy.
+- **MA_COOKIE direct access** (Cookie-based Metallum access — ONLY working path):
+  - Reads `MA_COOKIE` env var, then `~/.config/youtui/ma_cookie` file
+  - Makes direct HTTP requests to Metal Archives AJAX API (bypasses Cloudflare)
+  - Returns artist, album, year (from `<!-- 2024 -->` comments), full tracklist, genre (from band page)
+  - Cookie auto-saved to config file for persistence
+  - Expires ~30 min, needs periodic refresh
+  - Proven working: 91 Megadeth albums returned, genres extracted from band page
+- **metal-proxy** (`libs/metal-proxy/`):
+  - Pure background HTTP server on port 5000
+  - No headless browser, no window, no Python — Rust-only
+  - Reads saved cookie, serves MA data via direct HTTP
+  - Background task refreshes cookie from running Chromium via CDP (every 15 min)
+  - `--get-cookie` flag: launches Chromium with `--remote-debugging-port=9222`, tries headless=new first, falls back to visible window
+  - Your metadata provider's `try_local_proxy` connects automatically
+- **Genre aliasing**: 3,713 genres from MusicBee hierarchy (MusicBrainz + Discogs + RYM + Wikidata). `genre_map::normalize_genre()` normalizes provider genres. Integrated into `MetadataRegistry.resolve()`. 26 tests pass.
+- **Year fallback**: extract 4-digit year from album name when providers return `None`.
+- **CLI debug tool**: `ytmapi debug resolve <artist> <title>` tests full pipeline.
+- `ytmapi debug genre <genre>` / `genre-list [filter]` test genre normalization.
+- **Chromium headless** blocked by Cloudflare (confirmed). No viable browser-automation path.
+- **enmet Python lib** (github.com/lukjak/enmet) accesses MA — not used (Rust-only rule).
 
 ## Session 2026-06-23 (This Session, Committed)
 - Footer album format: Single-line `Title - Artist - Album_ [s]` instead of separate album line
@@ -265,8 +284,9 @@ Context menu is exclusively via `o`.
 - **Album art popup**: Sixel centering/sizing not fully correct. Image may appear small or off-center. Sixel persistence after popup close can corrupt main window. Known bug - needs dedicated sixel layer management.
 - **Playlist merge into self**: Guard added against identical source/target in `playlist_update_popup.rs`.
 - **Cursor style**: Notes popup + ConfigEditorPopup now render cursor with teal background via line-by-line `Span` approach.
-- **Metal-API (metal-api.dev)**: Approved REST API for Metal Archives. Currently returns 500 errors (backend crash). Provider code is written and tested with CLI tool, but API must be back online for production use.
+- **Metal-API (metal-api.dev)**: Approved REST API for Metal Archives. Currently returns 500 errors (backend crash). Provider code is written but API must be back online.
 - **Year metadata**: Some tracks still show `None` for year when no metadata provider returns a year and album name has no year string. Fallback extracts from album name `(YYYY)`.
+- **MA_COOKIE**: `cf_clearance` cookie from Metal Archives expires ~30 min. Must be refreshed periodically via `cargo run --release -p metal-proxy -- --get-cookie` or manual browser extraction.
 
 ## Remaining
 ### P1 — Missing features (wired backend, need frontend)
@@ -290,3 +310,4 @@ Context menu is exclusively via `o`.
 - Album browser j/k routing when show_tracks
 - ytmapi-rs: 150 pre-existing TODOs (parse/search.rs, parse/artist.rs type safety)
 - **Metadata pipeline**: Improve year coverage - add more fallback sources for year extraction. Metal-API provider needs backend fix at metal-api.dev.
+- **RYM proxy**: Same cookie-based approach as MA_COOKIE could work for RateYourMusic genre/descriptor data. Needs: RYM session cookie from browser, reverse-engineering internal API endpoints via Network tab. RYM is Cloudflare-blocked, no public API. Investigate when MA_COOKIE pattern is stable.
