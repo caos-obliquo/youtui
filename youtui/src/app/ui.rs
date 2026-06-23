@@ -470,7 +470,14 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                 self.quit_confirm = true;
                 return AsyncTask::new_no_op().into();
             }
-            AppAction::ViewLogs => self.handle_change_context(WindowContext::Logs),
+            AppAction::ViewLogs => {
+                if self.context == WindowContext::Logs {
+                    // Toggle off — restore prev_context
+                    std::mem::swap(&mut self.context, &mut self.prev_context);
+                } else {
+                    self.handle_change_context(WindowContext::Logs);
+                }
+            }
             AppAction::PlayPause => return self.pauseplay().into(),
             AppAction::Log(a) => {
                 return apply_action_mapped(self, a, |this: &mut Self| &mut this.logger);
