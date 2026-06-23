@@ -16,7 +16,7 @@ use crate::widgets::{ScrollingList, ScrollingListState};
 use vi_text_editor::ViTextEditor;
 use ratatui::Frame;
 use ratatui::prelude::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ytmapi_rs::common::{SuggestionType, TextRun};
@@ -338,7 +338,13 @@ pub fn draw_library_browser(
                 .enumerate()
                 .map(|(i, s)| {
                     let label = format!("{} - {}", s.title, s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "));
-                    if i == browser.cur_selected && right_selected {
+                    let is_playing = browser.cur_playing_video_id.as_ref().map_or(false, |vid| vid == &s.video_id);
+                    if is_playing {
+                        ListItem::new(Line::from(Span::styled(
+                            label,
+                            Style::default().fg(Color::Rgb(0x00, 0xff, 0x00)).add_modifier(Modifier::BOLD),
+                        )))
+                    } else if i == browser.cur_selected && right_selected {
                         ListItem::new(Line::from(Span::styled(
                             label,
                             Style::default().fg(SELECTED_BORDER_COLOUR),

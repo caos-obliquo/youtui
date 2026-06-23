@@ -333,6 +333,7 @@ pub struct LibraryBrowser {
     // Local search
     pub search_active: bool,
     pub search: SearchBlock,
+    pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
 }
 
 impl LibraryBrowser {
@@ -363,6 +364,7 @@ impl LibraryBrowser {
             albums_fetched: false,
             search_active: false,
             search: SearchBlock::default(),
+            cur_playing_video_id: None,
         }
     }
 

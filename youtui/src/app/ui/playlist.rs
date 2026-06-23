@@ -1119,8 +1119,10 @@ impl Playlist {
         // Further clean album-related suffixes from title for metadata validation
         let clean_title = {
             let s = clean_title.as_str();
-            // Strip "FULL ALBUM" or "Full Album" (case-insensitive)
-            if let Some(pos) = s.to_lowercase().find("full album") {
+            // Strip "FULL ALBUM", "FULL EP", "FULL LP" (case-insensitive)
+            let lower = s.to_lowercase();
+            let pos = lower.find("full album").or_else(|| lower.find("full ep")).or_else(|| lower.find("full lp"));
+            if let Some(pos) = pos {
                 s[..pos].trim().to_string()
             } else if let Some(pos) = s.find("  (") {
                 s[..pos].trim().to_string()
