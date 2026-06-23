@@ -180,22 +180,54 @@ impl NotesPopup {
             let cur_line = self.editor.cursor_line();
             let cur_col = self.editor.cursor_col();
             let visual_range = self.editor.visual_line_range();
+            let block_range = self.editor.visual_block_range();
             let mut lines: Vec<ratatui::text::Line> = Vec::new();
             for (i, line_text) in self.editor.get_text().split('\n').enumerate() {
-                let selected = visual_range.map_or(false, |(s, e)| i >= s && i <= e);
-                let bg = if selected { Color::Rgb(0x00, 0x5f, 0x5f) } else { ratatui::style::Color::default() };
                 let is_cursor = i == cur_line;
-                if is_cursor {
-                    let (before, after) = line_text.split_at(cur_col.min(line_text.len()));
-                    lines.push(ratatui::text::Line::from(vec![
-                        ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White).bg(bg)),
-                        ratatui::text::Span::styled(mark.to_string(), Style::default().fg(Color::White).bg(bg)),
-                        ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White).bg(bg)),
-                    ]));
+                if let Some((top, left, bot, right)) = block_range {
+                    // Visual block mode: highlight column range on lines in range
+                    if i >= top && i <= bot {
+                        let cols = left.min(right);
+                        let cole = right.max(left);
+                        let before = &line_text[..cols.min(line_text.len())];
+                        let mid_start = cols.min(line_text.len());
+                        let mid_end = cole.min(line_text.len());
+                        let mid = &line_text[mid_start..mid_end];
+                        let after = &line_text[mid_end..];
+                        if is_cursor && i == cur_line {
+                            let (c_before, c_after) = line_text.split_at(cur_col.min(line_text.len()));
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(c_before.to_string(), Style::default().fg(Color::White)),
+                                ratatui::text::Span::styled(mark.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
+                                ratatui::text::Span::styled(c_after.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
+                            ]));
+                        } else {
+                            lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White)),
+                                ratatui::text::Span::styled(mid.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
+                                ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White)),
+                            ]));
+                        }
+                    } else {
+                        lines.push(ratatui::text::Line::from(
+                            ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White)),
+                        ));
+                    }
                 } else {
-                    lines.push(ratatui::text::Line::from(
-                        ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White).bg(bg)),
-                    ));
+                    let selected = visual_range.map_or(false, |(s, e)| i >= s && i <= e);
+                    let bg = if selected { Color::Rgb(0x00, 0x5f, 0x5f) } else { ratatui::style::Color::default() };
+                    if is_cursor {
+                        let (before, after) = line_text.split_at(cur_col.min(line_text.len()));
+                        lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White).bg(bg)),
+                            ratatui::text::Span::styled(mark.to_string(), Style::default().fg(Color::White).bg(bg)),
+                            ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White).bg(bg)),
+                        ]));
+                    } else {
+                        lines.push(ratatui::text::Line::from(
+                            ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White).bg(bg)),
+                        ));
+                    }
                 }
             }
             frame.render_widget(
