@@ -259,7 +259,9 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
     let mut set_id_map = HashMap::new();
     let list_songs: Vec<ListSong> = songs.into_iter().map(|s| {
         let vid = s.video_id.get_raw().to_string();
-        let sid = s.set_video_id.get_raw().to_string();
+        let raw_sid = s.set_video_id.get_raw().to_string();
+        // Use set_video_id if non-empty, otherwise fall back to video_id
+        let sid = if raw_sid.is_empty() { vid.clone() } else { raw_sid };
         set_id_map.insert(vid, sid);
         let artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist { name: a.name, id: None }).collect());
         let album = Some(MaybeRc::Owned(ListSongAlbum {
