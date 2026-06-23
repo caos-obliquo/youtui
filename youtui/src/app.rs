@@ -21,8 +21,6 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleDeletePlaylistOk, HandleDeletePlaylistError,
     HandleEditPlaylistDetailsOk, HandleEditPlaylistDetailsError,
     HandleRatePlaylistOk, HandleRatePlaylistError,
-    HandleRemovePlaylistItemsOk, HandleRemovePlaylistItemsError,
-    HandleReorderPlaylistItemOk, HandleReorderPlaylistItemError,
     HandleSubscribeToArtistOk, HandleSubscribeToArtistError,
     HandleUnsubscribeFromArtistsOk, HandleUnsubscribeFromArtistsError,
     HandleAddPlaylistToPlaylistOk, HandleAddPlaylistToPlaylistError,
@@ -487,11 +485,11 @@ impl Youtui {
                         playlist_id,
                         video_ids: set_video_ids,
                     },
-                    HandleRemovePlaylistItemsOk,
-                    HandleRemovePlaylistItemsError,
+                    crate::app::ui::browser::library::HandleLibraryRemoveItemsOk,
+                    crate::app::ui::browser::library::HandleLibraryRemoveItemsErr,
                     None,
                 )
-                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.browser.library_browser);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ReorderPlaylistItemFromLibrary(playlist_id, video_id, target_video_id) => {
@@ -502,11 +500,11 @@ impl Youtui {
                         video_id,
                         target_video_id,
                     },
-                    HandleReorderPlaylistItemOk,
-                    HandleReorderPlaylistItemError,
+                    crate::app::ui::browser::library::HandleLibraryReorderItemsOk,
+                    crate::app::ui::browser::library::HandleLibraryReorderItemsErr,
                     None,
                 )
-                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.browser.library_browser);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::SubscribeToArtistFromLibrary(channel_id) => {

@@ -44,16 +44,20 @@ pub struct HandleEditPlaylistDetailsError;
 pub struct HandleRatePlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleRatePlaylistError;
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleReorderPlaylistItemOk;
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleReorderPlaylistItemError;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistError;
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleRemovePlaylistItemsOk;
+#[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleRemovePlaylistItemsError;
 
