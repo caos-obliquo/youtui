@@ -1180,27 +1180,47 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::MoveTrackUp => {
                     if self.show_playlist_tracks && self.playlist_tracks_selected > 0 {
                         let cur = self.playlist_tracks_selected;
-                        if let (Some(song), Some(above)) = (self.playlist_tracks.get(cur), self.playlist_tracks.get(cur - 1)) {
+                        let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
+                        let song_vid = filtered.get(cur).map(|s| s.video_id.get_raw().to_string());
+                        let above_vid = filtered.get(cur - 1).map(|s| s.video_id.get_raw().to_string());
+                        if let (Some(ref sv), Some(ref av)) = (song_vid, above_vid) {
                             if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                                let cur_idx = self.playlist_tracks.iter().position(|t| t.video_id.get_raw() == sv);
+                                let above_idx = self.playlist_tracks.iter().position(|t| t.video_id.get_raw() == av);
+                                if let (Some(ci), Some(ai)) = (cur_idx, above_idx) {
+                                    self.playlist_tracks.swap(ci, ai);
+                                    self.playlist_tracks_selected = self.playlist_tracks_selected.saturating_sub(1);
+                                }
                                 return (AsyncTask::new_no_op(), Some(AppCallback::ReorderPlaylistItemFromLibrary(
                                     pl.playlist_id.clone(),
-                                    song.video_id.clone(),
-                                    above.video_id.clone(),
+                                    ytmapi_rs::common::VideoID::from_raw(sv.clone()),
+                                    ytmapi_rs::common::VideoID::from_raw(av.clone()),
                                 )));
                             }
                         }
                     }
                 }
                 BrowserSongsAction::MoveTrackDown => {
-                    if self.show_playlist_tracks && self.playlist_tracks_selected + 1 < self.playlist_tracks.len() {
+                    if self.show_playlist_tracks {
                         let cur = self.playlist_tracks_selected;
-                        if let (Some(song), Some(below)) = (self.playlist_tracks.get(cur), self.playlist_tracks.get(cur + 1)) {
-                            if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                                return (AsyncTask::new_no_op(), Some(AppCallback::ReorderPlaylistItemFromLibrary(
-                                    pl.playlist_id.clone(),
-                                    song.video_id.clone(),
-                                    below.video_id.clone(),
-                                )));
+                        let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
+                        if cur + 1 < filtered.len() {
+                            let song_vid = filtered.get(cur).map(|s| s.video_id.get_raw().to_string());
+                            let below_vid = filtered.get(cur + 1).map(|s| s.video_id.get_raw().to_string());
+                            if let (Some(ref sv), Some(ref bv)) = (song_vid, below_vid) {
+                                if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                                    let cur_idx = self.playlist_tracks.iter().position(|t| t.video_id.get_raw() == sv);
+                                    let below_idx = self.playlist_tracks.iter().position(|t| t.video_id.get_raw() == bv);
+                                    if let (Some(ci), Some(bi)) = (cur_idx, below_idx) {
+                                        self.playlist_tracks.swap(ci, bi);
+                                        self.playlist_tracks_selected += 1;
+                                    }
+                                    return (AsyncTask::new_no_op(), Some(AppCallback::ReorderPlaylistItemFromLibrary(
+                                        pl.playlist_id.clone(),
+                                        ytmapi_rs::common::VideoID::from_raw(sv.clone()),
+                                        ytmapi_rs::common::VideoID::from_raw(bv.clone()),
+                                    )));
+                                }
                             }
                         }
                     }
