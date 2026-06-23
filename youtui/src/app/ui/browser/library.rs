@@ -155,7 +155,8 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 target.playlist_data = playlists;
                 target.playlist_selected = 0;
                 target.input_routing = InputRouting::Content;
-                target.show_playlist_tracks = false;
+                // show_playlist_tracks preserved across refreshes
+                // Only DismissTracks action closes it
             }
             LibraryEffect::PlaylistTracksLoaded(songs) => {
                 info!(count = %songs.len(), "Playlist tracks loaded");
