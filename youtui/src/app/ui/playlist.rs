@@ -1119,11 +1119,14 @@ impl Playlist {
         // Further clean album-related suffixes from title for metadata validation
         let clean_title = {
             let s = clean_title.as_str();
-            // Strip "FULL ALBUM", "FULL EP", "FULL LP" (case-insensitive)
+            // Strip album/suffix tags like (Full Album), (Full EP), (Demo), (Single)
             let lower = s.to_lowercase();
-            let pos = lower.find("full album").or_else(|| lower.find("full ep")).or_else(|| lower.find("full lp"));
+            let tags = ["full album", "full ep", "full lp", "full demo", "demo", "ep", "single", "singles"];
+            let pos = tags.iter().filter_map(|t| lower.find(t)).min();
             if let Some(pos) = pos {
-                s[..pos].trim().to_string()
+                // Try to find the opening paren before the tag to strip the whole suffix
+                let start = s[..pos].rfind('(').unwrap_or(pos);
+                if start > 0 { s[..start].trim().to_string() } else { s[..pos].trim().to_string() }
             } else if let Some(pos) = s.find("  (") {
                 s[..pos].trim().to_string()
             } else {
