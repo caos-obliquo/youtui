@@ -21,7 +21,6 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleDeletePlaylistOk, HandleDeletePlaylistError,
     HandleEditPlaylistDetailsOk, HandleEditPlaylistDetailsError,
     HandleRatePlaylistOk, HandleRatePlaylistError,
-    HandleGetPlaylistDetailsOk, HandleGetPlaylistDetailsError,
     HandleRemovePlaylistItemsOk, HandleRemovePlaylistItemsError,
     HandleReorderPlaylistItemOk, HandleReorderPlaylistItemError,
     HandleSubscribeToArtistOk, HandleSubscribeToArtistError,
@@ -152,9 +151,7 @@ pub enum AppCallback {
         playlist_title: String,
         tracks: Vec<crate::app::structures::ListSong>,
     },
-    // TODO: Wire back navigation in browser context
-    #[allow(dead_code)]
-    Back,
+
     ShowDeleteConfirm(PlaylistID<'static>, String),
     OpenRenamePopup(PlaylistID<'static>, String),
     OpenEditPopup(PlaylistID<'static>, String),
@@ -172,9 +169,7 @@ pub enum AppCallback {
         privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
     },
     RatePlaylistFromLibrary(PlaylistID<'static>, ytmapi_rs::common::LikeStatus),
-    // TODO: Wire playlist details popup — parse like_status for rate toggle
-    #[allow(dead_code)]
-    GetPlaylistDetailsFromLibrary(PlaylistID<'static>),
+
     RemovePlaylistItemsFromLibrary(PlaylistID<'static>, Vec<VideoID<'static>>),
     ReorderPlaylistItemFromLibrary(PlaylistID<'static>, VideoID<'static>, VideoID<'static>),
     SubscribeToArtistFromLibrary(ArtistChannelID<'static>),
@@ -381,6 +376,13 @@ impl Youtui {
                 );
                 let next_task = mutation(&mut self.window_state);
                 self.task_manager.spawn_task(&self.server, next_task);
+                if self.window_state.playlist.library_playlist_mutated {
+                    self.window_state.playlist.library_playlist_mutated = false;
+                    let refresh = self.window_state.browser.library_browser
+                        .reload_category()
+                        .map_frontend(|w: &mut YoutuiWindow| &mut w.browser.library_browser);
+                    self.task_manager.spawn_task(&self.server, refresh);
+                }
             }
         }
     }
@@ -660,16 +662,6 @@ impl Youtui {
                 .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
             }
-            AppCallback::GetPlaylistDetailsFromLibrary(playlist_id) => {
-                let effect = AsyncTask::new_future_try(
-                    GetPlaylistDetailsMessage(playlist_id),
-                    HandleGetPlaylistDetailsOk,
-                    HandleGetPlaylistDetailsError,
-                    None,
-                )
-                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
-                self.task_manager.spawn_task(&self.server, effect);
-            }
             AppCallback::ClosePopup => {
                 self.window_state.close_popup();
             }
@@ -681,38 +673,13 @@ impl Youtui {
             } => {
                 self.window_state.close_popup();
                 self.window_state.browser.library_browser.playlists_fetched = false;
-                const MAX_YTM_SONGS: usize = 5000;
-                let total = video_ids.len();
-                if total > MAX_YTM_SONGS {
-                    let chunks: Vec<Vec<VideoID<'static>>> = video_ids.chunks(MAX_YTM_SONGS).map(|c| c.to_vec()).collect();
-                    let chunks_needed = chunks.len();
-                    info!("Splitting {} songs into {} playlists", total, chunks_needed);
-                    // Store remaining chunks (skip first, it's about to be spawned)
-                    self.window_state.playlist.pending_playlist_chunks = Some((chunks[1..].to_vec(), title.clone(), description.clone(), privacy));
-                    // Spawn first chunk
-                    let first_title = format!("{} ({}/{})", title, 1, chunks_needed);
-                    let effect = AsyncTask::new_future_try(
-                        CreatePlaylistWithVideos {
-                            title: first_title,
-                            description: description.clone(),
-                            video_ids: chunks[0].clone(),
-                            privacy: None,
-                        },
-                        HandleCreatePlaylistOk,
-                        HandleCreatePlaylistError,
-                        None,
-                    )
-                    .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
-                    self.task_manager.spawn_task(&self.server, effect);
-                } else {
-                    let effect = self.window_state.handle_create_playlist_from_popup(
-                        title,
-                        description,
-                        privacy,
-                        video_ids,
-                    );
-                    self.task_manager.spawn_task(&self.server, effect);
-                }
+                let effect = self.window_state.handle_create_playlist_from_popup(
+                    title,
+                    description,
+                    privacy,
+                    video_ids,
+                );
+                self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::PlayNext => {
                 let effect = self.window_state.handle_next();
@@ -823,9 +790,6 @@ impl Youtui {
             AppCallback::OpenUrl(url) => {
                 let effect = self.window_state.play_yt_url(url);
                 self.task_manager.spawn_task(&self.server, effect);
-            }
-            AppCallback::Back => {
-                self.window_state.browser.navigate_back();
             }
         }
     }

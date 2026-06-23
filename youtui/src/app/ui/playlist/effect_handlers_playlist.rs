@@ -45,10 +45,6 @@ pub struct HandleRatePlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleRatePlaylistError;
 #[derive(Debug, PartialEq)]
-pub struct HandleGetPlaylistDetailsOk;
-#[derive(Debug, PartialEq)]
-pub struct HandleGetPlaylistDetailsError;
-#[derive(Debug, PartialEq)]
 pub struct HandleReorderPlaylistItemOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleReorderPlaylistItemError;
@@ -183,8 +179,9 @@ impl_youtui_task_handler!(
     (),
     Playlist,
     |_, _: ()| {
-        |_this: &mut Playlist| {
+        |this: &mut Playlist| {
             info!("Playlist deleted successfully");
+            this.library_playlist_mutated = true;
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
@@ -209,8 +206,9 @@ impl_youtui_task_handler!(
     (),
     Playlist,
     |_, _: ()| {
-        |_this: &mut Playlist| {
+        |this: &mut Playlist| {
             info!("Playlist details updated");
+            this.library_playlist_mutated = true;
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
@@ -235,8 +233,9 @@ impl_youtui_task_handler!(
     (),
     Playlist,
     |_, _: ()| {
-        |_this: &mut Playlist| {
+        |this: &mut Playlist| {
             info!("Playlist rated successfully");
+            this.library_playlist_mutated = true;
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
@@ -256,32 +255,6 @@ impl_youtui_task_handler!(
     }
 );
 
-impl_youtui_task_handler!(
-    HandleGetPlaylistDetailsOk,
-    ytmapi_rs::parse::GetPlaylistDetails,
-    Playlist,
-    |_, details: ytmapi_rs::parse::GetPlaylistDetails| {
-        move |this: &mut Playlist| {
-            info!("Got playlist details: {}", details.title);
-            this.last_error = Some(format!("Playlist: {} - {} tracks", details.title, details.track_count_text));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleGetPlaylistDetailsError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to get playlist details: {}", msg);
-            this.last_error = Some(format!("Details failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
 
 impl_youtui_task_handler!(
     HandleReorderPlaylistItemOk,
@@ -314,8 +287,9 @@ impl_youtui_task_handler!(
     (),
     Playlist,
     |_, _: ()| {
-        |_this: &mut Playlist| {
+        |this: &mut Playlist| {
             info!("Playlist renamed successfully");
+            this.library_playlist_mutated = true;
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
@@ -366,11 +340,11 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for PlaylistEffect {
         match self {
             PlaylistEffect::CreatePlaylistSuccess(playlist_id) => {
                 info!("Playlist created: {:?}", playlist_id);
+                target.library_playlist_mutated = true;
                 // Check if there are more chunks to create (sequential chain)
                 if let Some((chunks, ref title, ref description, ref privacy)) = target.pending_playlist_chunks.take() {
                     if let Some((i, chunk)) = chunks.iter().enumerate().next() {
-                        let total = chunks.len() + 1;
-                        let chunk_title = format!("{} ({}/{})", title, i + 2, total);
+                        let chunk_title = format!("{} pt{}", title, i + 1);
                         let remaining: Vec<Vec<_>> = chunks[i + 1..].to_vec();
                         target.pending_playlist_chunks = if remaining.is_empty() { None } else {
                             Some((remaining, title.clone(), description.clone(), privacy.clone()))
@@ -1017,8 +991,9 @@ pub struct HandleAddPlaylistToPlaylistOk;
 pub struct HandleAddPlaylistToPlaylistError;
 
 impl_youtui_task_handler!(HandleAddPlaylistToPlaylistOk, (), Playlist, |_, _: ()| {
-    |_this: &mut Playlist| {
+    |this: &mut Playlist| {
         info!("Playlist merged successfully");
+        this.library_playlist_mutated = true;
         AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
     }
 });
