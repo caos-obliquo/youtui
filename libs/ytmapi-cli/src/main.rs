@@ -363,6 +363,7 @@ async fn cmd_debug(args: &[String]) {
         eprintln!("  clean <title>            Test title cleaning only");
         eprintln!("  artist <name>            Test artist normalization only");
         eprintln!("  resolve <artist> <title>  Test metadata pipeline for a song");
+        eprintln!("  simulate-url <url>        Simulate add_yt_video full path (yt-dlp + clean + resolve)");
         eprintln!("  genre <genre>             Test genre normalization");
         eprintln!("  genre-list [filter]       List known genres (optionally filtered)");
         return;
@@ -393,6 +394,7 @@ async fn cmd_debug(args: &[String]) {
             println!("Normalized: '{}'", normalized);
             println!("Known: {}", known);
         }
+        "simulate-url" => cmd_debug_simulate_url(&args[1..]).await,
         "genre-list" => {
             let filter = args.get(1).map(|s| s.to_lowercase());
             let all = metadata_provider::genre_map::all_genres();
@@ -466,6 +468,234 @@ async fn cmd_debug_resolve(args: &[String]) {
                 println!("First 3 tracks:");
                 for (i, t) in meta.album_tracks.iter().take(3).enumerate() {
                     println!("  {}. {} ({:.0}s)", i + 1, t.title, t.duration_secs);
+                }
+            }
+            println!("Genres: {:?}", meta.genres);
+            println!("Styles: {:?}", meta.styles);
+        }
+        Err(e) => eprintln!("Resolution error: {}", e),
+    }
+}
+
+async fn cmd_debug_simulate_url(args: &[String]) {
+    if args.is_empty() {
+        eprintln!("Usage: ytmapi debug simulate-url <youtube-url>");
+        eprintln!("  Simulates the full add_yt_video flow: yt-dlp -> title cleaning -> registry.resolve()");
+        eprintln!("  Shows all tracks with quality guard check.");
+        return;
+    }
+    let url = &args[0];
+    println!("=== Simulating add_yt_video ===");
+    println!("URL: {}", url);
+    println!();
+
+    // Step 1: Extract video ID (same as play_yt_url)
+    let raw_id = if url.contains("watch?v=") {
+        url.split("watch?v=").nth(1).unwrap_or(url)
+            .split('&').next().unwrap_or("")
+            .to_string()
+    } else if url.contains("youtu.be/") {
+        url.split("youtu.be/").nth(1).unwrap_or(url)
+            .split('?').next().unwrap_or("")
+            .to_string()
+    } else {
+        url.rsplit('/').next().unwrap_or(url)
+            .split('?').next().unwrap_or(&url)
+            .to_string()
+    };
+    println!("Extracted video ID: {}", raw_id);
+    println!();
+
+    // Step 2: Run yt-dlp (same as add_yt_video)
+    println!("Running yt-dlp --dump-json --no-warnings --flat-playlist...");
+    let output = std::process::Command::new("yt-dlp")
+        .args(["--dump-json", "--no-warnings", "--flat-playlist"])
+        .arg(&format!("https://youtu.be/{}", raw_id))
+        .output();
+    
+    let (title, artist, duration_secs) = match output {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            // yt-dlp outputs NDJSON; parse first entry (same as serde_json::from_str)
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                let t = v.get("title").and_then(|s| s.as_str()).unwrap_or(&raw_id).to_string();
+                let uploader = v.get("uploader").and_then(|s| s.as_str()).unwrap_or("Unknown").to_string();
+                let a = if t.contains(" - ") {
+                    t.splitn(2, " - ").next().map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty() && s.len() < 80)
+                        .unwrap_or_else(|| uploader.clone())
+                } else {
+                    uploader.clone()
+                };
+                let d = v.get("duration").and_then(|s| s.as_f64()).unwrap_or(0.0);
+                println!("  Title:        '{}'", t);
+                println!("  Uploader:     '{}'", uploader);
+                println!("  Artist:       '{}'", a);
+                println!("  Duration:     {:.0}s", d);
+                (t, a, d)
+            } else {
+                eprintln!("Failed to parse yt-dlp output");
+                return;
+            }
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            eprintln!("yt-dlp failed: {}", stderr);
+            return;
+        }
+        Err(e) => {
+            eprintln!("Failed to run yt-dlp: {}", e);
+            return;
+        }
+    };
+    println!();
+
+    // Step 3: Title cleaning (match add_yt_video exactly)
+    // 3a: Strip artist prefix
+    let clean_title = {
+        let lower = title.to_lowercase();
+        let art_lower = artist.to_lowercase();
+        if lower.starts_with(&format!("{} - ", art_lower)) {
+            title[artist.len() + 3..].trim().to_string()
+        } else if lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
+            title[artist.len()..].trim().to_string()
+        } else {
+            title.to_string()
+        }
+    };
+    // 3b: Strip noise tags
+    let clean_title = {
+        let noise_tags = [
+            "official audio", "official video", "lyric video", "lyrics",
+            "legendado", "c legendado", "c legenda", "com legenda",
+            "com legendado", "legendado pt", "legendado pt-br",
+            "subtitle", "subtitles",
+        ];
+        let mut s = clean_title;
+        loop {
+            let lower = s.to_lowercase().trim().to_string();
+            let mut found = false;
+            for tag in &noise_tags {
+                if let Some(pos) = lower.rfind(tag) {
+                    let before = &s[..pos].trim();
+                    let cut = if let Some(paren_start) = before.rfind('(') {
+                        let between = &before[paren_start..];
+                        if between.to_lowercase().contains(tag) {
+                            &before[..paren_start.max(1).saturating_sub(1)]
+                        } else {
+                            &s[..pos]
+                        }
+                    } else {
+                        &s[..pos]
+                    };
+                    if cut.len() < s.len() {
+                        s = cut.trim().to_string();
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if !found {
+                s = s.trim_end_matches(|c| c == '(').trim().to_string();
+                break;
+            }
+        }
+        s.trim().to_string()
+    };
+    // 3c: Strip album suffix tags
+    let clean_title = {
+        let s = clean_title.as_str();
+        let lower = s.to_lowercase();
+        let tags = ["full album", "full ep", "full lp", "full demo", "full single", "album", "demo", "ep", "single", "singles"];
+        let pos = tags.iter().filter_map(|t| lower.find(t)).min();
+        if let Some(pos) = pos {
+            let start = s[..pos].rfind('(').unwrap_or(pos);
+            if start > 0 { s[..start].trim().to_string() } else { s[..pos].trim().to_string() }
+        } else if let Some(pos) = s.find("  (") {
+            s[..pos].trim().to_string()
+        } else {
+            s.trim().to_string()
+        }
+    };
+    // 3d: Strip year from parenthetical
+    let clean_title_for_search = {
+        let lower = clean_title.to_lowercase();
+        if let Some(paren) = lower.rfind("(") {
+            let inner = lower[paren..].trim_matches(|c| c == '(' || c == ')' || c == ' ');
+            if inner.split(|c: char| !c.is_ascii_digit())
+                .find(|p| p.len() == 4)
+                .and_then(|p| {
+                    let y = p.parse::<u16>().ok()?;
+                    if (1900..2100).contains(&y) { Some(y) } else { None }
+                })
+                .is_some()
+            {
+                clean_title[..paren].trim().to_string()
+            } else {
+                clean_title.clone()
+            }
+        } else {
+            clean_title.clone()
+        }
+    };
+
+    println!("=== Title Cleaning ===");
+    println!("Raw title:    '{}'", title);
+    println!("Artist:       '{}'", artist);
+    println!("Clean title:  '{}'", clean_title_for_search);
+    println!("Song title (for UI): '{}'", clean_title);
+    println!();
+
+    // Step 4: Resolve metadata via registry
+    let normalized = normalize_artist_name(&artist);
+    use metadata_provider::MetadataRegistry;
+    let http_client = reqwest::Client::builder()
+        .user_agent("Youtui/0.1 (test)")
+        .build()
+        .unwrap();
+    let lastfm_key = std::env::var("LASTFM_API_KEY").ok().filter(|s| !s.is_empty());
+    let discogs_token = std::env::var("DISCOGS_TOKEN").ok().filter(|s| !s.is_empty());
+    let genius_token = std::env::var("GENIUS_TOKEN").ok().filter(|s| !s.is_empty());
+    let registry = MetadataRegistry::new(
+        http_client,
+        lastfm_key,
+        discogs_token,
+        genius_token,
+        None,
+    );
+
+    println!("=== Resolving Metadata ===");
+    println!("Searching for: artist='{}' title='{}'", normalized, clean_title_for_search);
+    println!();
+
+    match registry.resolve(&normalized, &clean_title_for_search).await {
+        Ok(meta) => {
+            println!("=== Result ===");
+            println!("Artist: {:?}", meta.artist);
+            println!("Album:  {:?}", meta.album);
+            println!("Year:   {:?}", meta.year);
+            println!("Track#: {:?}", meta.track_no);
+            println!("Tracks: {} entries", meta.album_tracks.len());
+            if !meta.album_tracks.is_empty() {
+                let mut total_dur = 0.0f64;
+                for (i, t) in meta.album_tracks.iter().enumerate() {
+                    println!("  {:2}. {} ({:.0}s)", i + 1, t.title, t.duration_secs);
+                    total_dur += t.duration_secs;
+                }
+                println!();
+                println!("=== Quality Guard Check ===");
+                let valid_tracks = meta.album_tracks.iter().all(|t| t.duration_secs > 0.0);
+                let duration_ok = duration_secs == 0.0 || total_dur >= duration_secs * 0.5;
+                println!("  Total track duration: {:.0}s", total_dur);
+                println!("  Video duration:       {:.0}s", duration_secs);
+                println!("  All tracks have duration > 0: {}", valid_tracks);
+                println!("  Total >= 50% of video: {} ({:.0}s >= {:.0}s)", duration_ok, total_dur, duration_secs * 0.5);
+                if valid_tracks && duration_ok {
+                    println!("  => ALBUM SPLITTING WOULD TRIGGER");
+                } else {
+                    println!("  => ALBUM SPLITTING WOULD BE REJECTED");
+                    if !valid_tracks { println!("     Reason: zero-duration tracks"); }
+                    if !duration_ok { println!("     Reason: total duration {:.0}s < 50% of video {:.0}s", total_dur, duration_secs); }
                 }
             }
             println!("Genres: {:?}", meta.genres);

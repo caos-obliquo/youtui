@@ -317,30 +317,128 @@ Context menu is exclusively via `o`.
 - **Year metadata**: Some tracks still show `None` for year when no metadata provider returns a year and album name has no year string. Fallback extracts from album name `(YYYY)`.
 - **MA_COOKIE**: `cf_clearance` cookie from Metal Archives expires ~30 min. Must be refreshed periodically via `cargo run --release -p metal-proxy -- --get-cookie` or manual browser extraction.
 
-## Remaining
-### P1 — Missing features (wired backend, need frontend)
-- **Like status in details popup**: `GetPlaylistDetails.like_status` already parsed, just not rendered. Details popup `playlist_details_popup.rs:draw()` — add 1 line showing rating.
-- **Back navigation (remaining gap)**: `BrowserAction::Back` + `state_stack` works for `Navigate()` but `handle_change_search_type()` (F7 tab cycle) doesn't push snapshots. Stack can restore wrong tab.
-- **Playlist overwrite mode**: `app.rs:481` — fetch current tracks + remove before add
-- **Annotations integration**: verify Tab/l/h switching is fully wired
-- **Playlist editor**: Auto-open after track fetch replaced by inline tracks view (library shows tracks via `draw_advanced_table`).
+## Remaining Items (Detailed)
+### Recommended Order
+1. **Phase D: [SEARCH] indicator + selection highlight** (golden rule violation, affects `/` UX)
+2. **Phase C: Sort/filter popups for library tracks** (needed for keybinding parity)
+3. **P1: Like status in details popup** (trivial, 1 line)
+4. **P1: Back navigation (F7 cycle)** (state corruption bug)
+5. **P1: Playlist overwrite mode** (data-loss risk on save-to-existing)
+6. **P2 items** (polish, no data-loss)
+7. **P3 items** (tech debt)
 
-### P2 — Polish
-- FFT footer bars (roadmap)
-- Fix test counts in docs (json-crawler 8→2, async-callback-manager 15→14)
-- Footer: upgrade indicator icons (shuffle/repeat/scrobble) to monochrome, show explicitly in footer space
-- Album art popup: fix sixel centering and reuse (known bug)
-- **Library tracks: Sort/filter popups** — `Filter`/`Sort` key handlers toggle `self.filter`/`self.sort` (LikedSongs) instead of `tracks_filter`/`tracks_sort`. Need to wire for tracks view (Phase C).
-- **Library tracks: `[SEARCH]` indicator** — `/` filter works silently without indicator. Need `HasTitle` impl showing `[SEARCH: text (N/M)]` (Phase D).
-- **Library tracks: Selection highlight** — `get_selected_item()` returns raw index, highlight lands on wrong row when filter active (Phase D).
+### Phase D: `[SEARCH]` indicator + selection highlight (GOLDEN RULE)
+**Problem**: Library tracks `/` filter works silently (filters displayed rows) but:
+- No `[SEARCH: text (N/M)]` indicator in title bar — violates golden rule
+- Selection highlight lands on wrong row when filter/sort active — `get_selected_item()` returns raw `playlist_tracks_selected` index, not mapped to filtered position
 
-### P3 — Tech debt
-- Genius annotations fallback (page scrape)
-- Genius lyrics: Musixmatch integration
-- ytmapi-cli: more fixture types
-- Crate extraction: audio-player
-- Count-in-header standardization
-- Album browser j/k routing when show_tracks
-- ytmapi-rs: 150 pre-existing TODOs (parse/search.rs, parse/artist.rs type safety)
-- **Metadata pipeline**: Improve year coverage - add more fallback sources for year extraction. Metal-API provider needs backend fix at metal-api.dev.
-- **RYM proxy**: Same cookie-based approach as MA_COOKIE could work for RateYourMusic genre/descriptor data. Needs: RYM session cookie from browser, reverse-engineering internal API endpoints via Network tab. RYM is Cloudflare-blocked, no public API. Investigate when MA_COOKIE pattern is stable.
+**What to do**:
+1. **HasTitle impl for LibraryBrowser**: Add `HasTitle` returning `"Library"` + `[SEARCH: text (M/N)]` when tracks filter active. LibraryBrowser uses `BrowserWidget` which calls `HasTitle::title()`. Follow pattern in `draw.rs` for other browsers (SongsBrowser, AlbumsBrowser, etc. show search text in title). 
+   - File: `youtui/src/app/ui/browser/library.rs`
+   - Search key pattern: implement `HasTitle` trait, check `tracks_filter.filtered` len vs total
+   - Reference: `youtui/src/app/ui/browser/songs.rs` HasTitle implementation
+
+2. **Selection highlight fix**: When tracks view is showing (library state is `LibraryState::Tracks`), the selection index must be mapped through the filtered list to find the correct displayed row. 
+   - `get_selected_item()` returns `playlist_tracks_selected` (raw index into `playlist_tracks`)
+   - When filter/sort active, `get_tracks_filtered_list_iter()` returns subset
+   - Solution: track `tracks_selected_filtered` for filtered position, or map raw→filtered when drawing
+   - File: `youtui/src/app/ui/browser.rs` drawing code + `youtui/src/app/ui/browser/library.rs`
+
+3. **Files**: `youtui/src/app/ui/browser/library.rs`, `youtui/src/app/ui/browser.rs` (draw routing)
+
+### Phase C: Sort/filter popups for library tracks
+**Problem**: Action handlers for `Filter`/`Sort` actions in LibraryBrowser toggle `self.filter`/`self.sort` (LikedSongs category) instead of `self.tracks_filter`/`self.tracks_sort` (tracks view). No keybinding binds these actions for library context.
+
+**What to do**:
+1. **Keybindings**: In `keymap.rs`, add `FilterAction` and `SortAction` bindings for `Context::Library` when in tracks view. Bind to `o.s` (sort tracks) and `o.c` (filter tracks) to match other browsers.
+   - File: `youtui/src/config/keymap.rs` — likely add `Action::FilterAction(FilterAction::NoArg)` under `Context::Library``
+   - Note: FilterAction/SortAction for albums context uses `function_switch!` — tracks version needs similar but with `tracks_filter`/`tracks_sort`
+
+2. **Handler routing**: In `library.rs`, `ActionHandler<FilterAction>` and `ActionHandler<SortAction>` must check `library_state`:
+   - If `LibraryState::Tracks` → operate on `self.tracks_filter`/`self.tracks_sort`
+   - If `LibraryState::List` → operate on `self.filter`/`self.sort` (existing behavior)
+   - Files: `youtui/src/app/ui/browser/library.rs`
+
+3. **Popup dispatch**: Filter popup (`FilterView`) and Sort popup (`SortView`) need to be shown when triggered from tracks context. The `show_popup` method currently exists. Need to ensure popup uses correct manager.
+   - File: `youtui/src/app/ui/browser/library.rs` — `show_filter_popup()` and `show_sort_popup()` methods
+
+4. **Files**: `youtui/src/config/keymap.rs`, `youtui/src/app/ui/browser/library.rs`
+
+### P1: Like status in details popup (TRIVIAL — 1-3 lines)
+**Problem**: `GetPlaylistDetails.like_status` field already parsed from API response (values: `LIKE`, `DISLIKE`, `INDIFFERENT`). Rendered `draw()` method in details popup doesn't show it.
+
+**What to do**:
+1. In `playlist_details_popup.rs:draw()`, add line after title showing rating: `"Rating: ♥"` / `"Rating: −"` / `"Rating: ∅"` (or plain text)
+   - File: `youtui/src/app/ui/playlist/playlist_details_popup.rs`
+
+2. **Files**: `youtui/src/app/ui/playlist/playlist_details_popup.rs`
+
+### P1: Back navigation (F7 tab cycle)
+**Problem**: `BrowserAction::Back` + `state_stack` pattern correctly saves/restores state per-tab. But `handle_change_search_type()` (F7 tab cycle, `handle_search_action` in `browser.rs`) navigates between tabs without pushing snapshots. When user goes back, stack may restore wrong tab.
+
+**What to do**:
+1. In `handle_change_search_type()` (or the dispatch point around F7), call `push_state_snapshot()` on the *current* browser widget before switching to the new one.
+2. File: `youtui/src/app/ui/browser.rs` — the F7 dispatch in `handle_search_action()` or `handle_change_search_type()`
+3. Reference: `Navigate(new_search)` calls `push_state_snapshot()` in `browser.rs`
+
+**Files**: `youtui/src/app/ui/browser.rs`
+
+### P1: Playlist overwrite mode (DATA LOSS RISK)
+**Problem**: When user saves URL-added songs to an existing playlist (`o.E` → select existing playlist → save), the current behavior appends tracks to the existing playlist without checking if it should overwrite. The overwrite logic at `app.rs:481` (fetch current tracks + remove before add) exists but is behind a condition that never triggers.
+
+**What to do**:
+1. In PlaylistEditorPopup save flow (or the `o.E` save-to-existing flow), add a confirm step: "Playlist has N tracks. Replace (y/N)?" 
+2. If confirmed, fetch current tracks via `GetPlaylistSongs` then remove them via `RemovePlaylistItems` before adding new ones
+3. File: `youtui/src/app/ui/playlist/playlist_update_popup.rs` or `youtui/src/app/ui/playlist.rs` (save-existing path)
+
+**Files**: `youtui/src/app/ui/playlist/playlist_update_popup.rs`, `youtui/src/app/ui/playlist.rs`
+
+### P1: Annotations integration
+**Problem**: Lyrics popup has Tab/l/h for switching between lyrics/annotations/view-switching modes. Verify this is fully wired end-to-end.
+
+**Files**: `youtui/src/app/ui/playlist/annotations_popup.rs`, `youtui/src/app/ui/playlist/lyrics_popup.rs`
+
+### P2: FFT footer bars (low priority)
+**Problem**: No FFT frequency bars in footer (roadmap feature, not wired yet).
+
+### P2: Fix test counts in docs
+**Problem**: `json-crawler` says 8 tests but actual is 2 (0 lib + 2 doctests). `async-callback-manager` says 15 but actual is 14 (3 lib + 11 integ).
+
+**Files**: This file (CLAUDE.md), header section "Tests"
+
+### P2: Footer indicator icons
+**Problem**: Shuffle/repeat/scrobble indicators in footer use small icons. Upgrade to monochrome blocks/bars.
+
+### P2: Album art popup sixel fix
+**Problem**: Sixel centering not perfect, sixel persistence after close corrupts main window. Needs dedicated sixel layer management. Known bug.
+
+**Files**: `youtui/src/app/ui/browser/album_art_popup.rs`
+
+### P3: Genius annotations fallback (page scrape)
+**Problem**: Without `GENIUS_TOKEN`, `__INITIAL_STATE__` scraping fails on most pages. Need a fallback web-scraping path.
+
+**Files**: `genius-rs/src/annotations.rs`
+
+### P3: Genius lyrics: Musixmatch integration
+**Problem**: Genius lyrics only. No Musixmatch/LRCLIB fallback for songs without Genius entries.
+
+### P3: ytmapi-cli more fixture types
+**Problem**: CLI debug tool needs more fixture types (browse/search endpoints).
+
+### P3: Crate extraction: audio-player
+**Problem**: Audio player logic embedded in youtui binary. Should extract to separate crate.
+
+### P3: Count-in-header standardization
+**Problem**: Some browser tables show "N results", others don't. Standardize.
+
+### P3: Album browser j/k routing when show_tracks
+**Problem**: When album tracks are shown inline in AlbumsBrowser, j/k navigation doesn't move through tracks.
+
+### P3: ytmapi-rs 150 TODOs
+**Problem**: ~150 pre-existing TODO comments in `ytmapi-rs/src/parse/search.rs` and `parse/artist.rs` for type safety improvements.
+
+### P3: Metadata pipeline year coverage
+**Problem**: Some tracks show `None` for year. Need more fallback sources.
+
+### P3: RYM cookie proxy
+**Problem**: RateYourMusic has genre/descriptor data. Cloudflare-blocked, no public API. Could use same MA_COOKIE pattern (RYM session cookie + reverse-engineered internal API). Exploratory.

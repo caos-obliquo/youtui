@@ -13,7 +13,7 @@ impl DiscogsProvider {
 }
 
 impl MetadataProvider for DiscogsProvider {
-    fn priority(&self) -> u8 { 30 }
+    fn priority(&self) -> u8 { 8 }
 
     fn lookup<'a>(
         &'a self,
