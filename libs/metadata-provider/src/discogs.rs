@@ -28,7 +28,7 @@ impl MetadataProvider for DiscogsProvider {
             }
 
             let search_url = format!(
-                "https://api.discogs.com/database/search?artist={}&album={}&type=master&format=album&format=cd",
+                "https://api.discogs.com/database/search?q={}+{}&type=master&format=album&format=cd",
                 util::urlencoding(artist), util::urlencoding(title)
             );
             let mut req = client.get(&search_url)

@@ -1234,6 +1234,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 }
                 BrowserSongsAction::ToggleVisualMode => {
                     if self.show_playlist_tracks {
+                        info!("Toggling visual mode: {} -> {}", self.tracks_visual_mode, !self.tracks_visual_mode);
                         self.tracks_visual_mode = !self.tracks_visual_mode;
                         if self.tracks_visual_mode {
                             self.tracks_visual_start = self.playlist_tracks_selected;
