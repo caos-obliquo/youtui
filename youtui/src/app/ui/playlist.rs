@@ -1203,6 +1203,24 @@ impl Playlist {
                 s.trim().to_string()
             }
         };
+        // Strip extracted year from title for metadata matching
+        // e.g. "The Limits of Painting & Poetry (2000)" → "The Limits of Painting & Poetry"
+        let clean_title = {
+            let lower = clean_title.to_lowercase();
+            if let Some(paren) = lower.rfind("(") {
+                let inner = lower[paren..].trim_matches(|c| c == '(' || c == ')' || c == ' ');
+                if let Some(y) = inner.split(|c: char| !c.is_ascii_digit())
+                    .find(|p| p.len() == 4).and_then(|p| p.parse::<u16>().ok())
+                    .filter(|y| (1900..2100).contains(y))
+                {
+                    clean_title[..paren].trim().to_string()
+                } else {
+                    clean_title
+                }
+            } else {
+                clean_title
+            }
+        };
         let album = None;
         let song = ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
             clean_title.clone(), artist.clone(), video_id, album, format!("{}", duration),
