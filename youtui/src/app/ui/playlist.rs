@@ -110,8 +110,6 @@ pub struct Playlist {
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
-    /// True when the last addition was via :URL — skip album splitting
-    pub url_added: bool,
     pub album_current_track: usize,
     pub scrobbling_config: crate::config::ScrobblingConfig,
     pub yt_dlp_cookie_path: Option<String>,
@@ -897,7 +895,6 @@ impl Playlist {
             album_art_fetching: false,
             album_art_fetching_name: None,
             pending_count: 0,
-            url_added: false,
             search_text: String::new(),
             search_indices: Vec::new(),
             pre_search_selected: 0,
@@ -1209,9 +1206,13 @@ impl Playlist {
             let lower = clean_title.to_lowercase();
             if let Some(paren) = lower.rfind("(") {
                 let inner = lower[paren..].trim_matches(|c| c == '(' || c == ')' || c == ' ');
-                if let Some(y) = inner.split(|c: char| !c.is_ascii_digit())
-                    .find(|p| p.len() == 4).and_then(|p| p.parse::<u16>().ok())
-                    .filter(|y| (1900..2100).contains(y))
+                if inner.split(|c: char| !c.is_ascii_digit())
+                    .find(|p| p.len() == 4)
+                    .and_then(|p| {
+                        let y = p.parse::<u16>().ok()?;
+                        if (1900..2100).contains(&y) { Some(y) } else { None }
+                    })
+                    .is_some()
                 {
                     clean_title[..paren].trim().to_string()
                 } else {

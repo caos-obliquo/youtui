@@ -579,11 +579,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                         }
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no);
-                        let is_url = std::mem::take(&mut target.url_added);
-                        if is_url {
-                            info!("URL-added song: skipping album splitting");
-                        }
-                        if !is_url && !data.album_tracks.is_empty() && target.album_tracks.is_none() {
+                        if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
                             // Quality guard: verify tracklist before splitting
                             let valid_tracks = data.album_tracks.iter().all(|t| t.duration_secs > 0.0);
                             let total_dur: f64 = data.album_tracks.iter().map(|t| t.duration_secs).sum();
