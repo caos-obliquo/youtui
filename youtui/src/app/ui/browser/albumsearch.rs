@@ -325,7 +325,7 @@ impl TableView for AlbumSearchBrowser {
     }
     fn get_layout(&self) -> &[BasicConstraint] {
         &[
-            BasicConstraint::Length(4),
+            BasicConstraint::Length(6),
             BasicConstraint::Percentage(Percentage(75)),
             BasicConstraint::Length(8),
             BasicConstraint::Length(5),

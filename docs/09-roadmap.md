@@ -53,6 +53,17 @@
 | 37 | Auth test infra (3 cookie path fallbacks) | `ytmapi-rs/tests/utils/mod.rs` |
 | 38 | 9 stale #[allow(dead_code)] annotations removed | 4 files |
 | 39 | Keybinding additions: o.q/o.L/o.Q/o.m/o.n (queue), o.r (library) | `keymap.rs` |
+| ### | Enter = primary action (ncspot-style): NEVER opens sub-menu. Context via `o` only. Implemented across all 5 browser tabs. | All browser files |
+
+## Completed (2026-06-23 — Part 2, uncommitted)
+
+| # | Feature | Files |
+|---|---------|-------|
+| 40 | **VL prefix behavior documented + fixed**: ytmusicapi Python `validate_playlist_id()` strips VL for mutation endpoints (delete, edit, add/remove, rate). Browse needs VL. All 4 mutation PostQuery impls now strip VL. | `ytmapi-rs/src/query/playlist.rs`, `ytmapi-rs/src/query/playlist/edit.rs`, `ytmapi-rs/src/query/playlist/additems.rs`, `ytmapi-rs/src/query/rate.rs` |
+| 41 | **Playlist editor empty tracks fix**: `library.rs:1071` checked wrong field (`playlist_data` always populated) → `fetch_playlist_tracks()` was dead code. Now checks `playlist_tracks` emptiness. | `youtui/src/app/ui/browser/library.rs` |
+| 42 | **Rate playlist 404 fixed**: `like/like` endpoint also needs VL stripped from playlistId. Was only failing on deleted playlists | `ytmapi-rs/src/query/rate.rs` |
+| 43 | **Tmux anti-music icon**: `~/.config/tmux/tmux-nerd-font-window-name.yml` youtui → `♫⃠` | External config |
+| 44 | **Full test suite**: 312/312 pass, 0 fail, 4 ignored | All crates |
 
 ## Immediate (Next Session)
 
@@ -70,6 +81,7 @@
 | 5 | ytmapi-cli more fixture types + streaming tests | small | `ytmapi-cli/main.rs` |
 | 6 | Rate toggle from details popup (parse like_status) | med | `messages.rs` |
 | 7 | Batch reorder (not just swap) in ytmapi-rs | large | `ytmapi-rs/` |
+| 8 | **Footer FFT bars**: ringbuffer from async_rodio_sink → `rustfft` → 1-line frequency bars | med | `async_rodio_sink.rs`, `footer.rs`. Rust-only, no Cava dep. |
 
 ## Crate Extraction Status
 

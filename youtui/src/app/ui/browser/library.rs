@@ -462,7 +462,7 @@ impl LibraryBrowser {
             LibraryCategory::Albums => self.albums_fetched = false,
         }
         self.song_list.clear();
-        self.loading = true;
+        self.loading = false;
         self.fetch_current_category()
     }
 
@@ -1069,13 +1069,14 @@ impl ActionHandler<BrowserLibraryAction> for LibraryBrowser {
                         return self.play_selected_song();
                     }
                     LibraryCategory::Playlists => {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            let tracks: Vec<ListSong> = self.playlist_tracks.clone();
-                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistEditor {
-                                playlist_id: pl.playlist_id.clone(),
-                                playlist_title: pl.title.clone(),
-                                tracks,
-                            }));
+                        if !self.playlist_tracks.is_empty() {
+                            if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                                return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistEditor {
+                                    playlist_id: pl.playlist_id.clone(),
+                                    playlist_title: pl.title.clone(),
+                                    tracks: self.playlist_tracks.clone(),
+                                }));
+                            }
                         }
                         return (self.fetch_playlist_tracks(), None);
                     }

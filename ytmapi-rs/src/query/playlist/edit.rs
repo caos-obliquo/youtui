@@ -180,9 +180,10 @@ impl PostQuery for EditPlaylistQuery<'_> {
                 "addToTop" : add_to_top
             }))
         };
-        // TODO: Confirm if VL needs to be stripped / added from playlistId
+        let raw = self.id.get_raw();
+        let clean_id = raw.strip_prefix("VL").unwrap_or(raw);
         let serde_json::Value::Object(map) = json!({
-            "playlistId" : self.id.get_raw(),
+            "playlistId" : clean_id,
             "actions" : actions,
         }) else {
             unreachable!()

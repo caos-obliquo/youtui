@@ -1077,6 +1077,10 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
+            KeyActionTree::new_key(AppAction::BrowserLibrary(BrowserLibraryAction::ActivateSelected)),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
             KeyActionTree::new_key(AppAction::Browser(BrowserAction::LocalFilter)),
         ),

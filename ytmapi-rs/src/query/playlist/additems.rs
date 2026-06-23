@@ -1,6 +1,6 @@
 use super::SpecialisedQuery;
 use crate::auth::AuthToken;
-use crate::common::{PlaylistID, VideoID};
+use crate::common::{PlaylistID, VideoID, YoutubeID};
 use crate::parse::AddPlaylistItem;
 use crate::query::{PostMethod, PostQuery, Query};
 use serde_json::json;
@@ -93,8 +93,10 @@ impl<A: AuthToken, T: SpecialisedQuery> Query<A> for AddPlaylistItemsQuery<'_, T
 }
 impl<T: SpecialisedQuery> PostQuery for AddPlaylistItemsQuery<'_, T> {
     fn header(&self) -> serde_json::Map<String, serde_json::Value> {
+        let raw = self.id.get_raw();
+        let clean_id = raw.strip_prefix("VL").unwrap_or(raw);
         let serde_json::Value::Object(mut map) = json!({
-            "playlistId" : self.id,
+            "playlistId" : clean_id,
         }) else {
             unreachable!()
         };

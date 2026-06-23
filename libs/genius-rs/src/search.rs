@@ -53,17 +53,24 @@ pub async fn search(
         urlenc(title),
         urlenc(artist)
     );
+    tracing::info!("Genius: public search URL={}", url);
     match client.get(&url).send().await {
         Ok(resp) => {
+            let status = resp.status();
+            tracing::info!("Genius: public search status={}", status);
             if let Ok(data) = resp.json::<serde_json::Value>().await {
                 let hits = parse_hits(&data, "/response/sections/0/hits");
+                tracing::info!("Genius: public search returned {} hits", hits.len());
                 if !hits.is_empty() {
                     return Ok(hits);
                 }
             }
             Err(format!("No results from Genius: {}", url))
         }
-        Err(e) => Err(format!("Genius search request failed: {}", e)),
+        Err(e) => {
+            tracing::warn!("Genius: public search request failed: {}", e);
+            Err(format!("Genius search request failed: {}", e))
+        }
     }
 }
 
@@ -122,6 +129,18 @@ fn parse_hits(data: &serde_json::Value, pointer: &str) -> Vec<SongHit> {
 
 fn urlenc(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join("+")
+}
+
+/// Strip parenthetical/bracketed extras from title for slug fallback.
+/// "Shitty Jobz (Japanese Bonus Track)" → "Shitty Jobz"
+pub fn simplify_title<'a>(title: &'a str) -> &'a str {
+    if let Some(idx) = title.find('(') {
+        title[..idx].trim()
+    } else if let Some(idx) = title.find('[') {
+        title[..idx].trim()
+    } else {
+        title
+    }
 }
 
 /// Compute a Genius URL slug from artist and title.
