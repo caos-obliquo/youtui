@@ -554,8 +554,10 @@ impl LyricsPopup {
             }
             KeyCode::Tab => {
                 self.reset_count();
-                if self.show_annotations && self.focus == Focus::Lyrics {
+                if self.focus == Focus::Lyrics && !self.annotations.is_empty() {
+                    self.show_annotations = true;
                     self.focus = Focus::Annotations;
+                    self.ann_scroll_offset = 0;
                 } else {
                     self.focus = Focus::Lyrics;
                 }
@@ -570,8 +572,10 @@ impl LyricsPopup {
             }
             KeyCode::Char('l') if event.modifiers.contains(KeyModifiers::ALT) => {
                 self.reset_count();
-                if self.show_annotations && self.focus == Focus::Lyrics {
+                if self.focus == Focus::Lyrics && !self.annotations.is_empty() {
+                    self.show_annotations = true;
                     self.focus = Focus::Annotations;
+                    self.ann_scroll_offset = 0;
                 }
                 (AsyncTask::new_no_op(), None)
             }
@@ -782,6 +786,15 @@ impl LyricsPopup {
             }
             KeyCode::Enter => {
                 self.reset_count();
+                if self.focus == Focus::Annotations {
+                    if let Some(ann) = self.annotations.get(self.ann_scroll_offset) {
+                        let text = format!("{} — {}", ann.fragment, ann.explanation);
+                        let _ = std::process::Command::new("wl-copy").arg(&text).spawn();
+                        tracing::info!(fragment = %ann.fragment, "Annotation copied to clipboard");
+                        return (AsyncTask::new_no_op(), None);
+                    }
+                    return (AsyncTask::new_no_op(), None);
+                }
                 if let Some(line) = self.lines.get(self.cursor_line) {
                     let trimmed = line.trim();
                     // Parse [m:ss] or [mm:ss] at start of line
@@ -1042,7 +1055,7 @@ impl LyricsPopup {
                 let _scroll_hint = if has_more { " j/k scroll " } else { "" };
                 let _ann_hint = if ann_count > 0 { " | a: Toggle annotations" } else { "" };
                 let mut hint_str = String::from("( ) Lyric | <> Song | [] Seek | Space Pause");
-                if ann_count > 0 { hint_str.push_str(" | a Annotations"); }
+                if ann_count > 0 { hint_str.push_str(" | Tab/Alt+h/l Focus | Enter Copy Ann"); }
                 if has_jp { hint_str.push_str(" | R Romaji"); }
                 hint_str.push_str(" | Esc/q Close");
                 let hint = Paragraph::new(hint_str)
