@@ -406,6 +406,46 @@ Context menu is exclusively via `o`.
 - `#[allow(dead_code)]` annotation removed from `WindowContext::Notes` (intentional, re-added)
 - Remaining `#[allow(dead_code)]`: notes_popup (intentional dead variant), albumsearch (constructor used from tests)
 
+## Session 2026-06-24 (Batch B — Annotations + Colon + Metadata Pipeline)
+
+### Annotations & Colon Key
+- `:` key routing in lyrics popup: intercept before popup handler, route to YoutuiWindow command mode.
+- `AppCallback::TogglePlayPause`: space in lyrics popup pauses/resumes playback.
+- Genius `find_song` reorder: Bearer search FIRST (real id/path), slug URL fallback only.
+- Genius annotations pagination: `per_page=50` → full set (was 10).
+- Annotations UI: right-side absolute numbers, Tab/Alt+l/Alt+h focus switch, R romaji guard (has_japanese), conditional hints, visual mode yank (fragment+explanation via wl-copy).
+- Notes popup: `close_popup` saves parent popup (lyrics/etc.) when notes stacked on top.
+- `:notes` command: sets `prev_context` + `context = WindowContext::Notes`.
+
+### Metadata Pipeline Fixes
+- `score_result`: artist exact match +50 (was +3), contains +10 (was +1), penalty -500 for clear artist mismatch.
+- Discogs `find_artist_result`: filter search results by artist name before selecting master.
+- `normalize_artist_name`: strip " - Topic", Discogs "(N)" suffix, bracket prefix `[hate5six] Artist`, all-caps → proper case.
+- `add_raw_search_result_song`: normalize artist name on creation.
+- Album name cleanup: strip "YouTube: " prefix, " - Topic" suffix, bracket prefix.
+- Year fallback: extract 4-digit year from song title when metadata returns None.
+- Tags added: self-titled, self titled, s/t to album metadata stripping.
+
+### Album Split Fixes (Browser Play Path)
+- `push_song_list`: spawns `ValidateMetadata` for first added song (browser play path, was missing).
+- `clean_title_for_metadata` helper: extracted from `add_yt_video` inline, used by both paths.
+- Album name priority in `insert_album_tracks`: metadata-discovered album > YouTube uploader name.
+- `MetadataEffect::Validated`: year-from-title fallback after album fallback.
+
+### CLI Debug Tool
+- `ytmapi-cli genius`: search/annotations/lyrics/all subcommands for end-to-end testing.
+
+### Keybinding Changes
+| Key | Action | View |
+|---|---|---|
+| `Alt+l` | Focus annotations panel | Lyrics popup (annotations) |
+| `Alt+h` | Focus lyrics panel | Lyrics popup (annotations) |
+| `Tab`/`BackTab` | Focus switch (unchanged) | Lyrics popup |
+
+### Test Updates
+- `norm_uppercase`: `"METALLICA"` → `"Metallica"` (new all-caps normalization).
+- All 6 scoring tests updated for new weights.
+
 ### Previous Session Features (Unchanged)
 - Metadata pipeline (providers, Discogs, MA_COOKIE, genre aliasing).
 - Library tracks Phase A+B (delete re-route, filtered indices).
