@@ -340,10 +340,10 @@ mod tests {
     }
     impl Action for TestAction {
         fn context(&self) -> std::borrow::Cow<'_, str> {
-            todo!()
+            "".into()
         }
         fn describe(&self) -> std::borrow::Cow<'_, str> {
-            todo!()
+            "".into()
         }
     }
     fn test_keymap() -> Keymap<TestAction> {

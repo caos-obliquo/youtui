@@ -445,7 +445,9 @@ fn parse_top_result_from_music_shelf_contents(
             artist = Some(parse_flex_column_item(&mut mrlir, 1, 2)?);
             year = Some(parse_flex_column_item(&mut mrlir, 1, 4)?);
         }
-        Some(TopResultType::Playlist) => todo!(),
+        Some(TopResultType::Playlist) => {
+            artist = parse_flex_column_item(&mut mrlir, 1, 2).ok();
+        }
         Some(TopResultType::Song) => {
             artist = Some(parse_flex_column_item(&mut mrlir, 1, 2)?);
             album = Some(parse_flex_column_item(&mut mrlir, 1, 4)?);
@@ -454,8 +456,14 @@ fn parse_top_result_from_music_shelf_contents(
             // optional. TODO: Could make this more type safe in future.
             plays = parse_flex_column_item(&mut mrlir, 1, 8).ok();
         }
-        Some(TopResultType::Video) => todo!(),
-        Some(TopResultType::Station) => todo!(),
+        Some(TopResultType::Video) => {
+            artist = parse_flex_column_item(&mut mrlir, 1, 2).ok();
+            plays = parse_flex_column_item(&mut mrlir, 1, 4).ok();
+            duration = parse_flex_column_item(&mut mrlir, 1, 6).ok();
+        }
+        Some(TopResultType::Station) => {
+            artist = parse_flex_column_item(&mut mrlir, 1, 2).ok();
+        }
         Some(TopResultType::Podcast) => publisher = Some(parse_flex_column_item(&mut mrlir, 1, 2)?),
         None => {
             artist = Some(flex_1_0);
