@@ -1,50 +1,67 @@
 use crate::scrape::Annotation;
 
+const PER_PAGE: i64 = 50;
+
 /// Fetch annotations from Genius API using Bearer token.
-/// Calls `https://api.genius.com/referents?song_id={id}` and parses response.
+/// Calls `https://api.genius.com/referents?song_id={id}` with pagination.
 pub async fn fetch_from_api(
     client: &reqwest::Client,
     token: &str,
     song_id: i64,
 ) -> Result<Vec<Annotation>, String> {
-    let url = format!("https://api.genius.com/referents?song_id={}", song_id);
-    let resp = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", token))
-        .send()
-        .await
-        .map_err(|e| format!("API request failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("API returned {}", resp.status()));
-    }
-
-    let data: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("JSON parse failed: {}", e))?;
-
     let mut annotations = Vec::new();
+    let mut page = 1;
 
-    if let Some(refs) = data
-        .pointer("/response/referents")
-        .and_then(|r| r.as_array())
-    {
-        for referent in refs {
-            let fragment = referent
-                .get("fragment")
-                .and_then(|f| f.as_str())
-                .unwrap_or("")
-                .to_string();
-            let body = referent
-                .pointer("/annotations/0/body/dom")
-                .and_then(|d| extract_text_from_dom(d))
-                .unwrap_or_default();
+    loop {
+        let url = format!(
+            "https://api.genius.com/referents?song_id={}&per_page={}&page={}",
+            song_id, PER_PAGE, page
+        );
+        let resp = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await
+            .map_err(|e| format!("API request failed: {}", e))?;
 
-            if !fragment.is_empty() && !body.is_empty() {
-                annotations.push(Annotation { fragment, body });
+        if !resp.status().is_success() {
+            return Err(format!("API returned {}", resp.status()));
+        }
+
+        let data: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("JSON parse failed: {}", e))?;
+
+        let prev_count = annotations.len();
+
+        if let Some(refs) = data
+            .pointer("/response/referents")
+            .and_then(|r| r.as_array())
+        {
+            for referent in refs {
+                let fragment = referent
+                    .get("fragment")
+                    .and_then(|f| f.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let body = referent
+                    .pointer("/annotations/0/body/dom")
+                    .and_then(|d| extract_text_from_dom(d))
+                    .unwrap_or_default();
+
+                if !fragment.is_empty() && !body.is_empty() {
+                    annotations.push(Annotation { fragment, body });
+                }
             }
         }
+
+        let added = annotations.len() - prev_count;
+        if added < PER_PAGE as usize {
+            // Last page: fewer items returned than requested
+            break;
+        }
+        page += 1;
     }
 
     if annotations.is_empty() {
