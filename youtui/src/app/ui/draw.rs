@@ -30,14 +30,14 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             use ratatui::widgets::{Clear, Paragraph};
             let area = f.area();
             f.render_widget(Clear, area);
-            // 95% centered rect
+            // Symmetric centered rect (3% margin on each side)
             let vert = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(2), Constraint::Percentage(95), Constraint::Percentage(3)])
+                .constraints([Constraint::Percentage(3), Constraint::Percentage(94), Constraint::Percentage(3)])
                 .areas::<3>(area);
             let centered = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(2), Constraint::Percentage(95), Constraint::Percentage(3)])
+                .constraints([Constraint::Percentage(3), Constraint::Percentage(94), Constraint::Percentage(3)])
                 .areas::<3>(vert[1])[1];
             if centered.width < 4 || centered.height < 4 {
                 f.render_widget(Paragraph::new("Terminal too small").centered(), area);
