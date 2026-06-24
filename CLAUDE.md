@@ -470,6 +470,21 @@ Context menu is exclusively via `o`.
 - `youtui/src/app/ui/playlist.rs` — yank_buffer, PasteYanked handler.
 - `youtui/src/config/keymap.rs` — p keybinding.
 - `youtui/src/app/view/draw.rs` — suppress green playing indicator in visual mode.
+- `youtui/src/app.rs:670-677` — sixel belt-and-suspenders clear on popup close.
+
+### Session 2026-06-24 (Batch D — Sixel + Heart Spacing)
+
+### Heart Icon Spacing
+- `like_icon()`: prefix changed from 1 space to 2 spaces (`"  󰋑"`/`"  ♥"`).
+- Footer icons: `[Scrobble]  󰑗  ♥` (double space before heart).
+
+### Sixel Album Art Persistence
+- `AppCallback::ClosePopup`: when `album_art_popup` active, also send `\x1b[2J\x1b[H` after DCS clear.
+- Handles foot terminal's unreliable `\x1bP0p\x1b\\` DCS clear.
+
+### Files changed
+- `youtui/src/app/ui/footer.rs` — like_icon spacing.
+- `youtui/src/app.rs` — ClosePopup sixel clear.
 
 ### Previous Session Features (Unchanged)
 - Metadata pipeline (providers, Discogs, MA_COOKIE, genre aliasing).
