@@ -670,6 +670,12 @@ impl Youtui {
             AppCallback::ClosePopup => {
                 if self.window_state.album_art_popup.is_some() {
                     self.window_state.album_art_popup = None;
+                    // Force clear stale sixel pixels (DCS clear unreliable in foot)
+                    use std::io::Write;
+                    let mut stdout = std::io::stdout();
+                    let _ = stdout.write_all(b"\x1bP0p\x1b\\");
+                    let _ = stdout.write_all(b"\x1b[2J\x1b[H");
+                    let _ = stdout.flush();
                 } else {
                     self.window_state.close_popup();
                 }
