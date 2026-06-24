@@ -11,8 +11,6 @@ use crate::parse::{
 };
 use std::borrow::Cow;
 
-// TODO Seal
-// TODO: Add param bits
 // Implements Default to allow simple implementation of
 // Into<SearchQuery<FilteredSearch<F>>>
 pub trait FilteredSearchType: Default {

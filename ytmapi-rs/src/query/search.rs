@@ -11,8 +11,6 @@ const SPECIALIZED_PLAYLIST_WITH_SUGGESTIONS_PARAMS: &str = "BQgIIAWoMEA4QChADEAQ
 const SPECIALIZED_PLAYLIST_PREFIX_PARAMS: &str = "EgeKAQQoA";
 const SEARCH_QUERY_PATH: &str = "search";
 
-// TODO Seal
-// TODO: Add relevant parameters.
 // Implements Default to allow simple implementation of Into<SearchQuery<S>>
 pub trait SearchType: Default {
     fn specialised_params(&self, spelling_mode: &SpellingMode) -> Option<Cow<'_, str>>;
@@ -62,14 +60,12 @@ impl SearchType for BasicSearch {
 }
 impl SearchType for UploadSearch {
     fn specialised_params(&self, _: &SpellingMode) -> Option<Cow<'_, str>> {
-        // TODO: Investigate if spelling suggestions take affect here.
         Some("agIYAw%3D%3D".into())
     }
 }
 impl SearchType for LibrarySearch {
     fn specialised_params(&self, _: &SpellingMode) -> Option<Cow<'_, str>> {
-        // XXX: It may be possible to actually filter these, see sigma67/ytmusicapi for
-        // details. TODO: Investigate if spelling suggestions take affect here.
+        // XXX: It may be possible to actually filter these, see sigma67/ytmusicapi for details.
         Some("agIYBA%3D%3D".into())
     }
 }

@@ -27,7 +27,6 @@ pub enum ErrorKind {
         message: String,
     },
     /// General io error.
-    // TODO: improve
     Io(io::Error),
     /// Received a response from InnerTube that was not in the expected (JSON)
     /// format.
@@ -52,7 +51,6 @@ pub enum ErrorKind {
         token_hash: u64,
     },
     // This is a u64 not a usize as that is what serde_json will deserialize to.
-    // TODO: Could use a library to handle these.
     /// Recieved an error code in the Json reply from InnerTube.
     OtherErrorCodeInResponse {
         code: u64,
@@ -203,7 +201,6 @@ impl Display for ErrorKind {
 // entire format of this struct (potentially including entire source json file).
 impl Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO: Improve implementation
         Display::fmt(&*self.inner, f)
     }
 }
