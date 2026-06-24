@@ -58,7 +58,7 @@ pub mod library;
 pub use library::{
     EditSongLibraryStatusQuery, GetLibraryAlbumsQuery, GetLibraryArtistSubscriptionsQuery,
     GetLibraryArtistsQuery, GetLibraryChannelsQuery, GetLibraryPlaylistsQuery,
-    GetLibraryPodcastsQuery, GetLibrarySongsQuery, GetLibrarySortOrder,
+    GetLibraryPodcastsQuery, GetLibrarySongsQuery, GetLibrarySortOrder, GetSavedEpisodesQuery,
 };
 pub mod playlist;
 #[doc(inline)]
