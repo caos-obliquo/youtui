@@ -770,18 +770,27 @@ impl LyricsPopup {
             KeyCode::Char('d') if event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 let n = self.count_prefix.max(1) * 10;
                 self.reset_count();
-                let max_line = self.total_lines().saturating_sub(1);
-                self.cursor_line = self.cursor_line.saturating_add(n).min(max_line);
-                self.cursor_col = 0;
-                self.cursor_to_scroll();
+                if self.focus == Focus::Annotations {
+                    let max = self.annotations.len().saturating_sub(1);
+                    self.ann_scroll_offset = self.ann_scroll_offset.saturating_add(n).min(max);
+                } else {
+                    let max_line = self.total_lines().saturating_sub(1);
+                    self.cursor_line = self.cursor_line.saturating_add(n).min(max_line);
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                }
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('u') if event.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 let n = self.count_prefix.max(1) * 10;
                 self.reset_count();
-                self.cursor_line = self.cursor_line.saturating_sub(n);
-                self.cursor_col = 0;
-                self.cursor_to_scroll();
+                if self.focus == Focus::Annotations {
+                    self.ann_scroll_offset = self.ann_scroll_offset.saturating_sub(n);
+                } else {
+                    self.cursor_line = self.cursor_line.saturating_sub(n);
+                    self.cursor_col = 0;
+                    self.cursor_to_scroll();
+                }
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Enter => {
@@ -967,6 +976,7 @@ impl LyricsPopup {
                         };
                         let num_span = ratatui::text::Span::styled(num_str, Style::default().fg(Color::DarkGray));
                         let base_style = if self.visual_mode
+                            && self.focus == Focus::Lyrics
                             && abs_line >= self.visual_start.min(self.visual_end)
                             && abs_line <= self.visual_start.max(self.visual_end)
                         {
@@ -1009,8 +1019,9 @@ impl LyricsPopup {
                     let mut ann_lines: Vec<ratatui::text::Line> = Vec::new();
                     for (i, a) in self.annotations.iter().enumerate().skip(self.ann_scroll_offset).take(ann_visible) {
                         let num_str = format!(" {:>width$}", i, width = ann_max_digits);
-                        let is_cursor = !self.visual_mode && i == ann_cursor;
+                        let is_cursor = !self.visual_mode && self.focus == Focus::Annotations && i == ann_cursor;
                         let is_visual_sel = self.visual_mode
+                            && self.focus == Focus::Annotations
                             && i >= self.ann_visual_start.min(self.ann_visual_end)
                             && i <= self.ann_visual_start.max(self.ann_visual_end);
                         let fragment_style = if is_visual_sel {
@@ -1030,6 +1041,7 @@ impl LyricsPopup {
                         ]));
                         for expl_line in a.explanation.split('\n') {
                             let expl_style = if self.visual_mode
+                                && self.focus == Focus::Annotations
                                 && i >= self.ann_visual_start.min(self.ann_visual_end)
                                 && i <= self.ann_visual_start.max(self.ann_visual_end)
                             {
