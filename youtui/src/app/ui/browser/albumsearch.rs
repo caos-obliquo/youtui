@@ -59,6 +59,7 @@ pub struct AlbumSearchBrowser {
     search_cache: LruCache<String, Vec<SearchResultAlbum>>,
     last_search_query: Option<String>,
     pub local_filter_text: String,
+    pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
 }
 
 impl_youtui_component!(AlbumSearchBrowser);
@@ -87,6 +88,7 @@ impl AlbumSearchBrowser {
             search_cache: LruCache::new(NonZeroUsize::new(50).unwrap()),
             last_search_query: None,
             local_filter_text: String::new(),
+            cur_playing_video_id: None,
         }
     }
 
@@ -354,7 +356,9 @@ impl TableView for AlbumSearchBrowser {
         ]
     }
     fn get_highlighted_row(&self) -> Option<usize> {
-        None
+        self.cur_playing_video_id.as_ref().and_then(|vid| {
+            self.track_list.get_list_iter().position(|s| s.video_id == *vid)
+        })
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
         self.track_list

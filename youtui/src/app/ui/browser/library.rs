@@ -722,6 +722,11 @@ impl TableView for LibraryBrowser {
     fn get_highlighted_row(&self) -> Option<usize> {
         if self.tracks_visual_mode {
             Some(self.tracks_visual_start)
+        } else if self.show_playlist_tracks {
+            self.cur_playing_video_id.as_ref().and_then(|vid| {
+                self.get_tracks_filtered_list_iter()
+                    .position(|s| s.video_id == *vid)
+            })
         } else {
             None
         }

@@ -668,7 +668,11 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ClosePopup => {
-                self.window_state.close_popup();
+                if self.window_state.album_art_popup.is_some() {
+                    self.window_state.album_art_popup = None;
+                } else {
+                    self.window_state.close_popup();
+                }
             }
             AppCallback::CreatePlaylistFromPopup {
                 title,

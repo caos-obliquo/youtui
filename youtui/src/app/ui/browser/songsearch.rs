@@ -41,6 +41,7 @@ pub struct SongSearchBrowser {
     pub sort: SortManager,
     pub filter: FilterManager,
     pub local_filter_text: String,
+    pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
 }
 impl_youtui_component!(SongSearchBrowser);
 
@@ -317,7 +318,9 @@ impl TableView for SongSearchBrowser {
         ]
     }
     fn get_highlighted_row(&self) -> Option<usize> {
-        None
+        self.cur_playing_video_id.as_ref().and_then(|vid| {
+            self.song_list.get_list_iter().position(|s| s.video_id == *vid)
+        })
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
         self.song_list
@@ -440,6 +443,7 @@ impl SongSearchBrowser {
             filter: Default::default(),
             cur_selected: Default::default(),
             local_filter_text: String::new(),
+            cur_playing_video_id: None,
         }
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {

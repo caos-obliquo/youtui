@@ -614,6 +614,13 @@ impl Browser {
             }
         }
     }
+    pub fn set_cur_playing_video_id(&mut self, video_id: Option<ytmapi_rs::common::VideoID<'static>>) {
+        self.library_browser.cur_playing_video_id = video_id.clone();
+        self.song_search_browser.cur_playing_video_id = video_id.clone();
+        self.album_search_browser.cur_playing_video_id = video_id.clone();
+        self.artist_search_browser.album_songs_panel.cur_playing_video_id = video_id.clone();
+        self.playlist_search_browser.playlist_songs_panel.cur_playing_video_id = video_id;
+    }
     pub fn navigate_to(&mut self, target: NavTarget) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
         self.push_snapshot();
         match target {
