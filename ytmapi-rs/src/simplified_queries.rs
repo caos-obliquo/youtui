@@ -226,6 +226,37 @@ impl<A: AuthToken> YtMusic<A> {
         let query = query.into();
         self.query(query).await
     }
+    /// Resolves an album name (and optionally artist) to an AlbumID (browse ID).
+    /// Searches albums, matches by artist name if provided, returns first match.
+    /// ```no_run
+    /// # async {
+    /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE")
+    ///     .await
+    ///     .unwrap();
+    /// let id = yt.get_album_browse_id("Master of Puppets", Some("Metallica")).await.unwrap();
+    /// # };
+    /// ```
+    pub async fn get_album_browse_id<'a, Q: Into<SearchQuery<'a, FilteredSearch<AlbumsFilter>>>>(
+        &self,
+        album_name: Q,
+        artist_name: Option<&str>,
+    ) -> Result<AlbumID<'static>> {
+        let results = self.search_albums(album_name).await?;
+        // Try artist match first, fallback to first result
+        if let Some(artist) = artist_name {
+            let lower = artist.to_lowercase();
+            for r in &results {
+                if r.artist.to_lowercase().contains(&lower) {
+                    return Ok(r.album_id.clone());
+                }
+            }
+        }
+        results
+            .into_iter()
+            .next()
+            .map(|r| r.album_id)
+            .ok_or_else(|| crate::Error::web("No album found matching query"))
+    }
     /// Gets information about an artist and their top releases.
     /// ```no_run
     /// # async {

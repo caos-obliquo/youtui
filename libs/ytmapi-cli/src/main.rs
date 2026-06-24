@@ -131,6 +131,7 @@ fn print_usage() {
     eprintln!("  rate-song <video_id> <rating> Rate song (like/indifferent/dislike)");
     eprintln!("  lyrics <video_id>             Get lyrics for a song");
     eprintln!("  tracking-url <video_id>       Get song tracking URL");
+    eprintln!("  resolve-album <name> [artist]  Resolve album name to browse ID");
     eprintln!("  watch-playlist <video_id>     Get related/watch playlist");
     eprintln!();
     eprintln!("  LIBRARY [--sort name-asc|name-desc|recent|default]:");
@@ -522,6 +523,20 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
             match yt.get_song_tracking_url(video_id).await {
                 Ok(url) => println!("Tracking URL: {}", url.get_raw()),
                 Err(e) => eprintln!("Tracking URL error: {}", e),
+            }
+        }
+        "resolve-album" => {
+            let (album_name, artist_name) = if args.len() >= 2 {
+                (&args[0], Some(&args[1]))
+            } else if args.len() == 1 {
+                (&args[0], None)
+            } else {
+                eprintln!("Usage: ytmapi resolve-album <album_name> [artist_name]");
+                return;
+            };
+            match yt.get_album_browse_id(album_name, artist_name.map(|x| x.as_str())).await {
+                Ok(id) => println!("Album ID: {}", id.get_raw()),
+                Err(e) => eprintln!("Resolve error: {}", e),
             }
         }
         "watch-playlist" => {
