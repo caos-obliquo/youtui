@@ -104,7 +104,7 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 
 **Step 10**: `%` bracket match. `([{}])` — find matching pair. Forward/backward cursor move.
 
-**Step 11**: `BrowserAction::Back` + `state_stack` pattern saves/restores state per-tab. But `handle_change_search_type()` (F7 tab cycle) navigates between tabs without pushing snapshots. Call `push_state_snapshot()` before switching.
+**Step 11**: ~~F7 back-nav (FIXED). `handle_change_search_type()` now calls `push_snapshot()`.~~
 
 **Step 12**: `cargo build --release`, `cargo test --release`, verify no regressions.
 
