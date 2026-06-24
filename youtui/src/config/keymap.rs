@@ -1235,6 +1235,10 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
                         KeyActionTree::new_key(AppAction::Sort(SortAction::Close)),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('O')),
+                        KeyActionTree::new_key(AppAction::BrowserLibrary(BrowserLibraryAction::CycleSortOrder)),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
