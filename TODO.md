@@ -54,59 +54,29 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - **1**: `f`/`F`/`t`/`T` motions + `;`/`,` repeat
 - **2**: `r` replace single char
 
-### Session 2026-06-24 (Committed)
-- Footer heart icon, 5-line Status block, album art 7-char wide
-- Nerd Font MDI icons: repeat `󰑖`/`󰑗`/`󰑘`, shuffle `󰒝`, heart `󰋑`
-- Library tracks Phase C+D: sort/filter popups via o.z/o.c, [SEARCH] indicator
-- Like/subscribe/unsubscribe from album tracks view (o.t/o.S/o.U)
-- Force-split (o.f) + playlist editor overwrite save
-- Album URL auto-detection (OLAK5uy_ via playlist?list=)
-- Green lettering for playing song across ALL browser tabs
-- Album art popup (o.v): 95% centered, sixel data stored for cleanup
-- Metadata pipeline: resolver scoring, Discogs fix, url_added removed, per-track validation removed
-- 29 new tests (youtui: 103→124)
+### Session 2026-06-24 (All 5 Batches Committed)
+- **Batch A**: `:` colon routing in lyrics, annotations Bearer-first + pagination
+- **Batch B**: Metadata scoring + Discogs artist filter, browser play triggers album split, artist/album normalization
+- **Batch C**: Visual mode yank/paste (p), Esc exit visual mode, consistent color
+- **Batch D**: Sixel belt-and-suspenders clear, heart spacing
+- **Batch E**: Annotation visual mode (cyan highlight, cross-panel range clearing)
+- Tests: 124 youtui, 35 metadata-provider, 324 workspace total
 
 ## Priority Order (next steps)
 
 | # | Step | File(s) | Est |
 |---|------|---------|-----|
-| 1 | **Annotations integration + `:` in lyrics** | `lyrics_popup.rs`, `app.rs` | med |
-| 2 | **Visual mode cyan** (queue: all lines cyan, no green-on-nonplaying) | `playlist.rs`, `view/draw.rs` | small |
-| 3 | `C-r` redo (commit) | `libs/vi-text-editor/src/lib.rs` + 6 callers | ✓ ready |
-| 4 | `.` repeat last change | `libs/vi-text-editor/src/lib.rs` | med |
-| 5 | `J` join lines | `libs/vi-text-editor/src/lib.rs` | small |
-| 6 | `~` toggle case | `libs/vi-text-editor/src/lib.rs` | small |
-| 7 | Lyrics hybrid line numbers | `lyrics_popup.rs` | med |
-| 8 | Like album to library (add to YT Music profile) | `albumsearch.rs` + ytmapi-rs | med |
-| 9 | Sixel album art persistence | `draw.rs` | med |
-| 10 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
-| 11 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
-| 12 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
-| 13 | Build + full test suite | verify | verify |
-
-### Step details
-
-**Step 1**: Annotations integration + `:` in lyrics. Annotations display end-to-end with GENIUS_TOKEN. `:` Opens URL from lyrics popup (currently blocked by key interception). Add `AppCallback::OpenUrlCommand`, route through lyrics_popup `handle_key`.
-
-**Step 2**: Visual mode cyan. `view/draw.rs` — change `visual_range_style` to cyan bg. `playlist.rs` — fix `get_highlighted_row()` to not return playing index when visual mode active. All highlighted lines cyan, no green-on-nonplaying.
-
-**Step 3**: `C-r` redo. `handle_key` API gains `ctrl: bool` param. `undo()` pushes to `redo_stack`. New `redo()` method. Internal tests updated.
-
-**Step 4**: `.` repeat last change. Store last edit (insert/delete/change/replace) as `LastChange` enum. On `.` press, replay it.
-
-**Step 5**: `J` join lines. `buffer.remove(cursor)` if next char is `\n`, replacing with ` `.
-
-**Step 6**: `~` toggle case at cursor. ASCII `a-z` ↔ `A-Z`.
-
-**Step 7**: Hybrid line numbers in lyrics popup. `abs_line == cursor` show absolute, else show relative offset. Dim `Color::DarkGray`. Both render paths (side-by-side + full-width). `max_digits` from total line count.
-
-**Step 8**: Footer album format. `footer.rs:98-101` — construct `format!("{artists} - {album}")` composite string instead of artist/album on separate lines.
-
-**Step 9**: `~/.config/youtui/config.toml` — revert custom keybinds to clean defaults. Remove "wide" overrides.
-
-**Step 10**: Text objects. `iw` inner word, `i(`/`i)` inner parens, `a(`/`a)` a parens (including parens), `i"`/`a"` inner/a string. Works with `d`, `c`, `y` operators.
-
-**Step 11**: `%` bracket match. `([{}])` — find matching pair. Forward/backward cursor move.
+| 1 | Annotations integration + colon in lyrics | DONE | |
+| 2 | Visual mode cyan | DONE | |
+| 3 | Genius annotations fallback (no token) | `genius-rs/src/annotations.rs` | med |
+| 4 | Genius lyrics: Musixmatch/LRCLIB integration | new crate | med |
+| 5 | YTM album provider in metadata pipeline | `ytmapi-rs/src/query/album.rs` | med |
+| 6 | Like album to library (YTM profile) | `albumsearch.rs` + ytmapi-rs | med |
+| 7 | Sixel album art persistence | DONE | |
+| 8 | Album browser j/k when tracks shown inline | `albumsearch.rs` | small |
+| 9 | Count-in-header standardization | browser files | small |
+| 10 | ytmapi-rs 150 TODO items | `ytmapi-rs/src/parse/search.rs` | large |
+| 11 | Crate extraction: audio-player | new crate | large |
 
 **Step 12**: ~~F7 back-nav (FIXED). `handle_change_search_type()` now calls `push_snapshot()`.~~
 
