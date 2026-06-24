@@ -775,6 +775,10 @@ impl LyricsPopup {
                 self.reset_count();
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char(' ') => {
+                self.reset_count();
+                (AsyncTask::new_no_op(), Some(AppCallback::TogglePlayPause))
+            }
             KeyCode::Char('(') => {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::ViewPrevInQueue))
@@ -991,7 +995,7 @@ impl LyricsPopup {
                 let has_more = self.scroll_offset + visible_lines_count < line_count;
                 let _scroll_hint = if has_more { " j/k scroll " } else { "" };
                 let _ann_hint = if ann_count > 0 { " | a: Toggle annotations" } else { "" };
-                let hint = Paragraph::new(format!("( ) Prev/Next Lyric | <> Prev/Next Song | [] Seek | Esc/q: Close"))
+                let hint = Paragraph::new(format!("( ) Lyric | <> Song | [] Seek | Space Pause | Esc/q Close"))
                     .style(Style::default().fg(Color::DarkGray))
                     .alignment(Alignment::Center);
                 frame.render_widget(hint, hint_area);

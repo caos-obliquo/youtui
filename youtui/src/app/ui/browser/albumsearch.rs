@@ -27,7 +27,7 @@ use std::num::NonZeroUsize;
 use tracing::{info, warn};
 use vi_text_editor::ViTextEditor;
 use ytmapi_rs::parse::{SearchResultAlbum, AlbumSong, ParsedSongAlbum, ParsedSongArtist};
-use ytmapi_rs::common::{AlbumID, SearchSuggestion, Thumbnail, YoutubeID};
+use ytmapi_rs::common::{AlbumID, PlaylistID, SearchSuggestion, Thumbnail, YoutubeID, LikeStatus};
 
 #[derive(Default)]
 pub enum InputRouting {
@@ -47,6 +47,8 @@ pub struct AlbumSearchBrowser {
     pub fetched: bool,
     pub album_year: String,
     pub album_artist: String,
+    pub album_playlist_id: Option<PlaylistID<'static>>,
+    pub album_artists: Vec<ParsedSongArtist>,
     pub input_routing: InputRouting,
     pub widget_state: ScrollingTableState,
     pub sort: SortManager,
@@ -73,6 +75,8 @@ impl AlbumSearchBrowser {
             fetched: false,
             album_year: String::new(),
             album_artist: String::new(),
+            album_playlist_id: None,
+            album_artists: Vec::new(),
             sort: SortManager::default(),
             filter: FilterManager::default(),
             search: SearchBlock::default(),
@@ -494,6 +498,33 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
                     return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
                 }
             }
+            BrowserSongsAction::RatePlaylist => {
+                if self.show_tracks {
+                    if let Some(pl_id) = &self.album_playlist_id {
+                        let was_liked = false; // No local cache, always send Liked
+                        let rating = if was_liked { LikeStatus::Indifferent } else { LikeStatus::Liked };
+                        return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(pl_id.clone(), rating)));
+                    }
+                }
+            }
+            BrowserSongsAction::SubscribeToArtist => {
+                if self.show_tracks {
+                    if let Some(artist) = self.album_artists.first() {
+                        if let Some(channel_id) = &artist.id {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(channel_id.clone())));
+                        }
+                    }
+                }
+            }
+            BrowserSongsAction::UnsubscribeFromArtist => {
+                if self.show_tracks {
+                    if let Some(artist) = self.album_artists.first() {
+                        if let Some(channel_id) = &artist.id {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![channel_id.clone()])));
+                        }
+                    }
+                }
+            }
             BrowserSongsAction::Filter => {
                 self.toggle_filter();
             }
@@ -645,6 +676,7 @@ impl BackendTask<crate::app::server::ArcServer> for FetchAlbumTracks {
                 artists: album.artists,
                 thumbnails: album.thumbnails,
                 tracks: album.tracks,
+                audio_playlist_id: album.audio_playlist_id,
             })
         }
     }
@@ -657,6 +689,7 @@ pub struct AlbumFetchResult {
     pub artists: Vec<ParsedSongArtist>,
     pub thumbnails: Vec<Thumbnail>,
     pub tracks: Vec<AlbumSong>,
+    pub audio_playlist_id: Option<PlaylistID<'static>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -691,6 +724,8 @@ impl_youtui_task_handler!(HandleFetchAlbumTracksOk, AlbumFetchResult, AlbumSearc
         target.show_tracks = true;
         target.album_year = result.year.clone();
         target.album_artist = result.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+        target.album_playlist_id = result.audio_playlist_id;
+        target.album_artists = result.artists.clone();
         let album = ParsedSongAlbum { name: result.title, id: result.album_id };
         target.track_list.append_raw_album_songs(result.tracks, album, result.year, result.artists, result.thumbnails);
         AsyncTask::new_no_op()

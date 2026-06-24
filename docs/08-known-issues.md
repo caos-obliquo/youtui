@@ -37,6 +37,16 @@
 | `>` key crash guard | `draw_media_controls.rs` | `duration == 0` check prevents division by zero |
 | Last annotation cut off | `lyrics_popup.rs` | Height calculation doesn't account for bottom border |
 
+## Metadata Pipeline
+
+| Issue | File | Description |
+|-------|------|-------------|
+| Album audio_playlist_id may be None | `albumsearch.rs` | `o.t` silently no-ops for singles/EPs without audio_playlist_id |
+| Related tracks have no album/year | YTM API limitation | Watch-playlist endpoint returns no album/year. Artist from channel name only. |
+| Album URL tracks bypass metadata pipeline | `ui.rs` | `GetPlaylistTracks` loads songs without `ValidateMetadata`. No album splitting. |
+| Force-split has no visual feedback | `playlist.rs` | No toast/notification on success/failure. Check logs. |
+| Year metadata gaps | metadata providers | Some tracks show `None` for year. Fallback extracts from album name `(YYYY)` |
+
 ## External
 
 | Issue | Description |
@@ -44,3 +54,15 @@
 | Metallum CLI blocked by Cloudflare | `cf_clearance` cookie + TLS fingerprint mismatch |
 | Libre.fm scrobble fails silently | No retry on HTTP failure |
 | OAuth token management is manual | No refresh flow in youtui itself |
+| Metal-API (metal-api.dev) returns 500 | Approved MA REST API. Provider code written but API down. |
+
+## Sixel/Album Art
+
+| Issue | Description |
+|-------|-------------|
+| Album art popup centering not perfect | `album_art_popup.rs` | Large images may appear off-center |
+| Sixel persistence after popup close | `album_art_popup.rs` | Sixel data may corrupt main window. Resize terminal to clear. |
+
+## Uncommitted Session (2026-06-24)
+
+All features listed in CLAUDE.md "NEEDS TESTING" table are UNTESTED. User must verify each item before commit. See `CLAUDE.md` section "Session 2026-06-24 (This Session, UNCOMMITTED)" for complete list.

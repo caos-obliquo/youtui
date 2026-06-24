@@ -36,7 +36,7 @@
 - Album art centering
 - Comprehensive docs (5.4k-line reference manual, man pages)
 
-#### Session 2026-06-23 (this session — uncommitted)
+#### Session 2026-06-23 (Committed)
 - ytmapi-rs locale parameterization (language/location, builder methods, 3 tests)
 - ytmapi-cli watch-playlist subcommand (Debug-First compliance)
 - Metadata-provider crate extraction (19 tests, 0 warnings)
@@ -52,30 +52,38 @@
 - Keybinding additions: o.q/o.L/o.Q/o.m/o.n (queue), o.r (library)
 - Dead code cleanup
 
+#### Session 2026-06-24 (Uncommitted — Testing Needed)
+See `CLAUDE.md` "Session 2026-06-24" section for full feature list.
+
+**What's implemented:**
+- Footer heart icon (filled 󰋑 / empty ♥)
+- Library tracks Phase D: [SEARCH] indicator + selection highlight + filtered nav
+- Library tracks Phase C: sort/filter popups (o.z/o.c)
+- Like/subscribe/unsubscribe from album tracks view (o.t/o.S/o.U)
+- Force-split (o.f) — re-validate + re-split selected song
+- Playlist editor with overwrite save (o.e → :w fetch+remove+add)
+- Album URL auto-detection (OLAK5uy_ via playlist?list=)
+- Metadata pipeline: resolver scoring, title cleaning refactor, original_album preservation
+- Discogs priority 30→8, per-track validation removed, url_added removed
+
+**What needs testing:** All 12 items in CLAUDE.md "NEEDS TESTING" table.
+
 ## Test Status
 - youtui: 103/103 pass, 4 ignored, 0 warnings
-- metadata-provider: 19/19 pass, 0 warnings (new)
-- ytmapi-rs lib: 85/85 pass (+3 locale tests)
+- metadata-provider: 19/19 pass, 0 warnings
+- ytmapi-rs lib: 85/85 pass
 - ViTextEditor: 65/65 pass
 - genius-rs: 14/14 pass
-- ytmapi-cli: 3/3 pass
-- json-crawler: 8/8 pass
-- async-callback-manager: 15/15 pass
-- **Total: 312/312 pass, 0 fail, 4 ignored**
+- ytmapi-cli: 3/3 pass (+4 new later)
+- json-crawler: 2/2 pass (0 lib + 2 doctests)
+- async-callback-manager: 14/14 pass (3 lib + 11 integ)
+- **Total: ~305/305 pass, 0 fail, 4 ignored, 0 warnings**
 
 ## Remaining
 - Genius annotations: individual page scrape fallback (no __INITIAL_STATE__)
 - Genius lyrics: Musixmatch integration
 - ytmapi-cli: more fixture types, streaming tests
 - Crate extraction: audio-player (deep async_rodio_sink coupling)
-- `AppCallback::Back` — wire back navigation
-- `AppCallback::GetPlaylistDetailsFromLibrary` — rate toggle from popup
-- `SearchPlaylists`/`GetPlaylistSongs` — batch streaming
-
-## Feature: Standardize count-in-header across all browser views
-Every browser right panel should show entity count in title bar like Albums now does:
-- Songs: `Songs - {count}`
-- Artists: `Artists - {count}`
-- PlaylistSearch songs: `{playlist name} - {count} tracks`
-- Library LikedSongs: `Liked Songs - {count}`
-- Library Playlist tracks: `{playlist name} - {count} tracks`
+- Related tracks metadata enrichment (YTM API limitation — no album/year)
+- Test and commit session 2026-06-24 features
+- Back navigation (F7 tab cycle) push_state_snapshot fix

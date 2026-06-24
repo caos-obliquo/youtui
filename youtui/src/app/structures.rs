@@ -707,6 +707,41 @@ pub fn fuzzy_match(query: &str, target: &str) -> Option<u64> {
 }
 
 #[cfg(test)]
+mod normalize_tests {
+    use super::normalize_artist_name;
+
+    #[test]
+    fn norm_already_capitalized() {
+        assert_eq!(normalize_artist_name("Metallica"), "Metallica");
+    }
+
+    #[test]
+    fn norm_lowercase() {
+        assert_eq!(normalize_artist_name("metallica"), "Metallica");
+    }
+
+    #[test]
+    fn norm_uppercase() {
+        assert_eq!(normalize_artist_name("METALLICA"), "METALLICA");
+    }
+
+    #[test]
+    fn norm_single_char() {
+        assert_eq!(normalize_artist_name("a"), "A");
+    }
+
+    #[test]
+    fn norm_empty() {
+        assert_eq!(normalize_artist_name(""), "");
+    }
+
+    #[test]
+    fn norm_whitespace_padded() {
+        assert_eq!(normalize_artist_name("  metallica  "), "Metallica");
+    }
+}
+
+#[cfg(test)]
 mod fuzzy_tests {
     use super::fuzzy_match;
     #[test]

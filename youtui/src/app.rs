@@ -24,6 +24,7 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleSubscribeToArtistOk, HandleSubscribeToArtistError,
     HandleUnsubscribeFromArtistsOk, HandleUnsubscribeFromArtistsError,
     HandleAddPlaylistToPlaylistOk, HandleAddPlaylistToPlaylistError,
+    HandleOverwriteGetTracks, HandleOverwriteGetTracksErr,
 };
 use std::borrow::Cow;
 use std::time::Duration;
@@ -133,6 +134,7 @@ pub enum AppCallback {
         video_ids: Vec<VideoID<'static>>,
     },
     Navigate(NavTarget),
+    TogglePlayPause,
     SeekBack,
     SeekForward,
     SeekTo(Duration),
@@ -143,11 +145,14 @@ pub enum AppCallback {
     ReloadConfig,
     InsertNext(Vec<ListSong>),
     GetRelatedTracks(ytmapi_rs::common::VideoID<'static>),
-    #[allow(dead_code)]
     OpenPlaylistEditor {
         playlist_id: ytmapi_rs::common::PlaylistID<'static>,
         playlist_title: String,
         tracks: Vec<crate::app::structures::ListSong>,
+    },
+    OverwritePlaylistTracks {
+        playlist_id: PlaylistID<'static>,
+        new_ids: Vec<VideoID<'static>>,
     },
 
     ShowDeleteConfirm(PlaylistID<'static>, String),
@@ -689,6 +694,10 @@ impl Youtui {
                 let effect = self.window_state.handle_prev();
                 self.task_manager.spawn_task(&self.server, effect);
             }
+            AppCallback::TogglePlayPause => {
+                let effect = self.window_state.pauseplay();
+                self.task_manager.spawn_task(&self.server, effect);
+            }
             AppCallback::SeekBack => {
                 use crate::async_rodio_sink::SeekDirection;
                 let effect = self.window_state.playlist.handle_seek(
@@ -765,6 +774,18 @@ impl Youtui {
                 use crate::app::ui::playlist::playlist_editor_popup::PlaylistEditorPopup;
                 self.window_state.playlist_editor_popup = Some(PlaylistEditorPopup::new(playlist_id, playlist_title, tracks));
                 self.window_state.context = WindowContext::PlaylistEditor;
+            }
+            AppCallback::OverwritePlaylistTracks { playlist_id, new_ids } => {
+                self.window_state.close_popup();
+                self.window_state.browser.library_browser.playlists_fetched = false;
+                let effect = AsyncTask::new_future_try(
+                    GetPlaylistTracks(playlist_id.clone()),
+                    HandleOverwriteGetTracks(playlist_id, new_ids),
+                    HandleOverwriteGetTracksErr,
+                    None,
+                )
+                .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ReloadConfig => {
                 let config_dir = crate::get_config_dir().ok();

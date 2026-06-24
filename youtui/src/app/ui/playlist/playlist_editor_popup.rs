@@ -229,7 +229,10 @@ impl PlaylistEditorPopup {
         if video_ids.is_empty() {
             return None;
         }
-        Some(AppCallback::OpenPlaylistUpdatePopup(video_ids))
+        Some(AppCallback::OverwritePlaylistTracks {
+            playlist_id: self.playlist_id.clone(),
+            new_ids: video_ids,
+        })
     }
 
     fn execute_command(&mut self, cmd: &str) -> (ComponentEffect<Self>, Option<AppCallback>) {

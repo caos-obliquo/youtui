@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use tracing::{debug, info, warn};
-use ytmapi_rs::common::VideoID;
+use ytmapi_rs::common::{LikeStatus, VideoID};
 use crate::app::structures::Thumbnail;
 
 const QUEUE_DIR: &str = "youtui/queues";
@@ -26,6 +26,12 @@ pub struct CompactSongRef {
     pub album: Option<String>,
     pub duration_string: String,
     pub thumbnail_url: Option<String>,
+    #[serde(default = "default_like_status")]
+    pub like_status: LikeStatus,
+}
+
+fn default_like_status() -> LikeStatus {
+    LikeStatus::Indifferent
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,6 +70,7 @@ pub fn save_queue(playlist: &Playlist, name: &str) -> Result<(), Box<dyn std::er
                 album,
                 duration_string: song.duration_string.clone(),
                 thumbnail_url: get_largest_thumbnail_url(song.thumbnails.as_ref()),
+                like_status: song.like_status.clone(),
             }
         })
         .collect();
@@ -121,14 +128,16 @@ fn load_compact_queue(playlist: &mut Playlist, saved: CompactSavedQueue) -> Resu
         let songs: Vec<ListSong> = saved.songs
             .iter()
             .map(|ref_| {
-                ListSong::create_with_metadata(
+                let mut song = ListSong::create_with_metadata(
                     ref_.video_id.clone(),
                     ref_.title.clone(),
                     ref_.artists.clone(),
                     ref_.album.clone(),
                     ref_.duration_string.clone(),
                     ref_.thumbnail_url.clone(),
-                )
+                );
+                song.like_status = ref_.like_status.clone();
+                song
             })
             .collect();
         
@@ -166,6 +175,7 @@ fn normalize_and_load(playlist: &mut Playlist, saved: LegacySong, name: &str) ->
             album,
             duration_string: song.duration_string.clone(),
             thumbnail_url: get_largest_thumbnail_url(song.thumbnails.as_ref()),
+            like_status: song.like_status.clone(),
         }
     }).collect();
 
@@ -213,6 +223,7 @@ mod tests {
             album: Some("Test Album".to_string()),
             duration_string: "3:45".to_string(),
             thumbnail_url: Some("https://example.com/thumb.jpg".to_string()),
+            like_status: LikeStatus::Liked,
         };
         let json = serde_json::to_string_pretty(&song_ref).unwrap();
         assert!(json.contains("abc123"));
@@ -232,7 +243,8 @@ mod tests {
             "artists": ["Artist X", "Artist Y"],
             "album": "Album Name",
             "duration_string": "5:00",
-            "thumbnail_url": null
+            "thumbnail_url": null,
+            "like_status": "LIKE"
         }"#;
         
         let song_ref: CompactSongRef = serde_json::from_str(json).unwrap();
@@ -243,6 +255,22 @@ mod tests {
         assert_eq!(song_ref.album, Some("Album Name".to_string()));
         assert_eq!(song_ref.duration_string, "5:00");
         assert!(song_ref.thumbnail_url.is_none());
+        assert_eq!(song_ref.like_status, LikeStatus::Liked);
+    }
+
+    #[test]
+    fn test_compact_song_ref_deserialization_backwards_compat() {
+        let json = r#"{
+            "video_id": "old123",
+            "title": "Old Song",
+            "artists": ["Old Artist"],
+            "album": null,
+            "duration_string": "3:00",
+            "thumbnail_url": null
+        }"#;
+        
+        let song_ref: CompactSongRef = serde_json::from_str(json).unwrap();
+        assert_eq!(song_ref.like_status, LikeStatus::Indifferent);
     }
 
     #[test]
@@ -254,6 +282,7 @@ mod tests {
             album: Some("Album Title".to_string()),
             duration_string: "3:33".to_string(),
             thumbnail_url: Some("https://example.com/img.jpg".to_string()),
+            like_status: LikeStatus::Indifferent,
         };
         
         let json = serde_json::to_string(&song_ref).unwrap();
@@ -261,7 +290,7 @@ mod tests {
         
         // Verify structure has only compact fields
         let keys: Vec<_> = parsed.as_object().unwrap().keys().collect();
-        let expected_keys = vec!["video_id", "title", "artists", "album", "duration_string", "thumbnail_url"];
+        let expected_keys = vec!["video_id", "title", "artists", "album", "duration_string", "thumbnail_url", "like_status"];
         for key in expected_keys {
             assert!(keys.iter().any(|k| *k == key));
         }
@@ -282,6 +311,7 @@ mod tests {
             album: None,
             duration_string: "4:00".to_string(),
             thumbnail_url: None,
+            like_status: LikeStatus::Indifferent,
         };
         
         let json = serde_json::to_string(&song_ref).unwrap();
