@@ -4,8 +4,8 @@ use super::{
 use crate::app::ui::draw::draw_text_box;
 use crate::app::view::{BasicConstraint, HasTitle, ListView, Loadable};
 use crate::drawutils::{
-    DESELECTED_BORDER_COLOUR, PLAYING_COLOUR, ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TABLE_HEADINGS_COLOUR,
-    TEXT_COLOUR,
+    DESELECTED_BORDER_COLOUR, PLAYING_COLOUR, ROW_HIGHLIGHT_COLOUR, VISUAL_MODE_COLOUR,
+    SELECTED_BORDER_COLOUR, TABLE_HEADINGS_COLOUR, TEXT_COLOUR,
 };
 use crate::widgets::{ScrollingList, ScrollingTable, ScrollingTableState};
 use ratatui::Frame;
@@ -196,7 +196,7 @@ pub fn draw_table_impl<'a>(
     let table_widths = basic_constraints_to_table_constraints(layout, chunk.width, 1);
     let table_widget = ScrollingTable::new(items, headings, table_widths, cur_tick)
         .style(Style::new().fg(TEXT_COLOUR))
-        .visual_range_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
+        .visual_range_style(Style::default().bg(VISUAL_MODE_COLOUR))
         .row_highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
         .headings_style(Style::default().bold().fg(TABLE_HEADINGS_COLOUR))
         .secondary_row_highlight_style(Style::default().fg(PLAYING_COLOUR).add_modifier(ratatui::style::Modifier::BOLD))
