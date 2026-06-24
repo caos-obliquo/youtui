@@ -545,6 +545,8 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
             MetadataEffect::Validated(data, song_id) => {
                 if let Some(idx) = target.get_index_from_id(song_id) {
                     if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
+                        // Save original album before metadata overwrites it
+                        let original_album = song.album.as_ref().map(|a| a.as_ref().name.clone());
                         if let Some(ref album) = data.album {
                             song.album = Some(crate::app::structures::MaybeRc::Owned(
                                 crate::app::structures::ListSongAlbum {
@@ -595,7 +597,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                             }
                             target.album_tracks = Some(data.album_tracks.clone());
                             target.album_current_track = 0;
-                            let play_effect = target.insert_album_tracks(song_id, &data.album_tracks, &data.artist, &data.album, &data.year);
+                            let play_effect = target.insert_album_tracks(song_id, &data.album_tracks, &data.artist, &data.album, &data.year, &original_album);
                             info!("Album mode: {} tracks loaded for song {:?}",
                                 target.album_tracks.as_ref().map_or(0, |t| t.len()), song_id);
 

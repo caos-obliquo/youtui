@@ -290,6 +290,28 @@ Context menu is exclusively via `o`.
 - `chore:` cleanup — added `library_playlist_mutated = true` to merge success handler
 - Album split tags expanded: `full single`, `album` added to strip list
 
+## Session 2026-06-24 (This Session, Not Committed)
+### Critical Bugs Fixed
+- **Discogs priority 30→8**: Last.fm AlbumSearch (priority 10) ran before Discogs (30). With a Last.fm API key, Last.fm returned YouTube radio mix data for "The Pilot Ships - The Limits of Painting & Poetry" instead of the correct Discogs album "There Should Be An Entry Here". The pipeline saw `album.is_some()` and stopped before Discogs could respond. Changed Discogs to priority 8 so it runs before Last.fm AlbumSearch. Provider order: MetalApi(5) → Discogs(8) → Last.fm AlbumSearch(10) → Last.fm TrackSearch(20) → Genius(40) → MusicBrainz(50). See `libs/metadata-provider/src/discogs.rs:16`.
+- **Original album preservation**: `insert_album_tracks()` now takes `original_album: &Option<String>` parameter. Before `MetadataEffect::Validated` handler overwrites the song's album with Discogs data, it saves the original album name (from the YouTube video title). Split tracks use the original album name, falling back to the metadata album name. This keeps "The Limits of Painting & Poetry" instead of "There Should Be An Entry Here". Files: `youtui/src/app/ui/playlist.rs:929` (signature), `youtui/src/app/ui/playlist/effect_handlers_playlist.rs:603` (caller with save-before-overwrite), `youtui/src/app/ui/playlist/tests.rs:323+367` (test calls).
+- **`url_added` removed**: `play_yt_url()` set `url_added = true` which caused `MetadataEffect::Validated` to skip album splitting for URL-added songs. Removed the field entirely. Now URL songs validate and split like any other source. File: `youtui/src/app/ui/playlist.rs`.
+
+### CLI Debug Tool
+- **`ytmapi debug simulate-url <url>`**: Simulates the full `add_yt_video` path — runs yt-dlp, extracts title/artist/duration, applies same 4-step title cleaning (artist prefix, noise tags, album suffixes, year stripping), resolves via MetadataRegistry, shows all tracks with total duration and quality guard check (pass/fail). File: `libs/ytmapi-cli/src/main.rs`.
+
+### Minor Fixes
+- **Year stripping unused variable**: Fixed compiler warning in `add_yt_video` year extraction. File: `youtui/src/app/ui/playlist.rs:1209`.
+- **Log Viewer toggle**: F11 (ViewLogs) now checks if already in Logs context. If so, swaps back to `prev_context` instead of staying stuck. File: `youtui/src/app/ui.rs`.
+- **Library tracks filtered-index delete**: All delete/move handlers use `get_tracks_filtered_list_iter()` for correct track selection when sort/filter active. File: `youtui/src/app/ui/browser/library.rs`.
+
+### Metadata Pipeline
+- **Provider priority**: Lower priority number = runs first. Discogs at 8 ensures authoritative tracklist data takes precedence over Last.fm's often-incorrect user-contributed album data. Published on `crates.io` as `metadata-provider`.
+
+### Pending Items
+- Phase C: Wire sort/filter popups for library tracks view
+- Phase D: `[SEARCH]` indicator for library tracks + selection highlight fix
+- Library tracks `/` filter works silently — no indicator, selection lands on wrong row when filter active
+
 ## Notes Popup Features
 - Vim-driven text editor for storing URLs, song links, personal notes
 - File: `~/.config/youtui/notes.txt` — plain text, persists across sessions
