@@ -876,6 +876,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleVisualMode)),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
+            KeyActionTree::new_key_with_visibility(AppAction::Playlist(PlaylistAction::PasteYanked), KeyActionVisibility::Global),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('o')),
             KeyActionTree::new_mode(
                 [
