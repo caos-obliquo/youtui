@@ -384,6 +384,7 @@ Context menu is exclusively via `o`.
 - Per-track validation removed (corrupted split-track metadata).
 - o.v album art popup: separate ClosePopup handler (no context corruption).
 - o.v: sixel data stored in `w.sixel_data` for cleanup.
+- **F7 tab cycle**: `handle_change_search_type()` now calls `push_snapshot()` before switching variant. Back-stack no longer corrupted.
 
 ### Previous Session Features (Unchanged)
 - Metadata pipeline (providers, Discogs, MA_COOKIE, genre aliasing).
@@ -428,19 +429,11 @@ Context menu is exclusively via `o`.
 
 ## Remaining Items (Detailed)
 ### Recommended Order
-1. **P1: Back navigation (F7 cycle)** (state corruption bug)
+1. **Sixel album art persistence** (P2)
 2. **P2 items** (polish, no data-loss)
 3. **P3 items** (tech debt)
 
-### P1: Back navigation (F7 tab cycle)
-**Problem**: `BrowserAction::Back` + `state_stack` pattern correctly saves/restores state per-tab. But `handle_change_search_type()` (F7 tab cycle, `handle_search_action` in `browser.rs`) navigates between tabs without pushing snapshots. When user goes back, stack may restore wrong tab.
-
-**What to do**:
-1. In `handle_change_search_type()` (or the dispatch point around F7), call `push_state_snapshot()` on the *current* browser widget before switching to the new one.
-2. File: `youtui/src/app/ui/browser.rs` — the F7 dispatch in `handle_search_action()` or `handle_change_search_type()`
-3. Reference: `Navigate(new_search)` calls `push_state_snapshot()` in `browser.rs`
-
-**Files**: `youtui/src/app/ui/browser.rs`
+### P1: ~~Back navigation (F7 cycle) — FIXED. handle_change_search_type() now pushes snapshot.~~
 
 ### P1: Annotations integration
 **Problem**: Lyrics popup has Tab/l/h for switching between lyrics/annotations/view-switching modes. Verify this is fully wired end-to-end.

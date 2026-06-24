@@ -70,18 +70,17 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 
 | # | Step | File(s) | Est |
 |---|------|---------|-----|
-| 1 | **Back navigation (F7 tab cycle)** | `browser.rs` | med |
-| 2 | `C-r` redo (commit) | `libs/vi-text-editor/src/lib.rs` + 6 callers | ✓ ready |
-| 3 | `.` repeat last change | `libs/vi-text-editor/src/lib.rs` | med |
-| 4 | `J` join lines | `libs/vi-text-editor/src/lib.rs` | small |
-| 5 | `~` toggle case | `libs/vi-text-editor/src/lib.rs` | small |
-| 6 | Lyrics hybrid line numbers | `lyrics_popup.rs` | med |
-| 7 | Like album to library (add to YT Music profile) | `albumsearch.rs` + ytmapi-rs | med |
-| 8 | Footer album format fix | `footer.rs` | small |
-| 9 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
-| 10 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
-| 11 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
-| 12 | Build + full test suite | verify | verify |
+| 1 | `C-r` redo (commit) | `libs/vi-text-editor/src/lib.rs` + 6 callers | ✓ ready |
+| 2 | `.` repeat last change | `libs/vi-text-editor/src/lib.rs` | med |
+| 3 | `J` join lines | `libs/vi-text-editor/src/lib.rs` | small |
+| 4 | `~` toggle case | `libs/vi-text-editor/src/lib.rs` | small |
+| 5 | Lyrics hybrid line numbers | `lyrics_popup.rs` | med |
+| 6 | Like album to library (add to YT Music profile) | `albumsearch.rs` + ytmapi-rs | med |
+| 7 | Sixel album art persistence | `draw.rs` | med |
+| 8 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
+| 9 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
+| 10 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
+| 11 | Build + full test suite | verify | verify |
 
 ### Step details
 
