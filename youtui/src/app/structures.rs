@@ -443,7 +443,6 @@ impl BrowserSongsList {
             );
         }
     }
-    #[allow(dead_code)]
     pub fn append_raw_playlist_items(&mut self, raw_list: Vec<PlaylistItem>) {
         for song in raw_list {
             self.add_raw_playlist_item(song);
@@ -556,7 +555,6 @@ impl BrowserSongsList {
         });
         id
     }
-    #[allow(dead_code)]
     fn add_raw_playlist_item(&mut self, item: PlaylistItem) -> ListSongID {
         let id = self.create_next_id();
         let (track_no, title, video_id, duration, artists, album, thumbnails, explicit, year, like_status) = match item

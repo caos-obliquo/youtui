@@ -9,7 +9,7 @@ use crate::app::structures::{
 };
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{
-    AdvancedTableView, BasicConstraint, HasTitle, Loadable, SortDirection,
+    AdvancedTableView, BasicConstraint, HasTitle, Loadable,
     TableFilterCommand, TableSortCommand, TableView,
 };
 use crate::config::Config;
@@ -64,7 +64,6 @@ pub struct AlbumSearchBrowser {
 
 impl_youtui_component!(AlbumSearchBrowser);
 
-#[allow(dead_code)]
 impl AlbumSearchBrowser {
     pub fn new() -> Self {
         Self {
@@ -176,11 +175,6 @@ impl AlbumSearchBrowser {
         self.search.has_search_suggestions()
     }
 
-    #[allow(dead_code)]
-    pub fn get_search_suggestions(&self) -> &[SearchSuggestion] {
-        self.search.get_search_suggestions()
-    }
-
     pub fn search_albums_query(&mut self, query: String) -> (ComponentEffect<Self>, Option<AppCallback>) {
         if let Some(cached) = self.search_cache.get(&query) {
             self.albums = cached.clone();
@@ -197,8 +191,7 @@ impl AlbumSearchBrowser {
         ).map_frontend(|this: &mut Self| &mut *this);
         (task, None)
     }
-    #[allow(dead_code)]
-    pub fn revert_routing(&mut self) {}
+
     pub fn text_editor_mode(&self) -> Option<String> { None }
     pub fn go_to_first(&mut self) { self.album_selected = 0; self.track_selected = 0; }
     pub fn go_to_last(&mut self) {
@@ -239,39 +232,7 @@ impl AlbumSearchBrowser {
                 })
         })
     }
-    #[allow(dead_code)]
-    pub fn apply_all_sort_commands(&mut self) -> Result<()> {
-        for c in self.sort.sort_commands.iter() {
-            if !self.get_sortable_columns().contains(&c.column) {
-                bail!(format!("Unable to sort column {}", c.column));
-            }
-            self.track_list.sort(
-                get_adjusted_list_column(c.column, Self::subcolumns_of_vec())?,
-                c.direction,
-            );
-        }
-        Ok(())
-    }
-    #[allow(dead_code)]
-    pub fn apply_filter(&mut self) {
-        self.filter.shown = false;
-        self.input_routing = InputRouting::List;
-        let Some(filter) = self.filter.get_text().map(|s| s.to_string()) else {
-            return;
-        };
-        let cmd = TableFilterCommand::All(crate::app::view::Filter::Contains(
-            crate::app::view::FilterString::case_insensitive(filter),
-        ));
-        self.filter.filter_commands.push(cmd);
-        let new_max_cur = self.get_filtered_list_iter().count().saturating_sub(1);
-        self.track_selected = self.track_selected.min(new_max_cur);
-    }
-    #[allow(dead_code)]
-    pub fn clear_filter(&mut self) {
-        self.filter.shown = false;
-        self.input_routing = InputRouting::List;
-        self.clear_filter_commands();
-    }
+
     pub fn toggle_filter(&mut self) {
         if !self.filter.shown {
             self.filter.filter_text.clear();
@@ -282,42 +243,11 @@ impl AlbumSearchBrowser {
         }
         self.filter.shown = !self.filter.shown;
     }
-    pub fn close_sort(&mut self) {
-        self.sort.shown = false;
-        self.input_routing = InputRouting::List;
-    }
     pub fn handle_pop_sort(&mut self) {
         self.sort.cur = 0;
         self.sort.shown = true;
         self.input_routing = InputRouting::Sort;
     }
-    pub fn handle_sort_cur_asc(&mut self) {
-        let Some(column) = self.sortable_columns().get(self.sort.cur) else {
-            warn!("Tried to index sortable columns but was out of range");
-            return;
-        };
-        if let Err(e) = self.push_sort_command(TableSortCommand {
-            column: *column,
-            direction: SortDirection::Asc,
-        }) {
-            warn!("Tried to sort a column that is not sortable - error {e}")
-        };
-        self.close_sort();
-    }
-    pub fn handle_sort_cur_desc(&mut self) {
-        let Some(column) = self.sortable_columns().get(self.sort.cur) else {
-            warn!("Tried to index sortable columns but was out of range");
-            return;
-        };
-        if let Err(e) = self.push_sort_command(TableSortCommand {
-            column: *column,
-            direction: SortDirection::Desc,
-        }) {
-            warn!("Tried to sort a column that is not sortable - error {e}")
-        };
-        self.close_sort();
-    }
-    fn sortable_columns(&self) -> &[usize] { &[1, 3] }
 }
 
 impl Loadable for AlbumSearchBrowser {

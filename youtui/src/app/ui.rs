@@ -61,7 +61,6 @@ pub enum WindowContext {
     PlaylistRenamePopup,
     PlaylistEditPopup,
     PlaylistDetailsPopup,
-    #[allow(dead_code)]
     Notes,
 }
 

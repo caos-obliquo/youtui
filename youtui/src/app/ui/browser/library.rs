@@ -120,8 +120,7 @@ impl Action for BrowserLibraryAction {
 pub enum LibraryEffect {
     SongsLoaded(Vec<ListSong>),
     PlaylistsLoaded(Vec<LibraryPlaylist>),
-    #[allow(dead_code)]
-    PlaylistTracksLoaded(Vec<ListSong>),
+
     ArtistsLoaded(Vec<LibraryArtist>),
     AlbumsLoaded(Vec<SearchResultAlbum>),
     RemoveItemsSuccess,
@@ -161,15 +160,6 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 target.input_routing = InputRouting::Content;
                 // show_playlist_tracks preserved across refreshes
                 // Only DismissTracks action closes it
-            }
-            LibraryEffect::PlaylistTracksLoaded(songs) => {
-                info!(count = %songs.len(), "Playlist tracks loaded");
-                target.loading = false;
-                target.error = None;
-                target.playlist_tracks = songs;
-                target.playlist_tracks_selected = 0;
-                target.show_playlist_tracks = true;
-                target.input_routing = InputRouting::Content;
             }
             LibraryEffect::ArtistsLoaded(artists) => {
                 info!(count = %artists.len(), "Library artists loaded");
@@ -571,18 +561,6 @@ impl LibraryBrowser {
         (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(songs)))
     }
 
-    #[allow(dead_code)]
-    pub fn load_selected_playlist(&self) -> (AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>, Option<AppCallback>) {
-        if self.category != LibraryCategory::Playlists {
-            return (AsyncTask::new_no_op(), None);
-        }
-        let Some(pl) = self.playlist_data.get(self.playlist_selected) else {
-            return (AsyncTask::new_no_op(), None);
-        };
-        debug!(playlist = %pl.title, "Library: loading playlist");
-        (AsyncTask::new_no_op(), Some(AppCallback::LoadPlaylistFromPopup(pl.playlist_id.clone())))
-    }
-
     pub fn fetch_playlist_tracks(&mut self) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
         let Some(pl) = self.playlist_data.get(self.playlist_selected).cloned() else {
             return AsyncTask::new_no_op();
@@ -647,14 +625,6 @@ impl LibraryBrowser {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn search_text(&self) -> &str {
-        self.search.search_contents.get_text()
-    }
-    #[allow(dead_code)]
-    pub fn is_search_active(&self) -> bool {
-        self.search_active
-    }
 }
 
 // -- Tracks table view --
