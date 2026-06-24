@@ -3,7 +3,7 @@ use crate::drawutils::{
     BUTTON_BG_COLOUR, BUTTON_FG_COLOUR, PROGRESS_BG_COLOUR, PROGRESS_FG_COLOUR, middle_of_rect,
 };
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -11,8 +11,6 @@ use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
 use ratatui_image::Image;
 use ratatui_image::picker::Picker;
 use std::time::Duration;
-
-pub const ALBUM_ART_WIDTH: u16 = 7;
 
 pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
     time_string
@@ -22,6 +20,15 @@ pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
         .zip([1, 60, 3600])
         .fold(0, |acc, (time, multiplier)| acc + time * multiplier)
 }
+
+pub fn like_icon(status: ytmapi_rs::common::LikeStatus) -> &'static str {
+    match status {
+        ytmapi_rs::common::LikeStatus::Liked => " 󰋑",
+        _ => " ♥",
+    }
+}
+
+pub const ALBUM_ART_WIDTH: u16 = 7;
 
 pub fn secs_to_time_string(secs: usize) -> String {
     // Naive implementation
@@ -96,7 +103,7 @@ pub fn draw_footer(
     } else { "" };
     let album_art = cur_active_song.map(|s| &s.album_art);
     let last_art = w.last_album_art.clone();
-    let status_suffix = format!("{}{}{}{}", repeat_icon, radio_icon, shuffle_icon, scrobble_indicator);
+    let heart = cur_active_song.map(|s| like_icon(s.like_status.clone())).unwrap_or("");
     let bar = Gauge::default()
         .label(bar_str)
         .gauge_style(
@@ -130,31 +137,14 @@ pub fn draw_footer(
         .title(Line::from("Youtui").right_aligned())
         .borders(Borders::ALL);
     let block_inner = block.inner(chunk);
-    let get_progress_bar_and_text_layout = |r: Rect| {
-        let [song_text_chunk, progress_bar_chunk] = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(2), Constraint::Max(1)])
-            .areas(r);
-        (
-            song_text_chunk,
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Max(4), Constraint::Min(1), Constraint::Max(4)])
-                .areas(progress_bar_chunk),
-        )
-    };
-    let [album_art_chunk, _, progress_bar_chunk] = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(ALBUM_ART_WIDTH),
-            Constraint::Length(1),
-            Constraint::Min(0),
-        ])
-        .areas(block_inner);
+    let [album_art_chunk, _, right_area] = Layout::horizontal([
+        Constraint::Length(ALBUM_ART_WIDTH),
+        Constraint::Length(1),
+        Constraint::Min(0),
+    ]).areas(block_inner);
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
             w.last_album_art = Some(album_art.clone());
-            // Center the image within album_art_chunk using Fit(None)
             let image = terminal_image_capabilities.new_protocol(
                 album_art.in_mem_image.clone(),
                 album_art_chunk,
@@ -211,35 +201,56 @@ pub fn draw_footer(
             }
         }
     };
-    let (song_text_chunk, [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk]) =
-        get_progress_bar_and_text_layout(progress_bar_chunk);
+    let [line1, album_icons_line, bar_chunk] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ]).areas(right_area);
+    let [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk] = Layout::horizontal([
+        Constraint::Max(4),
+        Constraint::Min(1),
+        Constraint::Max(4),
+    ]).areas(bar_chunk);
     f.render_widget(bar, mid_bar_chunk);
     f.render_widget(left_arrow, left_arrow_chunk);
     f.render_widget(right_arrow, right_arrow_chunk);
-    f.render_widget(block, chunk);
-    // Two-line metadata: Artist - Song on line 1, Album on line 2
-    let [line1, line2] = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(song_text_chunk);
-    let avail1 = line1.width.saturating_sub(status_suffix.len() as u16) as usize;
-    let line1_text = if song_artist_line.len() > avail1 {
-        let mut s = song_artist_line[..avail1.saturating_sub(3).max(1)].to_string();
-        s.push_str("...");
-        format!("{}{}", s, status_suffix)
-    } else {
-        format!("{}{}", song_artist_line, status_suffix)
-    };
-    f.render_widget(Paragraph::new(Line::from(line1_text)), line1);
+    f.render_widget(Paragraph::new(Line::from(song_artist_line)), line1);
+    let status_icons = format!("{} {}{}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon, heart);
+    let mut album_spans = Vec::new();
     if !album_line.is_empty() {
-        let avail2 = line2.width.saturating_sub(3) as usize;
-        let line2_text = if album_line.len() > avail2 {
-            let mut s = format!("   {}", &album_line[..avail2.saturating_sub(6).max(1)]);
+        let avail = album_icons_line.width.saturating_sub(3) as usize;
+        if album_line.len() > avail {
+            let mut s = format!("   {}", &album_line[..avail.saturating_sub(6).max(1)]);
             s.push_str("...");
-            s
+            album_spans.push(Span::styled(s, Style::default().fg(Color::DarkGray)));
         } else {
-            format!("   {}", album_line)
-        };
-        f.render_widget(
-            Paragraph::new(Line::from(line2_text)).style(Style::default().fg(Color::DarkGray)),
-            line2,
-        );
+            album_spans.push(Span::styled(
+                format!("   {}", album_line),
+                Style::default().fg(Color::DarkGray),
+            ));
+        }
+    }
+    album_spans.push(Span::styled(status_icons, Style::default().fg(Color::Red)));
+    f.render_widget(Paragraph::new(Line::from(album_spans)), album_icons_line);
+    f.render_widget(block, chunk);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn like_icon_liked() {
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Liked), " 󰋑");
+    }
+
+    #[test]
+    fn like_icon_indifferent() {
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Indifferent), " ♥");
+    }
+
+    #[test]
+    fn like_icon_disliked() {
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Disliked), " ♥");
     }
 }

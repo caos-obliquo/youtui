@@ -15,7 +15,7 @@ use crate::app::structures::{
     DownloadStatus, AlbumArtState, fuzzy_match, Percentage,
 };
 use crate::app::view::{
-    AdvancedTableView, BasicConstraint, TableFilterCommand, TableSortCommand, TableView,
+    AdvancedTableView, BasicConstraint, HasTitle, TableFilterCommand, TableSortCommand, TableView,
 };
 use crate::app::ui::browser::shared_components::get_adjusted_list_column;
 use crate::app::ui::action::AppAction;
@@ -689,7 +689,19 @@ impl LibraryBrowser {
 // -- Tracks table traits --
 impl TableView for LibraryBrowser {
     fn get_selected_item(&self) -> usize {
-        self.playlist_tracks_selected
+        // When filter/sort active, map raw selection to filtered index
+        if !self.local_filter_text.is_empty() || !self.tracks_filter.filter_commands.is_empty() || !self.tracks_sort.sort_commands.is_empty() {
+            let selected_video_id = self.playlist_tracks.get(self.playlist_tracks_selected).map(|s| s.video_id.clone());
+            if let Some(ref vid) = selected_video_id {
+                self.get_tracks_filtered_list_iter()
+                    .position(|s| s.video_id == *vid)
+                    .unwrap_or(0)
+            } else {
+                0
+            }
+        } else {
+            self.playlist_tracks_selected
+        }
     }
     fn get_state(&self) -> &ScrollingTableState {
         &self.tracks_widget_state
@@ -798,6 +810,23 @@ impl AdvancedTableView for LibraryBrowser {
     }
 }
 
+impl HasTitle for LibraryBrowser {
+    fn get_title(&self) -> Cow<'_, str> {
+        if self.show_playlist_tracks {
+            let search_tag = if !self.local_filter_text.is_empty() {
+                let total = self.playlist_tracks.len();
+                let count = self.get_tracks_filtered_list_iter().count();
+                format!(" [SEARCH: {} ({}/{})]", self.local_filter_text, count, total)
+            } else {
+                String::new()
+            };
+            format!("Playlist Tracks{}", search_tag).into()
+        } else {
+            "Library".into()
+        }
+    }
+}
+
 // -- Scrollable --
 impl Scrollable for LibraryBrowser {
     fn increment_list(&mut self, amount: isize) {
@@ -819,7 +848,11 @@ impl Scrollable for LibraryBrowser {
                 }
                 LibraryCategory::Playlists => {
                     if self.show_playlist_tracks {
-                        let max = self.playlist_tracks.len().saturating_sub(1);
+                        let max = if !self.local_filter_text.is_empty() || !self.tracks_filter.filter_commands.is_empty() || !self.tracks_sort.sort_commands.is_empty() {
+                            self.get_tracks_filtered_list_iter().count().saturating_sub(1)
+                        } else {
+                            self.playlist_tracks.len().saturating_sub(1)
+                        };
                         self.playlist_tracks_selected = self
                             .playlist_tracks_selected
                             .saturating_add_signed(amount)
@@ -857,6 +890,11 @@ impl Scrollable for LibraryBrowser {
 
 impl ActionHandler<FilterAction> for LibraryBrowser {
     fn apply_action(&mut self, action: FilterAction) -> impl Into<YoutuiEffect<Self>> {
+        if self.show_playlist_tracks && self.category == LibraryCategory::Playlists {
+            // Toggle column filter popup for tracks view
+            self.tracks_filter.shown = !self.tracks_filter.shown;
+            return ComponentEffect::new_no_op();
+        }
         match self.category {
             LibraryCategory::LikedSongs => match action {
                 FilterAction::Close => self.filter.shown = false,
@@ -883,6 +921,11 @@ impl ActionHandler<FilterAction> for LibraryBrowser {
 
 impl ActionHandler<SortAction> for LibraryBrowser {
     fn apply_action(&mut self, action: SortAction) -> impl Into<YoutuiEffect<Self>> {
+        if self.show_playlist_tracks && self.category == LibraryCategory::Playlists {
+            // Toggle column sort popup for tracks view
+            self.tracks_sort.shown = !self.tracks_sort.shown;
+            return ComponentEffect::new_no_op();
+        }
         match self.category {
             LibraryCategory::LikedSongs => match action {
                 SortAction::Close => self.sort.shown = false,
@@ -1133,6 +1176,20 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
                             return (AsyncTask::new_no_op(), Some(AppCallback::OpenEditPopup(pl.playlist_id.clone(), pl.title.clone())));
                         }
+                    }
+                }
+                BrowserSongsAction::OpenPlaylistEditor => {
+                    if self.show_playlist_tracks {
+                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
+                            let tracks = self.playlist_tracks.clone();
+                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistEditor {
+                                playlist_id: pl.playlist_id.clone(),
+                                playlist_title: pl.title.clone(),
+                                tracks,
+                            }));
+                        }
+                    } else {
+                        self.error = Some("Open a playlist first (Enter)".into());
                     }
                 }
                 BrowserSongsAction::RatePlaylist => {

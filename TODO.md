@@ -54,63 +54,66 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - **1**: `f`/`F`/`t`/`T` motions + `;`/`,` repeat
 - **2**: `r` replace single char
 
+### Session 2026-06-24 (Uncommitted)
+- Footer heart icon (like indicator for all songs)
+- Library tracks Phase D: [SEARCH] indicator + selection + filtered nav
+- Library tracks Phase C: sort/filter popups via o.z/o.c
+- Like album (o.t), subscribe/unsubscribe artist (o.S/o.U) from album tracks
+- Force-split (o.f) + playlist editor overwrite save
+- Album URL auto-detection (OLAK5uy_ via playlist?list=)
+- Metadata pipeline: resolver scoring, original_album preservation, title cleaning refactor
+- Discogs fix, per-track validation removed, url_added removed
+
 ## Priority Order (next steps)
 
 | # | Step | File(s) | Est |
 |---|------|---------|-----|
-| 3 | `C-r` redo (commit) | `libs/vi-text-editor/src/lib.rs` + 6 callers | ✓ ready |
-| 4 | `.` repeat last change | `libs/vi-text-editor/src/lib.rs` | med |
-| 5 | `J` join lines | `libs/vi-text-editor/src/lib.rs` | small |
-| 6 | `~` toggle case | `libs/vi-text-editor/src/lib.rs` | small |
-| 7 | Lyrics hybrid line numbers | `lyrics_popup.rs` | med |
-| 8 | Footer album format fix | `footer.rs` | small |
-| 9 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
-| 10 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
-| 11 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
-| 12 | Album art full-window popup (`o.v`) | new popup + `playlist.rs` + `action.rs` + `keymap.rs` | large |
-| 13 | Remove `r` direct key for lyrics | `keymap.rs` | tiny |
-| 14 | `o.a`/`o.A` conflict + `o.r`→`o.l` | `keymap.rs` | small |
-| 15 | Config.toml completeness (all settings in config) | `config.toml` + `keymap.rs` | med |
-| 16 | Build + full test suite | verify | verify |
+| 1 | **Test session 2026-06-24 features** | all changed files | verify |
+| 2 | `C-r` redo (commit) | `libs/vi-text-editor/src/lib.rs` + 6 callers | ✓ ready |
+| 3 | `.` repeat last change | `libs/vi-text-editor/src/lib.rs` | med |
+| 4 | `J` join lines | `libs/vi-text-editor/src/lib.rs` | small |
+| 5 | `~` toggle case | `libs/vi-text-editor/src/lib.rs` | small |
+| 6 | Lyrics hybrid line numbers | `lyrics_popup.rs` | med |
+| 7 | Footer album format fix | `footer.rs` | small |
+| 8 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
+| 9 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
+| 10 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
+| 11 | Back navigation (F7 tab cycle) | `browser.rs` | med |
+| 12 | Build + full test suite | verify | verify |
 
 ### Step details
 
-**Step 3**: `C-r` redo. `handle_key` API gains `ctrl: bool` param. `undo()` pushes to `redo_stack`. New `redo()` method. Internal tests updated.
+**Step 1**: Test all 12 items in CLAUDE.md "NEEDS TESTING" table. User must verify each before commit.
 
-**Step 4**: `.` repeat last change. Store last edit (insert/delete/change/replace) as `LastChange` enum. On `.` press, replay it.
+**Step 2**: `C-r` redo. `handle_key` API gains `ctrl: bool` param. `undo()` pushes to `redo_stack`. New `redo()` method. Internal tests updated.
 
-**Step 5**: `J` join lines. `buffer.remove(cursor)` if next char is `\n`, replacing with ` `.
+**Step 3**: `.` repeat last change. Store last edit (insert/delete/change/replace) as `LastChange` enum. On `.` press, replay it.
 
-**Step 6**: `~` toggle case at cursor. ASCII `a-z` ↔ `A-Z`.
+**Step 4**: `J` join lines. `buffer.remove(cursor)` if next char is `\n`, replacing with ` `.
 
-**Step 7**: Hybrid line numbers in lyrics popup. `abs_line == cursor` show absolute, else show relative offset. Dim `Color::DarkGray`. Both render paths (side-by-side + full-width). `max_digits` from total line count.
+**Step 5**: `~` toggle case at cursor. ASCII `a-z` ↔ `A-Z`.
 
-**Step 8**: Footer album format. `footer.rs:98-101` — construct `format!("{artists} - {album}")` composite string instead of artist/album on separate lines.
+**Step 6**: Hybrid line numbers in lyrics popup. `abs_line == cursor` show absolute, else show relative offset. Dim `Color::DarkGray`. Both render paths (side-by-side + full-width). `max_digits` from total line count.
 
-**Step 9**: `~/.config/youtui/config.toml` — revert custom keybinds to clean defaults. Remove "wide" overrides.
+**Step 7**: Footer album format. `footer.rs:98-101` — construct `format!("{artists} - {album}")` composite string instead of artist/album on separate lines.
 
-**Step 10**: Text objects. `iw` inner word, `i(`/`i)` inner parens, `a(`/`a)` a parens (including parens), `i"`/`a"` inner/a string. Works with `d`, `c`, `y` operators.
+**Step 8**: `~/.config/youtui/config.toml` — revert custom keybinds to clean defaults. Remove "wide" overrides.
 
-**Step 11**: `%` bracket match. `([{}])` — find matching pair. Forward/backward cursor move.
+**Step 9**: Text objects. `iw` inner word, `i(`/`i)` inner parens, `a(`/`a)` a parens (including parens), `i"`/`a"` inner/a string. Works with `d`, `c`, `y` operators.
 
-**Step 12**: Album art popup. New `AlbumArtPopup` widget + `WindowContext` variant. `o.v` opens full-window `ratatui_image` view of downloaded album art. High resolution.
+**Step 10**: `%` bracket match. `([{}])` — find matching pair. Forward/backward cursor move.
 
-**Step 13**: Remove `r` direct key for lyrics from all browser views (artist_songs, songs, playlist_songs). Keep `o.l` only.
+**Step 11**: `BrowserAction::Back` + `state_stack` pattern saves/restores state per-tab. But `handle_change_search_type()` (F7 tab cycle) navigates between tabs without pushing snapshots. Call `push_state_snapshot()` before switching.
 
-**Step 14**: `o.a`/`o.A` conflict resolution. Playlist vs artist_songs. Standardize names. `o.r` → `o.l` for lyrics consistency.
-
-**Step 15**: Full config externalization. ALL keymap sections in `config.toml`. Add `playlist_update_popup`, `song_info_popup`, `lyrics_popup`, `config_editor_popup` as keymap fields + config sections. Route all popups through keymap dispatch (no raw `handle_key()`). Add `browser_library` section. Audit all hardcoded settings → config.
-
-**Step 16**: `cargo build --release`, `cargo test --release`, verify no regressions.
+**Step 12**: `cargo build --release`, `cargo test --release`, verify no regressions.
 
 ## Blocked
 - Cross-platform clipboard (Wayland-only `wl-copy` — low priority, sidequest)
 - Config template syntax (`o.enter`/`enter.enter` 2 pre-existing test failures)
 - YouTube API format drift (external issue)
 - Crossterm 0.29 `Event::Key` destructure mismatch (pre-existing, not our changes)
+- Related tracks metadata enrichment (YTM API doesn't return album/year)
 
 ## Known Gaps (Consistency)
-- **Albums tab still lacks YTM search** (F1 toggles local filter only). Needs a `SearchAlbums` backend task + SearchBlock integration to match Songs/Artist behavior.
-- **Albums track display** uses custom column layout instead of `draw_advanced_table`. Works but lacks sort/filter popups that other tabs have.
-- **Library Playlists** still uses basic track list — could benefit from same advanced table as the old PlaylistSearchBrowser tab.
-- **Footer album art** fetches async which causes brief blank on song change. Cache helps but not instantaneous.
+- **Library tab missing playing indicator**: No second highlight showing which song is currently playing
+- **Footer album art**: Fetches async, brief blank on song change. Cache helps but not instantaneous.

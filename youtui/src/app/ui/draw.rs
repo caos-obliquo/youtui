@@ -22,10 +22,46 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     w.sixel_data = None;
     w.sixel_rect = None;
 
-    // Album art popup: draw full-screen without main window (avoids sixel corruption)
+    // Album art popup: draw full-screen, store sixel data for cleanup on close
     if w.album_art_popup.is_some() {
         if let Some(popup) = &mut w.album_art_popup {
-            popup.draw(f, f.area(), terminal_image_capabilities);
+            use ratatui::layout::{Constraint, Direction, Layout};
+            use ratatui_image::{Image, Resize};
+            use ratatui::widgets::{Clear, Paragraph};
+            let area = f.area();
+            f.render_widget(Clear, area);
+            // 95% centered rect
+            let vert = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(2), Constraint::Percentage(95), Constraint::Percentage(3)])
+                .areas::<3>(area);
+            let centered = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(2), Constraint::Percentage(95), Constraint::Percentage(3)])
+                .areas::<3>(vert[1])[1];
+            if centered.width < 4 || centered.height < 4 {
+                f.render_widget(Paragraph::new("Terminal too small").centered(), area);
+                return;
+            }
+            match terminal_image_capabilities.new_protocol(
+                popup.thumbnail.in_mem_image.clone(),
+                centered,
+                Resize::Fit(None),
+            ) {
+                Ok(protocol) => {
+                    // Store sixel data for proper cleanup on close
+                    if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
+                        w.sixel_data = Some(sixel.data.clone());
+                        w.sixel_rect = Some(centered);
+                    }
+                    f.render_widget(Image::new(&protocol), centered);
+                }
+                Err(_) => {
+                    w.sixel_data = None;
+                    w.sixel_rect = None;
+                    f.render_widget(Paragraph::new("Failed to load album art").centered(), area);
+                }
+            }
         }
         return;
     }
@@ -36,7 +72,7 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         .constraints([
             Constraint::Length(header::header_required_height(w)),
             Constraint::Min(2),
-            Constraint::Length(6),
+            Constraint::Length(5),
         ])
         .areas(f.area());
     header::draw_header(f, w, header_chunk);
@@ -223,9 +259,6 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             .style(Style::default().fg(Color::DarkGray))
             .alignment(Alignment::Center);
         f.render_widget(prompt, chunks[2]);
-    }
-    if let Some(popup) = &mut w.album_art_popup {
-        popup.draw(f, f.area(), terminal_image_capabilities);
     }
 }
 

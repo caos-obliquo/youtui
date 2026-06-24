@@ -75,6 +75,7 @@ pub enum BrowserSongsAction {
     DeleteSelected,
     DeleteToTop,
     DeleteToBottom,
+    OpenPlaylistEditor,
 }
 
 impl Action for BrowserSongsAction {
@@ -111,6 +112,7 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::DeleteSelected => "Delete Selected",
             BrowserSongsAction::DeleteToTop => "Delete to Top",
             BrowserSongsAction::DeleteToBottom => "Delete to Bottom",
+            BrowserSongsAction::OpenPlaylistEditor => "Edit Tracks (Vim)",
         }
         .into()
     }

@@ -135,6 +135,7 @@ fn compact_song_ref_contains_all_fields() {
         album: Some("Test Album".to_string()),
         duration_string: "3:45".to_string(),
         thumbnail_url: Some("https://example.com/thumb.jpg".to_string()),
+        like_status: LikeStatus::Indifferent,
     };
     
     assert_eq!(song_ref.video_id.get_raw(), "test123");
@@ -154,6 +155,7 @@ fn compact_song_ref_serialization_roundtrip() {
         album: None,
         duration_string: "4:20".to_string(),
         thumbnail_url: None,
+        like_status: LikeStatus::Indifferent,
     };
     
     let json = serde_json::to_string(&song_ref).unwrap();
@@ -164,6 +166,7 @@ fn compact_song_ref_serialization_roundtrip() {
     assert_eq!(parsed.artists, song_ref.artists);
     assert_eq!(parsed.album, song_ref.album);
     assert_eq!(parsed.duration_string, song_ref.duration_string);
+    assert_eq!(parsed.like_status, song_ref.like_status);
 }
 
 #[test]
@@ -176,6 +179,7 @@ fn compact_queue_with_current_index() {
             album: Some("Album".to_string()),
             duration_string: "3:00".to_string(),
             thumbnail_url: None,
+            like_status: LikeStatus::Indifferent,
         },
         CompactSongRef {
             video_id: VideoID::from_raw("song2"),
@@ -184,6 +188,7 @@ fn compact_queue_with_current_index() {
             album: Some("Album".to_string()),
             duration_string: "4:00".to_string(),
             thumbnail_url: None,
+            like_status: LikeStatus::Indifferent,
         },
     ];
     

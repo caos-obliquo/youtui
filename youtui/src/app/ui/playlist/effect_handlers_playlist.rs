@@ -1,7 +1,9 @@
 use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::ValidatedMetadata;
 
-use crate::app::server::{ArcServer, TaskMetadata};
+use crate::app::server::{
+    ArcServer, TaskMetadata, AddSongsToPlaylist, RemovePlaylistItems,
+};
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
 use crate::app::ui::playlist::Playlist;
@@ -11,7 +13,7 @@ use crate::app::ui::playlist::playlist_details_popup::PlaylistDetailsPopup;
 use async_callback_manager::{AsyncTask, FrontendEffect};
 use std::rc::Rc;
 use tracing::{error, info};
-use ytmapi_rs::common::{PlaylistID, YoutubeID};
+use ytmapi_rs::common::{PlaylistID, VideoID, SetVideoID, YoutubeID};
 use ytmapi_rs::parse::LibraryPlaylist;
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::WatchPlaylistTrack;
@@ -60,6 +62,15 @@ pub struct HandleRemovePlaylistItemsOk;
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
 pub struct HandleRemovePlaylistItemsError;
+
+#[derive(Debug, PartialEq)]
+pub struct HandleOverwriteGetTracks(pub PlaylistID<'static>, pub Vec<VideoID<'static>>);
+#[derive(Debug, PartialEq)]
+pub struct HandleOverwriteGetTracksErr;
+#[derive(Debug, PartialEq)]
+pub struct HandleOverwriteRemoveDone(pub PlaylistID<'static>, pub Vec<VideoID<'static>>);
+#[derive(Debug, PartialEq)]
+pub struct HandleOverwriteRemoveDoneErr;
 
 #[derive(Debug, PartialEq)]
 pub struct HandleFetchPlaylistDetailsOk;
@@ -334,6 +345,83 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             error!("Failed to remove playlist items: {}", msg);
             this.last_error = Some(format!("Remove failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleOverwriteGetTracks,
+    Vec<PlaylistSong>,
+    Playlist,
+    |this: HandleOverwriteGetTracks, songs: Vec<PlaylistSong>| {
+        move |_target: &mut Playlist| {
+            let set_ids: Vec<SetVideoID<'static>> = songs.iter()
+                .map(|s| s.set_video_id.clone())
+                .collect();
+            if set_ids.is_empty() {
+                info!("Overwrite: no tracks to remove, adding directly");
+                let add_effect = AsyncTask::new_future_try(
+                    AddSongsToPlaylist { playlist_id: this.0, video_ids: this.1 },
+                    HandleAddSongsOk,
+                    HandleAddSongsError,
+                    None,
+                );
+                return add_effect;
+            }
+            info!("Overwrite: removing {} old tracks, adding {} new tracks", set_ids.len(), this.1.len());
+            let remove_effect = AsyncTask::new_future_try(
+                RemovePlaylistItems { playlist_id: this.0.clone(), video_ids: set_ids },
+                HandleOverwriteRemoveDone(this.0, this.1),
+                HandleOverwriteRemoveDoneErr,
+                None,
+            );
+            remove_effect
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleOverwriteGetTracksErr,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |target: &mut Playlist| {
+            error!("Overwrite: failed to fetch playlist tracks: {}", msg);
+            target.last_error = Some(format!("Overwrite failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleOverwriteRemoveDone,
+    (),
+    Playlist,
+    |this: HandleOverwriteRemoveDone, _: ()| {
+        move |_target: &mut Playlist| {
+            info!("Overwrite: old tracks removed, adding new tracks");
+            let add_effect = AsyncTask::new_future_try(
+                AddSongsToPlaylist { playlist_id: this.0, video_ids: this.1 },
+                HandleAddSongsOk,
+                HandleAddSongsError,
+                None,
+            );
+            add_effect
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleOverwriteRemoveDoneErr,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |target: &mut Playlist| {
+            error!("Overwrite: failed to remove old tracks: {}", msg);
+            target.last_error = Some(format!("Overwrite remove failed: {}", msg));
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }

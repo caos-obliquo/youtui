@@ -169,3 +169,86 @@ impl MetadataRegistry {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_meta(artist: Option<&str>, album: Option<&str>, year: Option<&str>, tracks: usize) -> ValidatedMetadata {
+        ValidatedMetadata {
+            artist: artist.map(String::from),
+            album: album.map(String::from),
+            year: year.map(String::from),
+            album_tracks: (0..tracks).map(|i| AlbumTrack {
+                title: format!("Track {}", i + 1),
+                duration_secs: 100.0,
+            }).collect(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn score_empty_metadata() {
+        let meta = ValidatedMetadata::default();
+        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 0);
+    }
+
+    #[test]
+    fn score_album_tracks_only() {
+        let meta = make_meta(None, None, None, 3);
+        // 100 (tracks) + 3*2 = 106
+        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 106);
+    }
+
+    #[test]
+    fn score_exact_artist_and_album_title() {
+        let meta = make_meta(Some("Metallica"), Some("Master of Puppets"), None, 0);
+        let score = MetadataRegistry::score_result(&meta, "Metallica", "Master of Puppets");
+        // album(10) + artist(3) + album_title(15) + and_norm(10) = 38
+        assert_eq!(score, 38);
+    }
+
+    #[test]
+    fn score_artist_contains_bonus() {
+        let meta = make_meta(Some("The Beatles Band"), None, None, 0);
+        let score = MetadataRegistry::score_result(&meta, "Beatles", "Title");
+        assert_eq!(score, 1); // contains match only
+    }
+
+    #[test]
+    fn score_and_normalization_boost() {
+        let meta = make_meta(Some("Band"), Some("Rock & Roll"), None, 0);
+        let score = MetadataRegistry::score_result(&meta, "Band", "Rock and Roll");
+        // album(10) + artist_exact(3) + and_norm(10) = 23
+        assert_eq!(score, 23);
+    }
+
+    #[test]
+    fn score_year_bonus() {
+        let meta = make_meta(None, None, Some("1986"), 0);
+        let score = MetadataRegistry::score_result(&meta, "Artist", "Title");
+        assert_eq!(score, 5);
+    }
+
+    #[test]
+    fn score_track_count_capped() {
+        let meta = make_meta(None, None, None, 20);
+        // 100 (tracks) + min(15,20)*2 = 130
+        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 130);
+    }
+
+    #[test]
+    fn score_complete_metadata() {
+        let meta = make_meta(Some("Metallica"), Some("Master of Puppets"), Some("1986"), 8);
+        let score = MetadataRegistry::score_result(&meta, "Metallica", "Master of Puppets");
+        // tracks(100) + album(10) + year(5) + artist_exact(3) + album_title(15) + and_norm(10) + 8*2 = 159
+        assert_eq!(score, 159);
+    }
+
+    #[test]
+    fn score_album_contains_title() {
+        let meta = make_meta(None, Some("The Complete Master of Puppets Live"), None, 0);
+        let score = MetadataRegistry::score_result(&meta, "Any", "Master of Puppets");
+        assert_eq!(score, 10 + 7); // album(10) + contains(7)
+    }
+}

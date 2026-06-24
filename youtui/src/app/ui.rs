@@ -1434,39 +1434,23 @@ impl YoutuiWindow {
         self.context = WindowContext::Playlist;
 
         // Check for playlist URL FIRST — before video extraction
-        if url.contains("playlist?list=") {
-            if let Some(list_id) = url.split("list=").nth(1).and_then(|s| s.split('&').next()).map(|s| s.to_string()) {
-                if !list_id.is_empty() {
-                    let pl_id = ytmapi_rs::common::PlaylistID::from_raw(format!("VL{}", list_id));
-                    use crate::app::server::GetPlaylistTracks;
-                    use crate::app::ui::playlist::effect_handlers_playlist::{
-                        HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
-                    };
-                    return AsyncTask::new_future_try(
-                        GetPlaylistTracks(pl_id),
-                        HandleGetPlaylistTracksOk,
-                        HandleGetPlaylistTracksErr,
-                        None,
-                    )
-                    .map_frontend(|this: &mut Self| &mut this.playlist);
-                }
-            }
+        if let Some(list_id) = extract_playlist_id(&url) {
+            let pl_id = ytmapi_rs::common::PlaylistID::from_raw(format!("VL{}", list_id));
+            use crate::app::server::GetPlaylistTracks;
+            use crate::app::ui::playlist::effect_handlers_playlist::{
+                HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
+            };
+            return AsyncTask::new_future_try(
+                GetPlaylistTracks(pl_id),
+                HandleGetPlaylistTracksOk,
+                HandleGetPlaylistTracksErr,
+                None,
+            )
+            .map_frontend(|this: &mut Self| &mut this.playlist);
         }
 
         // Extract video ID for single video
-        let video_id_str = if url.contains("watch?v=") {
-            url.split("watch?v=").nth(1).unwrap_or(&url)
-                .split('&').next().unwrap_or("")
-                .to_string()
-        } else if url.contains("youtu.be/") {
-            url.split("youtu.be/").nth(1).unwrap_or(&url)
-                .split('?').next().unwrap_or("")
-                .to_string()
-        } else {
-            url.rsplit('/').next().unwrap_or(&url)
-                .split('?').next().unwrap_or(&url)
-                .to_string()
-        };
+        let video_id_str = extract_video_id(&url);
 
         let effect;
 
@@ -1481,6 +1465,7 @@ impl YoutuiWindow {
 
         effect
     }
+
     pub fn open_song_info_popup(&mut self, song: crate::app::structures::ListSong) -> ComponentEffect<Self> {
         self.song_info_popup = Some(SongInfoPopup::new(song));
         self.prev_context = self.context;
@@ -1588,4 +1573,103 @@ impl_youtui_task_handler!(
         AsyncTask::new_no_op()
     }
 );
+
+pub fn extract_playlist_id(url: &str) -> Option<String> {
+    if url.contains("playlist?list=") {
+        url.split("list=").nth(1)
+            .and_then(|s| s.split('&').next())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    }
+}
+
+fn extract_video_id(url: &str) -> String {
+    if url.contains("watch?v=") {
+        url.split("watch?v=").nth(1).unwrap_or(url)
+            .split('&').next().unwrap_or("")
+            .to_string()
+    } else if url.contains("youtu.be/") {
+        url.split("youtu.be/").nth(1).unwrap_or(url)
+            .split('?').next().unwrap_or("")
+            .to_string()
+    } else {
+        url.rsplit('/').next().unwrap_or(url)
+            .split('?').next().unwrap_or(url)
+            .to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_playlist_id, extract_video_id};
+
+    #[test]
+    fn extract_playlist_id_album_url() {
+        let url = "https://music.youtube.com/playlist?list=OLAK5uy_n7A1VkPqP_8RkGeVh5H";
+        assert_eq!(extract_playlist_id(url), Some("OLAK5uy_n7A1VkPqP_8RkGeVh5H".to_string()));
+    }
+
+    #[test]
+    fn extract_playlist_id_video_url() {
+        let url = "https://music.youtube.com/watch?v=dQw4w9WgXcQ";
+        assert_eq!(extract_playlist_id(url), None);
+    }
+
+    #[test]
+    fn extract_playlist_id_with_extra_params() {
+        let url = "https://youtube.com/playlist?list=PLABC123&si=xyz&feature=share";
+        assert_eq!(extract_playlist_id(url), Some("PLABC123".to_string()));
+    }
+
+    #[test]
+    fn extract_playlist_id_empty_list() {
+        let url = "https://youtube.com/playlist?list=";
+        assert_eq!(extract_playlist_id(url), None);
+    }
+
+    #[test]
+    fn extract_playlist_id_random_url() {
+        let url = "https://example.com/no-playlist-here";
+        assert_eq!(extract_playlist_id(url), None);
+    }
+
+    #[test]
+    fn extract_video_id_watch_url() {
+        let id = extract_video_id("https://music.youtube.com/watch?v=dQw4w9WgXcQ");
+        assert_eq!(id, "dQw4w9WgXcQ");
+    }
+
+    #[test]
+    fn extract_video_id_youtu_be() {
+        let id = extract_video_id("https://youtu.be/dQw4w9WgXcQ");
+        assert_eq!(id, "dQw4w9WgXcQ");
+    }
+
+    #[test]
+    fn extract_video_id_with_extra_params() {
+        let id = extract_video_id("https://youtube.com/watch?v=abc123defgh&list=PLxyz&index=1");
+        assert_eq!(id, "abc123defgh");
+    }
+
+    #[test]
+    fn extract_video_id_youtu_be_with_params() {
+        let id = extract_video_id("https://youtu.be/abc123defgh?si=xyz123");
+        assert_eq!(id, "abc123defgh");
+    }
+
+    #[test]
+    fn extract_video_id_short_url() {
+        let id = extract_video_id("https://example.com/short");
+        assert_eq!(id, "short");
+    }
+
+    #[test]
+    fn extract_video_id_invalid() {
+        let id = extract_video_id("not-a-url");
+        assert_eq!(id, "not-a-url");
+    }
+}
+
 pub mod components;

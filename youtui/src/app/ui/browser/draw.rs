@@ -7,6 +7,7 @@ use super::playlistsearch::PlaylistSearchBrowser;
 use super::shared_components::SearchBlock;
 use super::songsearch::SongSearchBrowser;
 use crate::app::component::actionhandler::Suggestable;
+use crate::app::view::HasTitle;
 use crate::app::ui::browser::albumsearch::AlbumSearchBrowser;
 use crate::app::view::draw::{draw_advanced_table, draw_list, draw_loadable, draw_panel_mut};
 use crate::drawutils::{
@@ -240,7 +241,7 @@ pub fn draw_library_browser(
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(border_style)
-            .title("Playlist Tracks");
+            .title(browser.get_title());
         let inner = block.inner(chunk);
         f.render_widget(Clear, chunk);
         f.render_widget(block, chunk);

@@ -49,10 +49,10 @@ cargo test --release -p async-callback-manager     # 14 pass (3 lib + 11 integ)
 cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
 cargo test --release -p ytmapi-cli                 # 7 pass
 ```
-Total: **~305/305 pass, 0 fail, 4 ignored, 0 warnings** (json-crawler count wrong in docs, actual 2 not 8)
+Total: **~305/305 pass, 0 fail, 4 ignored, 0 warnings** (json-crawler actual 2, docs say 8; async-callback-manager actual 14, docs say 15)
 
 ## Warnings
-`cargo build --release` -- 10 pre-existing warnings (unused imports, dead_code, deprecated SearchQuery API). Not introduced by changes.
+`cargo build --release` -- 1 pre-existing warning (ytmapi-rs `unused_mut` in playlist.rs). Not introduced by changes.
 
 ## Arch (3-layer async callback)
 ```
@@ -90,16 +90,17 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `app/ui/playlist.rs` | ~2835 | Queue, playback, album splitting, visual mode |
 | `app/ui/browser.rs` | ~932 | Browser routing, 5-tab dispatch |
 | `app/ui/browser/draw.rs` | ~657 | All browser draw functions |
-| `app/ui/browser/library.rs` | ~1269 | Library (4th tab) with inline tracks view |
-| `app/ui/browser/albumsearch.rs` | ~705 | Albums tab (refactored) |
-| `config/keymap.rs` | ~2079 | All keybindings by context |
-| `app/ui.rs` | ~1584 | Main window, event routing |
+| `app/ui/browser/library.rs` | ~1500 | Library (4th tab) with inline tracks view |
+| `app/ui/browser/albumsearch.rs` | ~720 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
+| `config/keymap.rs` | ~2130 | All keybindings by context |
+| `app/ui.rs` | ~1591 | Main window, event routing |
 | `libs/metadata-provider/` | 19 tests | Metadata trait + 5 provider impls |
 | `app/ui/playlist/notes_popup.rs` | ~272 | Vim-driven notes text editor |
-| `app/ui/playlist/playlist_editor_popup.rs` | ~484 | Playlist editor (nvim-driven) |
+| `app/ui/playlist/playlist_editor_popup.rs` | ~484 | Playlist editor (nvim-driven, overwrite save) |
 | `app/ui/playlist/album_art_popup.rs` | ~41 | Album art sixel popup |
 | `app/ui/playlist/config_editor_popup.rs` | ~146 | Config file editor |
-| `docs/subsystems/notes.md` | ~100 | Notes popup architecture doc |
+| `app/ui/browser/footer.rs` | ~249 | Footer: progress, metadata, heart icon, album art |
+| `app/ui/playlist/effect_handlers_playlist.rs` | ~650 | ValidateMetadata, overwrite save chain handlers |
 | `libs/metal-proxy/src/main.rs` | ~275 | Metal Archives cookie-based proxy |
 
 ## Playlist Features Status
@@ -290,27 +291,70 @@ Context menu is exclusively via `o`.
 - `chore:` cleanup — added `library_playlist_mutated = true` to merge success handler
 - Album split tags expanded: `full single`, `album` added to strip list
 
-## Session 2026-06-24 (This Session, Not Committed)
-### Critical Bugs Fixed
-- **Discogs priority 30→8**: Last.fm AlbumSearch (priority 10) ran before Discogs (30). With a Last.fm API key, Last.fm returned YouTube radio mix data for "The Pilot Ships - The Limits of Painting & Poetry" instead of the correct Discogs album "There Should Be An Entry Here". The pipeline saw `album.is_some()` and stopped before Discogs could respond. Changed Discogs to priority 8 so it runs before Last.fm AlbumSearch. Provider order: MetalApi(5) → Discogs(8) → Last.fm AlbumSearch(10) → Last.fm TrackSearch(20) → Genius(40) → MusicBrainz(50). See `libs/metadata-provider/src/discogs.rs:16`.
-- **Original album preservation**: `insert_album_tracks()` now takes `original_album: &Option<String>` parameter. Before `MetadataEffect::Validated` handler overwrites the song's album with Discogs data, it saves the original album name (from the YouTube video title). Split tracks use the original album name, falling back to the metadata album name. This keeps "The Limits of Painting & Poetry" instead of "There Should Be An Entry Here". Files: `youtui/src/app/ui/playlist.rs:929` (signature), `youtui/src/app/ui/playlist/effect_handlers_playlist.rs:603` (caller with save-before-overwrite), `youtui/src/app/ui/playlist/tests.rs:323+367` (test calls).
-- **`url_added` removed**: `play_yt_url()` set `url_added = true` which caused `MetadataEffect::Validated` to skip album splitting for URL-added songs. Removed the field entirely. Now URL songs validate and split like any other source. File: `youtui/src/app/ui/playlist.rs`.
+## Session 2026-06-24 (This Session, UNCOMMITTED)
 
-### CLI Debug Tool
-- **`ytmapi debug simulate-url <url>`**: Simulates the full `add_yt_video` path — runs yt-dlp, extracts title/artist/duration, applies same 4-step title cleaning (artist prefix, noise tags, album suffixes, year stripping), resolves via MetadataRegistry, shows all tracks with total duration and quality guard check (pass/fail). File: `libs/ytmapi-cli/src/main.rs`.
+### NEEDS TESTING (User Must Verify)
+Test each item, report bugs before commit.
 
-### Minor Fixes
-- **Year stripping unused variable**: Fixed compiler warning in `add_yt_video` year extraction. File: `youtui/src/app/ui/playlist.rs:1209`.
-- **Log Viewer toggle**: F11 (ViewLogs) now checks if already in Logs context. If so, swaps back to `prev_context` instead of staying stuck. File: `youtui/src/app/ui.rs`.
-- **Library tracks filtered-index delete**: All delete/move handlers use `get_tracks_filtered_list_iter()` for correct track selection when sort/filter active. File: `youtui/src/app/ui/browser/library.rs`.
+| # | Feature | What to Test | How |
+|---|---|---|---|
+| **1** | **Footer layout** | 6-line Status block with `Borders::ALL`, album art 4x4 left, no gap. Line 1: artist-song, Line 2: album + icons merged, Line 3: progress bar, Line 4: empty. | Play any song, check footer. |
+| **2** | **Footer heart/like icon** | Shows ♥ or 󰋑 on line 2 merged with album text. Toggles via `o.t` in queue. Persistent across sessions. | Play song, `o.t` in queue, verify footer heart changes. |
+| **3** | **Lyrics Space pause** | `Space` in lyrics popup toggles play/pause. Help bar shows `Space Pause`. | Open lyrics, press Space, verify music pauses/resumes. |
+| **4** | **Lyrics help bar outside footer** | `( ) Lyric | <> Song | [] Seek | Space Pause | Esc/q Close` rendered above Status block. | Open lyrics, verify help bar not inside Status box. |
+| **5** | **Album art 4x4 scaling** | Album art renders as 4x4 square in Status block left, `Resize::Fit` scales. | Play songs with various album art sizes, check left side of Status. |
+| **6** | **Library tracks [SEARCH] indicator** | `/` in library tracks view shows `Playlist Tracks [SEARCH: text (N/M)]` in title bar. | Open library > Enter playlist > `/` type search. |
+| **7** | **Library tracks selection** | Selection lands on correct row when filter/sort active. j/k scrolls within filtered results. | Filter tracks via `/`, press j/k. |
+| **8** | **Library tracks sort/filter popups** | `o.z` sort popup, `o.c` filter popup. Esc/Enter control them. | Open library tracks, press `o.z` or `o.c`. |
+| **9** | **Like/subscribe from album tracks** | `o.t` likes album, `o.S`/`o.U` subscribes/unsubscribes artist. Album appears in Library. | Find album, Enter show tracks, `o.t`/`o.S`. |
+| **10** | **Force-split** | `o.f` on a song re-validates metadata and re-splits into tracks. Works with/without original parent. | Queue full-album video, `o.f` on a track. |
+| **11** | **Playlist editor** | `o.e` in library tracks opens vim-driven editor. Yank/paste/undo/visual/commands. Overwrite save. | Library > Enter playlist > `o.e`, edit, `:w` save. |
+| **12** | **Album URL auto-detect** | Paste YT Music album URL — loads all tracks, not single video. | `:` command, paste `playlist?list=OLAK5uy_...` URL. |
 
-### Metadata Pipeline
-- **Provider priority**: Lower priority number = runs first. Discogs at 8 ensures authoritative tracklist data takes precedence over Last.fm's often-incorrect user-contributed album data. Published on `crates.io` as `metadata-provider`.
+### Features Implemented
 
-### Pending Items
-- Phase C: Wire sort/filter popups for library tracks view
-- Phase D: `[SEARCH]` indicator for library tracks + selection highlight fix
-- Library tracks `/` filter works silently — no indicator, selection lands on wrong row when filter active
+#### Footer Restructure
+- **6-line footer** with `Block::default().borders(Borders::ALL)` title "Status" / right-aligned "Youtui"
+- **Album art 4x4** inside block inner (6-line footer - 2 border = 4 inner). `Resize::Fit(None)` scales any image to fit.
+- **No gap** between album art and content: `[Length(album_size), Min(0)]` split (was `Length(1)` gap).
+- **Layout**: line1 = artist-song, line2 = album (gray) + status icons (red) merged on single line with styled Spans, line3 = progress bar `< [ ] >`, line4 = empty.
+- **Status icons** now on line 2 (1 line higher than before) — removes visual gap between icons and progress bar.
+- `footer.rs`: extracted `like_icon()` as public fn (3 tests).
+
+#### Lyrics Popup
+- **Space pauses**: `KeyCode::Char(' ')` → `AppCallback::TogglePlayPause`. `lyrics_popup.rs:777-780`.
+- **Hint text cleaned**: `"( ) Lyric | <> Song | [] Seek | Space Pause | Esc/q Close"`.
+- **Footer reserve**: `top_anchored_rect` reserve updated 5→6 lines to match 6-line footer. Commands stay outside Status block.
+
+#### AppCallback
+- New variant `AppCallback::TogglePlayPause` → calls `self.window_state.pauseplay()`. `app.rs:107,688-691`.
+
+#### New Tests
+- **29 new tests**: `like_icon()` (3), `extract_playlist_id()`/`extract_video_id()` (11), `normalize_artist_name()` (6), `score_result()` (9).
+- LikeStatus persistence: `CompactSongRef` gains `like_status` field with `#[serde(default)]` backward compat.
+
+#### Previous Session Features (Unchanged)
+- **Heart icon** persisted across sessions via queue save/load
+- **Library tracks** Phase A+B+D (SEARCH indicator, selection highlight, sort/filter popups)
+- **Force split** (`o.f`), **Playlist editor** (vim-driven, overwrite save)
+- **Album URL auto-detect** (playlist-based URLs)
+- **Like/subscribe** from album tracks
+- **Metadata pipeline** (scoring, title cleaning, Discogs fix, MA_COOKIE, genre aliasing)
+
+### Fixed Bugs
+- Log viewer toggle (F11) now exits properly
+- Year stripping unused variable warning
+- Discogs structured search → combined search
+- `url_added` removed (blocked URL song splitting)
+- Per-track validation removed (corrupted split-track metadata)
+
+### Known Issues
+- **Album art 4x4**: Small square inside bordered status block. Larger art not possible without breaking 6-line constraint.
+- **Album `audio_playlist_id`**: May be `None` for some album types (singles, EPs). `o.t` silently no-ops.
+- **Related tracks metadata**: YTM watch-playlist API returns no album/year.
+- **Album URL tracks bypass metadata pipeline**: No album splitting for these.
+- **Force-split visual feedback**: No toast/notification. Check logs.
+- **Sixel album art**: May persist after popup close. Temp workaround: resize terminal.
 
 ## Notes Popup Features
 - Vim-driven text editor for storing URLs, song links, personal notes
@@ -338,62 +382,18 @@ Context menu is exclusively via `o`.
 - **Metal-API (metal-api.dev)**: Approved REST API for Metal Archives. Currently returns 500 errors (backend crash). Provider code is written but API must be back online.
 - **Year metadata**: Some tracks still show `None` for year when no metadata provider returns a year and album name has no year string. Fallback extracts from album name `(YYYY)`.
 - **MA_COOKIE**: `cf_clearance` cookie from Metal Archives expires ~30 min. Must be refreshed periodically via `cargo run --release -p metal-proxy -- --get-cookie` or manual browser extraction.
+- **Album `audio_playlist_id`**: May be `None` for some album types (singles, EPs). `o.t` silently no-ops.
+- **Related tracks metadata**: YTM watch-playlist API returns no album/year. Artist extracted from channel name only.
+- **Album URL tracks bypass metadata pipeline**: `GetPlaylistTracks` loads songs without `ValidateMetadata`. No album splitting for these.
+- **Force-split visual feedback**: No toast/notification on success/failure. Check logs.
+- **Playlist editor modified check**: `Esc`/`:q` warns on unsaved changes. `:q!` force-quits.
+- **Sixel album art**: May persist after popup close. Temp workaround: resize terminal.
 
 ## Remaining Items (Detailed)
 ### Recommended Order
-1. **Phase D: [SEARCH] indicator + selection highlight** (golden rule violation, affects `/` UX)
-2. **Phase C: Sort/filter popups for library tracks** (needed for keybinding parity)
-3. **P1: Like status in details popup** (trivial, 1 line)
-4. **P1: Back navigation (F7 cycle)** (state corruption bug)
-5. **P1: Playlist overwrite mode** (data-loss risk on save-to-existing)
-6. **P2 items** (polish, no data-loss)
-7. **P3 items** (tech debt)
-
-### Phase D: `[SEARCH]` indicator + selection highlight (GOLDEN RULE)
-**Problem**: Library tracks `/` filter works silently (filters displayed rows) but:
-- No `[SEARCH: text (N/M)]` indicator in title bar — violates golden rule
-- Selection highlight lands on wrong row when filter/sort active — `get_selected_item()` returns raw `playlist_tracks_selected` index, not mapped to filtered position
-
-**What to do**:
-1. **HasTitle impl for LibraryBrowser**: Add `HasTitle` returning `"Library"` + `[SEARCH: text (M/N)]` when tracks filter active. LibraryBrowser uses `BrowserWidget` which calls `HasTitle::title()`. Follow pattern in `draw.rs` for other browsers (SongsBrowser, AlbumsBrowser, etc. show search text in title). 
-   - File: `youtui/src/app/ui/browser/library.rs`
-   - Search key pattern: implement `HasTitle` trait, check `tracks_filter.filtered` len vs total
-   - Reference: `youtui/src/app/ui/browser/songs.rs` HasTitle implementation
-
-2. **Selection highlight fix**: When tracks view is showing (library state is `LibraryState::Tracks`), the selection index must be mapped through the filtered list to find the correct displayed row. 
-   - `get_selected_item()` returns `playlist_tracks_selected` (raw index into `playlist_tracks`)
-   - When filter/sort active, `get_tracks_filtered_list_iter()` returns subset
-   - Solution: track `tracks_selected_filtered` for filtered position, or map raw→filtered when drawing
-   - File: `youtui/src/app/ui/browser.rs` drawing code + `youtui/src/app/ui/browser/library.rs`
-
-3. **Files**: `youtui/src/app/ui/browser/library.rs`, `youtui/src/app/ui/browser.rs` (draw routing)
-
-### Phase C: Sort/filter popups for library tracks
-**Problem**: Action handlers for `Filter`/`Sort` actions in LibraryBrowser toggle `self.filter`/`self.sort` (LikedSongs category) instead of `self.tracks_filter`/`self.tracks_sort` (tracks view). No keybinding binds these actions for library context.
-
-**What to do**:
-1. **Keybindings**: In `keymap.rs`, add `FilterAction` and `SortAction` bindings for `Context::Library` when in tracks view. Bind to `o.s` (sort tracks) and `o.c` (filter tracks) to match other browsers.
-   - File: `youtui/src/config/keymap.rs` — likely add `Action::FilterAction(FilterAction::NoArg)` under `Context::Library``
-   - Note: FilterAction/SortAction for albums context uses `function_switch!` — tracks version needs similar but with `tracks_filter`/`tracks_sort`
-
-2. **Handler routing**: In `library.rs`, `ActionHandler<FilterAction>` and `ActionHandler<SortAction>` must check `library_state`:
-   - If `LibraryState::Tracks` → operate on `self.tracks_filter`/`self.tracks_sort`
-   - If `LibraryState::List` → operate on `self.filter`/`self.sort` (existing behavior)
-   - Files: `youtui/src/app/ui/browser/library.rs`
-
-3. **Popup dispatch**: Filter popup (`FilterView`) and Sort popup (`SortView`) need to be shown when triggered from tracks context. The `show_popup` method currently exists. Need to ensure popup uses correct manager.
-   - File: `youtui/src/app/ui/browser/library.rs` — `show_filter_popup()` and `show_sort_popup()` methods
-
-4. **Files**: `youtui/src/config/keymap.rs`, `youtui/src/app/ui/browser/library.rs`
-
-### P1: Like status in details popup (TRIVIAL — 1-3 lines)
-**Problem**: `GetPlaylistDetails.like_status` field already parsed from API response (values: `LIKE`, `DISLIKE`, `INDIFFERENT`). Rendered `draw()` method in details popup doesn't show it.
-
-**What to do**:
-1. In `playlist_details_popup.rs:draw()`, add line after title showing rating: `"Rating: ♥"` / `"Rating: −"` / `"Rating: ∅"` (or plain text)
-   - File: `youtui/src/app/ui/playlist/playlist_details_popup.rs`
-
-2. **Files**: `youtui/src/app/ui/playlist/playlist_details_popup.rs`
+1. **P1: Back navigation (F7 cycle)** (state corruption bug)
+2. **P2 items** (polish, no data-loss)
+3. **P3 items** (tech debt)
 
 ### P1: Back navigation (F7 tab cycle)
 **Problem**: `BrowserAction::Back` + `state_stack` pattern correctly saves/restores state per-tab. But `handle_change_search_type()` (F7 tab cycle, `handle_search_action` in `browser.rs`) navigates between tabs without pushing snapshots. When user goes back, stack may restore wrong tab.
@@ -404,16 +404,6 @@ Context menu is exclusively via `o`.
 3. Reference: `Navigate(new_search)` calls `push_state_snapshot()` in `browser.rs`
 
 **Files**: `youtui/src/app/ui/browser.rs`
-
-### P1: Playlist overwrite mode (DATA LOSS RISK)
-**Problem**: When user saves URL-added songs to an existing playlist (`o.E` → select existing playlist → save), the current behavior appends tracks to the existing playlist without checking if it should overwrite. The overwrite logic at `app.rs:481` (fetch current tracks + remove before add) exists but is behind a condition that never triggers.
-
-**What to do**:
-1. In PlaylistEditorPopup save flow (or the `o.E` save-to-existing flow), add a confirm step: "Playlist has N tracks. Replace (y/N)?" 
-2. If confirmed, fetch current tracks via `GetPlaylistSongs` then remove them via `RemovePlaylistItems` before adding new ones
-3. File: `youtui/src/app/ui/playlist/playlist_update_popup.rs` or `youtui/src/app/ui/playlist.rs` (save-existing path)
-
-**Files**: `youtui/src/app/ui/playlist/playlist_update_popup.rs`, `youtui/src/app/ui/playlist.rs`
 
 ### P1: Annotations integration
 **Problem**: Lyrics popup has Tab/l/h for switching between lyrics/annotations/view-switching modes. Verify this is fully wired end-to-end.
