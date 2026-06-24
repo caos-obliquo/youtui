@@ -929,6 +929,7 @@ impl Playlist {
         artist: &Option<String>,
         album: &Option<String>,
         year: &Option<String>,
+        original_album: &Option<String>,
     ) -> Option<ComponentEffect<Self>> {
         let Some(src_idx) = self.get_index_from_id(song_id) else { return None; };
 
@@ -949,7 +950,9 @@ impl Playlist {
             };
             (video_raw, album_artist, album_year, src_arc)
         };
-        let album_name = album.clone();
+        // Use original album name if available (from YouTube video title),
+        // fall back to the metadata-provided album name
+        let album_name = original_album.clone().or_else(|| album.clone());
 
         // Guard: skip if tracks already exist for this video_id (cascade prevention)
         let existing_tracks = self.list.get_list_iter()
@@ -1183,22 +1186,53 @@ impl Playlist {
             }
             s.trim().to_string()
         };
-        // Further clean album-related suffixes from title for metadata validation
+        // Strip parenthesized/bracketed groups containing album metadata tags
+        // Only matches tags inside paren/bracket groups — never bare in title text
+        // Sorted longest-first so multi-word tags match before single-word substrings
         let clean_title = {
-            let s = clean_title.as_str();
-            // Strip album/suffix tags like (Full Album), (Full EP), (Demo), (Single)
-            let lower = s.to_lowercase();
-            let tags = ["full album", "full ep", "full lp", "full demo", "full single", "album", "demo", "ep", "single", "singles"];
-            let pos = tags.iter().filter_map(|t| lower.find(t)).min();
-            if let Some(pos) = pos {
-                // Try to find the opening paren before the tag to strip the whole suffix
-                let start = s[..pos].rfind('(').unwrap_or(pos);
-                if start > 0 { s[..start].trim().to_string() } else { s[..pos].trim().to_string() }
-            } else if let Some(pos) = s.find("  (") {
-                s[..pos].trim().to_string()
-            } else {
-                s.trim().to_string()
+            let mut s = clean_title;
+            let tags = [
+                "studio album", "live album", "full-length album", "full-length",
+                "full album", "full ep", "full lp", "full demo", "full single",
+                "official album", "compilation", "bootleg", "anthology", "collection",
+                "single", "demo", "ep", "lp", "album", "singles",
+            ];
+
+            loop {
+                let chars: Vec<char> = s.chars().collect();
+                let mut modified = false;
+                let mut i = 0;
+                while i < chars.len() {
+                    if chars[i] == '(' || chars[i] == '[' {
+                        let open = i;
+                        let mut depth = 1;
+                        i += 1;
+                        while i < chars.len() && depth > 0 {
+                            if chars[i] == '(' || chars[i] == '[' { depth += 1; }
+                            else if chars[i] == ')' || chars[i] == ']' { depth -= 1; }
+                            i += 1;
+                        }
+                        if depth == 0 {
+                            let group: String = chars[open..i].iter().collect();
+                            let group_lower = group.to_lowercase();
+                            if tags.iter().any(|tag| group_lower.contains(tag)) {
+                                let before: String = chars[..open].iter().collect();
+                                let after: String = chars[i..].iter().collect();
+                                s = format!("{}{}", before.trim(), after.trim()).trim().to_string();
+                                modified = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+                if !modified { break; }
             }
+
+            // Trim residual trailing punctuation left after stripping groups
+            s.trim_end_matches(|c: char| c == '(' || c == '[' || c == '-' || c == ',' || c == '.')
+                .trim().to_string()
         };
         // Strip extracted year from title for metadata matching
         // e.g. "The Limits of Painting & Poetry (2000)" → "The Limits of Painting & Poetry"
@@ -1222,14 +1256,24 @@ impl Playlist {
                 clean_title
             }
         };
-        let album = None;
         let song = ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
-            clean_title.clone(), artist.clone(), video_id, album, format!("{}", duration),
+            clean_title.clone(), artist.clone(), video_id, None, format!("{}", duration),
         );
         let old_count = self.list.get_list_iter().count();
         let id = self.list.append_raw_search_result_songs(vec![song]);
         if self.list.get_list_iter().count() > old_count {
             self.cur_selected = self.list.get_list_iter().count().saturating_sub(1);
+            // Set initial album name from YouTube video title (before metadata overwrites)
+            if let Some(idx) = self.get_index_from_id(id) {
+                if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
+                    s.album = Some(crate::app::structures::MaybeRc::Owned(
+                        crate::app::structures::ListSongAlbum {
+                            name: clean_title.clone(),
+                            id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+                        },
+                    ));
+                }
+            }
             if let Some(year) = year {
                 if let Some(idx) = self.get_index_from_id(id) {
                     if let Some(s) = self.list.get_list_iter_mut().nth(idx) {

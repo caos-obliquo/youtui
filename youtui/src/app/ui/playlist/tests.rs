@@ -322,7 +322,7 @@ fn insert_album_tracks_sets_correct_metadata() {
 
     p.insert_album_tracks(
         orig_id, &tracks,
-        &Some("Artist".into()), &Some("Album".into()), &None,
+        &Some("Artist".into()), &Some("Album".into()), &None, &None,
     );
 
     // original + 3 tracks
@@ -364,7 +364,7 @@ fn album_download_shares_arc_with_tracks() {
         AlbumTrack { title: "T2".into(), duration_secs: 100.0 },
     ];
     p.album_tracks = Some(tracks.clone());
-    p.insert_album_tracks(orig_id, &tracks, &Some("Artist".into()), &Some("Album".into()), &None);
+    p.insert_album_tracks(orig_id, &tracks, &Some("Artist".into()), &Some("Album".into()), &None, &None);
 
     // Set original's download to Valid data and verify Arc sharing
     let shared = Arc::new(InMemSong(vec![1, 2, 3, 4, 5]));
