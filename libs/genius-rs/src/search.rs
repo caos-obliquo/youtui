@@ -29,6 +29,7 @@ pub async fn search(
                 urlenc(artist),
                 urlenc(title)
             );
+            tracing::info!("Genius Bearer search URL={}, token_len={}", url, tok.len());
             match client
                 .get(&url)
                 .header("Authorization", format!("Bearer {}", tok))
@@ -36,11 +37,18 @@ pub async fn search(
                 .await
             {
                 Ok(resp) => {
-                    if let Ok(data) = resp.json::<serde_json::Value>().await {
-                        let hits = parse_hits(&data, "/response/hits");
-                        if !hits.is_empty() {
-                            return Ok(hits);
+                    let status = resp.status();
+                    tracing::info!("Genius Bearer search status={}", status);
+                    match resp.json::<serde_json::Value>().await {
+                        Ok(data) => {
+                            tracing::info!("Genius Bearer response keys: {:?}", data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+                            let hits = parse_hits(&data, "/response/hits");
+                            tracing::info!("Genius Bearer search parsed {} hits", hits.len());
+                            if !hits.is_empty() {
+                                return Ok(hits);
+                            }
                         }
+                        Err(e) => tracing::warn!("Genius Bearer JSON parse error: {}", e),
                     }
                 }
                 Err(e) => tracing::warn!("Genius Bearer search error: {}", e),

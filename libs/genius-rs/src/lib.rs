@@ -29,9 +29,19 @@ impl GeniusClient {
     }
 
     /// Search Genius for a song by artist and title.
-    /// Tries slug URL first (full + simplified), then Bearer search, then public search.
+    /// Bearer search first (gives real song ID for annotations),
+    /// then slug URL fallback, then public search.
     pub async fn find_song(&self, artist: &str, title: &str) -> Result<Option<SongHit>, String> {
-        // Try full slug URL (no API call)
+        // Bearer search first — gives real song ID for annotations API
+        if self.token.as_deref().is_some_and(|t| !t.is_empty()) {
+            let hits = search::search(&self.client, artist, title, self.token.as_deref()).await
+                .unwrap_or_default();
+            if let Some(hit) = hits.into_iter().next() {
+                tracing::info!("Genius: found via Bearer search (id={})", hit.id);
+                return Ok(Some(hit));
+            }
+        }
+        // Try full slug URL (no API call, but gives id=0)
         let slug_hit = search::hit_from_path(artist, title);
         if scrape::page_exists(&self.client, &slug_hit.path).await {
             tracing::info!("Genius: found via full slug");
@@ -44,15 +54,6 @@ impl GeniusClient {
             if scrape::page_exists(&self.client, &simple_hit.path).await {
                 tracing::info!("Genius: found via simplified slug");
                 return Ok(Some(simple_hit));
-            }
-        }
-        // Bearer search (gives real song ID for annotations)
-        if self.token.as_deref().is_some_and(|t| !t.is_empty()) {
-            let hits = search::search(&self.client, artist, title, self.token.as_deref()).await
-                .unwrap_or_default();
-            if let Some(hit) = hits.into_iter().next() {
-                tracing::info!("Genius: found via Bearer search");
-                return Ok(Some(hit));
             }
         }
         // Public search API (no auth)
