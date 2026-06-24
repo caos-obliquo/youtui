@@ -80,5 +80,5 @@
 - ytmapi-cli: more fixture types, streaming tests
 - Crate extraction: audio-player (deep async_rodio_sink coupling)
 - Related tracks metadata enrichment (YTM API limitation — no album/year)
-- Back navigation (F7 tab cycle) push_state_snapshot fix
 - Like album to library (add to YT Music profile under Albums)
+- Sixel album art persistence (blank sixel over rect on close)
