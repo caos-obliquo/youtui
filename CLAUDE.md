@@ -13,6 +13,7 @@ If things break, rollback and re-apply one-by-one.
 - **Debug-First Rule**: CLI debug tool before UI wiring for any new backend path.
 - **Investigate before change**: trace root cause fully before proposing fix. Present findings, then fix.
 - **Small commits, clean diffs**: each commit = one logical change. No mixed concerns. No drive-by refactors.
+- **PR-only merges to main**: feature branch → PR → review → merge. No direct pushes to `main`. Pre-push hook enforces this; `git push origin HEAD:feature-branch` for new branches.
 
 ## User Preferences (Strict)
 - **No sudo** without explicit permission.
