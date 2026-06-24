@@ -446,6 +446,31 @@ Context menu is exclusively via `o`.
 - `norm_uppercase`: `"METALLICA"` → `"Metallica"` (new all-caps normalization).
 - All 6 scoring tests updated for new weights.
 
+## Session 2026-06-24 (Batch C — Visual Mode Polish + Yank/Paste)
+
+### Visual Mode (Queue)
+- `draw_table_impl`: visual mode suppresses green playing indicator; all highlighted rows uniform bg.
+- `ROW_HIGHLIGHT_COLOUR` remains `Blue` (normal selection); `VISUAL_RANGE_COLOUR` removed (same blue for both).
+- Esc bound to `ClearSearch` also exits visual mode (`visual_mode = false`).
+- Consistent color across all pages (queue, browser tables).
+
+### Yank/Paste (Vim-style)
+- `yank_buffer: Vec<ListSong>` field on `Playlist` — stores yanked songs.
+- Visual mode `y` saves songs to `yank_buffer` AND clipboard (wl-copy).
+- New `PasteYanked` action bound to `p` — inserts buffer after cursor.
+- Multiple paste (buffer persists after paste, vim-compatible).
+
+### Keybinding Additions
+| Key | Action | View |
+|---|---|---|
+| `p` | PasteYanked | Queue |
+| `y` (visual mode) | Yank songs to buffer + clipboard | Queue |
+
+### Files changed
+- `youtui/src/app/ui/playlist.rs` — yank_buffer, PasteYanked handler.
+- `youtui/src/config/keymap.rs` — p keybinding.
+- `youtui/src/app/view/draw.rs` — suppress green playing indicator in visual mode.
+
 ### Previous Session Features (Unchanged)
 - Metadata pipeline (providers, Discogs, MA_COOKIE, genre aliasing).
 - Library tracks Phase A+B (delete re-route, filtered indices).
@@ -495,12 +520,12 @@ Context menu is exclusively via `o`.
 
 ### P1: ~~Back navigation (F7 cycle) — FIXED.~~
 
-### P1: Annotations integration + `:` command in lyrics
+### P1: ~~Annotations integration + `:` command in lyrics — FIXED.~~
 **Problem**: Lyrics popup has Tab/l/h for switching between lyrics/annotations modes. `:` command (OpenUrl) doesn't work inside lyrics popup — popup intercepts keys before global handler. Annotations display needs end-to-end verification with GENIUS_TOKEN.
 
 **Files**: `youtui/src/app/ui/playlist/lyrics_popup.rs`, `youtui/src/app/ui/playlist/annotations_popup.rs`, `app.rs`
 
-### P2: Visual mode color — all highlighted lines cyan
+### P2: ~~Visual mode color — all highlighted lines cyan~~
 **Problem**: In queue visual mode, first line shows green lettering (even when not playing). Rest highlighted purple. All highlighted lines should use consistent cyan bg.
 
 **Files**: `youtui/src/app/ui/playlist.rs`, `youtui/src/app/view/draw.rs`
