@@ -235,6 +235,15 @@ impl<A: AuthToken> YtMusic<A> {
     /// let id = yt.get_album_browse_id("Master of Puppets", Some("Metallica")).await.unwrap();
     /// # };
     /// ```
+    /// Resolves an album name to a browse ID by searching and filtering by artist.
+    /// ```no_run
+    /// # async {
+    /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE")
+    ///     .await
+    ///     .unwrap();
+    /// let id = yt.get_album_browse_id("Master of Puppets", Some("Metallica")).await;
+    /// # };
+    /// ```
     pub async fn get_album_browse_id<'a, Q: Into<SearchQuery<'a, FilteredSearch<AlbumsFilter>>>>(
         &self,
         album_name: Q,

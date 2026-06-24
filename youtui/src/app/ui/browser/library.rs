@@ -1501,3 +1501,26 @@ impl KeyRouter<AppAction> for LibraryBrowser {
         self.get_all_keybinds(config)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sort_order_cycle() {
+        let mut lib = LibraryBrowser::new();
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::Default);
+
+        lib.apply_action(BrowserLibraryAction::CycleSortOrder);
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::NameAsc);
+
+        lib.apply_action(BrowserLibraryAction::CycleSortOrder);
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::NameDesc);
+
+        lib.apply_action(BrowserLibraryAction::CycleSortOrder);
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::RecentlySaved);
+
+        lib.apply_action(BrowserLibraryAction::CycleSortOrder);
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::Default);
+    }
+}
