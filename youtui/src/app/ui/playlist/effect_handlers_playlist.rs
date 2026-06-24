@@ -1,6 +1,6 @@
 use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::ValidatedMetadata;
-use crate::app::server::ValidateMetadata;
+
 use crate::app::server::{ArcServer, TaskMetadata};
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
@@ -601,31 +601,9 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                             info!("Album mode: {} tracks loaded for song {:?}",
                                 target.album_tracks.as_ref().map_or(0, |t| t.len()), song_id);
 
-                            // Spawn per-track metadata validation (year/album/artist from Last.fm)
-                            let video_raw = target.get_song_from_id(song_id).map(|s| s.video_id.get_raw().to_string()).unwrap_or_default();
+                            // Fetch album art from Last.fm
                             let api_key = target.scrobbling_config.api_key.clone();
                             let mut effect = AsyncTask::new_no_op();
-                            for (i, track) in data.album_tracks.iter().enumerate() {
-                                if let Some(track_id) = target.list.get_list_iter()
-                                    .find(|s| s.video_id.get_raw() == video_raw && s.track_no == Some(i + 1))
-                                    .map(|s| s.id)
-                                {
-                                    if !api_key.is_empty() {
-                                        let artist = data.artist.clone().unwrap_or_default();
-                                        let discogs_token = Some(target.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty());
-                                        let vt = AsyncTask::new_future_try(
-                                            ValidateMetadata(artist.clone(), track.title.clone(), track_id, api_key.clone(), discogs_token),
-                                            HandleMetadataValidated(track_id),
-                                            HandleMetadataValidationError,
-                                            None,
-                                        );
-                                        effect = effect.push(vt);
-                                    }
-                                }
-                            }
-
-                            // Fetch album art from Last.fm
-                            // Fetch album art from Last.fm (fallback to song's own artist/album)
                             if !api_key.is_empty() {
                                 let art_artist = data.artist.clone()
                                     .or_else(|| target.get_song_from_id(song_id)
