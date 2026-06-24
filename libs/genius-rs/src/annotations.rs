@@ -47,7 +47,7 @@ pub async fn fetch_from_api(
                     .to_string();
                 let body = referent
                     .pointer("/annotations/0/body/dom")
-                    .and_then(|d| extract_text_from_dom(d))
+                    .and_then(extract_text_from_dom)
                     .unwrap_or_default();
 
                 if !fragment.is_empty() && !body.is_empty() {

@@ -156,10 +156,8 @@ impl ViTextEditor {
     }
 
     pub fn push_history(&mut self, entry: String) {
-        if !entry.is_empty() {
-            if self.history.last() != Some(&entry) {
-                self.history.push(entry);
-            }
+        if !entry.is_empty() && self.history.last() != Some(&entry) {
+            self.history.push(entry);
         }
         self.history_pos = self.history.len();
     }
@@ -291,9 +289,7 @@ impl ViTextEditor {
                 self.mode = ViMode::Normal;
             }
             crossterm::event::KeyCode::Char('o') => {
-                let tmp = self.cursor;
-                self.cursor = self.visual_start;
-                self.visual_start = tmp;
+                std::mem::swap(&mut self.cursor, &mut self.visual_start);
             }
             // motions
             crossterm::event::KeyCode::Char('h')
@@ -473,9 +469,7 @@ impl ViTextEditor {
                 self.mode = ViMode::Normal;
             }
             crossterm::event::KeyCode::Char('o') => {
-                let tmp = self.cursor;
-                self.cursor = self.visual_start;
-                self.visual_start = tmp;
+                std::mem::swap(&mut self.cursor, &mut self.visual_start);
             }
             // motions
             crossterm::event::KeyCode::Char('h')
@@ -568,13 +562,11 @@ impl ViTextEditor {
                     return true; // submit
                 }
             }
-            crossterm::event::KeyCode::Backspace => {
-                if self.cursor > 0 {
-                    self.save_undo();
-                    self.cursor -= 1;
-                    self.buffer.remove(self.cursor);
-                    self.insert_buffer.pop();
-                }
+            crossterm::event::KeyCode::Backspace if self.cursor > 0 => {
+                self.save_undo();
+                self.cursor -= 1;
+                self.buffer.remove(self.cursor);
+                self.insert_buffer.pop();
             }
             crossterm::event::KeyCode::Char(c) => {
                 self.save_undo();
@@ -582,11 +574,11 @@ impl ViTextEditor {
                 self.cursor += 1;
                 self.insert_buffer.push(c);
             }
-            crossterm::event::KeyCode::Left => {
-                if self.cursor > 0 { self.cursor -= 1; }
+            crossterm::event::KeyCode::Left if self.cursor > 0 => {
+                self.cursor -= 1;
             }
-            crossterm::event::KeyCode::Right => {
-                if self.cursor < self.buffer.len() { self.cursor += 1; }
+            crossterm::event::KeyCode::Right if self.cursor < self.buffer.len() => {
+                self.cursor += 1;
             }
             crossterm::event::KeyCode::Home => self.cursor = 0,
             crossterm::event::KeyCode::End => self.cursor = self.buffer.len(),
@@ -641,13 +633,11 @@ impl ViTextEditor {
                 self.insert_buffer.clear();
                 self.mode = ViMode::Insert;
             }
-            crossterm::event::KeyCode::Char('s') => {
-                if self.cursor < self.buffer.len() {
-                    self.save_undo();
-                    self.buffer.remove(self.cursor);
-                    self.insert_buffer.clear();
-                    self.mode = ViMode::Insert;
-                }
+            crossterm::event::KeyCode::Char('s') if self.cursor < self.buffer.len() => {
+                self.save_undo();
+                self.buffer.remove(self.cursor);
+                self.insert_buffer.clear();
+                self.mode = ViMode::Insert;
             }
             crossterm::event::KeyCode::Char('S') => {
                 self.save_undo();
@@ -698,29 +688,25 @@ impl ViTextEditor {
                 self.want_col = None;
                 self.cursor = end_of_big_word(&self.buffer, self.cursor);
             }
-            crossterm::event::KeyCode::Char('~') => {
-                if self.cursor < self.buffer.len() {
-                    let b = self.buffer.as_bytes()[self.cursor];
-                    let toggled = if b.is_ascii_lowercase() {
-                        b.to_ascii_uppercase()
-                    } else if b.is_ascii_uppercase() {
-                        b.to_ascii_lowercase()
-                    } else {
-                        b
-                    };
-                    if toggled != b {
-                        self.save_undo();
-                        self.buffer.remove(self.cursor);
-                        self.buffer.insert(self.cursor, toggled as char);
-                        self.last_change = LastChange::ReplaceChar(toggled as char);
-                    }
+            crossterm::event::KeyCode::Char('~') if self.cursor < self.buffer.len() => {
+                let b = self.buffer.as_bytes()[self.cursor];
+                let toggled = if b.is_ascii_lowercase() {
+                    b.to_ascii_uppercase()
+                } else if b.is_ascii_uppercase() {
+                    b.to_ascii_lowercase()
+                } else {
+                    b
+                };
+                if toggled != b {
+                    self.save_undo();
+                    self.buffer.remove(self.cursor);
+                    self.buffer.insert(self.cursor, toggled as char);
+                    self.last_change = LastChange::ReplaceChar(toggled as char);
                 }
             }
-            crossterm::event::KeyCode::Char('%') => {
-                if !self.buffer.is_empty() {
-                    if let Some(pos) = find_matching_bracket(&self.buffer, self.cursor) {
-                        self.cursor = pos;
-                    }
+            crossterm::event::KeyCode::Char('%') if !self.buffer.is_empty() => {
+                if let Some(pos) = find_matching_bracket(&self.buffer, self.cursor) {
+                    self.cursor = pos;
                 }
             }
             crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
@@ -739,12 +725,10 @@ impl ViTextEditor {
                     self.cursor = start;
                 }
             }
-            crossterm::event::KeyCode::Char('x') => {
-                if !self.buffer.is_empty() && self.cursor < self.buffer.len() {
-                    self.save_undo();
-                    self.buffer.remove(self.cursor);
-                    self.last_change = LastChange::DeleteChar;
-                }
+            crossterm::event::KeyCode::Char('x') if !self.buffer.is_empty() && self.cursor < self.buffer.len() => {
+                self.save_undo();
+                self.buffer.remove(self.cursor);
+                self.last_change = LastChange::DeleteChar;
             }
             crossterm::event::KeyCode::Char(c @ ('f' | 'F' | 't' | 'T')) => {
                 self.mode = ViMode::OperatorPending(c);
@@ -789,13 +773,11 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Char('d') => {
                 self.mode = ViMode::OperatorPending('d');
             }
-            crossterm::event::KeyCode::Char('D') => {
-                if self.cursor < self.buffer.len() {
-                    self.save_undo();
-                    self.clipboard = self.buffer[self.cursor..].to_string();
-                    self.buffer.truncate(self.cursor);
-                    self.last_change = LastChange::DeleteToEnd;
-                }
+            crossterm::event::KeyCode::Char('D') if self.cursor < self.buffer.len() => {
+                self.save_undo();
+                self.clipboard = self.buffer[self.cursor..].to_string();
+                self.buffer.truncate(self.cursor);
+                self.last_change = LastChange::DeleteToEnd;
             }
             crossterm::event::KeyCode::Char('v') if ctrl => {
                 self.visual_start = self.cursor;
@@ -821,32 +803,26 @@ impl ViTextEditor {
                     self.clipboard = self.buffer.clone();
                 }
             }
-            crossterm::event::KeyCode::Char('p') => {
-                if !self.clipboard.is_empty() {
-                    self.save_undo();
-                    let pos = self.cursor;
-                    self.buffer.insert_str(pos, &self.clipboard);
-                    self.cursor = pos + self.clipboard.len();
-                    self.last_change = LastChange::Paste;
-                }
+            crossterm::event::KeyCode::Char('p') if !self.clipboard.is_empty() => {
+                self.save_undo();
+                let pos = self.cursor;
+                self.buffer.insert_str(pos, &self.clipboard);
+                self.cursor = pos + self.clipboard.len();
+                self.last_change = LastChange::Paste;
             }
-            crossterm::event::KeyCode::Char('P') => {
-                if !self.clipboard.is_empty() {
-                    self.save_undo();
-                    self.buffer.insert_str(self.cursor, &self.clipboard);
-                    self.last_change = LastChange::Paste;
-                }
+            crossterm::event::KeyCode::Char('P') if !self.clipboard.is_empty() => {
+                self.save_undo();
+                self.buffer.insert_str(self.cursor, &self.clipboard);
+                self.last_change = LastChange::Paste;
             }
-            crossterm::event::KeyCode::Char('J') => {
-                if self.multiline {
-                    let after = &self.buffer[self.cursor..];
-                    if let Some(nl) = after.find('\n') {
-                        self.save_undo();
-                        let pos = self.cursor + nl;
-                        self.buffer.remove(pos);
-                        self.buffer.insert(pos, ' ');
-                        self.last_change = LastChange::InsertText(" ".to_string());
-                    }
+            crossterm::event::KeyCode::Char('J') if self.multiline => {
+                let after = &self.buffer[self.cursor..];
+                if let Some(nl) = after.find('\n') {
+                    self.save_undo();
+                    let pos = self.cursor + nl;
+                    self.buffer.remove(pos);
+                    self.buffer.insert(pos, ' ');
+                    self.last_change = LastChange::InsertText(" ".to_string());
                 }
             }
             crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down => {
@@ -1560,29 +1536,29 @@ fn find_enclosing_pair(text: &str, cursor: usize, open: u8, close: u8) -> Option
     let len = bytes.len();
     if cursor >= len { return None; }
     let mut depth = 0;
-    let open_pos = loop {
+    let open_pos = {
         let mut found = None;
-        for i in (0..cursor).rev() {
-            if bytes[i] == close { depth += 1; }
-            else if bytes[i] == open {
+        for (i, &b) in bytes[..cursor].iter().enumerate().rev() {
+            if b == close { depth += 1; }
+            else if b == open {
                 if depth == 0 { found = Some(i); break; }
                 depth -= 1;
             }
         }
-        break found;
+        found
     };
     let open_pos = open_pos?;
     depth = 0;
-    let close_pos = loop {
+    let close_pos = {
         let mut found = None;
-        for i in (open_pos + 1)..len {
-            if bytes[i] == open { depth += 1; }
-            else if bytes[i] == close {
+        for (i, &b) in bytes.iter().enumerate().skip(open_pos + 1) {
+            if b == open { depth += 1; }
+            else if b == close {
                 if depth == 0 { found = Some(i); break; }
                 depth -= 1;
             }
         }
-        break found;
+        found
     };
     Some((open_pos, close_pos? + 1))
 }
@@ -1617,9 +1593,9 @@ fn find_matching_bracket(text: &str, cursor: usize) -> Option<usize> {
     for &(open, close) in open_close {
         if bytes[cursor] == open {
             let mut depth = 0;
-            for i in (cursor + 1)..len {
-                if bytes[i] == open { depth += 1; }
-                else if bytes[i] == close {
+            for (i, &b) in bytes.iter().enumerate().skip(cursor + 1) {
+                if b == open { depth += 1; }
+                else if b == close {
                     if depth == 0 { return Some(i); }
                     depth -= 1;
                 }
@@ -1631,9 +1607,9 @@ fn find_matching_bracket(text: &str, cursor: usize) -> Option<usize> {
     for &(open, close) in open_close {
         if bytes[cursor] == close {
             let mut depth = 0;
-            for i in (0..cursor).rev() {
-                if bytes[i] == close { depth += 1; }
-                else if bytes[i] == open {
+            for (i, &b) in bytes[..cursor].iter().enumerate().rev() {
+                if b == close { depth += 1; }
+                else if b == open {
                     if depth == 0 { return Some(i); }
                     depth -= 1;
                 }
@@ -1651,8 +1627,8 @@ fn find_char(text: &str, cursor: usize, ch: char, dir: FindDir, till: bool) -> u
     match dir {
         FindDir::Forward => {
             let start = if cursor + 1 < len { cursor + 1 } else { return len; };
-            for i in start..len {
-                if bytes[i] == target {
+            for (i, &b) in bytes.iter().enumerate().skip(start) {
+                if b == target {
                     return if till { i.saturating_sub(1) } else { i };
                 }
             }
@@ -1661,8 +1637,8 @@ fn find_char(text: &str, cursor: usize, ch: char, dir: FindDir, till: bool) -> u
         FindDir::Backward => {
             if cursor == 0 { return 0; }
             let end = cursor;
-            for i in (0..end).rev() {
-                if bytes[i] == target {
+            for (i, &b) in bytes[..end].iter().enumerate().rev() {
+                if b == target {
                     return if till { i + 1 } else { i };
                 }
             }

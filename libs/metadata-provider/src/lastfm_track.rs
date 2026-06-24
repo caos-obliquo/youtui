@@ -38,7 +38,7 @@ impl MetadataProvider for TrackSearchProvider {
                         let year = track.get("wiki")
                             .and_then(|w| w.get("published"))
                             .and_then(|p| p.as_str())
-                            .and_then(|d| util::extract_year(d));
+                            .and_then(util::extract_year);
                         if album.is_some() || year.is_some() {
                             let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
                             return Some(ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new(), genres: Vec::new(), styles: Vec::new() });
@@ -77,7 +77,7 @@ impl MetadataProvider for TrackSearchProvider {
                                         let year = track.get("wiki")
                                             .and_then(|w| w.get("published"))
                                             .and_then(|p| p.as_str())
-                                            .and_then(|d| util::extract_year(d));
+                                            .and_then(util::extract_year);
                                         if album.is_some() || year.is_some() {
                                             let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
                                             return Some(ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new(), genres: Vec::new(), styles: Vec::new() });

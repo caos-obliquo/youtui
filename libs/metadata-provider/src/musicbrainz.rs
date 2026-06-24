@@ -4,6 +4,10 @@ use futures::future::BoxFuture;
 
 pub struct MusicBrainzProvider;
 
+impl Default for MusicBrainzProvider {
+    fn default() -> Self { Self }
+}
+
 impl MusicBrainzProvider {
     pub fn new() -> Self {
         Self

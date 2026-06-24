@@ -100,7 +100,7 @@ pub fn normalize_genre(name: &str) -> String {
         }
     }
     // Match after stripping trailing spaces/slashes
-    let cleaned = lowered.trim_end_matches(|c: char| c == ' ' || c == '/').to_string();
+    let cleaned = lowered.trim_end_matches(&[' ', '/'] as &[_]).to_string();
     if let Some(canonical) = map.get(&cleaned) {
         return canonical.clone();
     }
@@ -121,7 +121,7 @@ pub fn is_known_genre(name: &str) -> bool {
     let lowered = name.to_lowercase().trim().to_string();
     let map = genre_map();
     map.contains_key(&lowered)
-        || map.contains_key(&lowered.trim_end_matches(|c: char| c == ' ' || c == '/').to_string())
+        || map.contains_key(&lowered.trim_end_matches(&[' ', '/'] as &[_]).to_string())
 }
 
 /// Normalize all genres in a list, deduplicating and sorting.
