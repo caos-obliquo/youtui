@@ -533,7 +533,7 @@ Context menu is exclusively via `o`.
 ### P2: FFT footer bars (low priority)
 **Problem**: No FFT frequency bars in footer (roadmap feature, not wired yet).
 
-### P2: Sixel album art persistence
+### P2: ~~Sixel album art persistence~~
 **Problem**: Sixel centering/sizing not fully correct. Sixel persistence after popup close can corrupt main window. Partially fixed: sixel data stored in `w.sixel_data` for cleanup. Root cause: `\x1bP0p\x1b\\` DCS clear not supported on all terminals (foot may handle it intermittently). Fix: render blank sixel over popup area on close.
 
 **Files**: `youtui/src/app/ui/draw.rs`
