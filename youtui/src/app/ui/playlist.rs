@@ -123,6 +123,7 @@ pub struct Playlist {
     pub undo_stack: Vec<Vec<(crate::app::structures::ListSong, usize)>>,
     pub visual_mode: bool,
     pub visual_start: usize,
+    yank_buffer: Vec<ListSong>,
     /// Guard: true when a FetchAlbumArt task is in-flight for current song
     pub album_art_fetching: bool,
     /// Album name being fetched for album art matching
@@ -182,6 +183,7 @@ pub enum PlaylistAction {
     SortQueueDesc,
     SortQueueClear,
     ForceSplitAlbum,
+    PasteYanked,
 }
 
 impl Action for PlaylistAction {
@@ -231,6 +233,7 @@ impl Action for PlaylistAction {
             PlaylistAction::SortQueueDesc => "Sort Descending",
             PlaylistAction::SortQueueClear => "Clear Sort",
             PlaylistAction::ForceSplitAlbum => "Force Split Album",
+            PlaylistAction::PasteYanked => "Paste Yanked",
         }
         .into()
     }
@@ -250,7 +253,10 @@ impl ActionHandler<PlaylistAction> for Playlist {
             PlaylistAction::ToggleVisualMode => (self.toggle_visual_mode(), None),
             PlaylistAction::ToggleShuffle => (self.toggle_shuffle(), None),
             PlaylistAction::ToggleSearch => (self.toggle_search(), None),
-            PlaylistAction::ClearSearch => (self.clear_search(), None),
+            PlaylistAction::ClearSearch => {
+                if self.visual_mode { self.visual_mode = false; }
+                (self.clear_search(), None)
+            }
             PlaylistAction::SaveQueue => {
                 match queue_persistence::auto_save(self) {
                     Ok(_) => info!("Queue saved successfully"),
@@ -332,8 +338,13 @@ impl ActionHandler<PlaylistAction> for Playlist {
                             format!("{} - {}", artists, s.title)
                         })
                         .collect();
+                    // Save songs to yank buffer for paste
+                    self.yank_buffer = self.list.get_list_iter()
+                        .skip(start).take(end - start + 1)
+                        .cloned()
+                        .collect();
                     let _ = std::process::Command::new("wl-copy").arg(lines.join("\n")).spawn();
-                    info!("Yanked {} lines from visual selection to clipboard", lines.len());
+                    info!("Yanked {} lines from visual selection to clipboard and buffer", self.yank_buffer.len());
                     self.visual_mode = false;
                     return (AsyncTask::new_no_op(), None);
                 }
@@ -491,6 +502,17 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 // Also trigger download for the parent song
                 let effect = self.download_upcoming_from_id(parent_id);
                 (effect.push(validation_task), None)
+            },
+            PlaylistAction::PasteYanked => {
+                if !self.yank_buffer.is_empty() {
+                    let insert_pos = self.cur_selected.saturating_add(1);
+                    let max = self.list.get_list_iter().count();
+                    let pos = insert_pos.min(max);
+                    self.list.insert_song_list_at(self.yank_buffer.clone(), pos);
+                    if self.shuffle_enabled { self.generate_shuffle_indices(); }
+                    info!("Pasted {} yanked songs at position {}", self.yank_buffer.len(), pos);
+                }
+                (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ToggleRomaji => {
                 if self.romaji_mode {
@@ -968,6 +990,7 @@ impl Playlist {
             undo_stack: Vec::new(),
             visual_mode: false,
             visual_start: 0,
+            yank_buffer: Vec::new(),
             album_art_fetching: false,
             album_art_fetching_name: None,
             pending_count: 0,
