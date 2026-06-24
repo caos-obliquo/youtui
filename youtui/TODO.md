@@ -75,6 +75,8 @@
 - **Total: ~330/330 pass, 0 fail, 4 ignored, 0 warnings**
 
 ## Remaining
+- **P1**: Annotations integration + `:` command in lyrics popup (GENIUS_TOKEN + key routing)
+- **P2**: Visual mode cyan (queue: all lines cyan, no green-on-nonplaying)
 - Genius annotations: individual page scrape fallback (no __INITIAL_STATE__)
 - Genius lyrics: Musixmatch integration
 - ytmapi-cli: more fixture types, streaming tests

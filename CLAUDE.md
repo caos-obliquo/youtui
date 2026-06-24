@@ -52,7 +52,7 @@ cargo test --release -p ytmapi-cli                 # 7 pass
 Total: **~326/326 pass, 0 fail, 4 ignored, 0 warnings** (youtui 124 + 19 + 65 + 85 + 14 + 14 + 2 + 7 = 330 metadata-provider included separately)
 
 ## Warnings
-`cargo build --release` -- 1 pre-existing warning (ytmapi-rs `unused_mut` in playlist.rs). Not introduced by changes.
+`cargo build --release` -- 1 pre-existing warning (ytmapi-rs `unused_mut` in playlist.rs). Not introduced by changes. 2 pre-existing ytmapi-cli deprecation warnings (SearchQuery). youtui crate: 0 warnings.
 
 ## Arch (3-layer async callback)
 ```
@@ -385,6 +385,18 @@ Context menu is exclusively via `o`.
 - o.v album art popup: separate ClosePopup handler (no context corruption).
 - o.v: sixel data stored in `w.sixel_data` for cleanup.
 - **F7 tab cycle**: `handle_change_search_type()` now calls `push_snapshot()` before switching variant. Back-stack no longer corrupted.
+- **C-r redo**: config_editor_popup now passes ctrl modifier to ViTextEditor. Notes editor already worked.
+
+### Dead Code Removed
+- `yt_dlp.rs`: removed unused `YtDlpDownloader` struct + `YtDlpDownloaderError` enum (app uses rusty_ytdl)
+- `effect_handlers_playlist.rs`: removed 4 dead handler structs + impls (HandleReorderPlaylistItem*, HandleRemovePlaylistItems*)
+- `library.rs`: removed 3 unused methods (`load_selected_playlist`, `search_text`, `is_search_active`)
+- `albumsearch.rs`: removed 5 unused methods (`get_search_suggestions`, `revert_routing`, `apply_all_sort_commands`, `apply_filter`, `clear_filter`)
+- `actionhandler.rs`: removed unused `MouseHandler` trait
+- `notes_popup.rs`: removed unused `NotesAction` enum + `ActionHandler` impl (Esc/q handled directly)
+- `scrolling_list.rs`, `tab_grid.rs`: removed unused methods
+- `#[allow(dead_code)]` annotation removed from `WindowContext::Notes` (intentional, re-added)
+- Remaining `#[allow(dead_code)]`: notes_popup (intentional dead variant), albumsearch (constructor used from tests)
 
 ### Previous Session Features (Unchanged)
 - Metadata pipeline (providers, Discogs, MA_COOKIE, genre aliasing).
@@ -429,16 +441,21 @@ Context menu is exclusively via `o`.
 
 ## Remaining Items (Detailed)
 ### Recommended Order
-1. **Sixel album art persistence** (P2)
-2. **P2 items** (polish, no data-loss)
-3. **P3 items** (tech debt)
+1. **Annotations integration** (P1)
+2. **Sixel album art persistence** (P2)
+3. **P2/P3 items** (polish, no data-loss)
 
-### P1: ~~Back navigation (F7 cycle) — FIXED. handle_change_search_type() now pushes snapshot.~~
+### P1: ~~Back navigation (F7 cycle) — FIXED.~~
 
-### P1: Annotations integration
-**Problem**: Lyrics popup has Tab/l/h for switching between lyrics/annotations/view-switching modes. Verify this is fully wired end-to-end.
+### P1: Annotations integration + `:` command in lyrics
+**Problem**: Lyrics popup has Tab/l/h for switching between lyrics/annotations modes. `:` command (OpenUrl) doesn't work inside lyrics popup — popup intercepts keys before global handler. Annotations display needs end-to-end verification with GENIUS_TOKEN.
 
-**Files**: `youtui/src/app/ui/playlist/annotations_popup.rs`, `youtui/src/app/ui/playlist/lyrics_popup.rs`
+**Files**: `youtui/src/app/ui/playlist/lyrics_popup.rs`, `youtui/src/app/ui/playlist/annotations_popup.rs`, `app.rs`
+
+### P2: Visual mode color — all highlighted lines cyan
+**Problem**: In queue visual mode, first line shows green lettering (even when not playing). Rest highlighted purple. All highlighted lines should use consistent cyan bg.
+
+**Files**: `youtui/src/app/ui/playlist.rs`, `youtui/src/app/view/draw.rs`
 
 ### P2: FFT footer bars (low priority)
 **Problem**: No FFT frequency bars in footer (roadmap feature, not wired yet).
@@ -470,6 +487,9 @@ Context menu is exclusively via `o`.
 
 ### P3: Album browser j/k routing when show_tracks
 **Problem**: When album tracks are shown inline in AlbumsBrowser, j/k navigation doesn't move through tracks.
+
+### P3: ytmapi-rs 150 TODOs
+**Problem**: ~150 pre-existing TODO comments in `ytmapi-rs/src/parse/search.rs` and `parse/artist.rs` for type safety improvements.
 
 ### P3: ytmapi-rs 150 TODOs
 **Problem**: ~150 pre-existing TODO comments in `ytmapi-rs/src/parse/search.rs` and `parse/artist.rs` for type safety improvements.
