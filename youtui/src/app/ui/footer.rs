@@ -92,12 +92,12 @@ pub fn draw_footer(
         })
         .unwrap_or_default();
     let repeat_icon = match w.playlist.repeat_mode {
-        crate::app::structures::RepeatMode::All => " ↺",
-        crate::app::structures::RepeatMode::One => " ↻₁",
-        _ => "",
+        crate::app::structures::RepeatMode::All => " \u{F0456}",
+        crate::app::structures::RepeatMode::One => " \u{F0458}",
+        _ => " \u{F0457}",
     };
-    let radio_icon = if w.playlist.radio_mode { " ↻" } else { "" };
-    let shuffle_icon = if w.playlist.shuffle_enabled { " ⇄" } else { "" };
+    let radio_icon = if w.playlist.radio_mode { " \u{F0456}" } else { "" };
+    let shuffle_icon = if w.playlist.shuffle_enabled { " \u{F049D}" } else { "" };
     let scrobble_indicator = if w.playlist.scrobbling_config.enabled {
         if w.playlist.scrobble_state.is_some() { " [Scrobble]" } else { " [s]" }
     } else { "" };
@@ -215,7 +215,7 @@ pub fn draw_footer(
     f.render_widget(left_arrow, left_arrow_chunk);
     f.render_widget(right_arrow, right_arrow_chunk);
     f.render_widget(Paragraph::new(Line::from(song_artist_line)), line1);
-    let status_icons = format!("{} {}{}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon, heart);
+    let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
     let mut album_spans = Vec::new();
     if !album_line.is_empty() {
         let avail = album_icons_line.width.saturating_sub(3) as usize;
@@ -230,7 +230,8 @@ pub fn draw_footer(
             ));
         }
     }
-    album_spans.push(Span::styled(status_icons, Style::default().fg(Color::Red)));
+    album_spans.push(Span::raw(status_prefix));
+    album_spans.push(Span::styled(heart, Style::default().fg(Color::Red)));
     f.render_widget(Paragraph::new(Line::from(album_spans)), album_icons_line);
     f.render_widget(block, chunk);
 }
