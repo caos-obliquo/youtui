@@ -23,8 +23,8 @@ pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
 
 pub fn like_icon(status: ytmapi_rs::common::LikeStatus) -> &'static str {
     match status {
-        ytmapi_rs::common::LikeStatus::Liked => " 󰋑",
-        _ => " ♥",
+        ytmapi_rs::common::LikeStatus::Liked => "  󰋑",
+        _ => "  ♥",
     }
 }
 
@@ -242,16 +242,16 @@ mod tests {
 
     #[test]
     fn like_icon_liked() {
-        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Liked), " 󰋑");
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Liked), "  󰋑");
     }
 
     #[test]
     fn like_icon_indifferent() {
-        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Indifferent), " ♥");
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Indifferent), "  ♥");
     }
 
     #[test]
     fn like_icon_disliked() {
-        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Disliked), " ♥");
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Disliked), "  ♥");
     }
 }
