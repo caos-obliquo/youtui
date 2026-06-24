@@ -39,7 +39,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 103 pass, 4 ignore
+cargo test --release -p youtui --bin youtui       # 124 pass, 4 ignore
 cargo test --release -p metadata-provider          # 19 pass
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
@@ -49,7 +49,7 @@ cargo test --release -p async-callback-manager     # 14 pass (3 lib + 11 integ)
 cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
 cargo test --release -p ytmapi-cli                 # 7 pass
 ```
-Total: **~305/305 pass, 0 fail, 4 ignored, 0 warnings** (json-crawler actual 2, docs say 8; async-callback-manager actual 14, docs say 15)
+Total: **~326/326 pass, 0 fail, 4 ignored, 0 warnings** (youtui 124 + 19 + 65 + 85 + 14 + 14 + 2 + 7 = 330 metadata-provider included separately)
 
 ## Warnings
 `cargo build --release` -- 1 pre-existing warning (ytmapi-rs `unused_mut` in playlist.rs). Not introduced by changes.
@@ -97,9 +97,9 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `libs/metadata-provider/` | 19 tests | Metadata trait + 5 provider impls |
 | `app/ui/playlist/notes_popup.rs` | ~272 | Vim-driven notes text editor |
 | `app/ui/playlist/playlist_editor_popup.rs` | ~484 | Playlist editor (nvim-driven, overwrite save) |
-| `app/ui/playlist/album_art_popup.rs` | ~41 | Album art sixel popup |
+| `app/ui/playlist/album_art_popup.rs` | ~26 | Album art sixel popup |
 | `app/ui/playlist/config_editor_popup.rs` | ~146 | Config file editor |
-| `app/ui/browser/footer.rs` | ~249 | Footer: progress, metadata, heart icon, album art |
+| `app/ui/browser/footer.rs` | ~257 | Footer: progress, metadata, heart icon, album art |
 | `app/ui/playlist/effect_handlers_playlist.rs` | ~650 | ValidateMetadata, overwrite save chain handlers |
 | `libs/metal-proxy/src/main.rs` | ~275 | Metal Archives cookie-based proxy |
 
@@ -291,70 +291,107 @@ Context menu is exclusively via `o`.
 - `chore:` cleanup — added `library_playlist_mutated = true` to merge success handler
 - Album split tags expanded: `full single`, `album` added to strip list
 
-## Session 2026-06-24 (This Session, UNCOMMITTED)
+## Session 2026-06-24 (Committed)
 
-### NEEDS TESTING (User Must Verify)
-Test each item, report bugs before commit.
-
-| # | Feature | What to Test | How |
-|---|---|---|---|
-| **1** | **Footer layout** | 6-line Status block with `Borders::ALL`, album art 4x4 left, no gap. Line 1: artist-song, Line 2: album + icons merged, Line 3: progress bar, Line 4: empty. | Play any song, check footer. |
-| **2** | **Footer heart/like icon** | Shows ♥ or 󰋑 on line 2 merged with album text. Toggles via `o.t` in queue. Persistent across sessions. | Play song, `o.t` in queue, verify footer heart changes. |
-| **3** | **Lyrics Space pause** | `Space` in lyrics popup toggles play/pause. Help bar shows `Space Pause`. | Open lyrics, press Space, verify music pauses/resumes. |
-| **4** | **Lyrics help bar outside footer** | `( ) Lyric | <> Song | [] Seek | Space Pause | Esc/q Close` rendered above Status block. | Open lyrics, verify help bar not inside Status box. |
-| **5** | **Album art 4x4 scaling** | Album art renders as 4x4 square in Status block left, `Resize::Fit` scales. | Play songs with various album art sizes, check left side of Status. |
-| **6** | **Library tracks [SEARCH] indicator** | `/` in library tracks view shows `Playlist Tracks [SEARCH: text (N/M)]` in title bar. | Open library > Enter playlist > `/` type search. |
-| **7** | **Library tracks selection** | Selection lands on correct row when filter/sort active. j/k scrolls within filtered results. | Filter tracks via `/`, press j/k. |
-| **8** | **Library tracks sort/filter popups** | `o.z` sort popup, `o.c` filter popup. Esc/Enter control them. | Open library tracks, press `o.z` or `o.c`. |
-| **9** | **Like/subscribe from album tracks** | `o.t` likes album, `o.S`/`o.U` subscribes/unsubscribes artist. Album appears in Library. | Find album, Enter show tracks, `o.t`/`o.S`. |
-| **10** | **Force-split** | `o.f` on a song re-validates metadata and re-splits into tracks. Works with/without original parent. | Queue full-album video, `o.f` on a track. |
-| **11** | **Playlist editor** | `o.e` in library tracks opens vim-driven editor. Yank/paste/undo/visual/commands. Overwrite save. | Library > Enter playlist > `o.e`, edit, `:w` save. |
-| **12** | **Album URL auto-detect** | Paste YT Music album URL — loads all tracks, not single video. | `:` command, paste `playlist?list=OLAK5uy_...` URL. |
-
-### Features Implemented
-
-#### Footer Restructure
-- **6-line footer** with `Block::default().borders(Borders::ALL)` title "Status" / right-aligned "Youtui"
-- **Album art 4x4** inside block inner (6-line footer - 2 border = 4 inner). `Resize::Fit(None)` scales any image to fit.
-- **No gap** between album art and content: `[Length(album_size), Min(0)]` split (was `Length(1)` gap).
-- **Layout**: line1 = artist-song, line2 = album (gray) + status icons (red) merged on single line with styled Spans, line3 = progress bar `< [ ] >`, line4 = empty.
-- **Status icons** now on line 2 (1 line higher than before) — removes visual gap between icons and progress bar.
+### Footer Restructure
+- **5-line footer** with `Block::default().borders(Borders::ALL)` title "Status" / right-aligned "Youtui"
+- **Album art 7-char wide** (`ALBUM_ART_WIDTH = 7`) with 1-char gap. `Resize::Fit(None)` scales image.
+- **Layout**: 3 inner lines — line1 = artist-song, line2 = album (gray) + status icons (default), line3 = progress bar `< [ ] >`.
+- **Status icons**: repeat `󰑖`/`󰑗`/`󰑘`, shuffle `󰒝`, scrobble, heart `󰋑` (MDI Nerd Font set). Heart only red.
 - `footer.rs`: extracted `like_icon()` as public fn (3 tests).
+- `like_icon()`: returns `" 󰋑"` for Liked, `" ♥"` otherwise.
+- Footer reserve 6→5 in lyrics_popup.
 
-#### Lyrics Popup
+### Lyrics Popup
 - **Space pauses**: `KeyCode::Char(' ')` → `AppCallback::TogglePlayPause`. `lyrics_popup.rs:777-780`.
 - **Hint text cleaned**: `"( ) Lyric | <> Song | [] Seek | Space Pause | Esc/q Close"`.
-- **Footer reserve**: `top_anchored_rect` reserve updated 5→6 lines to match 6-line footer. Commands stay outside Status block.
+- **Footer reserve**: `top_anchored_rect` reserve updated to 5 lines to match 5-line footer.
 
-#### AppCallback
+### Green Lettering (Playing Indicator)
+- **All browser tabs now show green bold text** on currently playing song: Songs, Artists, Albums, Library, PlaylistSearch.
+- `view/draw.rs`: changed `secondary_row_highlight_style` from `bg(PLAYING_COLOUR)` to `fg(PLAYING_COLOUR)`.
+- `cur_playing_video_id` field added to every browser widget struct.
+- `Browser::set_cur_playing_video_id()` propagates playing ID to all widgets.
+- `get_highlighted_row()` in each browser returns index matching `cur_playing_video_id`.
+
+### Album Art Popup (o.v)
+- Draw logic moved from `album_art_popup.rs` into `draw.rs` for sixel data tracking.
+- 95% centered rect (was 90%).
+- Stores sixel data in `w.sixel_data` on draw for proper cleanup on close.
+- `AppCallback::ViewAlbumCover`: saves `prev_context` before opening.
+- `AppCallback::ClosePopup`: handles album art popup as overlay (no context change).
+- Dead second draw removed from `draw.rs`.
+
+### Library Tracks Sort/Filter + SEARCH
+- `o.z` sort popup, `o.c` filter popup wired for library tracks view.
+- `HasTitle::get_title()` returns `Playlist Tracks [SEARCH: text (N/M)]`.
+- `get_selected_item()` maps raw selection to filtered index when sort/filter active.
+- `get_highlighted_row()` now also checks `cur_playing_video_id`.
+
+### Like/Subscribe from Album Tracks
+- `o.t` likes album via `audio_playlist_id` (RatePlaylistFromLibrary).
+- `o.S` subscribes to artist, `o.U` unsubscribes (SubscribeToArtistFromLibrary/UnsubscribeFromArtistFromLibrary).
+
+### Force-Split (o.f)
+- `PlaylistAction::ForceSplitAlbum`: re-validates metadata and re-splits selected track.
+- Handles both cases: parent exists (re-split) and parent removed (use track 1 as new parent).
+- Triggers `ValidateMetadata` + `download_upcoming_from_id`.
+
+### Album URL Auto-Detect
+- `:` command with `playlist?list=OLAK5uy_...` loads all tracks via `GetPlaylistTracks`.
+- Extracted `extract_playlist_id()` and `extract_video_id()` as free functions (11 tests).
+
+### Playlist Editor Overwrite Save
+- `o.e` → editor → `:w` → `AppCallback::OverwritePlaylistTracks`.
+- Chain: `HandleOverwriteGetTracks` → `HandleOverwriteRemoveDone` → `HandleAddSongsOk`.
+- `close_popup()` called, library refreshes on save.
+
+### AppCallback
 - New variant `AppCallback::TogglePlayPause` → calls `self.window_state.pauseplay()`. `app.rs:107,688-691`.
+- New variant `AppCallback::OverwritePlaylistTracks`.
 
-#### New Tests
+### New Tests
 - **29 new tests**: `like_icon()` (3), `extract_playlist_id()`/`extract_video_id()` (11), `normalize_artist_name()` (6), `score_result()` (9).
 - LikeStatus persistence: `CompactSongRef` gains `like_status` field with `#[serde(default)]` backward compat.
+- Total youtui tests: 124 (was 103).
 
-#### Previous Session Features (Unchanged)
-- **Heart icon** persisted across sessions via queue save/load
-- **Library tracks** Phase A+B+D (SEARCH indicator, selection highlight, sort/filter popups)
-- **Force split** (`o.f`), **Playlist editor** (vim-driven, overwrite save)
-- **Album URL auto-detect** (playlist-based URLs)
-- **Like/subscribe** from album tracks
-- **Metadata pipeline** (scoring, title cleaning, Discogs fix, MA_COOKIE, genre aliasing)
+### Keybinding Additions
+| Key | Action | View |
+|---|---|---|
+| `o.f` | ForceSplitAlbum | Queue |
+| `o.e` | OpenPlaylistEditor | Library tracks |
+| `o.t` | RatePlaylist (like album) | Album tracks |
+| `o.S` | SubscribeToArtist | Album tracks |
+| `o.U` | UnsubscribeFromArtist | Album tracks |
+| `o.z` | SortAction::Close | Library tracks |
+| `o.c` | FilterAction::Close | Library tracks |
+
+### Metadata Pipeline (Committed This Session)
+- **Scoring system**: `MetadataRegistry::score_result()` — +50 tracklist, +20 album match, +10 artist match, +10 year present.
+- **Discogs `q=` search**: combined artist+album search (was broken structured `artist=&album=`).
+- **Discogs fallback**: when exact match fails, retry with `q=artist` only.
+- **url_added removed**: URL-added songs now split correctly.
+- **Per-track validation removed**: corrupted correct split-track metadata.
+- **MA_COOKIE direct access**: cookie-based Metal Archives bypass (ENV var + config file).
+- **metal-proxy**: pure Rust background server on port 5000, cookie-based, no browser.
+- **Genre aliasing**: 3,713 genres normalized, 26 tests.
 
 ### Fixed Bugs
-- Log viewer toggle (F11) now exits properly
-- Year stripping unused variable warning
-- Discogs structured search → combined search
-- `url_added` removed (blocked URL song splitting)
-- Per-track validation removed (corrupted split-track metadata)
+- Log viewer toggle (F11) now exits properly.
+- Year stripping unused variable warning removed.
+- Discogs structured search → combined search.
+- `url_added` removed (blocked URL song splitting).
+- Per-track validation removed (corrupted split-track metadata).
+- o.v album art popup: separate ClosePopup handler (no context corruption).
+- o.v: sixel data stored in `w.sixel_data` for cleanup.
 
-### Known Issues
-- **Album art 4x4**: Small square inside bordered status block. Larger art not possible without breaking 6-line constraint.
-- **Album `audio_playlist_id`**: May be `None` for some album types (singles, EPs). `o.t` silently no-ops.
-- **Related tracks metadata**: YTM watch-playlist API returns no album/year.
-- **Album URL tracks bypass metadata pipeline**: No album splitting for these.
-- **Force-split visual feedback**: No toast/notification. Check logs.
-- **Sixel album art**: May persist after popup close. Temp workaround: resize terminal.
+### Previous Session Features (Unchanged)
+- Metadata pipeline (providers, Discogs, MA_COOKIE, genre aliasing).
+- Library tracks Phase A+B (delete re-route, filtered indices).
+- Heart icon persisted across sessions via queue save/load.
+- Force split (`o.f`), Playlist editor (vim-driven, overwrite save).
+- Album URL auto-detect (playlist-based URLs).
+- Like/subscribe from album tracks.
 
 ## Notes Popup Features
 - Vim-driven text editor for storing URLs, song links, personal notes
@@ -413,18 +450,13 @@ Test each item, report bugs before commit.
 ### P2: FFT footer bars (low priority)
 **Problem**: No FFT frequency bars in footer (roadmap feature, not wired yet).
 
-### P2: Fix test counts in docs
-**Problem**: `json-crawler` says 8 tests but actual is 2 (0 lib + 2 doctests). `async-callback-manager` says 15 but actual is 14 (3 lib + 11 integ).
+### P2: Sixel album art persistence
+**Problem**: Sixel centering/sizing not fully correct. Sixel persistence after popup close can corrupt main window. Partially fixed: sixel data stored in `w.sixel_data` for cleanup. Root cause: `\x1bP0p\x1b\\` DCS clear not supported on all terminals (foot may handle it intermittently). Fix: render blank sixel over popup area on close.
 
-**Files**: This file (CLAUDE.md), header section "Tests"
+**Files**: `youtui/src/app/ui/draw.rs`
 
-### P2: Footer indicator icons
-**Problem**: Shuffle/repeat/scrobble indicators in footer use small icons. Upgrade to monochrome blocks/bars.
-
-### P2: Album art popup sixel fix
-**Problem**: Sixel centering not perfect, sixel persistence after close corrupts main window. Needs dedicated sixel layer management. Known bug.
-
-**Files**: `youtui/src/app/ui/browser/album_art_popup.rs`
+### P3: Like album to library
+**Problem**: `o.t` rates audio_playlist_id (likes the playlist) but doesn't add album to user's library/Albums section in YT Music profile. Needs new API endpoint for "add to library" for albums.
 
 ### P3: Genius annotations fallback (page scrape)
 **Problem**: Without `GENIUS_TOKEN`, `__INITIAL_STATE__` scraping fails on most pages. Need a fallback web-scraping path.

@@ -52,32 +52,27 @@
 - Keybinding additions: o.q/o.L/o.Q/o.m/o.n (queue), o.r (library)
 - Dead code cleanup
 
-#### Session 2026-06-24 (Uncommitted — Testing Needed)
-See `CLAUDE.md` "Session 2026-06-24" section for full feature list.
-
-**What's implemented:**
-- Footer heart icon (filled 󰋑 / empty ♥)
-- Library tracks Phase D: [SEARCH] indicator + selection highlight + filtered nav
-- Library tracks Phase C: sort/filter popups (o.z/o.c)
+#### Session 2026-06-24 (Committed)
+- Footer: 5-line Status block, album art 7-char, heart icon, MDI Nerd Font icons
+- Library tracks Phase C+D: sort/filter popups, [SEARCH] indicator
 - Like/subscribe/unsubscribe from album tracks view (o.t/o.S/o.U)
-- Force-split (o.f) — re-validate + re-split selected song
-- Playlist editor with overwrite save (o.e → :w fetch+remove+add)
+- Force-split (o.f) + playlist editor overwrite save
 - Album URL auto-detection (OLAK5uy_ via playlist?list=)
-- Metadata pipeline: resolver scoring, title cleaning refactor, original_album preservation
-- Discogs priority 30→8, per-track validation removed, url_added removed
-
-**What needs testing:** All 12 items in CLAUDE.md "NEEDS TESTING" table.
+- Green lettering for playing song across ALL browser tabs
+- Album art popup (o.v): 95% centered, sixel data stored for cleanup
+- Metadata pipeline: resolver scoring, Discogs fix, url_added removed, per-track validation removed
+- 29 new tests (youtui: 103→124)
 
 ## Test Status
-- youtui: 103/103 pass, 4 ignored, 0 warnings
+- youtui: 124/124 pass, 4 ignored, 0 warnings
 - metadata-provider: 19/19 pass, 0 warnings
 - ytmapi-rs lib: 85/85 pass
 - ViTextEditor: 65/65 pass
 - genius-rs: 14/14 pass
-- ytmapi-cli: 3/3 pass (+4 new later)
+- ytmapi-cli: 7/7 pass
 - json-crawler: 2/2 pass (0 lib + 2 doctests)
 - async-callback-manager: 14/14 pass (3 lib + 11 integ)
-- **Total: ~305/305 pass, 0 fail, 4 ignored, 0 warnings**
+- **Total: ~330/330 pass, 0 fail, 4 ignored, 0 warnings**
 
 ## Remaining
 - Genius annotations: individual page scrape fallback (no __INITIAL_STATE__)
@@ -85,5 +80,5 @@ See `CLAUDE.md` "Session 2026-06-24" section for full feature list.
 - ytmapi-cli: more fixture types, streaming tests
 - Crate extraction: audio-player (deep async_rodio_sink coupling)
 - Related tracks metadata enrichment (YTM API limitation — no album/year)
-- Test and commit session 2026-06-24 features
 - Back navigation (F7 tab cycle) push_state_snapshot fix
+- Like album to library (add to YT Music profile under Albums)

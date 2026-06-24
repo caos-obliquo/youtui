@@ -54,31 +54,33 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - **1**: `f`/`F`/`t`/`T` motions + `;`/`,` repeat
 - **2**: `r` replace single char
 
-### Session 2026-06-24 (Uncommitted)
-- Footer heart icon (like indicator for all songs)
-- Library tracks Phase D: [SEARCH] indicator + selection + filtered nav
-- Library tracks Phase C: sort/filter popups via o.z/o.c
-- Like album (o.t), subscribe/unsubscribe artist (o.S/o.U) from album tracks
+### Session 2026-06-24 (Committed)
+- Footer heart icon, 5-line Status block, album art 7-char wide
+- Nerd Font MDI icons: repeat `󰑖`/`󰑗`/`󰑘`, shuffle `󰒝`, heart `󰋑`
+- Library tracks Phase C+D: sort/filter popups via o.z/o.c, [SEARCH] indicator
+- Like/subscribe/unsubscribe from album tracks view (o.t/o.S/o.U)
 - Force-split (o.f) + playlist editor overwrite save
 - Album URL auto-detection (OLAK5uy_ via playlist?list=)
-- Metadata pipeline: resolver scoring, original_album preservation, title cleaning refactor
-- Discogs fix, per-track validation removed, url_added removed
+- Green lettering for playing song across ALL browser tabs
+- Album art popup (o.v): 95% centered, sixel data stored for cleanup
+- Metadata pipeline: resolver scoring, Discogs fix, url_added removed, per-track validation removed
+- 29 new tests (youtui: 103→124)
 
 ## Priority Order (next steps)
 
 | # | Step | File(s) | Est |
 |---|------|---------|-----|
-| 1 | **Test session 2026-06-24 features** | all changed files | verify |
+| 1 | **Back navigation (F7 tab cycle)** | `browser.rs` | med |
 | 2 | `C-r` redo (commit) | `libs/vi-text-editor/src/lib.rs` + 6 callers | ✓ ready |
 | 3 | `.` repeat last change | `libs/vi-text-editor/src/lib.rs` | med |
 | 4 | `J` join lines | `libs/vi-text-editor/src/lib.rs` | small |
 | 5 | `~` toggle case | `libs/vi-text-editor/src/lib.rs` | small |
 | 6 | Lyrics hybrid line numbers | `lyrics_popup.rs` | med |
-| 7 | Footer album format fix | `footer.rs` | small |
-| 8 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
-| 9 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
-| 10 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
-| 11 | Back navigation (F7 tab cycle) | `browser.rs` | med |
+| 7 | Like album to library (add to YT Music profile) | `albumsearch.rs` + ytmapi-rs | med |
+| 8 | Footer album format fix | `footer.rs` | small |
+| 9 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
+| 10 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
+| 11 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
 | 12 | Build + full test suite | verify | verify |
 
 ### Step details
