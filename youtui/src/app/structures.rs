@@ -138,6 +138,47 @@ impl From<ParsedUploadArtist> for ListSongArtist {
 pub fn normalize_artist_name(name: &str) -> String {
     let trimmed = name.trim();
     if trimmed.is_empty() { return String::new(); }
+    // Strip leading bracket prefix like "[hate5six] Sunami" -> "Sunami"
+    let trimmed = {
+        let s = trimmed;
+        if s.starts_with('[') {
+            if let Some(close) = s.find(']') {
+                let after = s[close + 1..].trim();
+                if !after.is_empty() { after } else { s }
+            } else { s }
+        } else { s }
+    };
+    // Strip YouTube " - Topic" suffix (auto-generated topic channels)
+    let trimmed = {
+        let s = trimmed;
+        let lower = s.to_lowercase();
+        if lower.ends_with(" - topic") {
+            s[..s.len() - 8].trim()
+        } else {
+            s
+        }
+    };
+    // Strip Discogs disambiguation suffix like " (2)", " (3)" etc.
+    let trimmed = {
+        let s = trimmed;
+        if let Some(paren) = s.rfind(" (") {
+            let inner = s[paren + 2..].trim_end_matches(')');
+            if inner.chars().all(|c| c.is_ascii_digit()) {
+                s[..paren].trim()
+            } else {
+                s
+            }
+        } else {
+            s
+        }
+    };
+    // If ALL uppercase (e.g. "SUNAMI"), convert to proper case like "Sunami"
+    if !trimmed.is_empty() && trimmed.chars().all(|c| !c.is_alphabetic() || c.is_uppercase()) {
+        let lowered = trimmed.to_lowercase();
+        let mut chars = lowered.chars();
+        let first = chars.next().unwrap().to_uppercase().to_string();
+        return first + chars.as_str();
+    }
     let mut chars = trimmed.chars();
     let first = chars.next().unwrap().to_uppercase().to_string();
     first + chars.as_str()
@@ -475,10 +516,30 @@ impl BrowserSongsList {
             id,
             year: year.map(std::rc::Rc::new),
             artists: MaybeRc::Owned(vec![ListSongArtist {
-                name: artist,
+                name: normalize_artist_name(&artist),
                 id: None,
             }]),
-            album: album.map(Into::into).map(MaybeRc::Owned),
+            album: album.map(|a| {
+                let mut album: ListSongAlbum = a.into();
+                // Strip "YouTube: " prefix from album name (uploader channel)
+                let lower = album.name.to_lowercase();
+                if lower.starts_with("youtube: ") {
+                    album.name = album.name[9..].trim().to_string();
+                }
+                // Strip " - Topic" suffix from album name (auto-generated topic channel)
+                let lower = album.name.to_lowercase();
+                if lower.ends_with(" - topic") {
+                    album.name = album.name[..album.name.len() - 8].trim().to_string();
+                }
+                // Strip leading bracket prefix like "[hate5six] Sunami" -> "Sunami"
+                if album.name.starts_with('[') {
+                    if let Some(close) = album.name.find(']') {
+                        let after = album.name[close + 1..].trim().to_string();
+                        if !after.is_empty() { album.name = after; }
+                    }
+                }
+                album
+            }).map(MaybeRc::Owned),
             actual_duration: None,
             video_id,
             track_no: None,
@@ -722,7 +783,7 @@ mod normalize_tests {
 
     #[test]
     fn norm_uppercase() {
-        assert_eq!(normalize_artist_name("METALLICA"), "METALLICA");
+        assert_eq!(normalize_artist_name("METALLICA"), "Metallica");
     }
 
     #[test]

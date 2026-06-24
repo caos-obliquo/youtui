@@ -595,6 +595,16 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                                 song.year = Some(Rc::new(y.to_string()));
                             }
                         }
+                        // Fallback: extract year from song title (e.g. "ST LP 2023")
+                        if song.year.is_none() {
+                            if let Some(y) = song.title.split(|c: char| !c.is_ascii_digit())
+                                .find(|p| p.len() == 4)
+                                .and_then(|p| p.parse::<u16>().ok())
+                                .filter(|y| (1900..2100).contains(y))
+                            {
+                                song.year = Some(Rc::new(y.to_string()));
+                            }
+                        }
                         if let Some(ref artist) = data.artist {
                             let normalized = crate::app::structures::normalize_artist_name(artist);
                             song.artists = crate::app::structures::MaybeRc::Owned(vec![

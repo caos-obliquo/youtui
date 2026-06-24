@@ -1026,9 +1026,8 @@ impl Playlist {
             };
             (video_raw, album_artist, album_year, src_arc)
         };
-        // Use original album name if available (from YouTube video title),
-        // fall back to the metadata-provided album name
-        let album_name = original_album.clone().or_else(|| album.clone());
+        // Use metadata-provided album name, fall back to original YouTube title
+        let album_name = album.clone().or_else(|| original_album.clone());
 
         // Guard: skip if tracks already exist for this video_id (cascade prevention)
         let existing_tracks = self.list.get_list_iter()
@@ -1134,6 +1133,127 @@ impl Playlist {
         self.scrobbling_config = config;
     }
 
+    /// Clean song title for metadata lookup: strip artist prefix, noise tags, album metadata tags, year
+    fn clean_title_for_metadata(artist: &str, title: &str) -> String {
+        // Strip "{artist} - " prefix from title (case-insensitive) for clean metadata
+        let s = {
+            let lower = title.to_lowercase();
+            let art_lower = artist.to_lowercase();
+            if lower.starts_with(&format!("{} - ", art_lower)) {
+                title[artist.len() + 3..].trim().to_string()
+            } else if lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
+                title[artist.len()..].trim().to_string()
+            } else {
+                title.to_string()
+            }
+        };
+        // Strip YouTube noise patterns from title end
+        let s = {
+            let noise_tags = [
+                "official audio", "official video", "lyric video", "lyrics",
+                "legendado", "c legendado", "c legenda", "com legenda",
+                "com legendado", "legendado pt", "legendado pt-br",
+                "subtitle", "subtitles",
+            ];
+            let mut s = s;
+            loop {
+                let lower = s.to_lowercase().trim().to_string();
+                let mut found = false;
+                for tag in &noise_tags {
+                    if let Some(pos) = lower.rfind(tag) {
+                        let before = &s[..pos].trim();
+                        let cut = if let Some(paren_start) = before.rfind('(') {
+                            let between = &before[paren_start..];
+                            if between.to_lowercase().contains(tag) {
+                                &before[..paren_start.max(1).saturating_sub(1)]
+                            } else {
+                                &s[..pos]
+                            }
+                        } else {
+                            &s[..pos]
+                        };
+                        if cut.len() < s.len() {
+                            s = cut.trim().to_string();
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if !found {
+                    s = s.trim_end_matches(|c| c == '(').trim().to_string();
+                    break;
+                }
+            }
+            s.trim().to_string()
+        };
+        // Strip parenthesized/bracketed groups containing album metadata tags
+        let s = {
+            let mut s = s;
+            let tags = [
+                "studio album", "live album", "full-length album", "full-length",
+                "full album", "full ep", "full lp", "full demo", "full single",
+                "official album", "compilation", "bootleg", "anthology", "collection",
+                "self-titled", "self titled", "s/t",
+                "single", "demo", "ep", "lp", "album", "singles",
+            ];
+            loop {
+                let chars: Vec<char> = s.chars().collect();
+                let mut modified = false;
+                let mut i = 0;
+                while i < chars.len() {
+                    if chars[i] == '(' || chars[i] == '[' {
+                        let open = i;
+                        let mut depth = 1;
+                        i += 1;
+                        while i < chars.len() && depth > 0 {
+                            if chars[i] == '(' || chars[i] == '[' { depth += 1; }
+                            else if chars[i] == ')' || chars[i] == ']' { depth -= 1; }
+                            i += 1;
+                        }
+                        if depth == 0 {
+                            let group: String = chars[open..i].iter().collect();
+                            let group_lower = group.to_lowercase();
+                            if tags.iter().any(|tag| group_lower.contains(tag)) {
+                                let before: String = chars[..open].iter().collect();
+                                let after: String = chars[i..].iter().collect();
+                                s = format!("{}{}", before.trim(), after.trim()).trim().to_string();
+                                modified = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+                if !modified { break; }
+            }
+            s.trim_end_matches(|c: char| c == '(' || c == '[' || c == '-' || c == ',' || c == '.')
+                .trim().to_string()
+        };
+        // Strip extracted year from title
+        let s = {
+            let lower = s.to_lowercase();
+            if let Some(paren) = lower.rfind("(") {
+                let inner = lower[paren..].trim_matches(|c| c == '(' || c == ')' || c == ' ');
+                if inner.split(|c: char| !c.is_ascii_digit())
+                    .find(|p| p.len() == 4)
+                    .and_then(|p| {
+                        let y = p.parse::<u16>().ok()?;
+                        if (1900..2100).contains(&y) { Some(y) } else { None }
+                    })
+                    .is_some()
+                {
+                    s[..paren].trim().to_string()
+                } else {
+                    s
+                }
+            } else {
+                s
+            }
+        };
+        s
+    }
+
     pub fn add_yt_video(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, url: &str) -> ComponentEffect<Self> {
         use ytmapi_rs::common::YoutubeID;
         let raw_id = video_id.get_raw().to_string();
@@ -1204,134 +1324,7 @@ impl Playlist {
         };
         let year = year.or(title_year);
 
-        // Strip "{artist} - " prefix from title (case-insensitive) for clean metadata
-        // Also strip bare artist prefix when no separator (e.g. "Artist Song Title")
-        let clean_title = {
-            let lower = title.to_lowercase();
-            let art_lower = artist.to_lowercase();
-            if lower.starts_with(&format!("{} - ", art_lower)) {
-                title[artist.len() + 3..].trim().to_string()
-            } else if lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
-                // Title starts with artist name without separator
-                // Only strip if what follows isn't also the artist name (avoid over-stripping)
-                title[artist.len()..].trim().to_string()
-            } else {
-                title.to_string()
-            }
-        };
-        // Strip YouTube noise patterns from title end for metadata lookup
-        let clean_title = {
-            let noise_tags = [
-                "official audio", "official video", "lyric video", "lyrics",
-                "legendado", "c legendado", "c legenda", "com legenda",
-                "com legendado", "legendado pt", "legendado pt-br",
-                "subtitle", "subtitles",
-            ];
-            let mut s = clean_title;
-            // Repeatedly strip noise patterns from end (after stripping parenthesized variants too)
-            loop {
-                let lower = s.to_lowercase().trim().to_string();
-                let mut found = false;
-                for tag in &noise_tags {
-                    if let Some(pos) = lower.rfind(tag) {
-                        // Check if we can strip from this position to end
-                        let before = &s[..pos].trim();
-                        // Strip parenthesized variant like "(Official Audio)" 
-                        let cut = if let Some(paren_start) = before.rfind('(') {
-                            let between = &before[paren_start..];
-                            if between.to_lowercase().contains(tag) {
-                                &before[..paren_start.max(1).saturating_sub(1)]
-                            } else {
-                                &s[..pos]
-                            }
-                        } else {
-                            &s[..pos]
-                        };
-                        if cut.len() < s.len() {
-                            s = cut.trim().to_string();
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if !found {
-                    // Trim any dangling open-paren left after strip
-                    s = s.trim_end_matches(|c| c == '(').trim().to_string();
-                    break;
-                }
-            }
-            s.trim().to_string()
-        };
-        // Strip parenthesized/bracketed groups containing album metadata tags
-        // Only matches tags inside paren/bracket groups — never bare in title text
-        // Sorted longest-first so multi-word tags match before single-word substrings
-        let clean_title = {
-            let mut s = clean_title;
-            let tags = [
-                "studio album", "live album", "full-length album", "full-length",
-                "full album", "full ep", "full lp", "full demo", "full single",
-                "official album", "compilation", "bootleg", "anthology", "collection",
-                "single", "demo", "ep", "lp", "album", "singles",
-            ];
-
-            loop {
-                let chars: Vec<char> = s.chars().collect();
-                let mut modified = false;
-                let mut i = 0;
-                while i < chars.len() {
-                    if chars[i] == '(' || chars[i] == '[' {
-                        let open = i;
-                        let mut depth = 1;
-                        i += 1;
-                        while i < chars.len() && depth > 0 {
-                            if chars[i] == '(' || chars[i] == '[' { depth += 1; }
-                            else if chars[i] == ')' || chars[i] == ']' { depth -= 1; }
-                            i += 1;
-                        }
-                        if depth == 0 {
-                            let group: String = chars[open..i].iter().collect();
-                            let group_lower = group.to_lowercase();
-                            if tags.iter().any(|tag| group_lower.contains(tag)) {
-                                let before: String = chars[..open].iter().collect();
-                                let after: String = chars[i..].iter().collect();
-                                s = format!("{}{}", before.trim(), after.trim()).trim().to_string();
-                                modified = true;
-                                break;
-                            }
-                        }
-                    } else {
-                        i += 1;
-                    }
-                }
-                if !modified { break; }
-            }
-
-            // Trim residual trailing punctuation left after stripping groups
-            s.trim_end_matches(|c: char| c == '(' || c == '[' || c == '-' || c == ',' || c == '.')
-                .trim().to_string()
-        };
-        // Strip extracted year from title for metadata matching
-        // e.g. "The Limits of Painting & Poetry (2000)" → "The Limits of Painting & Poetry"
-        let clean_title = {
-            let lower = clean_title.to_lowercase();
-            if let Some(paren) = lower.rfind("(") {
-                let inner = lower[paren..].trim_matches(|c| c == '(' || c == ')' || c == ' ');
-                if inner.split(|c: char| !c.is_ascii_digit())
-                    .find(|p| p.len() == 4)
-                    .and_then(|p| {
-                        let y = p.parse::<u16>().ok()?;
-                        if (1900..2100).contains(&y) { Some(y) } else { None }
-                    })
-                    .is_some()
-                {
-                    clean_title[..paren].trim().to_string()
-                } else {
-                    clean_title
-                }
-            } else {
-                clean_title
-            }
-        };
+        let clean_title = Self::clean_title_for_metadata(&artist, &title);
         let song = ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
             clean_title.clone(), artist.clone(), video_id, None, format!("{}", duration),
         );
@@ -1719,6 +1712,21 @@ impl Playlist {
             self.cur_selected = self.cur_selected.min(self.get_max_visual_index());
         }
 
+        // Spawn metadata validation for first added song (enables album splitting)
+        if let Some(song) = self.get_song_from_id(first_id) {
+            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+            if !artist.is_empty() {
+                let clean_title = Self::clean_title_for_metadata(&artist, &song.title);
+                let validation_task = AsyncTask::new_future_try(
+                    ValidateMetadata(artist, clean_title, first_id, self.scrobbling_config.api_key.clone(),
+                        Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty())),
+                    HandleMetadataValidated(first_id),
+                    HandleMetadataValidationError,
+                    None,
+                );
+                return (first_id, effect.push(validation_task));
+            }
+        }
         (first_id, effect)
     }
 
