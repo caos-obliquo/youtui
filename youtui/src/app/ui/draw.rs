@@ -79,15 +79,15 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     let context_selected = !w.help.shown && !w.key_pending();
     match w.context {
         WindowContext::Browser => {
-            // Set current playing video ID for library browser highlight
+            // Set current playing video ID for all browser playing indicators
             if let Some(id) = w.playlist.get_cur_playing_id() {
                 if let Some(song) = w.playlist.get_song_from_id(id) {
-                    w.browser.library_browser.cur_playing_video_id = Some(song.video_id.clone());
+                    w.browser.set_cur_playing_video_id(Some(song.video_id.clone()));
                 } else {
-                    w.browser.library_browser.cur_playing_video_id = None;
+                    w.browser.set_cur_playing_video_id(None);
                 }
             } else {
-                w.browser.library_browser.cur_playing_video_id = None;
+                w.browser.set_cur_playing_video_id(None);
             }
             w.browser
                 .draw_mut_chunk(f, window_chunk, context_selected, w.tick);

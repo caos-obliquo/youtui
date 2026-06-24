@@ -43,6 +43,7 @@ pub struct AlbumSongsPanel {
     pub category_filter: Option<&'static str>,
     filtered_cache: Vec<ListSong>,
     pub local_filter_text: String,
+    pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
 }
 impl_youtui_component!(AlbumSongsPanel);
 
@@ -101,6 +102,7 @@ impl AlbumSongsPanel {
             category_filter: None,
             filtered_cache: Vec::new(),
             local_filter_text: String::new(),
+            cur_playing_video_id: None,
         }
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
@@ -404,7 +406,9 @@ impl TableView for AlbumSongsPanel {
         ["#", "Album", "Song", "Duration", "Year"].into_iter()
     }
     fn get_highlighted_row(&self) -> Option<usize> {
-        None
+        self.cur_playing_video_id.as_ref().and_then(|vid| {
+            self.list.get_list_iter().position(|s| s.video_id == *vid)
+        })
     }
     fn get_mut_state(&mut self) -> &mut ScrollingTableState {
         &mut self.widget_state
