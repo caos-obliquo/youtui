@@ -31,7 +31,7 @@ use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
 use crate::widgets::ScrollingTableState;
 use action::{AppAction, ListAction, PAGE_KEY_LINES, SEEK_AMOUNT, TextEntryAction};
 use async_callback_manager::{AsyncTask, Constraint};
-use crossterm::event::{Event, KeyCode, KeyEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use itertools::Either;
 use std::time::Duration;
 
@@ -746,6 +746,8 @@ impl YoutuiWindow {
                                         content,
                                     ),
                                 );
+                                self.prev_context = self.context;
+                                self.context = WindowContext::Notes;
                                 return AsyncTask::new_no_op().into();
                             }
                             if cmd.starts_with("http://") || cmd.starts_with("https://") || cmd.starts_with("youtu") {
@@ -788,6 +790,14 @@ impl YoutuiWindow {
         // Route events to popup if one is active
         if self.lyrics_popup.is_some() {
             if let Event::Key(k) = event {
+                // `:` key opens command mode; route before popup swallows it
+                tracing::info!("lyrics popup key: code={:?}, mods={:?}", k.code, k.modifiers);
+                if k.code == KeyCode::Char(':') && k.modifiers == KeyModifiers::NONE {
+                    tracing::info!("colon intercepted, setting command_mode");
+                    self.command_mode = true;
+                    self.command_editor.clear();
+                    return AsyncTask::new_no_op().into();
+                }
                 let popup = self.lyrics_popup.as_mut().unwrap();
                 let (effect, callback) = popup.handle_key(k);
                 let effect = effect.map_frontend(|this: &mut Self| {
@@ -1406,26 +1416,31 @@ impl YoutuiWindow {
             this.lyrics_popup.as_mut().expect("just set")
         });
 
-        use crate::app::server::GetAnnotations;
-        let ann_artist = artist.clone();
-        let ann_title = title.clone();
-        let gen_id2 = self.lyrics_generation;
-        let ann_effect: ComponentEffect<YoutuiWindow> = AsyncTask::new_future_try(
-            GetAnnotations(artist, title, genius_token),
-            HandleGetAnnotationsOk,
-            HandleGetAnnotationsErr,
-            None,
-        )
-        .map_frontend(move |this: &mut Self| {
-            if this.lyrics_generation != gen_id2 {
-                return this.lyrics_popup.as_mut().expect("popup exists");
-            }
-            if this.lyrics_popup.is_none() {
-                this.lyrics_popup = Some(LyricsPopup::new(ann_artist, ann_title));
-            }
-            this.lyrics_popup.as_mut().expect("just set")
-        });
-        effect.push(ann_effect)
+        // Annotations: only fetch if token available
+        if !genius_token.is_empty() {
+            use crate::app::server::GetAnnotations;
+            let ann_artist = artist.clone();
+            let ann_title = title.clone();
+            let gen_id2 = self.lyrics_generation;
+            let ann_effect: ComponentEffect<YoutuiWindow> = AsyncTask::new_future_try(
+                GetAnnotations(artist, title, genius_token),
+                HandleGetAnnotationsOk,
+                HandleGetAnnotationsErr,
+                None,
+            )
+            .map_frontend(move |this: &mut Self| {
+                if this.lyrics_generation != gen_id2 {
+                    return this.lyrics_popup.as_mut().expect("popup exists");
+                }
+                if this.lyrics_popup.is_none() {
+                    this.lyrics_popup = Some(LyricsPopup::new(ann_artist, ann_title));
+                }
+                this.lyrics_popup.as_mut().expect("just set")
+            });
+            effect.push(ann_effect)
+        } else {
+            effect
+        }
     }
     pub fn play_yt_url(&mut self, url: String) -> ComponentEffect<Self> {
         use ytmapi_rs::common::YoutubeID;
@@ -1474,6 +1489,16 @@ impl YoutuiWindow {
     }
 
     pub fn close_popup(&mut self) {
+        // Notes can be stacked on top of another popup (e.g. lyrics)
+        // Only clear notes, keep parent popup intact
+        if self.context == WindowContext::Notes && self.notes_popup.is_some() {
+            tracing::info!("close_popup: notes stacked -> restore prev_context={:?}, lyrics_popup={}",
+                self.prev_context, self.lyrics_popup.is_some());
+            self.notes_popup = None;
+            self.context = self.prev_context;
+            self.prev_context = WindowContext::Browser;
+            return;
+        }
         self.playlist_save_popup = None;
         self.playlist_update_popup = None;
         self.lyrics_popup = None;
