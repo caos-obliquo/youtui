@@ -799,6 +799,7 @@ impl Browser {
         }
     }
     pub fn handle_change_search_type(&mut self) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
+        self.push_snapshot();
         match self.variant {
             BrowserVariant::Artist => {
                 self.variant = BrowserVariant::Album;
