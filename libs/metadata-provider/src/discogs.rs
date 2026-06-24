@@ -42,6 +42,20 @@ impl MetadataProvider for DiscogsProvider {
                 d.get("results").and_then(|a| a.as_array()).cloned().unwrap_or_default()
             };
 
+            // Helper: find first result matching artist by title field ("Artist - Album Title")
+            let find_artist_result = |items: &[serde_json::Value]| -> Option<serde_json::Value> {
+                let art_low = artist.to_lowercase();
+                for r in items {
+                    if let Some(title) = r.get("title").and_then(|t| t.as_str()) {
+                        let artist_part = title.split(" - ").next().unwrap_or("").to_lowercase();
+                        if artist_part.contains(&art_low) || art_low.contains(&artist_part) {
+                            return Some(r.clone());
+                        }
+                    }
+                }
+                None
+            };
+
             // If exact search found nothing, try broader artist-only search
             let first = if results.is_empty() {
                 tracing::debug!("Discogs exact search found nothing for {} - {}, trying artist fallback", artist, title);
@@ -56,9 +70,12 @@ impl MetadataProvider for DiscogsProvider {
                 }
                 let fb_resp = fb_req.send().await.ok()?;
                 let fb_data: serde_json::Value = fb_resp.json().await.ok()?;
-                fb_data.get("results")?.as_array()?.first()?.clone()
+                let fb_items = fb_data.get("results")?.as_array()?;
+                find_artist_result(fb_items)
+                    .or_else(|| fb_items.first().cloned())?
             } else {
-                results.first()?.clone()
+                find_artist_result(&results)
+                    .or_else(|| results.first().cloned())?
             };
             let year = first.get("year").and_then(|y| y.as_i64()).map(|y| y.to_string());
             let master_id = first.get("master_id")?.as_i64()?;

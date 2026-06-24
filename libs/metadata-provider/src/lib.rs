@@ -71,19 +71,20 @@ impl MetadataRegistry {
     /// Score how closely a provider result matches the search query
     fn score_result(meta: &ValidatedMetadata, artist: &str, title: &str) -> i32 {
         let mut score = 0;
+        let mut artist_ok = false;
+        // Artist match is CRITICAL — heavy weight
+        if let Some(ref a) = meta.artist {
+            let a_low = util::norm_for_lfm(a).to_lowercase();
+            let art_low = util::norm_for_lfm(artist).to_lowercase();
+            if a_low == art_low { score += 50; artist_ok = true; }
+            else if a_low.contains(&art_low) || art_low.contains(&a_low) { score += 10; }
+        }
         // album_tracks present: +100 (most important — enables splitting)
         if !meta.album_tracks.is_empty() { score += 100; }
         // album name present: +10
         if meta.album.is_some() { score += 10; }
         // year present: +5
         if meta.year.is_some() { score += 5; }
-        // Artist matches search artist: +3
-        if let Some(ref a) = meta.artist {
-            let a_low = a.to_lowercase();
-            let art_low = artist.to_lowercase();
-            if a_low == art_low { score += 3; }
-            else if a_low.contains(&art_low) || art_low.contains(&a_low) { score += 1; }
-        }
         // Album name matches or contains search title: +15 (strong signal)
         if let Some(ref a) = meta.album {
             let a_low = a.to_lowercase();
@@ -97,6 +98,16 @@ impl MetadataRegistry {
         }
         // More tracks = more complete: +2 per track (up to +30)
         score += (meta.album_tracks.len() as i32).min(15) * 2;
+        // PENALTY: if artist IS present but doesn't match at all — wrong band
+        if !artist_ok {
+            if let Some(ref a) = meta.artist {
+                let a_low = util::norm_for_lfm(a).to_lowercase();
+                let art_low = util::norm_for_lfm(artist).to_lowercase();
+                if !a_low.contains(&art_low) && !art_low.contains(&a_low) {
+                    score -= 500;
+                }
+            }
+        }
         score
     }
 
@@ -204,23 +215,23 @@ mod tests {
     fn score_exact_artist_and_album_title() {
         let meta = make_meta(Some("Metallica"), Some("Master of Puppets"), None, 0);
         let score = MetadataRegistry::score_result(&meta, "Metallica", "Master of Puppets");
-        // album(10) + artist(3) + album_title(15) + and_norm(10) = 38
-        assert_eq!(score, 38);
+        // album(10) + artist_exact(50) + album_title(15) + and_norm(10) = 85
+        assert_eq!(score, 85);
     }
 
     #[test]
     fn score_artist_contains_bonus() {
         let meta = make_meta(Some("The Beatles Band"), None, None, 0);
         let score = MetadataRegistry::score_result(&meta, "Beatles", "Title");
-        assert_eq!(score, 1); // contains match only
+        assert_eq!(score, 10); // contains match only (now +10)
     }
 
     #[test]
     fn score_and_normalization_boost() {
         let meta = make_meta(Some("Band"), Some("Rock & Roll"), None, 0);
         let score = MetadataRegistry::score_result(&meta, "Band", "Rock and Roll");
-        // album(10) + artist_exact(3) + and_norm(10) = 23
-        assert_eq!(score, 23);
+        // album(10) + artist_exact(50) + and_norm(10) = 70
+        assert_eq!(score, 70);
     }
 
     #[test]
@@ -241,8 +252,8 @@ mod tests {
     fn score_complete_metadata() {
         let meta = make_meta(Some("Metallica"), Some("Master of Puppets"), Some("1986"), 8);
         let score = MetadataRegistry::score_result(&meta, "Metallica", "Master of Puppets");
-        // tracks(100) + album(10) + year(5) + artist_exact(3) + album_title(15) + and_norm(10) + 8*2 = 159
-        assert_eq!(score, 159);
+        // tracks(100) + album(10) + year(5) + artist_exact(50) + album_title(15) + and_norm(10) + 8*2 = 206
+        assert_eq!(score, 206);
     }
 
     #[test]
