@@ -4,7 +4,7 @@ use crate::common::{
     ApiOutcome, FeedbackTokenAddToLibrary, FeedbackTokenRemoveFromLibrary, YoutubeID,
 };
 use crate::parse::{
-    Episode, LibraryArtist, LibraryArtistSubscription, LibraryChannel, LibraryPlaylist, LibraryPodcast,
+    LibraryArtist, LibraryArtistSubscription, LibraryChannel, LibraryPlaylist, LibraryPodcast,
     SearchResultAlbum, TableListSong,
 };
 use serde_json::json;
@@ -328,39 +328,5 @@ pub(crate) fn get_sort_order_params(o: &GetLibrarySortOrder) -> Option<&'static 
         GetLibrarySortOrder::NameDesc => Some("ggMGKgQIARAB"),
         GetLibrarySortOrder::RecentlySaved => Some("ggMGKgQIABAB"),
         GetLibrarySortOrder::Default => None,
-    }
-}
-
-#[derive(Default, Clone)]
-pub struct GetSavedEpisodesQuery {
-    sort_order: GetLibrarySortOrder,
-}
-
-impl GetSavedEpisodesQuery {
-    pub fn new(sort_order: GetLibrarySortOrder) -> Self {
-        Self { sort_order }
-    }
-}
-
-impl<A: LoggedIn> Query<A> for GetSavedEpisodesQuery {
-    type Output = Vec<Episode>;
-    type Method = PostMethod;
-}
-impl PostQuery for GetSavedEpisodesQuery {
-    fn header(&self) -> serde_json::Map<String, serde_json::Value> {
-        if let Some(params) = get_sort_order_params(&self.sort_order) {
-            serde_json::Map::from_iter([
-                ("browseId".to_string(), json!("FEmusic_saved_episodes")),
-                ("params".to_string(), json!(params)),
-            ])
-        } else {
-            serde_json::Map::from_iter([("browseId".to_string(), json!("FEmusic_saved_episodes"))])
-        }
-    }
-    fn params(&self) -> Vec<(&str, Cow<'_, str>)> {
-        vec![]
-    }
-    fn path(&self) -> &str {
-        "browse"
     }
 }
