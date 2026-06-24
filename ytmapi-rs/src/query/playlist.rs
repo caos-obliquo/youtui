@@ -251,7 +251,7 @@ impl PostQuery for RemovePlaylistItemsQuery<'_> {
                 })
             })
             .collect();
-        let serde_json::Value::Object(mut map) = json!({
+        let serde_json::Value::Object(map) = json!({
             "playlistId": clean_id,
             "actions": actions,
         }) else {

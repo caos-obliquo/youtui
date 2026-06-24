@@ -83,7 +83,6 @@ pub struct PlaylistSong {
     pub library_management: Option<LibraryManager>,
     pub title: String,
     pub artists: Vec<super::ParsedSongArtist>,
-    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub explicit: Explicit,
@@ -112,7 +111,6 @@ pub struct PlaylistVideo {
     // Could be 'ParsedVideoChannel'
     pub channel_name: String,
     pub channel_id: ArtistChannelID<'static>,
-    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub is_available: bool,
@@ -130,7 +128,6 @@ pub struct PlaylistEpisode {
     pub title: String,
     pub podcast_name: String,
     pub podcast_id: PlaylistID<'static>,
-    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub is_available: bool,
@@ -148,7 +145,6 @@ pub struct PlaylistUploadSong {
     pub title: String,
     // An UploadSong may not have an album, in that case empty vec returned.
     pub artists: Vec<ParsedUploadArtist>,
-    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
 }

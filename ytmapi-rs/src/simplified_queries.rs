@@ -33,7 +33,7 @@ use crate::query::{
     GetArtistAlbumsQuery, GetArtistQuery, GetChannelEpisodesQuery, GetChannelQuery,
     GetEpisodeQuery, GetHistoryQuery, GetLibraryAlbumsQuery, GetLibraryArtistSubscriptionsQuery,
     GetLibraryArtistsQuery, GetLibraryChannelsQuery, GetLibraryPlaylistsQuery,
-    GetLibraryPodcastsQuery, GetLibrarySongsQuery, GetLibraryUploadAlbumQuery,
+    GetLibraryPodcastsQuery, GetLibrarySongsQuery, GetLibrarySortOrder, GetLibraryUploadAlbumQuery,
     GetLibraryUploadAlbumsQuery, GetLibraryUploadArtistQuery, GetLibraryUploadArtistsQuery,
     GetLibraryUploadSongsQuery, GetLyricsIDQuery, GetMoodCategoriesQuery, GetMoodPlaylistsQuery,
     GetNewEpisodesQuery, GetPlaylistTracksQuery, GetPodcastQuery, GetSearchSuggestionsQuery,
@@ -827,7 +827,6 @@ impl<A: LoggedIn> YtMusic<A> {
         let query = RemoveHistoryItemsQuery::new(feedback_tokens);
         self.query(query).await
     }
-    // TODO: Docs / alternative constructors.
     pub async fn edit_song_library_status(
         &self,
         query: EditSongLibraryStatusQuery<'_>,
@@ -994,8 +993,13 @@ impl<A: LoggedIn> YtMusic<A> {
     /// let results = yt.get_library_artists().await;
     /// # };
     /// ```
-    pub async fn get_library_artists(&self) -> Result<Vec<LibraryArtist>> {
-        let query = GetLibraryArtistsQuery::default();
+    pub async fn get_library_artists(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<Vec<LibraryArtist>> {
+        let query = sort_order
+            .map(GetLibraryArtistsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets a list of all songs in your Library.
@@ -1014,8 +1018,13 @@ impl<A: LoggedIn> YtMusic<A> {
     /// let results = yt.get_library_songs().await;
     /// # };
     /// ```
-    pub async fn get_library_songs(&self) -> Result<<GetLibrarySongsQuery as Query<A>>::Output> {
-        let query = GetLibrarySongsQuery::default();
+    pub async fn get_library_songs(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<<GetLibrarySongsQuery as Query<A>>::Output> {
+        let query = sort_order
+            .map(GetLibrarySongsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets a list of all albums in your Library.
@@ -1034,8 +1043,13 @@ impl<A: LoggedIn> YtMusic<A> {
     /// let results = yt.get_library_albums().await;
     /// # };
     /// ```
-    pub async fn get_library_albums(&self) -> Result<Vec<SearchResultAlbum>> {
-        let query = GetLibraryAlbumsQuery::default();
+    pub async fn get_library_albums(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<Vec<SearchResultAlbum>> {
+        let query = sort_order
+            .map(GetLibraryAlbumsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets a list of all artist subscriptions in your Library.
@@ -1054,8 +1068,13 @@ impl<A: LoggedIn> YtMusic<A> {
     /// let results = yt.get_library_artist_subscriptions().await;
     /// # };
     /// ```
-    pub async fn get_library_artist_subscriptions(&self) -> Result<Vec<LibraryArtistSubscription>> {
-        let query = GetLibraryArtistSubscriptionsQuery::default();
+    pub async fn get_library_artist_subscriptions(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<Vec<LibraryArtistSubscription>> {
+        let query = sort_order
+            .map(GetLibraryArtistSubscriptionsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets a list of all podcasts in your Library.
@@ -1076,8 +1095,11 @@ impl<A: LoggedIn> YtMusic<A> {
     /// ```
     pub async fn get_library_podcasts(
         &self,
+        sort_order: Option<GetLibrarySortOrder>,
     ) -> Result<<GetLibraryPodcastsQuery as Query<A>>::Output> {
-        let query = GetLibraryPodcastsQuery::default();
+        let query = sort_order
+            .map(GetLibraryPodcastsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets a list of all channels in your Library.
@@ -1098,8 +1120,11 @@ impl<A: LoggedIn> YtMusic<A> {
     /// ```
     pub async fn get_library_channels(
         &self,
+        sort_order: Option<GetLibrarySortOrder>,
     ) -> Result<<GetLibraryChannelsQuery as Query<A>>::Output> {
-        let query = GetLibraryChannelsQuery::default();
+        let query = sort_order
+            .map(GetLibraryChannelsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets your recently played history.

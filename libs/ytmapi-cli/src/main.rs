@@ -21,7 +21,7 @@ use ytmapi_rs::{
         GetChannelQuery, GetChannelEpisodesQuery, GetPodcastQuery,
         GetEpisodeQuery, GetNewEpisodesQuery,
         DeleteUploadEntityQuery,
-        GetLibraryUploadAlbumQuery, GetLibraryUploadArtistQuery,
+        GetLibrarySortOrder, GetLibraryUploadAlbumQuery, GetLibraryUploadArtistQuery,
     },
 };
 
@@ -46,6 +46,10 @@ async fn main() {
                 cookie_file = Some(args.get(i).cloned().unwrap_or_default());
             }
             "--json" => json_output = true,
+            "--help" | "-h" => {
+                print_usage();
+                return;
+            }
             _ => cmd_args.push(args[i].clone()),
         }
         i += 1;
@@ -69,6 +73,16 @@ async fn main() {
         "debug" => cmd_debug(rest).await,
         "genius" => cmd_genius(rest).await,
         _ => cmd_live(command, rest, cookie_file.as_deref(), json_output).await,
+    }
+}
+
+fn parse_sort_order(s: &str) -> Option<GetLibrarySortOrder> {
+    match s {
+        "name-asc" | "name_asc" => Some(GetLibrarySortOrder::NameAsc),
+        "name-desc" | "name_desc" => Some(GetLibrarySortOrder::NameDesc),
+        "recent" | "recently-saved" | "recently_saved" => Some(GetLibrarySortOrder::RecentlySaved),
+        "default" => Some(GetLibrarySortOrder::Default),
+        _ => None,
     }
 }
 
@@ -119,7 +133,7 @@ fn print_usage() {
     eprintln!("  tracking-url <video_id>       Get song tracking URL");
     eprintln!("  watch-playlist <video_id>     Get related/watch playlist");
     eprintln!();
-    eprintln!("  LIBRARY:");
+    eprintln!("  LIBRARY [--sort name-asc|name-desc|recent|default]:");
     eprintln!("  library playlists             List library playlists");
     eprintln!("  library songs                 List library songs");
     eprintln!("  library albums                List library albums");
@@ -518,38 +532,64 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
             }
         }
 
-        // ── LIBRARY ─────────────────────────────────────────────────────
+                // ── LIBRARY ─────────────────────────────────────────────────────
         "library" => {
-            if args.is_empty() { eprintln!("Usage: ytmapi library <subcommand>"); return; }
-            match args[0].as_str() {
+            // Parse --sort flag before subcommand
+            let mut sort_order: Option<GetLibrarySortOrder> = None;
+            let mut sub_args: Vec<String> = Vec::new();
+            let mut i = 0;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--sort" => {
+                        i += 1;
+                        if let Some(val) = args.get(i) {
+                            if let Some(order) = parse_sort_order(val) {
+                                sort_order = Some(order);
+                            } else {
+                                eprintln!("Invalid --sort value '{}'. Valid: name-asc, name-desc, recent, default", val);
+                                return;
+                            }
+                        } else {
+                            eprintln!("--sort requires a value (name-asc, name-desc, recent, default)");
+                            return;
+                        }
+                    }
+                    _ => sub_args.push(args[i].clone()),
+                }
+                i += 1;
+            }
+            if sub_args.is_empty() { eprintln!("Usage: ytmapi library <subcommand> [--sort <order>]"); return; }
+            match sub_args[0].as_str() {
                 "playlists" => match yt.get_library_playlists().await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "songs" => match yt.get_library_songs().await {
+                "songs" => match yt.get_library_songs(sort_order).await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "albums" => match yt.get_library_albums().await {
+                "albums" => match yt.get_library_albums(sort_order).await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "artists" => match yt.get_library_artists().await {
+                "artists" => match yt.get_library_artists(sort_order).await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "artist-subscriptions" => match yt.get_library_artist_subscriptions().await {
+                "artist-subscriptions" => match yt.get_library_artist_subscriptions(sort_order).await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "podcasts" => match yt.get_library_podcasts().await {
+                "podcasts" => match yt.get_library_podcasts(sort_order).await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "channels" => match yt.get_library_channels().await {
+                "channels" => match yt.get_library_channels(sort_order).await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
+
+
                 "upload-songs" => match yt.get_library_upload_songs().await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),

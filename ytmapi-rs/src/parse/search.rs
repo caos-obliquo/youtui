@@ -232,7 +232,6 @@ pub struct SearchResultFeaturedPlaylist {
     pub thumbnails: Vec<Thumbnail>,
 }
 
-// TODO: Type safety
 fn parse_basic_search_result_from_section_list_contents(
     mut section_list_contents: BasicSearchSectionListContents,
 ) -> Result<SearchResults> {
@@ -408,7 +407,6 @@ fn parse_top_results_from_music_card_shelf_contents(
     }
     Ok(results)
 }
-// TODO: Tests
 fn parse_top_result_from_music_shelf_contents(
     music_shelf_contents: JsonCrawlerBorrowed<'_>,
 ) -> Result<Option<TopResult>> {
@@ -423,7 +421,6 @@ fn parse_top_result_from_music_shelf_contents(
     let flex_1_0: String = parse_flex_column_item(&mut mrlir, 1, 0)?;
     // Deserialize without taking ownership of flex_1_0 - not possible with
     // JsonCrawler::take_value_pointer().
-    // TODO: add methods like borrow_value_pointer() to JsonCrawler.
     let result_type_result: std::result::Result<_, serde::de::value::Error> =
         TopResultType::deserialize(flex_1_0.as_str().into_deserializer());
     let result_type = result_type_result.ok();
@@ -453,7 +450,7 @@ fn parse_top_result_from_music_shelf_contents(
             album = Some(parse_flex_column_item(&mut mrlir, 1, 4)?);
             duration = Some(parse_flex_column_item(&mut mrlir, 1, 6)?);
             // This does not show up in all Card renderer results and so we'll define it as
-            // optional. TODO: Could make this more type safe in future.
+            // optional.
             plays = parse_flex_column_item(&mut mrlir, 1, 8).ok();
         }
         Some(TopResultType::Video) => {
@@ -476,7 +473,7 @@ fn parse_top_result_from_music_shelf_contents(
                 duration = Some(flex_1_2);
             }
             // This does not show up in all Card renderer results and so we'll define it as
-            // optional. TODO: Could make this more type safe in future.
+            // optional.
             plays = parse_flex_column_item(&mut mrlir, 1, 6).ok();
         }
     }
@@ -495,8 +492,6 @@ fn parse_top_result_from_music_shelf_contents(
         byline: None,
     }))
 }
-// TODO: Type safety
-// TODO: Tests
 fn parse_artist_search_result_from_music_shelf_contents(
     music_shelf_contents: JsonCrawlerBorrowed<'_>,
 ) -> Result<SearchResultArtist> {
@@ -512,8 +507,6 @@ fn parse_artist_search_result_from_music_shelf_contents(
         browse_id,
     })
 }
-// TODO: Type safety
-// TODO: Tests
 fn parse_profile_search_result_from_music_shelf_contents(
     music_shelf_contents: JsonCrawlerBorrowed<'_>,
 ) -> Result<SearchResultProfile> {
@@ -529,8 +522,6 @@ fn parse_profile_search_result_from_music_shelf_contents(
         thumbnails,
     })
 }
-// TODO: Type safety
-// TODO: Tests
 fn parse_album_search_result_from_music_shelf_contents(
     music_shelf_contents: JsonCrawlerBorrowed<'_>,
 ) -> Result<SearchResultAlbum> {
@@ -652,8 +643,6 @@ fn parse_song_search_result_from_music_shelf_contents(
         year,
     })
 }
-// TODO: Type safety
-// TODO: Tests
 fn parse_video_search_result_from_music_shelf_contents(
     music_shelf_contents: JsonCrawlerBorrowed<'_>,
 ) -> Result<Option<SearchResultVideo>> {
@@ -685,9 +674,12 @@ fn parse_video_search_result_from_music_shelf_contents(
             }))
         }
         "Episode" => {
-            //TODO: Handle live episode
-            let date = EpisodeDate::Recorded {
-                date: parse_flex_column_item(&mut mrlir, 1, 2)?,
+            let date = if mrlir.path_exists(LIVE_BADGE_LABEL) {
+                EpisodeDate::Live
+            } else {
+                EpisodeDate::Recorded {
+                    date: parse_flex_column_item(&mut mrlir, 1, 2)?,
+                }
             };
             let channel_name = parse_flex_column_item(&mut mrlir, 1, 4)?;
             let video_id = mrlir.take_value_pointer(PLAYLIST_ITEM_VIDEO_ID)?;
@@ -723,8 +715,11 @@ fn parse_video_search_result_from_music_shelf_contents(
             Ok(Some(SearchResultVideo::VideoEpisode {
                             title,
                             channel_name,
-                        //TODO: Handle live episode
-                            date: EpisodeDate::Recorded { date: first_field },
+                            date: if mrlir.path_exists(LIVE_BADGE_LABEL) {
+                                EpisodeDate::Live
+                            } else {
+                                EpisodeDate::Recorded { date: first_field }
+                            },
                             thumbnails,
                             episode_id: video_id,
                         }))
@@ -732,8 +727,6 @@ fn parse_video_search_result_from_music_shelf_contents(
         }
     }
 }
-// TODO: Type safety
-// TODO: Tests
 fn parse_podcast_search_result_from_music_shelf_contents(
     music_shelf_contents: JsonCrawlerBorrowed<'_>,
 ) -> Result<SearchResultPodcast> {
@@ -749,8 +742,6 @@ fn parse_podcast_search_result_from_music_shelf_contents(
         thumbnails,
     })
 }
-// TODO: Type safety
-// TODO: Tests
 fn parse_episode_search_result_from_music_shelf_contents(
     music_shelf_contents: JsonCrawlerBorrowed<'_>,
 ) -> Result<SearchResultEpisode> {
@@ -777,8 +768,6 @@ fn parse_episode_search_result_from_music_shelf_contents(
         thumbnails,
     })
 }
-// TODO: Type safety
-// TODO: Tests
 fn parse_featured_playlist_search_result_from_music_shelf_contents(
     music_shelf_contents: JsonCrawlerBorrowed<'_>,
 ) -> Result<SearchResultFeaturedPlaylist> {
@@ -874,7 +863,6 @@ struct BasicSearchSectionListContents(JsonCrawlerOwned);
 // In this case, we've searched and had no results found.
 // We are being quite explicit here to avoid a false positive.
 // See tests for an example.
-// TODO: Test this function itself.
 fn section_contents_is_empty(section_contents: &mut FilteredSearchSectionContents) -> Result<bool> {
     Ok(section_contents
         .0
@@ -908,8 +896,6 @@ fn get_filtered_search_continuation_music_shelf_contents_and_params(
         continuation_params,
     ))
 }
-// TODO: Consolidate these two functions into single function.
-// TODO: This could be implemented with a non-mutable array also.
 fn section_list_contents_is_empty(
     section_contents: &mut BasicSearchSectionListContents,
 ) -> Result<bool> {
@@ -971,7 +957,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultAlbum> {
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?
@@ -984,7 +969,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultProfile> {
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?
@@ -997,7 +981,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultArtist> {
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?
@@ -1010,7 +993,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultSong> {
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?
@@ -1023,7 +1005,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultVideo> {
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?
@@ -1036,7 +1017,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultEpisode> {
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?
@@ -1049,7 +1029,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultPodcast> {
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?
@@ -1062,7 +1041,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultPlaylist> {
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?
@@ -1075,7 +1053,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultCommunityPlay
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?
@@ -1088,7 +1065,6 @@ impl TryFrom<FilteredSearchMusicShelfContents> for Vec<SearchResultFeaturedPlayl
     fn try_from(
         mut value: FilteredSearchMusicShelfContents,
     ) -> std::prelude::v1::Result<Self, Self::Error> {
-        // TODO: Make this a From method.
         value
             .0
             .try_iter_mut()?

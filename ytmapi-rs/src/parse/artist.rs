@@ -33,9 +33,7 @@ pub struct GetArtist {
 #[non_exhaustive]
 pub struct GetArtistAlbumsAlbum {
     pub title: String,
-    // TODO: Use type system
     pub playlist_id: Option<String>,
-    // TODO: Use type system
     pub browse_id: AlbumID<'static>,
     pub category: Option<String>, // TODO change to enum
     pub thumbnails: Vec<Thumbnail>,
@@ -206,7 +204,6 @@ pub struct TableListSong {
     pub library_management: Option<LibraryManager>,
     pub title: String,
     pub artists: Vec<super::ParsedSongArtist>,
-    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub explicit: Explicit,
