@@ -670,7 +670,33 @@ impl Youtui {
             AppCallback::ClosePopup => {
                 if self.window_state.album_art_popup.is_some() {
                     self.window_state.album_art_popup = None;
-                    // Force clear stale sixel pixels (DCS clear unreliable in foot)
+                    // Physically overwrite stale sixel pixels by rendering a blank black sixel
+                    // over the popup area. DCS clear (\x1bP0p\x1b\\) is unreliable in foot, so
+                    // physically overwriting is the only reliable method.
+                    let sixel_rect = self.window_state.sixel_rect;
+                    if let Some(rect) = sixel_rect {
+                        let blank = image::DynamicImage::from(image::RgbaImage::from_pixel(
+                            1, 1,
+                            image::Rgba([0, 0, 0, 255]),
+                        ));
+                        if let Ok(protocol) = self.terminal_image_capabilities.new_protocol(
+                            blank,
+                            rect,
+                            ratatui_image::Resize::Scale(None),
+                        ) {
+                            if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
+                                use std::io::Write;
+                                let mut stdout = std::io::stdout();
+                                let _ = crossterm::execute!(
+                                    &mut stdout,
+                                    crossterm::cursor::MoveTo(rect.x, rect.y),
+                                );
+                                let _ = stdout.write_all(sixel.data.as_bytes());
+                                let _ = stdout.flush();
+                            }
+                        }
+                    }
+                    // Belt-and-suspenders: also send DCS clear + ANSI clear
                     use std::io::Write;
                     let mut stdout = std::io::stdout();
                     let _ = stdout.write_all(b"\x1bP0p\x1b\\");
