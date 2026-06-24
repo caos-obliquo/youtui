@@ -1,4 +1,4 @@
-use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffect, YoutuiEffect};
+use crate::app::component::actionhandler::ComponentEffect;
 use vi_text_editor::{ViMode, ViTextEditor};
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
@@ -7,25 +7,6 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
-use std::borrow::Cow;
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum NotesAction {
-    #[allow(dead_code)]
-    Close,
-}
-
-impl Action for NotesAction {
-    fn context(&self) -> Cow<'_, str> {
-        "Notes".into()
-    }
-    fn describe(&self) -> Cow<'_, str> {
-        match self {
-            NotesAction::Close => "Close",
-        }
-        .into()
-    }
-}
 
 pub struct NotesPopup {
     pub editor: ViTextEditor,
@@ -35,16 +16,6 @@ pub struct NotesPopup {
 }
 
 impl_youtui_component!(NotesPopup);
-
-impl ActionHandler<NotesAction> for NotesPopup {
-    fn apply_action(&mut self, action: NotesAction) -> impl Into<YoutuiEffect<Self>> {
-        match action {
-            NotesAction::Close => {
-                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
-            }
-        }
-    }
-}
 
 impl NotesPopup {
     pub fn new(notes_path: std::path::PathBuf, content: String) -> Self {

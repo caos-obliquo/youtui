@@ -70,43 +70,47 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 
 | # | Step | File(s) | Est |
 |---|------|---------|-----|
-| 1 | `C-r` redo (commit) | `libs/vi-text-editor/src/lib.rs` + 6 callers | ✓ ready |
-| 2 | `.` repeat last change | `libs/vi-text-editor/src/lib.rs` | med |
-| 3 | `J` join lines | `libs/vi-text-editor/src/lib.rs` | small |
-| 4 | `~` toggle case | `libs/vi-text-editor/src/lib.rs` | small |
-| 5 | Lyrics hybrid line numbers | `lyrics_popup.rs` | med |
-| 6 | Like album to library (add to YT Music profile) | `albumsearch.rs` + ytmapi-rs | med |
-| 7 | Sixel album art persistence | `draw.rs` | med |
-| 8 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
-| 9 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
-| 10 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
-| 11 | Build + full test suite | verify | verify |
+| 1 | **Annotations integration + `:` in lyrics** | `lyrics_popup.rs`, `app.rs` | med |
+| 2 | **Visual mode cyan** (queue: all lines cyan, no green-on-nonplaying) | `playlist.rs`, `view/draw.rs` | small |
+| 3 | `C-r` redo (commit) | `libs/vi-text-editor/src/lib.rs` + 6 callers | ✓ ready |
+| 4 | `.` repeat last change | `libs/vi-text-editor/src/lib.rs` | med |
+| 5 | `J` join lines | `libs/vi-text-editor/src/lib.rs` | small |
+| 6 | `~` toggle case | `libs/vi-text-editor/src/lib.rs` | small |
+| 7 | Lyrics hybrid line numbers | `lyrics_popup.rs` | med |
+| 8 | Like album to library (add to YT Music profile) | `albumsearch.rs` + ytmapi-rs | med |
+| 9 | Sixel album art persistence | `draw.rs` | med |
+| 10 | Remove wide config | `~/.config/youtui/config.toml` | tiny |
+| 11 | Text objects iw, i(, a(, i", a" | `libs/vi-text-editor/src/lib.rs` | large |
+| 12 | `%` bracket match | `libs/vi-text-editor/src/lib.rs` | med |
+| 13 | Build + full test suite | verify | verify |
 
 ### Step details
 
-**Step 1**: Test all 12 items in CLAUDE.md "NEEDS TESTING" table. User must verify each before commit.
+**Step 1**: Annotations integration + `:` in lyrics. Annotations display end-to-end with GENIUS_TOKEN. `:` Opens URL from lyrics popup (currently blocked by key interception). Add `AppCallback::OpenUrlCommand`, route through lyrics_popup `handle_key`.
 
-**Step 2**: `C-r` redo. `handle_key` API gains `ctrl: bool` param. `undo()` pushes to `redo_stack`. New `redo()` method. Internal tests updated.
+**Step 2**: Visual mode cyan. `view/draw.rs` — change `visual_range_style` to cyan bg. `playlist.rs` — fix `get_highlighted_row()` to not return playing index when visual mode active. All highlighted lines cyan, no green-on-nonplaying.
 
-**Step 3**: `.` repeat last change. Store last edit (insert/delete/change/replace) as `LastChange` enum. On `.` press, replay it.
+**Step 3**: `C-r` redo. `handle_key` API gains `ctrl: bool` param. `undo()` pushes to `redo_stack`. New `redo()` method. Internal tests updated.
 
-**Step 4**: `J` join lines. `buffer.remove(cursor)` if next char is `\n`, replacing with ` `.
+**Step 4**: `.` repeat last change. Store last edit (insert/delete/change/replace) as `LastChange` enum. On `.` press, replay it.
 
-**Step 5**: `~` toggle case at cursor. ASCII `a-z` ↔ `A-Z`.
+**Step 5**: `J` join lines. `buffer.remove(cursor)` if next char is `\n`, replacing with ` `.
 
-**Step 6**: Hybrid line numbers in lyrics popup. `abs_line == cursor` show absolute, else show relative offset. Dim `Color::DarkGray`. Both render paths (side-by-side + full-width). `max_digits` from total line count.
+**Step 6**: `~` toggle case at cursor. ASCII `a-z` ↔ `A-Z`.
 
-**Step 7**: Footer album format. `footer.rs:98-101` — construct `format!("{artists} - {album}")` composite string instead of artist/album on separate lines.
+**Step 7**: Hybrid line numbers in lyrics popup. `abs_line == cursor` show absolute, else show relative offset. Dim `Color::DarkGray`. Both render paths (side-by-side + full-width). `max_digits` from total line count.
 
-**Step 8**: `~/.config/youtui/config.toml` — revert custom keybinds to clean defaults. Remove "wide" overrides.
+**Step 8**: Footer album format. `footer.rs:98-101` — construct `format!("{artists} - {album}")` composite string instead of artist/album on separate lines.
 
-**Step 9**: Text objects. `iw` inner word, `i(`/`i)` inner parens, `a(`/`a)` a parens (including parens), `i"`/`a"` inner/a string. Works with `d`, `c`, `y` operators.
+**Step 9**: `~/.config/youtui/config.toml` — revert custom keybinds to clean defaults. Remove "wide" overrides.
 
-**Step 10**: `%` bracket match. `([{}])` — find matching pair. Forward/backward cursor move.
+**Step 10**: Text objects. `iw` inner word, `i(`/`i)` inner parens, `a(`/`a)` a parens (including parens), `i"`/`a"` inner/a string. Works with `d`, `c`, `y` operators.
 
-**Step 11**: ~~F7 back-nav (FIXED). `handle_change_search_type()` now calls `push_snapshot()`.~~
+**Step 11**: `%` bracket match. `([{}])` — find matching pair. Forward/backward cursor move.
 
-**Step 12**: `cargo build --release`, `cargo test --release`, verify no regressions.
+**Step 12**: ~~F7 back-nav (FIXED). `handle_change_search_type()` now calls `push_snapshot()`.~~
+
+**Step 13**: `cargo build --release`, `cargo test --release`, verify no regressions.
 
 ## Blocked
 - Cross-platform clipboard (Wayland-only `wl-copy` — low priority, sidequest)

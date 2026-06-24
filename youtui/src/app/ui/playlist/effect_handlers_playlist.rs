@@ -46,22 +46,10 @@ pub struct HandleEditPlaylistDetailsError;
 pub struct HandleRatePlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleRatePlaylistError;
-#[allow(dead_code)]
-#[derive(Debug, PartialEq)]
-pub struct HandleReorderPlaylistItemOk;
-#[allow(dead_code)]
-#[derive(Debug, PartialEq)]
-pub struct HandleReorderPlaylistItemError;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleRenamePlaylistError;
-#[allow(dead_code)]
-#[derive(Debug, PartialEq)]
-pub struct HandleRemovePlaylistItemsOk;
-#[allow(dead_code)]
-#[derive(Debug, PartialEq)]
-pub struct HandleRemovePlaylistItemsError;
 
 #[derive(Debug, PartialEq)]
 pub struct HandleOverwriteGetTracks(pub PlaylistID<'static>, pub Vec<VideoID<'static>>);
@@ -271,31 +259,7 @@ impl_youtui_task_handler!(
 );
 
 
-impl_youtui_task_handler!(
-    HandleReorderPlaylistItemOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |_this: &mut Playlist| {
-            info!("Playlist item reordered");
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
 
-impl_youtui_task_handler!(
-    HandleReorderPlaylistItemError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to reorder playlist item: {}", msg);
-            this.last_error = Some(format!("Reorder failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
 
 impl_youtui_task_handler!(
     HandleRenamePlaylistOk,
@@ -324,31 +288,7 @@ impl_youtui_task_handler!(
     }
 );
 
-impl_youtui_task_handler!(
-    HandleRemovePlaylistItemsOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |_this: &mut Playlist| {
-            info!("Playlist items removed successfully");
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
 
-impl_youtui_task_handler!(
-    HandleRemovePlaylistItemsError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to remove playlist items: {}", msg);
-            this.last_error = Some(format!("Remove failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
 
 impl_youtui_task_handler!(
     HandleOverwriteGetTracks,
