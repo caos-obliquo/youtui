@@ -486,6 +486,21 @@ Context menu is exclusively via `o`.
 - `youtui/src/app/ui/footer.rs` — like_icon spacing.
 - `youtui/src/app.rs` — ClosePopup sixel clear.
 
+### Session 2026-06-24 (Batch E — Annotation Visual Mode)
+
+### Annotation Visual Mode Fixes
+- Entering visual mode in annotations clears `visual_start`/`visual_end` (lyrics range) to prevent stale line 0 highlight.
+- Entering visual mode in lyrics clears `ann_visual_start`/`ann_visual_end` (annotations range).
+- Added `VISUAL_MODE_COLOUR = Color::Cyan` (separate from `ROW_HIGHLIGHT_COLOUR = Blue`).
+- Visual mode highlight uses cyan in both lyrics and annotations panels.
+- Explanation body lines also highlighted with cyan during visual mode.
+- Queue visual range style uses `VISUAL_MODE_COLOUR` (cyan) consistently.
+
+### Files changed
+- `youtui/src/drawutils.rs` — added VISUAL_MODE_COLOUR.
+- `youtui/src/app/ui/playlist/lyrics_popup.rs` — V handler clears opposite range, uses VISUAL_MODE_COLOUR.
+- `youtui/src/app/view/draw.rs` — visual_range_style uses VISUAL_MODE_COLOUR.
+
 ### Previous Session Features (Unchanged)
 - Metadata pipeline (providers, Discogs, MA_COOKIE, genre aliasing).
 - Library tracks Phase A+B (delete re-route, filtered indices).
@@ -525,7 +540,7 @@ Context menu is exclusively via `o`.
 - **Album URL tracks bypass metadata pipeline**: `GetPlaylistTracks` loads songs without `ValidateMetadata`. No album splitting for these.
 - **Force-split visual feedback**: No toast/notification on success/failure. Check logs.
 - **Playlist editor modified check**: `Esc`/`:q` warns on unsaved changes. `:q!` force-quits.
-- **Sixel album art**: May persist after popup close. Temp workaround: resize terminal.
+- **Sixel album art**: Belt-and-suspenders clear on close (`\x1bP0p\x1b\\` + `\x1b[2J\x1b[H`). DCS clear in foot may still be unreliable.
 
 ## Remaining Items (Detailed)
 ### Recommended Order

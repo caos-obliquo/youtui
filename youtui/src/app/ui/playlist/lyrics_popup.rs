@@ -1,5 +1,6 @@
 use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffect, YoutuiEffect};
 use crate::app::ui::AppCallback;
+use crate::drawutils::VISUAL_MODE_COLOUR;
 use async_callback_manager::AsyncTask;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
@@ -533,9 +534,15 @@ impl LyricsPopup {
                 if self.focus == Focus::Annotations {
                     self.ann_visual_start = self.ann_scroll_offset;
                     self.ann_visual_end = self.ann_scroll_offset;
+                    // Clear lyrics visual range to prevent stale highlighting
+                    self.visual_start = 0;
+                    self.visual_end = 0;
                 } else {
                     self.visual_start = self.cursor_line;
                     self.visual_end = self.cursor_line;
+                    // Clear annotations visual range to prevent stale highlighting
+                    self.ann_visual_start = 0;
+                    self.ann_visual_end = 0;
                 }
                 self.visual_mode = true;
                 (AsyncTask::new_no_op(), None)
@@ -956,7 +963,7 @@ impl LyricsPopup {
                             && abs_line >= self.visual_start.min(self.visual_end)
                             && abs_line <= self.visual_start.max(self.visual_end)
                         {
-                            Style::default().fg(Color::Black).bg(Color::Cyan)
+                            Style::default().fg(Color::Black).bg(VISUAL_MODE_COLOUR)
                         } else {
                             Style::default().fg(Color::White)
                         };
@@ -1000,7 +1007,7 @@ impl LyricsPopup {
                             && i >= self.ann_visual_start.min(self.ann_visual_end)
                             && i <= self.ann_visual_start.max(self.ann_visual_end);
                         let fragment_style = if is_visual_sel {
-                            Style::default().fg(Color::Black).bg(Color::Cyan)
+                            Style::default().fg(Color::Black).bg(VISUAL_MODE_COLOUR)
                         } else if is_cursor {
                             Style::default().fg(Color::Black).bg(Color::White)
                         } else {
@@ -1015,10 +1022,18 @@ impl LyricsPopup {
                             num_span,
                         ]));
                         for expl_line in a.explanation.split('\n') {
+                            let expl_style = if self.visual_mode
+                                && i >= self.ann_visual_start.min(self.ann_visual_end)
+                                && i <= self.ann_visual_start.max(self.ann_visual_end)
+                            {
+                                Style::default().fg(Color::Black).bg(VISUAL_MODE_COLOUR)
+                            } else {
+                                Style::default().fg(Color::DarkGray)
+                            };
                             ann_lines.push(ratatui::text::Line::from(
                                 ratatui::text::Span::styled(
                                     expl_line.to_string(),
-                                    Style::default().fg(Color::DarkGray),
+                                    expl_style,
                                 ),
                             ));
                         }
