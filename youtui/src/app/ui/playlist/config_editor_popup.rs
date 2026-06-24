@@ -87,7 +87,7 @@ impl ConfigEditorPopup {
                     // We can't do ZZ in a single handle_key call.
                     // We'll handle it via the key_stack mechanism.
                 }
-                self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), false);
+                self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), event.modifiers.contains(KeyModifiers::CONTROL));
                 (AsyncTask::new_no_op(), None)
             }
         }
