@@ -9288,6 +9288,7 @@ dependencies = [
 name = "ytmapi-cli"
 version = "0.1.0"
 dependencies = [
+ "genius-rs",
  "metadata-provider",
  "reqwest 0.11.27",
  "serde_json",

@@ -51,6 +51,7 @@ async fn main() {
     match command.as_str() {
         "fixture" => cmd_fixture(rest, json_output).await,
         "debug" => cmd_debug(rest).await,
+        "genius" => cmd_genius(rest).await,
         _ => cmd_live(command, rest, cookie_file.as_deref(), json_output).await,
     }
 }
@@ -91,6 +92,12 @@ fn print_usage() {
     eprintln!("  debug resolve <artist> <title>  Test full resolution pipeline");
     eprintln!("  debug genre <genre>            Test genre normalization");
     eprintln!("  debug genre-list [filter]      List known genres");
+    eprintln!();
+    eprintln!("GENIUS (no auth, uses GENIUS_TOKEN env):");
+    eprintln!("  genius search <artist> <title>        Search Genius for song");
+    eprintln!("  genius annotations <artist> <title>   Fetch annotations");
+    eprintln!("  genius lyrics <artist> <title>        Fetch lyrics");
+    eprintln!("  genius all <artist> <title>            Fetch lyrics + annotations");
     eprintln!();
     eprintln!("AUTH:");
     eprintln!("  Export cookies from https://music.youtube.com to a file:");
@@ -354,6 +361,93 @@ fn clean_title(title: &str, artist: &str) -> String {
         s = s[..pos].trim().to_string();
     }
     s.trim().to_string()
+}
+
+async fn cmd_genius(args: &[String]) {
+    if args.len() < 3 {
+        eprintln!("Usage: ytmapi genius <search|annotations|lyrics|all> <artist> <title>");
+        eprintln!("  GENIUS_TOKEN env var required for annotations");
+        return;
+    }
+    let sub = &args[0];
+    let artist = &args[1];
+    let title = &args[2..].join(" ");
+    let token = std::env::var("GENIUS_TOKEN").ok().filter(|s| !s.is_empty());
+
+    let client = reqwest::Client::builder()
+        .user_agent("ytmapi-cli/0.1 (genius debug)")
+        .build()
+        .unwrap();
+    let genius = genius_rs::GeniusClient::new(token, client);
+
+    match sub.as_str() {
+        "search" => {
+            println!("=== Genius Search ===");
+            println!("Artist: '{}'  Title: '{}'", artist, title);
+            match genius.find_song(artist, &title).await {
+                Ok(Some(hit)) => {
+                    println!("Found: id={}, path={}", hit.id, hit.path);
+                    println!("  Title: '{}'", hit.title);
+                    println!("  Artist: '{}'", hit.artist);
+                    println!("  Year: {:?}", hit.year);
+                    println!("  Album: {:?}", hit.album);
+                    println!("  Thumbnail: {:?}", hit.thumbnail);
+                }
+                Ok(None) => println!("No results found"),
+                Err(e) => println!("Search error: {}", e),
+            }
+        }
+        "annotations" => {
+            println!("=== Genius Annotations ===");
+            println!("Artist: '{}'  Title: '{}'", artist, title);
+            match genius.find_song(artist, &title).await {
+                Ok(Some(hit)) => {
+                    println!("Song found: id={}, path={}", hit.id, hit.path);
+                    println!("Fetching annotations...");
+                    match genius.fetch_annotations_with_token(&hit.path, hit.id).await {
+                        Ok(anns) => {
+                            println!("Fetched {} annotations:", anns.len());
+                            for (i, a) in anns.iter().enumerate() {
+                                println!("  {}. [{}] {}", i + 1, a.fragment, a.body.chars().take(200).collect::<String>());
+                            }
+                        }
+                        Err(e) => println!("Annotations error: {}", e),
+                    }
+                }
+                Ok(None) => println!("No Genius results for this song"),
+                Err(e) => println!("Search error: {}", e),
+            }
+        }
+        "lyrics" => {
+            println!("=== Genius Lyrics ===");
+            println!("Artist: '{}'  Title: '{}'", artist, title);
+            match genius.find_and_fetch(artist, &title).await {
+                Ok((hit, lyrics)) => {
+                    println!("Song: id={}, path={}", hit.id, hit.path);
+                    println!("Title: '{}'  Artist: '{}'", hit.title, hit.artist);
+                    println!("\n--- Lyrics ---\n{}", lyrics);
+                }
+                Err(e) => println!("Lyrics error: {}", e),
+            }
+        }
+        "all" => {
+            println!("=== Genius All (Lyrics + Annotations) ===");
+            println!("Artist: '{}'  Title: '{}'", artist, title);
+            match genius.find_fetch_all(artist, &title).await {
+                Ok((hit, lyrics, annotations)) => {
+                    println!("Song: id={}, path={}", hit.id, hit.path);
+                    println!("Title: '{}'  Artist: '{}'", hit.title, hit.artist);
+                    println!("\n--- Lyrics ---\n{}", lyrics);
+                    println!("\n--- Annotations ({}) ---", annotations.len());
+                    for (i, a) in annotations.iter().enumerate() {
+                        println!("  {}. [{}] {}", i + 1, a.fragment, a.body.chars().take(200).collect::<String>());
+                    }
+                }
+                Err(e) => println!("Error: {}", e),
+            }
+        }
+        _ => eprintln!("Unknown genius sub: {}. Use search, annotations, lyrics, all", sub.as_str()),
+    }
 }
 
 async fn cmd_debug(args: &[String]) {
