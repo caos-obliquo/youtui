@@ -16,6 +16,10 @@ use scraper::{Html, Selector};
 /// (requires Chromium installed)
 pub struct MetalApiProvider;
 
+impl Default for MetalApiProvider {
+    fn default() -> Self { Self }
+}
+
 impl MetalApiProvider {
     pub fn new() -> Self { Self }
 }
@@ -83,8 +87,8 @@ async fn try_metal_api(artist: &str, title: &str, client: &reqwest::Client) -> O
     let detail: BandDetail = band_resp.json().await.ok()?;
     let clean_title = util::norm_for_lfm(title);
     let album = detail.discography.as_ref().and_then(|albums| {
-        albums.iter().find(|a| a.songs.as_ref().is_some_and(|s| s.iter().any(|s| s.name.as_deref().map_or(false, |n| util::norm_for_lfm(n) == clean_title))))
-            .or_else(|| albums.iter().find(|a| a.name.as_deref().map_or(false, |n| n.to_lowercase().contains(&artist.to_lowercase()))))
+        albums.iter().find(|a| a.songs.as_ref().is_some_and(|s| s.iter().any(|s| s.name.as_deref().is_some_and(|n| util::norm_for_lfm(n) == clean_title))))
+            .or_else(|| albums.iter().find(|a| a.name.as_deref().is_some_and(|n| n.to_lowercase().contains(&artist.to_lowercase()))))
     })?;
 
     let year = album.release_date.as_ref().and_then(|d| d.split(|c: char| !c.is_ascii_digit()).find(|p| p.len() == 4).map(String::from));
@@ -170,7 +174,7 @@ fn normalize_artist(name: &str) -> String {
 /// Checks MA_COOKIE env var first, then ~/.config/youtui/ma_cookie file.
 async fn try_direct_ma(artist: &str, _title: &str) -> Option<ValidatedMetadata> {
     let _cookie = std::env::var("MA_COOKIE").ok().filter(|c| !c.is_empty())
-        .or_else(|| load_cookie_file());
+                .or_else(load_cookie_file);
 
     let cookie_val = _cookie?;
     save_cookie(&cookie_val);
@@ -208,12 +212,13 @@ async fn try_direct_ma(artist: &str, _title: &str) -> Option<ValidatedMetadata> 
 
     // Find the best matching album: prefer exact album title match, else first result
     let clean_title = util::norm_for_lfm(_title);
+    let tag_re = Regex::new(r"<[^>]*>").unwrap();
     let matching_row = {
         let mut best = None;
         for row in rows {
             if let Some(r) = row.as_array() {
                 if let Some(album_html) = r.get(1).and_then(|v| v.as_str()) {
-                    let album_name = Regex::new(r"<[^>]*>").unwrap().replace_all(album_html, "");
+                    let album_name = tag_re.replace_all(album_html, "");
                     let album_name = album_name.trim();
                     let nl = util::norm_for_lfm(album_name);
                     if nl.contains(&clean_title) || clean_title.contains(&nl) {

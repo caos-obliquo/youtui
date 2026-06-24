@@ -141,7 +141,7 @@ fn urlenc(s: &str) -> String {
 
 /// Strip parenthetical/bracketed extras from title for slug fallback.
 /// "Shitty Jobz (Japanese Bonus Track)" → "Shitty Jobz"
-pub fn simplify_title<'a>(title: &'a str) -> &'a str {
+pub fn simplify_title(title: &str) -> &str {
     if let Some(idx) = title.find('(') {
         title[..idx].trim()
     } else if let Some(idx) = title.find('[') {

@@ -61,7 +61,7 @@ impl MetadataProvider for AlbumSearchProvider {
                     .or_else(|| album_data.get("releasedate"))
                     .or_else(|| album_data.get("wiki").and_then(|w| w.get("published")))
                     .and_then(|d| d.as_str())
-                    .and_then(|d| util::extract_year(d));
+                    .and_then(util::extract_year);
 
                 let mut album_tracks = Vec::new();
                 if let Some(tracklist) = album_data
@@ -86,7 +86,7 @@ impl MetadataProvider for AlbumSearchProvider {
                                 .unwrap_or(0);
                             Some((name, count))
                         }).collect();
-                        all.sort_by(|a, b| b.1.cmp(&a.1));
+                        all.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
                         all.into_iter().take(5).map(|(n, _)| n).collect()
                     })
                     .unwrap_or_default();

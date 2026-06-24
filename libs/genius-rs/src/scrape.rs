@@ -143,7 +143,7 @@ pub fn extract_annotations(html: &str) -> Result<Vec<Annotation>, String> {
             .to_string();
         let body = val
             .pointer("/body/dom")
-            .and_then(|dom| extract_text_from_dom(dom))
+            .and_then(extract_text_from_dom)
             .unwrap_or_default();
 
         if !fragment.is_empty() && !body.is_empty() {
@@ -192,10 +192,7 @@ fn extract_initial_state(html: &str) -> Option<Value> {
         })
         .map(|(i, _)| i + 1);
 
-    let json_str = match end {
-        Some(end) => &rest[..end],
-        None => return None,
-    };
+    let json_str = &rest[..end?];
 
     serde_json::from_str(json_str).ok()
 }
@@ -275,8 +272,8 @@ fn decode_html_entities(s: &str) -> String {
                     "#x201D" => "\"",
                     "#x200B" => "",
                     _ => {
-                        if entity.starts_with('#') {
-                            if let Ok(code) = entity[1..].parse::<u32>() {
+                        if let Some(rest) = entity.strip_prefix('#') {
+                            if let Ok(code) = rest.parse::<u32>() {
                                 if let Some(c) = char::from_u32(code) {
                                     result.push(c);
                                     i += end + 1;

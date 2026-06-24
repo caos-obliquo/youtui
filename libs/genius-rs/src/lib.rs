@@ -160,15 +160,10 @@ impl GeniusClient {
                     let simple_title = search::simplify_title(title);
                     if simple_title != title {
                         let simple_hit = search::hit_from_path(artist, simple_title);
-                        match self.fetch_lyrics(&simple_hit.path).await {
-                            Ok((l, _)) => {
-                                let real_hit = self.find_song(artist, title).await?.unwrap_or(simple_hit);
-                                return {
-                                    let annotations = self.fetch_annotations_with_token(&real_hit.path, real_hit.id).await.unwrap_or_default();
-                                    Ok((real_hit, l, annotations))
-                                };
-                            }
-                            Err(_) => {}
+                        if let Ok((l, _)) = self.fetch_lyrics(&simple_hit.path).await {
+                            let real_hit = self.find_song(artist, title).await?.unwrap_or(simple_hit);
+                            let annotations = self.fetch_annotations_with_token(&real_hit.path, real_hit.id).await.unwrap_or_default();
+                            return Ok((real_hit, l, annotations));
                         }
                     }
                     // Fallback to search API
