@@ -964,16 +964,7 @@ impl LyricsPopup {
                     .enumerate()
                     .skip(self.scroll_offset).take(visible_lines_count)
                     .map(|(abs_line, line)| {
-                        let num_str = if self.focus == Focus::Lyrics {
-                            let rel = (abs_line as isize) - (self.cursor_line as isize);
-                            if rel == 0 {
-                                format!("{:>width$} ", abs_line, width = max_digits)
-                            } else {
-                                format!("{:>+width$} ", rel, width = max_digits)
-                            }
-                        } else {
-                            format!("{:>width$} ", abs_line, width = max_digits)
-                        };
+                        let num_str = format!("{:>width$} ", abs_line, width = max_digits);
                         let num_span = ratatui::text::Span::styled(num_str, Style::default().fg(Color::DarkGray));
                         let base_style = if self.visual_mode
                             && self.focus == Focus::Lyrics
@@ -1032,11 +1023,9 @@ impl LyricsPopup {
                             Style::default().fg(Color::Cyan)
                         };
                         let num_span = ratatui::text::Span::styled(num_str, Style::default().fg(Color::DarkGray));
-                        let frag_limit = ann_inner.width.saturating_sub(ann_max_digits as u16 + 1) as usize;
-                        let fragment_trunc: String = a.fragment.chars().take(frag_limit).collect();
-                        let padding: String = std::iter::repeat(" ").take(frag_limit - fragment_trunc.chars().count()).collect();
+                        let fragment_style_span = ratatui::text::Span::styled(a.fragment.clone(), fragment_style);
                         ann_lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled(fragment_trunc + &padding, fragment_style),
+                            fragment_style_span,
                             num_span,
                         ]));
                         for expl_line in a.explanation.split('\n') {
