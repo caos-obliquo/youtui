@@ -96,8 +96,9 @@ impl AlbumSearchBrowser {
             return (AsyncTask::new_no_op(), None);
         }
         self.fetched = true;
+        use ytmapi_rs::query::GetLibrarySortOrder;
         let task = AsyncTask::new_future_try(
-            crate::app::server::GetAllLibraryAlbums,
+            crate::app::server::GetAllLibraryAlbums { sort_order: GetLibrarySortOrder::Default },
             HandleLibraryAlbumsOk,
             HandleLibraryAlbumsError,
             None,

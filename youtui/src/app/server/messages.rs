@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, SetVideoID, YoutubeID, LikeStatus};
+use ytmapi_rs::query::library::GetLibrarySortOrder;
 use ytmapi_rs::query::playlist::PrivacyStatus;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong, GetPlaylistDetails};
 
@@ -233,7 +234,9 @@ impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct GetAllLibrarySongs;
+pub struct GetAllLibrarySongs {
+    pub sort_order: GetLibrarySortOrder,
+}
 
 impl BackendTask<ArcServer> for GetAllLibrarySongs {
     type Output = Result<Vec<TableListSong>>;
@@ -243,13 +246,15 @@ impl BackendTask<ArcServer> for GetAllLibrarySongs {
         backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
+        let sort_order = self.sort_order;
         async move {
             use ytmapi_rs::query::GetLibrarySongsQuery;
             use crate::app::server::api::stream_api_with_retry_n;
 
             let api_guard = backend.api.get_api().await?;
+            let query = GetLibrarySongsQuery::new(sort_order);
 
-            match stream_api_with_retry_n(&api_guard, &GetLibrarySongsQuery::default(), 10).await {
+            match stream_api_with_retry_n(&api_guard, &query, 10).await {
                 Ok(pages) => {
                     let songs: Vec<_> = pages.into_iter().flatten().collect();
                     tracing::info!(count = %songs.len(), "GetAllLibrarySongs done");
@@ -267,7 +272,9 @@ impl BackendTask<ArcServer> for GetAllLibrarySongs {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct GetAllLibraryArtists;
+pub struct GetAllLibraryArtists {
+    pub sort_order: GetLibrarySortOrder,
+}
 
 impl BackendTask<ArcServer> for GetAllLibraryArtists {
     type Output = Result<Vec<LibraryArtist>>;
@@ -277,13 +284,15 @@ impl BackendTask<ArcServer> for GetAllLibraryArtists {
         backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
+        let sort_order = self.sort_order;
         async move {
             use ytmapi_rs::query::GetLibraryArtistsQuery;
             use crate::app::server::api::stream_api_with_retry_n;
 
             let api_guard = backend.api.get_api().await?;
+            let query = GetLibraryArtistsQuery::new(sort_order);
 
-            match stream_api_with_retry_n(&api_guard, &GetLibraryArtistsQuery::default(), 10).await {
+            match stream_api_with_retry_n(&api_guard, &query, 10).await {
                 Ok(pages) => {
                     let artists: Vec<_> = pages.into_iter().flatten().collect();
                     tracing::info!(count = %artists.len(), "GetAllLibraryArtists done");
@@ -301,7 +310,9 @@ impl BackendTask<ArcServer> for GetAllLibraryArtists {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct GetAllLibraryAlbums;
+pub struct GetAllLibraryAlbums {
+    pub sort_order: GetLibrarySortOrder,
+}
 
 impl BackendTask<ArcServer> for GetAllLibraryAlbums {
     type Output = Result<Vec<SearchResultAlbum>>;
@@ -311,13 +322,15 @@ impl BackendTask<ArcServer> for GetAllLibraryAlbums {
         backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
+        let sort_order = self.sort_order;
         async move {
             use ytmapi_rs::query::GetLibraryAlbumsQuery;
             use crate::app::server::api::stream_api_with_retry_n;
 
             let api_guard = backend.api.get_api().await?;
+            let query = GetLibraryAlbumsQuery::new(sort_order);
 
-            match stream_api_with_retry_n(&api_guard, &GetLibraryAlbumsQuery::default(), 10).await {
+            match stream_api_with_retry_n(&api_guard, &query, 10).await {
                 Ok(pages) => {
                     let albums: Vec<_> = pages.into_iter().flatten().collect();
                     tracing::info!(count = %albums.len(), "GetAllLibraryAlbums done");

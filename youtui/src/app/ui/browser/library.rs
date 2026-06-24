@@ -30,6 +30,7 @@ use std::collections::{HashMap, HashSet};
 use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus};
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
+use ytmapi_rs::query::GetLibrarySortOrder;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum LibraryCategory {
@@ -96,6 +97,7 @@ pub enum BrowserLibraryAction {
     ActivateSelected,
     DismissTracks,
     ReloadCategory,
+    CycleSortOrder,
 }
 
 impl Action for BrowserLibraryAction {
@@ -111,6 +113,7 @@ impl Action for BrowserLibraryAction {
             BrowserLibraryAction::ActivateSelected => "Activate selected",
             BrowserLibraryAction::DismissTracks => "Go back from tracks",
             BrowserLibraryAction::ReloadCategory => "Reload category",
+            BrowserLibraryAction::CycleSortOrder => "Cycle sort order",
         }
         .into()
     }
@@ -401,6 +404,7 @@ pub struct LibraryBrowser {
     pub search: SearchBlock,
     pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
     pub local_filter_text: String,
+    pub sort_order: GetLibrarySortOrder,
 }
 
 impl LibraryBrowser {
@@ -439,6 +443,7 @@ impl LibraryBrowser {
             search: SearchBlock::default(),
             cur_playing_video_id: None,
             local_filter_text: String::new(),
+            sort_order: GetLibrarySortOrder::Default,
         }
     }
 
@@ -452,13 +457,14 @@ impl LibraryBrowser {
                     return AsyncTask::new_no_op();
                 }
                 self.loading = true;
-                AsyncTask::new_future_try(
-                    GetAllLibrarySongs,
+                let task = AsyncTask::new_future_try(
+                    GetAllLibrarySongs { sort_order: self.sort_order.clone() },
                     HandleLibrarySongsOk,
                     HandleLibrarySongsErr,
                     None,
                 )
-                .map_frontend(|this: &mut Self| this)
+                .map_frontend(|this: &mut Self| this);
+                task
             }
             LibraryCategory::Playlists => {
                 if self.playlists_fetched {
@@ -479,7 +485,7 @@ impl LibraryBrowser {
                 }
                 self.loading = true;
                 AsyncTask::new_future_try(
-                    GetAllLibraryArtists,
+                    GetAllLibraryArtists { sort_order: self.sort_order.clone() },
                     HandleLibraryArtistsOk,
                     HandleLibraryArtistsErr,
                     None,
@@ -492,7 +498,7 @@ impl LibraryBrowser {
                 }
                 self.loading = true;
                 AsyncTask::new_future_try(
-                    GetAllLibraryAlbums,
+                    GetAllLibraryAlbums { sort_order: self.sort_order.clone() },
                     HandleLibraryAlbumsOk,
                     HandleLibraryAlbumsErr,
                     None,
@@ -797,7 +803,13 @@ impl HasTitle for LibraryBrowser {
             };
             format!("Playlist Tracks{}", search_tag).into()
         } else {
-            "Library".into()
+            let sort_label = match self.sort_order {
+                GetLibrarySortOrder::Default => "",
+                GetLibrarySortOrder::NameAsc => " [A-Z]",
+                GetLibrarySortOrder::NameDesc => " [Z-A]",
+                GetLibrarySortOrder::RecentlySaved => " [Recent]",
+            };
+            format!("Library{}", sort_label).into()
         }
     }
 }
@@ -1456,6 +1468,16 @@ impl ActionHandler<BrowserLibraryAction> for LibraryBrowser {
                 return (AsyncTask::new_no_op(), None);
             }
             BrowserLibraryAction::ReloadCategory => {
+                return (self.reload_category(), None);
+            }
+            BrowserLibraryAction::CycleSortOrder => {
+                self.sort_order = match self.sort_order {
+                    GetLibrarySortOrder::Default => GetLibrarySortOrder::NameAsc,
+                    GetLibrarySortOrder::NameAsc => GetLibrarySortOrder::NameDesc,
+                    GetLibrarySortOrder::NameDesc => GetLibrarySortOrder::RecentlySaved,
+                    GetLibrarySortOrder::RecentlySaved => GetLibrarySortOrder::Default,
+                };
+                info!(sort = ?self.sort_order, "Library sort order changed");
                 return (self.reload_category(), None);
             }
         }
