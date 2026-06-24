@@ -11,6 +11,8 @@ If things break, rollback and re-apply one-by-one.
 - **User chooses priority**: items listed, user picks. Always one.
 - **Test before commit**: user must confirm working before commit.
 - **Debug-First Rule**: CLI debug tool before UI wiring for any new backend path.
+- **Investigate before change**: trace root cause fully before proposing fix. Present findings, then fix.
+- **Small commits, clean diffs**: each commit = one logical change. No mixed concerns. No drive-by refactors.
 
 ## User Preferences (Strict)
 - **No sudo** without explicit permission.
@@ -27,9 +29,15 @@ If things break, rollback and re-apply one-by-one.
 - **Debug-First Rule**: Every new implementation starts by creating CLI debugging tools. CLI tools make tracing changes easier than UI-only debugging. Before wiring UI features, build CLI subcommands/tools that exercise the same backend code paths. Run them to verify correctness before integrating into the UI layer.
 - **Enter = speed**: Enter NEVER opens sub-menu or confirmation dialogs. Direct primary action (play, load tracks, focus). All secondary actions behind `o` context menu. No friction, no confirmations.
 - **Tmux integration**: Youtui status shown via `~/.local/bin/tmux-music` script (tmpfile-based IPC), tmux window icon via `tmux-nerd-font-window-name` plugin at `~/.config/tmux/tmux-nerd-font-window-name.yml`.
-- **Plain Unicode over Nerd Font**: Prefers combining Unicode characters (e.g., `♫⃠`) over Nerd Font glyphs for icons. Suckless-compatible.
+- **Plain Unicode over Nerd Font**: Prefers combining Unicode characters (e.g., `♫⃠`) over Nerd Font glyphs for icons. Suckless-compatible. Exception: Nerd Font MDI icons for footer status (repeat/shuffle/heart) for visual clarity.
 - **Incremental testing**: Test one thing at a time. User validates each change before proceeding. No batch testing.
 - **Compact UI**: Minimal visual noise, information-dense layouts. Footer shows `Artist - Song - Album` in single line.
+- **Terminal**: foot (Wayland native). Sixel graphics support but DCS clear is unreliable. Design fallbacks.
+- **Docs are code**: CLAUDE.md, TODO.md, docs/ must stay current with every commit. Stale docs = bug.
+- **Dead code is liability**: Remove unused structs, methods, annotations on sight. Keep only what compiles and is wired.
+- **Prefer foreground over background**: Subtle styling (green text, not green highlight) for playing indicators. Less visual noise.
+- **Prioritize root cause over workaround**: Trace the chain before patching. If the fix is in a dependency, document upstream.
+- **Catalog before implement**: New features get a TODO entry with scope, files, and estimate before coding starts.
 
 ## Build
 - Workspace root: `/home/caos/builds/youtui/`
