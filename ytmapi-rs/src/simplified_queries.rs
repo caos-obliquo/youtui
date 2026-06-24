@@ -36,11 +36,10 @@ use crate::query::{
     GetLibraryPodcastsQuery, GetLibrarySongsQuery, GetLibrarySortOrder, GetLibraryUploadAlbumQuery,
     GetLibraryUploadAlbumsQuery, GetLibraryUploadArtistQuery, GetLibraryUploadArtistsQuery,
     GetLibraryUploadSongsQuery, GetLyricsIDQuery, GetMoodCategoriesQuery, GetMoodPlaylistsQuery,
-    GetNewEpisodesQuery, GetPlaylistTracksQuery, GetPodcastQuery, GetSavedEpisodesQuery,
-    GetSearchSuggestionsQuery, GetTasteProfileQuery, GetUserPlaylistsQuery, GetUserQuery,
-    GetUserVideosQuery, GetWatchPlaylistQuery, Query, RemoveHistoryItemsQuery,
-    RemovePlaylistItemsQuery, SearchQuery, SetTasteProfileQuery, SubscribeArtistQuery,
-    UnsubscribeArtistsQuery,
+    GetNewEpisodesQuery, GetPlaylistTracksQuery, GetPodcastQuery, GetSearchSuggestionsQuery,
+    GetTasteProfileQuery, GetUserPlaylistsQuery, GetUserQuery, GetUserVideosQuery,
+    GetWatchPlaylistQuery, Query, RemoveHistoryItemsQuery, RemovePlaylistItemsQuery, SearchQuery,
+    SetTasteProfileQuery, SubscribeArtistQuery, UnsubscribeArtistsQuery,
 };
 use crate::{Result, YtMusic};
 
@@ -1156,25 +1155,6 @@ impl<A: LoggedIn> YtMusic<A> {
     ) -> Result<<GetLibraryChannelsQuery as Query<A>>::Output> {
         let query = sort_order
             .map(GetLibraryChannelsQuery::new)
-            .unwrap_or_default();
-        self.query(query).await
-    }
-    /// Gets a list of all saved episodes in your Library.
-    ///
-    /// ```no_run
-    /// # async {
-    /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE")
-    ///     .await
-    ///     .unwrap();
-    /// let results = yt.get_saved_episodes(None).await;
-    /// # };
-    /// ```
-    pub async fn get_saved_episodes(
-        &self,
-        sort_order: Option<GetLibrarySortOrder>,
-    ) -> Result<<GetSavedEpisodesQuery as Query<A>>::Output> {
-        let query = sort_order
-            .map(GetSavedEpisodesQuery::new)
             .unwrap_or_default();
         self.query(query).await
     }

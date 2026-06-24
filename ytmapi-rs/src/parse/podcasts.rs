@@ -14,8 +14,7 @@ use crate::nav_consts::{
     SUBTITLE, SUBTITLE_RUNS, SUBTITLE3, TITLE, TWO_COLUMN,
 };
 use crate::query::{
-    GetChannelEpisodesQuery, GetChannelQuery, GetEpisodeQuery, GetNewEpisodesQuery,
-    GetPodcastQuery, GetSavedEpisodesQuery,
+    GetChannelEpisodesQuery, GetChannelQuery, GetEpisodeQuery, GetNewEpisodesQuery, GetPodcastQuery,
 };
 use const_format::concatcp;
 use itertools::Itertools;
@@ -313,27 +312,6 @@ impl ParseFrom<GetNewEpisodesQuery> for Vec<Episode> {
             .try_into_iter()?
             .map(parse_episode)
             .collect()
-    }
-}
-impl ParseFrom<GetSavedEpisodesQuery> for Vec<Episode> {
-    fn parse_from(p: crate::ProcessedResult<GetSavedEpisodesQuery>) -> Result<Self> {
-        let json_crawler = JsonCrawlerOwned::from(p);
-        // Find all music shelf contents across sections (saved episodes may have
-        // multiple categories like "Episodes for later", "Saved episodes" etc.)
-        let mut results = Vec::new();
-        for item in json_crawler
-            .navigate_pointer(concatcp!(SINGLE_COLUMN_TAB, SECTION_LIST, "/contents"))?
-            .try_into_iter()?
-        {
-            if let Ok(music_shelf) = item.navigate_pointer(MUSIC_SHELF) {
-                if let Ok(contents) = music_shelf.navigate_pointer("/contents") {
-                    for episode_item in contents.try_into_iter()? {
-                        results.push(parse_episode(episode_item)?);
-                    }
-                }
-            }
-        }
-        Ok(results)
     }
 }
 

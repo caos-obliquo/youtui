@@ -142,7 +142,6 @@ fn print_usage() {
     eprintln!("  library artist-subscriptions  List subscribed artists");
     eprintln!("  library podcasts              List library podcasts");
     eprintln!("  library channels              List library channels");
-    eprintln!("  library saved-episodes        List saved episodes");
     eprintln!("  library upload-songs          List uploaded songs");
     eprintln!("  library upload-artists        List upload artists");
     eprintln!("  library upload-albums         List upload albums");
@@ -601,10 +600,6 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                     Err(e) => eprintln!("Library error: {}", e),
                 },
                 "channels" => match yt.get_library_channels(sort_order).await {
-                    Ok(results) => print_results(&results, json),
-                    Err(e) => eprintln!("Library error: {}", e),
-                },
-                "saved-episodes" => match yt.get_saved_episodes(sort_order).await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
