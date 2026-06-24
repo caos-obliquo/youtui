@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 ## Tests
 ```bash
 cargo test --release -p youtui --bin youtui       # 124 pass, 4 ignore
-cargo test --release -p metadata-provider          # 19 pass
+cargo test --release -p metadata-provider          # 35 pass
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
 cargo test --release -p ytmapi-rs                  # 28/52 auth (needs cookie)
@@ -58,10 +58,10 @@ cargo test --release -p async-callback-manager     # 14 pass (3 lib + 11 integ)
 cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
 cargo test --release -p ytmapi-cli                 # 7 pass
 ```
-Total: **~326/326 pass, 0 fail, 4 ignored, 0 warnings** (youtui 124 + 19 + 65 + 85 + 14 + 14 + 2 + 7 = 330 metadata-provider included separately)
+Total: **~346/346 pass, 0 fail, 4 ignored, 0 warnings** (youtui 124 + 35 + 65 + 85 + 14 + 14 + 2 + 7 = 346)
 
 ## Warnings
-`cargo build --release` -- 1 pre-existing warning (ytmapi-rs `unused_mut` in playlist.rs). Not introduced by changes. 2 pre-existing ytmapi-cli deprecation warnings (SearchQuery). youtui crate: 0 warnings.
+`cargo build --release` -- **0 warnings across workspace** (all 9 crates).
 
 ## Arch (3-layer async callback)
 ```
@@ -72,16 +72,15 @@ See `docs/` for full reference (5.4k lines, 20 files).
 ## 9 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 103 |
+| `youtui` | Main binary | 124 |
 | `ytmapi-rs` | YT Music API client | 85 lib + 28/52 auth |
 | `vi-text-editor` | Vim text editor widget | 65 |
-| `metadata-provider` | Metadata trait + impls | 19 |
+| `metadata-provider` | Metadata trait + impls | 35 |
 | `genius-rs` | Genius lyrics/annotations | 14 |
 | `async-callback-manager` | Async task dispatch | 15 |
 | `json-crawler` | JSON path parser | 8 |
 | `ytmapi-cli` | CLI debug tool | 7 |
 | `metal-proxy` | Metal Archives direct proxy | 0 |
-| `libs/metal-proxy/` | ~250 | Chromium-free background proxy (cookie-based)
 
 ## 5 Browser Tabs Fully Wired
 | Tab | Search | Table | Sort/Filter | o Menu | Nav | Status |
@@ -103,7 +102,7 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `app/ui/browser/albumsearch.rs` | ~720 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
 | `config/keymap.rs` | ~2130 | All keybindings by context |
 | `app/ui.rs` | ~1591 | Main window, event routing |
-| `libs/metadata-provider/` | 19 tests | Metadata trait + 5 provider impls |
+| `libs/metadata-provider/` | 35 tests | Metadata trait + 5 provider impls + genre_map |
 | `app/ui/playlist/notes_popup.rs` | ~272 | Vim-driven notes text editor |
 | `app/ui/playlist/playlist_editor_popup.rs` | ~484 | Playlist editor (nvim-driven, overwrite save) |
 | `app/ui/playlist/album_art_popup.rs` | ~26 | Album art sixel popup |
@@ -288,8 +287,6 @@ Context menu is exclusively via `o`.
 ### Known Issues
 - **Album art popup**: Sixel centering not perfect, sixel persistence after close. Known bug.
 - **MA cookie**: `cf_clearance` expires ~30 min. Refresh via `cargo run --release -p metal-proxy -- --get-cookie`.
-- **Sort/filter popups**: Column sort and filter popups not wired for library tracks view (Phase C).
-- **[SEARCH] indicator**: Missing for library tracks `/` filter (Phase D).
 
 ## Session 2026-06-22 (Committed)
 - `fix:` lyrics help text — `( ) Prev/Next Lyric | <> Prev/Next Song | [] Seek | Esc/q: Close`
@@ -405,7 +402,8 @@ Context menu is exclusively via `o`.
 - `notes_popup.rs`: removed unused `NotesAction` enum + `ActionHandler` impl (Esc/q handled directly)
 - `scrolling_list.rs`, `tab_grid.rs`: removed unused methods
 - `#[allow(dead_code)]` annotation removed from `WindowContext::Notes` (intentional, re-added)
-- Remaining `#[allow(dead_code)]`: notes_popup (intentional dead variant), albumsearch (constructor used from tests)
+- Remaining `#[allow(dead_code)]`: notes_popup (intentional dead variant), oauth.rs (2 deserialize-only fields)
+
 
 ## Session 2026-06-24 (Batch B — Annotations + Colon + Metadata Pipeline)
 
@@ -502,6 +500,27 @@ Context menu is exclusively via `o`.
 - `youtui/src/app/ui/playlist/lyrics_popup.rs` — V handler clears opposite range, uses VISUAL_MODE_COLOUR.
 - `youtui/src/app/view/draw.rs` — visual_range_style uses VISUAL_MODE_COLOUR.
 
+## Session 2026-06-24 (ytmapi-cli Full Wiring + ytmapi-rs Polish — c095628)
+
+- **ytmapi-cli rewrite**: 1426 lines, 44 commands across all 16 Innertube API paths
+- **62 stale TODOs removed** across 30 ytmapi-rs files (99→37 remaining)
+- **Library sort order** exposed through 6 simplified API methods + `--sort` CLI flag
+- **GetAlbumBrowseId resolver**: `resolve_album_browse_id()` fn
+- **CLI --help flag fixed**: now works without cookie
+- **sort_order crate re-export**: `GetLibrarySortOrder` exported from `query`
+- **35 clippy warnings fixed** across 3 dependency crates: metadata-provider (12→0), vi-text-editor (18→0), genius-rs (6→0)
+- **0 warnings across workspace**, all tests pass
+
+## Session 2026-06-24 (Dead Code Polish — f723535)
+
+- **17 stale `#[allow(dead_code)]` removed** across 6 files
+- **206 lines dead code deleted**: close_sort/handle_sort_cur_asc/handle_sort_cur_desc/sortable_columns from albumsearch, PlaylistTracksLoaded variant+match arm from library, load_selected_playlist/search_text/is_search_active from library, go_to_first/go_to_last from playlistsearch/search_panel/songs_panel, set_filter_text from lyrics_popup
+- **LyricsPopupState::Loaded(String) → Loaded(())**: field never read
+- **Remove unused `SortDirection` import** from albumsearch
+- **docs/ytmapi-rs-status.md**: new endpoint-by-endpoint gap analysis
+- **TODO.md**: updated with current state
+- **CLAUDE.md**: this update
+
 ### Previous Session Features (Unchanged)
 - Metadata pipeline (providers, Discogs, MA_COOKIE, genre aliasing).
 - Library tracks Phase A+B (delete re-route, filtered indices).
@@ -545,9 +564,13 @@ Context menu is exclusively via `o`.
 
 ## Remaining Items (Detailed)
 ### Recommended Order
-1. **Annotations integration** (P1)
-2. **Sixel album art persistence** (P2)
-3. **P2/P3 items** (polish, no data-loss)
+1. **Library sort order UI** (P1)
+2. **Annotations integration** (P1)
+3. **Sixel album art persistence** (P2)
+4. **P2/P3 items** (polish, no data-loss)
+
+### P1: Library sort order UI
+**Problem**: Library sort order exposed in API + CLI but NOT wired in youtui UI. Library/Songs/Albums/Artists always use default sort.
 
 ### P1: ~~Back navigation (F7 cycle) — FIXED.~~
 
@@ -592,11 +615,8 @@ Context menu is exclusively via `o`.
 ### P3: Album browser j/k routing when show_tracks
 **Problem**: When album tracks are shown inline in AlbumsBrowser, j/k navigation doesn't move through tracks.
 
-### P3: ytmapi-rs 150 TODOs
-**Problem**: ~150 pre-existing TODO comments in `ytmapi-rs/src/parse/search.rs` and `parse/artist.rs` for type safety improvements.
-
-### P3: ytmapi-rs 150 TODOs
-**Problem**: ~150 pre-existing TODO comments in `ytmapi-rs/src/parse/search.rs` and `parse/artist.rs` for type safety improvements.
+### P3: ytmapi-rs 37 remaining TODOs
+**Problem**: 37 legitimate TODOs remaining (artist categories, i18n, VL prefix, continuations, unfulfilled feature fields). All LOW value for youtui.
 
 ### P3: Metadata pipeline year coverage
 **Problem**: Some tracks show `None` for year. Need more fallback sources.
