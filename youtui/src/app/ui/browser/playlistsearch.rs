@@ -477,21 +477,6 @@ impl PlaylistSearchBrowser {
         self.prev_input_routing = mem::replace(&mut self.input_routing, input_routing);
     }
 
-    // TODO: Wire go_to_first — planned navigation shortcut
-    #[allow(dead_code)]
-    pub fn go_to_first(&mut self) {
-        match self.input_routing {
-            InputRouting::Playlist => self.playlist_search_panel.go_to_first(),
-            InputRouting::Song => self.playlist_songs_panel.go_to_first(),
-        }
-    }
-    #[allow(dead_code)]
-    pub fn go_to_last(&mut self) {
-        match self.input_routing {
-            InputRouting::Playlist => self.playlist_search_panel.go_to_last(),
-            InputRouting::Song => self.playlist_songs_panel.go_to_last(),
-        }
-    }
 }
 
 #[derive(Debug, PartialEq)]

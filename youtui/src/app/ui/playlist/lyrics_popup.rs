@@ -33,8 +33,7 @@ impl Action for LyricsPopupAction {
 
 pub enum LyricsPopupState {
     Loading,
-    #[allow(dead_code)]
-    Loaded(String),
+    Loaded(()),
     Error(String),
 }
 
@@ -126,7 +125,7 @@ impl LyricsPopup {
             self.lyrics_cache.put(key.clone(), lyrics.clone());
         }
         self.original_lyrics = lyrics.clone();
-        self.state = LyricsPopupState::Loaded(lyrics);
+        self.state = LyricsPopupState::Loaded(());
         self.romaji_cache = None;
         self.scroll_offset = 0;
         self.rebuild_lines();
@@ -145,11 +144,6 @@ impl LyricsPopup {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn set_filter_text(&mut self, text: &str) {
-        self.filter_text = text.to_string();
-        self.rebuild_lines();
-    }
     fn rebuild_lines(&mut self) {
         self.lines.clear();
         if self.romaji_mode && has_japanese(&self.original_lyrics) {

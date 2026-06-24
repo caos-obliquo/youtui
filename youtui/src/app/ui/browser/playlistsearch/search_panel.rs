@@ -102,14 +102,6 @@ impl PlaylistSearchPanel {
         self.search_popped = false;
         self.route = PlaylistInputRouting::List;
     }
-    #[allow(dead_code)]
-    pub fn go_to_first(&mut self) {
-        self.selected = 0;
-    }
-    #[allow(dead_code)]
-    pub fn go_to_last(&mut self) {
-        self.selected = self.list.len().saturating_sub(1);
-    }
 }
 impl Component for PlaylistSearchPanel {
     type Bkend = ArcServer;

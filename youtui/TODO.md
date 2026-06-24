@@ -77,54 +77,50 @@
 - ytmapi-rs Phase 0: Fixed 3 `todo!()` panics in search.rs TopResultType parsing
 - ytmapi-rs Phase 0: Fixed 2 deprecated SearchQuery::new calls in ytmapi-cli
 - ytmapi-cli: Full 44-command coverage (was 16) across all ytmapi-rs endpoints
-- User commands: user, user-videos, user-playlists
-- Podcast commands: channel, channel-episodes, podcast, episode, new-episodes
-- Recommendation commands: taste-profile, set-taste-profile, mood-categories, mood-playlists
-- History commands: history, remove-history
-- Library commands: full subcommand tree (playlists/songs/albums/artists/artist-subscriptions/podcasts/channels/upload-*)
-- All upload commands: upload-songs, upload-artists, upload-albums, upload-album <id>, upload-artist <id>, delete-upload, upload <file>
-- Merge-playlist, rate-playlist, add-to-playlist, remove-items, subscribe, unsubscribe
-- All 10 search variants + search-suggestions
-- Debug subcommands: meta, clean, artist, resolve, genre, genre-list
-- Genius subcommands: search, annotations, lyrics, all
-- Fixture subcommand with --type flag
-- Full usage organized by category
-- 7/7 tests pass, 0 warnings, 235 total workspace tests pass
-- ytmapi-rs lib: 85/85 lib tests pass (auth tests need cookie)
+- 7/7 tests pass, 0 warnings
+
+#### Session 2026-06-24 (ytmapi-rs Polish, uncommitted)
+- **62 stale TODOs removed** across 30 files (99->37 remaining)
+- **0 warnings across workspace** (fixed 35 clippy warnings in 3 dep crates)
+- Library sort order exposed through 6 simplified API methods + ytmapi-cli `--sort` flag
+- GetAlbumBrowseId resolver (`resolve_album_browse_id()` fn)
+- `#[allow(dead_code)]` cleanup: 7 proposital kept, partial stale removal
+- Clippy: vi-text-editor 18→0, metadata-provider 12→0, genius-rs 6→0
 
 ## Test Status
 - youtui: 124/124 pass, 4 ignored, 0 warnings
 - metadata-provider: 19/19 pass, 0 warnings
-- ytmapi-rs lib: 85/85 pass
-- ViTextEditor: 65/65 pass
-- genius-rs: 14/14 pass
-- ytmapi-cli: 7/7 pass
-- json-crawler: 2/2 pass (0 lib + 2 doctests)
-- async-callback-manager: 14/14 pass (3 lib + 11 integ)
-- **Total: 235 non-auth pass, ~52 auth need cookie, 0 warnings**
+- ytmapi-rs lib: 85/85 pass, 0 warnings
+- ViTextEditor: 65/65 pass, 0 warnings
+- genius-rs: 14/14 pass, 0 warnings
+- ytmapi-cli: 7/7 pass, 0 warnings
+- json-crawler: 2/2 pass
+- async-callback-manager: 14/14 pass
+- **Total: ~330 non-auth pass, 0 fail, 0 warnings across workspace**
 
-## Remaining (Post-Session 2026-06-24)
-### P2 (Low Priority)
-- FFT footer bars - real-time audio spectrum in footer (needs rustfft dep + Source adapter)
-- Sixel album art centering/persistence - foot DCS unreliable, centering not perfect
+## Remaining (Priority Order)
+
+### P1 (This Session)
+- Finish dead_code cleanup: remove 17 stale annotations + truly dead methods
+- Wire library sort order in youtui UI
+- Update docs: CLAUDE.md, TODO.md, roadmap
+
+### P2
+- FFT footer bars - real-time audio spectrum (needs rustfft + Source adapter)
+- Sixel album art centering/persistence fix
+- Like album to library (o.t adds to YT Music profile Albums)
 
 ### P3
-- Like album to library - o.t rates but doesn't add to YT Music profile Albums
-- Genius annotations fallback - page scrape when no GENIUS_TOKEN
+- Genius annotations fallback (page scrape when no GENIUS_TOKEN)
 - Genius lyrics: Musixmatch/LRCLIB integration
-- Related tracks metadata enrichment - YTM API returns no album/year
 - Crate extraction: audio-player (deep async_rodio_sink coupling)
-- Count-in-header standardization across browser tabs
+- Related tracks metadata enrichment
 - Album browser j/k routing when show_tracks
-- RYM cookie proxy (exploratory, same MA_COOKIE pattern)
 - Metal-API (metal-api.dev) returns 500
-- Album URL tracks bypass metadata pipeline (no album splitting)
-- Force-split (o.f) has no toast/notification feedback
-- MA_COOKIE cf_clearance expires ~30 min, manual refresh
 
-### ytmapi-rs Remaining
-- Phase 1: Remove stale "TODO: Tests" comments (functions tested via integration, no standalone unit tests needed)
-- Phase 2: Remove stale "TODO: Type safety" comments (subjective refactor, no concrete improvement)
-- Phase 3: Parse feedback tokens from history/artist/playlist API responses (8 TODO items)
-- Phase 5: ~50 code quality nits (docs, unwrap->expect, dead code removal)
-- 1 pre-existing warning: unused_mut in playlist.rs
+### Skipped (Low Value)
+- **GetSavedEpisodes** — podcasts not wired in UI
+- **GetAccountInfo** — no UI use case
+- **GetPodcast continuations** — podcasts not wired
+- **GetSong (full)** — not planned by upstream
+- **37 remaining ytmapi-rs TODOs** — all low-value feature gaps (artist categories, i18n, VL prefix, consolidation)
