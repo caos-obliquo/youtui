@@ -192,6 +192,6 @@ impl ListView for PlaylistSearchPanel {
 }
 impl HasTitle for PlaylistSearchPanel {
     fn get_title(&self) -> Cow<'_, str> {
-        "Playlists".into()
+        format!("Playlists - {} results", self.list.len()).into()
     }
 }
