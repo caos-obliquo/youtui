@@ -91,7 +91,7 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::PlaySongs => "Play songs",
             BrowserSongsAction::AddSongToPlaylist => "Add song to playlist",
             BrowserSongsAction::AddSongsToPlaylist => "Add songs to playlist",
-            BrowserSongsAction::SaveToExistingPlaylist => "Save to existing playlist",
+            BrowserSongsAction::SaveToExistingPlaylist => "Add to existing playlist",
             BrowserSongsAction::InsertNext => "Play next",
             BrowserSongsAction::ViewLyrics => "View Lyrics",
             BrowserSongsAction::CopySongUrl => "Copy Song URL",

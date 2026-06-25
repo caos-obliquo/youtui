@@ -251,6 +251,7 @@ impl MetadataRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::overrides::MetadataOverrides;
 
     fn make_meta(artist: Option<&str>, album: Option<&str>, year: Option<&str>, tracks: usize) -> ValidatedMetadata {
         ValidatedMetadata {
@@ -328,5 +329,141 @@ mod tests {
         let meta = make_meta(None, Some("The Complete Master of Puppets Live"), None, 0);
         let score = MetadataRegistry::score_result(&meta, "Any", "Master of Puppets");
         assert_eq!(score, 10 + 7); // album(10) + contains(7)
+    }
+
+    // --- resolve() integration tests ---
+
+    struct MockProvider {
+        priority_val: u8,
+        result: Option<ValidatedMetadata>,
+    }
+
+    impl MetadataProvider for MockProvider {
+        fn priority(&self) -> u8 {
+            self.priority_val
+        }
+
+        fn lookup<'a>(
+            &'a self,
+            _artist: &'a str,
+            _title: &'a str,
+            _album: Option<&'a str>,
+            _client: &'a reqwest::Client,
+        ) -> futures::future::BoxFuture<'a, Option<ValidatedMetadata>> {
+            let result = self.result.clone();
+            Box::pin(async move { result })
+        }
+    }
+
+    fn make_registry(providers: Vec<Box<dyn MetadataProvider>>) -> MetadataRegistry {
+        MetadataRegistry {
+            providers,
+            http_client: reqwest::Client::new(),
+            cache: std::sync::Mutex::new(lru::LruCache::new(
+                std::num::NonZeroUsize::new(200).unwrap(),
+            )),
+            overrides: std::sync::Mutex::new(MetadataOverrides::default()),
+            overrides_path: None,
+            cache_path: None,
+        }
+    }
+
+    #[test]
+    fn resolve_selects_highest_scored_provider() {
+        // Provider 1: tracks + album + exact artist → ~195
+        let p1 = MockProvider {
+            priority_val: 1,
+            result: Some(ValidatedMetadata {
+                artist: Some("Metallica".into()),
+                album: Some("Master of Puppets".into()),
+                year: Some("1986".into()),
+                album_tracks: vec![
+                    AlbumTrack { title: "Battery".into(), duration_secs: 500.0 },
+                    AlbumTrack { title: "Master of Puppets".into(), duration_secs: 515.0 },
+                ],
+                ..Default::default()
+            }),
+        };
+        // Provider 2: album but no tracks, no artist → ~17
+        let p2 = MockProvider {
+            priority_val: 2,
+            result: Some(ValidatedMetadata {
+                artist: None,
+                album: Some("Master of Puppets".into()),
+                ..Default::default()
+            }),
+        };
+        // Provider 3: wrong artist penalty → ~ -490
+        let p3 = MockProvider {
+            priority_val: 3,
+            result: Some(ValidatedMetadata {
+                artist: Some("Megadeth".into()),
+                album: Some("Rust in Peace".into()),
+                ..Default::default()
+            }),
+        };
+
+        let reg = make_registry(vec![Box::new(p1), Box::new(p2), Box::new(p3)]);
+        let result =
+            futures::executor::block_on(reg.resolve("Metallica", "Master of Puppets", None))
+                .unwrap();
+
+        assert_eq!(result.artist, Some("Metallica".to_string()));
+        assert_eq!(result.album, Some("Master of Puppets".to_string()));
+        assert_eq!(result.year, Some("1986".to_string()));
+        assert_eq!(result.album_tracks.len(), 2);
+    }
+
+    #[test]
+    fn resolve_returns_default_when_no_match() {
+        // Provider returns metadata that doesn't match at all
+        let p = MockProvider {
+            priority_val: 1,
+            result: Some(ValidatedMetadata {
+                artist: Some("Megadeth".into()),
+                album: Some("Rust in Peace".into()),
+                ..Default::default()
+            }),
+        };
+        let reg = make_registry(vec![Box::new(p)]);
+        let result =
+            futures::executor::block_on(reg.resolve("Metallica", "Master of Puppets", None))
+                .unwrap();
+
+        // Default: all fields None/empty
+        assert_eq!(result.artist, None);
+        assert_eq!(result.album, None);
+        assert_eq!(result.year, None);
+        assert!(result.album_tracks.is_empty());
+    }
+
+    #[test]
+    fn resolve_uses_album_param_for_better_match() {
+        // Provider matches only when album is given
+        let p = MockProvider {
+            priority_val: 1,
+            result: Some(ValidatedMetadata {
+                artist: Some("Band".into()),
+                album: Some("The Album".into()),
+                year: Some("2020".into()),
+                album_tracks: vec![AlbumTrack {
+                    title: "Song".into(),
+                    duration_secs: 200.0,
+                }],
+                ..Default::default()
+            }),
+        };
+        let reg = make_registry(vec![Box::new(p)]);
+        // Resolve with album param
+        let result =
+            futures::executor::block_on(reg.resolve("Band", "Song", Some("The Album"))).unwrap();
+        assert_eq!(result.artist, Some("Band".to_string()));
+        assert_eq!(result.album, Some("The Album".to_string()));
+        assert_eq!(result.album_tracks.len(), 1);
+
+        // Resolve without album param also works (provider always returns same)
+        let result2 =
+            futures::executor::block_on(reg.resolve("Band", "Song", None)).unwrap();
+        assert_eq!(result2.album, Some("The Album".to_string()));
     }
 }

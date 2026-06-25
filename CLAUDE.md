@@ -48,8 +48,8 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 125 pass, 4 ignore
-cargo test --release -p metadata-provider          # 35 pass
+cargo test --release -p youtui --bin youtui       # 135 pass, 4 ignore
+cargo test --release -p metadata-provider          # 45 pass
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
 cargo test --release -p ytmapi-rs                  # 28/52 auth (needs cookie)
@@ -58,7 +58,7 @@ cargo test --release -p async-callback-manager     # 14 pass (3 lib + 11 integ)
 cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
 cargo test --release -p ytmapi-cli                 # 7 pass
 ```
-Total: **~347/347 pass, 0 fail, 4 ignored, 0 warnings** (youtui 125 + 35 + 65 + 85 + 14 + 14 + 2 + 7 = 347)
+Total: **~357/357 pass, 0 fail, 4 ignored, 0 warnings** (youtui 135 + 45 + 65 + 85 + 14 + 14 + 2 + 7 = 357)
 
 ## Warnings
 `cargo build --release` -- **0 warnings across workspace** (all 9 crates).
@@ -72,10 +72,10 @@ See `docs/` for full reference (5.4k lines, 20 files).
 ## 9 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 124 |
+| `youtui` | Main binary | 135 |
 | `ytmapi-rs` | YT Music API client | 85 lib + 28/52 auth |
 | `vi-text-editor` | Vim text editor widget | 65 |
-| `metadata-provider` | Metadata trait + impls | 35 |
+| `metadata-provider` | Metadata trait + impls | 45 |
 | `genius-rs` | Genius lyrics/annotations | 14 |
 | `async-callback-manager` | Async task dispatch | 15 |
 | `json-crawler` | JSON path parser | 8 |
@@ -102,7 +102,7 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `app/ui/browser/albumsearch.rs` | ~720 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
 | `config/keymap.rs` | ~2130 | All keybindings by context |
 | `app/ui.rs` | ~1591 | Main window, event routing |
-| `libs/metadata-provider/` | 35 tests | Metadata trait + 5 provider impls + genre_map |
+| `libs/metadata-provider/` | 45 tests | Metadata trait + 5 provider impls + genre_map |
 | `app/ui/playlist/notes_popup.rs` | ~272 | Vim-driven notes text editor |
 | `app/ui/playlist/playlist_editor_popup.rs` | ~484 | Playlist editor (nvim-driven, overwrite save) |
 | `app/ui/playlist/album_art_popup.rs` | ~35 | Album art sixel popup w/ pagination |
@@ -455,7 +455,11 @@ Context menu is exclusively via `o`.
 - `notes_popup.rs`: removed unused `NotesAction` enum + `ActionHandler` impl (Esc/q handled directly)
 - `scrolling_list.rs`, `tab_grid.rs`: removed unused methods
 - `#[allow(dead_code)]` annotation removed from `WindowContext::Notes` (intentional, re-added)
-- Remaining `#[allow(dead_code)]`: notes_popup (intentional dead variant), oauth.rs (2 deserialize-only fields)
+- `scrobbler.rs`: removed `#![allow(dead_code)]` (all items used)
+- `actionhandler.rs`: removed dead `MouseHandler` trait entirely
+- `api.rs`: removed `#[allow(unused_imports)]`
+- `tab_grid.rs`, `scrolling_list.rs`: test-only builder methods gated with `#[cfg(test)]`
+- Remaining `#[allow(dead_code)]`: yt_dlp.rs (intentional — fields/variants for future use, documented), notes_popup (intentional dead variant), oauth.rs (2 deserialize-only fields)
 
 
 ## Session 2026-06-24 (Batch B — Annotations + Colon + Metadata Pipeline)

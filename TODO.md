@@ -37,6 +37,14 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 
 ## Done
 
+### Session 2026-06-25 — Test gaps + dead_code + add-to-playlist + lowercase preserve
+
+- **3 test holes filled**: resolve() integration (3 tests), metal_api parsing (6 tests), insert_album_tracks propagation (1 test)
+- **#[allow(dead_code)] cleanup**: removed from scrobbler, api, actionhandler MouseHandler trait. Gated test-only builders with `#[cfg(test)]`
+- **E button rename**: "Save Queue to Existing Playlist" → "Add Queue to Playlist" (always appends, no toggle)
+- **normalize_artist_name**: preserves intentional lowercase (e.g. "data da morte"). Same fix in metal_api
+- Test counts: youtui 136, metadata-provider 45, workspace ~357
+
 ### Session 2026-06-25 — Metadata Cache Persistence + Library Album Fix
 
 - **Library songs now keep album data**: `HandleLibrarySongsOk` no longer drops `ts.album.name` and `ts.album.id` — Album column in library browser now shows real names from YTM API.
@@ -78,12 +86,12 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 | 2 | Visual mode cyan | DONE | |
 | 3 | Genius annotations fallback (no token) | `genius-rs/src/annotations.rs` | med |
 | 4 | Genius lyrics: Musixmatch/LRCLIB integration | new crate | med |
-| 5 | YTM album provider in metadata pipeline | `ytmapi-rs/src/query/album.rs` | med |
-| 6 | Like album to library (YTM profile) | `albumsearch.rs` + ytmapi-rs | med |
+| 5 | YTM album provider in metadata pipeline | DONE | |
+| 6 | Like album to library (YTM profile) | DONE | |
 | 7 | Sixel album art persistence | DONE | |
-| 8 | Album browser j/k when tracks shown inline | `albumsearch.rs` | small |
-| 9 | Count-in-header standardization | browser files | small |
-| 10 | ytmapi-rs 150 TODO items | `ytmapi-rs/src/parse/search.rs` | large |
+| 8 | Album browser j/k when tracks shown inline | DONE | |
+| 9 | Count-in-header standardization | DONE | |
+| 10 | ytmapi-rs TODO cleanup (62/99 stale removed) | DONE | |
 | 11 | Crate extraction: audio-player | new crate | large |
 
 **Step 12**: ~~F7 back-nav (FIXED). `handle_change_search_type()` now calls `push_snapshot()`.~~

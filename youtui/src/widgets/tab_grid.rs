@@ -21,7 +21,7 @@ enum TabGridConstraint {
 }
 
 impl<'a> TabGrid<'a> {
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn new_with_max_cols(
         titles: impl IntoIterator<Item = impl Into<Cow<'a, str>>>,
         cols: u16,

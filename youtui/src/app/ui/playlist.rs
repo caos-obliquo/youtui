@@ -217,7 +217,7 @@ impl Action for PlaylistAction {
             PlaylistAction::ToggleRepeat => "Toggle Repeat Mode",
             PlaylistAction::ToggleRadio => "Toggle Radio Mode",
             PlaylistAction::ViewSongInfo => "View Song Info",
-            PlaylistAction::SaveToExistingPlaylist => "Save Queue to Existing Playlist",
+            PlaylistAction::SaveToExistingPlaylist => "Add Queue to Playlist",
             PlaylistAction::UndoDelete => "Undo Delete",
             PlaylistAction::DeleteToTop => "Delete to Top",
             PlaylistAction::DeleteToBottom => "Delete to Bottom",

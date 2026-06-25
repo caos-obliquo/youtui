@@ -179,9 +179,13 @@ pub fn normalize_artist_name(name: &str) -> String {
         let first = chars.next().unwrap().to_uppercase().to_string();
         return first + chars.as_str();
     }
+    // Respect intentional lowercase names (e.g. "data da morte" should not become "Data da morte")
     let mut chars = trimmed.chars();
-    let first = chars.next().unwrap().to_uppercase().to_string();
-    first + chars.as_str()
+    let first = chars.next().unwrap();
+    if first.is_lowercase() {
+        return trimmed.to_string();
+    }
+    first.to_uppercase().to_string() + chars.as_str()
 }
 
 impl From<ParsedSongAlbum> for ListSongAlbum {
@@ -787,7 +791,8 @@ mod normalize_tests {
 
     #[test]
     fn norm_lowercase() {
-        assert_eq!(normalize_artist_name("metallica"), "Metallica");
+        // All-lowercase names preserved (intentional naming like "data da morte")
+        assert_eq!(normalize_artist_name("metallica"), "metallica");
     }
 
     #[test]
@@ -797,7 +802,7 @@ mod normalize_tests {
 
     #[test]
     fn norm_single_char() {
-        assert_eq!(normalize_artist_name("a"), "A");
+        assert_eq!(normalize_artist_name("a"), "a");
     }
 
     #[test]
@@ -807,7 +812,13 @@ mod normalize_tests {
 
     #[test]
     fn norm_whitespace_padded() {
-        assert_eq!(normalize_artist_name("  metallica  "), "Metallica");
+        // Whitespace stripped, all-lowercase preserved
+        assert_eq!(normalize_artist_name("  metallica  "), "metallica");
+    }
+
+    #[test]
+    fn norm_intentional_lowercase_preserved() {
+        assert_eq!(normalize_artist_name("data da morte"), "data da morte");
     }
 }
 
