@@ -47,20 +47,21 @@ async fn do_lookup(artist: &str, title: &str, client: &reqwest::Client) -> Optio
     let band = artist.trim();
     if band.is_empty() { return None; }
 
-    // 1. Try metal-api.dev (approved community REST API)
-    let result = try_metal_api(band, title, client).await;
+    // 1. Try direct MA access with cf_clearance cookie (env or file).
+    //    Fastest & most reliable — metal-api.dev is down, proxy requires setup.
+    let result = try_direct_ma(band, title).await;
     if result.is_some() { return result; }
 
-    tracing::debug!("metal-api.dev unavailable, trying local proxy");
+    tracing::debug!("direct MA access unavailable, trying local proxy");
 
     // 2. Try local Chromium proxy (bypasses Cloudflare via headless browser)
     let result = try_local_proxy(band, title, client).await;
     if result.is_some() { return result; }
 
-    tracing::debug!("local proxy unavailable, trying direct MA access");
+    tracing::debug!("local proxy unavailable, trying metal-api.dev");
 
-    // 3. Try direct MA access with cf_clearance cookie from env
-    try_direct_ma(band, title).await
+    // 3. Try metal-api.dev (approved community REST API — currently returning 500)
+    try_metal_api(band, title, client).await
 }
 
 async fn try_metal_api(artist: &str, title: &str, client: &reqwest::Client) -> Option<ValidatedMetadata> {
@@ -172,8 +173,10 @@ fn normalize_artist(name: &str) -> String {
     let trimmed = name.trim();
     if trimmed.is_empty() { return String::new(); }
     let mut chars = trimmed.chars();
-    let first = chars.next().unwrap().to_uppercase().to_string();
-    first + chars.as_str()
+    let first = chars.next().unwrap();
+    // Preserve intentional lowercase (e.g. "data da morte"), only capitalize if not already lowercase
+    if first.is_lowercase() { return trimmed.to_string(); }
+    first.to_uppercase().to_string() + chars.as_str()
 }
 
 /// Try direct Metal Archives access using a cf_clearance cookie.
@@ -352,5 +355,79 @@ pub fn save_cookie(cookie: &str) {
 pub fn clear_cookie() {
     if let Some(path) = cookie_file_path() {
         let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_artist_capitalizes_first_letter() {
+        // All-lowercase preserved (intentional naming)
+        assert_eq!(normalize_artist("metallica"), "metallica");
+        // Already-uppercase first char stays unchanged
+        assert_eq!(normalize_artist("MEGADETH"), "MEGADETH");
+        // Mixed case with uppercase first char stays
+        assert_eq!(normalize_artist("Iron maiden"), "Iron maiden");
+    }
+
+    #[test]
+    fn test_normalize_intentional_lowercase() {
+        assert_eq!(normalize_artist("data da morte"), "data da morte");
+    }
+
+    #[test]
+    fn test_normalize_artist_empty_string() {
+        assert_eq!(normalize_artist(""), "");
+        assert_eq!(normalize_artist("  "), "");
+    }
+
+    #[test]
+    fn test_html_tag_re_strips_tags() {
+        let result = HTML_TAG_RE.replace_all("<b>Album Name</b>", "");
+        assert_eq!(result, "Album Name");
+
+        let result = HTML_TAG_RE.replace_all(
+            "<a href='/bands/Metallica'>Metallica</a>",
+            "",
+        );
+        assert_eq!(result, "Metallica");
+    }
+
+    #[test]
+    fn test_href_re_extracts_url() {
+        let input = r#"<a href="/bands/123">Link</a>"#;
+        let cap = HREF_RE.captures(input).and_then(|c| c.get(1)).map(|m| m.as_str());
+        assert_eq!(cap, Some("/bands/123"));
+
+        let no_match = "no href here";
+        assert!(HREF_RE.captures(no_match).is_none());
+    }
+
+    #[test]
+    fn test_year_comment_re_extracts_year() {
+        let input = "<!-- 2024-01-15 -->January 15th, 2024";
+        let cap = YEAR_COMMENT_RE.captures(input).and_then(|c| c.get(1)).map(|m| m.as_str());
+        assert_eq!(cap, Some("2024"));
+
+        let modern = "<!-- 2025 -->April 1st, 2025";
+        let cap2 = YEAR_COMMENT_RE.captures(modern).and_then(|c| c.get(1)).map(|m| m.as_str());
+        assert_eq!(cap2, Some("2025"));
+
+        let no_comment = "no year here";
+        assert!(YEAR_COMMENT_RE.captures(no_comment).is_none());
+    }
+
+    #[test]
+    fn test_genre_dt_re_extracts_genre() {
+        let input = "<dt>Genre:</dt><dd>Thrash Metal, Death Metal</dd>";
+        let cap = GENRE_DT_RE.captures(input);
+        assert!(cap.is_some());
+        let genre_str = HTML_TAG_RE.replace_all(cap.unwrap().get(1).unwrap().as_str(), "");
+        assert_eq!(genre_str, "Thrash Metal, Death Metal");
+
+        let no_genre = "<dt>Country:</dt><dd>USA</dd>";
+        assert!(GENRE_DT_RE.captures(no_genre).is_none());
     }
 }

@@ -4,7 +4,7 @@ use crate::config::keymap::{KeyActionTree, Keymap};
 use crate::keyaction::{DisplayableKeyAction, KeyAction, KeyActionVisibility};
 use crate::keybind::Keybind;
 use async_callback_manager::AsyncTask;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers, MouseEvent};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use std::borrow::Cow;
 use ytmapi_rs::common::SearchSuggestion;
 
@@ -250,13 +250,7 @@ pub trait Suggestable: TextHandler {
     fn has_search_suggestions(&self) -> bool;
 }
 
-#[allow(dead_code)]
-pub trait MouseHandler {
-    /// Not implemented yet!
-    fn handle_mouse_event(&mut self, _mouse_event: MouseEvent) {
-        unimplemented!()
-    }
-}
+
 
 /// The action to do after handling a key event
 #[derive(Debug)]

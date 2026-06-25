@@ -15,7 +15,6 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use ytmapi_rs::auth::noauth::NoAuthToken;
-#[allow(unused_imports)]
 use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID, LikeStatus, YoutubeID};
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,

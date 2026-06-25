@@ -241,10 +241,6 @@ impl PlaylistUpdatePopup {
                     self.apply_action(PlaylistUpdatePopupAction::MoveDown).into();
                 return (effect.effect, effect.callback);
             }
-            KeyCode::Char('O') => {
-                self.overwrite = !self.overwrite;
-                return (AsyncTask::new_no_op(), None);
-            }
             KeyCode::Char('g') => {
                 self.selected_idx = 0;
                 self.list_state.select(Some(0));
@@ -288,7 +284,6 @@ impl PlaylistUpdatePopup {
     }
 
     fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
-        let mode_indicator = if self.overwrite { " [Replace]" } else { " [Append]" };
         let title = if self.source_playlist_id.is_some() {
             " Merge Playlist Into ".to_string()
         } else if self.video_ids.is_empty() {
@@ -296,7 +291,7 @@ impl PlaylistUpdatePopup {
         } else if self.search_active {
             format!(" Search Playlists [{}] ", self.search_text)
         } else {
-            format!(" Select Playlist ({} songs){} /:Search O:Toggle ", self.video_ids.len(), mode_indicator)
+            format!(" Add to Playlist ({} songs) /:Search ", self.video_ids.len())
         };
         let block = Block::default()
             .title(title)

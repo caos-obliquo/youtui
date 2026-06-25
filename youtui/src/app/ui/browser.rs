@@ -883,7 +883,6 @@ mod tests {
     #[tokio::test]
     async fn artist_search_panel_search_suggestions_has_correct_keybinds() {
         let cfg = Config::default();
-        let b = Browser::new();
         // Toggle search to make search keybindings active
         // (ArtistInputRouting defaults to List now)
         let mut b2 = Browser::new();

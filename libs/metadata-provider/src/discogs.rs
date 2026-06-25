@@ -99,7 +99,7 @@ impl MetadataProvider for DiscogsProvider {
                 Some(AlbumTrack { title, duration_secs })
             }).collect();
 
-            if tracks.len() >= 2 {
+            if !tracks.is_empty() {
                 let album_name = mdata.get("title").and_then(|t| t.as_str()).map(|s| s.to_string());
                 let genres: Vec<String> = mdata.get("genres")
                     .and_then(|g| g.as_array())
