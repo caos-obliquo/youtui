@@ -1049,12 +1049,49 @@ impl BackendTask<ArcServer> for ValidateMetadata {
     type MetadataType = TaskMetadata;
     fn into_future(self, backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
         let registry = backend.metadata_registry.clone();
+        let api = backend.api.clone();
         async move {
             let artist = self.0;
             let title = self.1;
             let _song_id = self.2;
             let album = self.5;
-            registry.resolve(&artist, &title, album.as_deref()).await
+            let mut result = registry.resolve(&artist, &title, album.as_deref()).await?;
+
+            // YTM album enrichment: if result has no year and we have an album name,
+            // try to get canonical data from YouTube Music directly
+            if result.year.is_none() && album.is_some() {
+                let search_query = result.artist.as_ref()
+                    .map(|a| format!("{} {}", a, album.as_deref().unwrap_or("")))
+                    .unwrap_or_else(|| format!("{} {}", artist, album.as_deref().unwrap_or("")));
+                match api.search_albums(search_query).await {
+                    Ok(albums) => {
+                        if let Some(album_result) = albums.into_iter().next() {
+                            use ytmapi_rs::query::GetAlbumQuery;
+                            use super::api::query_api_with_retry;
+                            let query = GetAlbumQuery::new(&album_result.album_id);
+                            match query_api_with_retry(
+                                &api.get_api().await.map_err(|e| anyhow::anyhow!("{}", e))?,
+                                query,
+                            ).await {
+                                Ok(album_data) => {
+                                    if !album_data.year.is_empty() {
+                                        tracing::debug!("YTM album enrichment: year={}", album_data.year);
+                                        result.year = Some(album_data.year);
+                                        // Only set album name if ours is empty
+                                        if result.album.is_none() && !album_data.title.is_empty() {
+                                            result.album = Some(album_data.title);
+                                        }
+                                    }
+                                }
+                                Err(e) => tracing::debug!("YTM album detail fetch failed: {}", e),
+                            }
+                        }
+                    }
+                    Err(e) => tracing::debug!("YTM album search failed: {}", e),
+                }
+            }
+
+            Ok(result)
         }
     }
 }
