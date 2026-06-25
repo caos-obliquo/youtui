@@ -8,7 +8,8 @@ use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use ratatui_image::picker::Picker;
 
@@ -364,8 +365,9 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
     (s_len, c_len, d_len) = (s_len.max(3), c_len.max(7), d_len.max(7));
     // Total block width required, including padding and borders.
     let width = s_len + c_len + d_len + 4;
-    // Total block height required, including header and borders.
-    let height = items + 3;
+    // Total block height required, including header, borders, and reference footer.
+    const REF_LINES: u16 = 3;
+    let height = items + 3 + REF_LINES as usize;
     // Naive implementation
     // XXX: We're running get_help_list_items a second time here.
     // Better to move to the fold above.
@@ -389,6 +391,11 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
         true,
         |_| "Help".into(),
         |t, f, chunk| {
+            let [table_chunk, ref_chunk] = Layout::vertical([
+                Constraint::Min(1),
+                Constraint::Length(REF_LINES),
+            ])
+            .areas(chunk);
             let commands_table = t.get_help_list_items().into_iter().map(
                 |DisplayableKeyAction {
                      keybinds,
@@ -398,7 +405,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
             );
             let (new_state, effect) = draw_table_impl(
                 f,
-                chunk,
+                table_chunk,
                 t.help.cur,
                 None,
                 None,
@@ -411,6 +418,20 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
                 cur_tick,
             );
             t.help.widget_state = new_state;
+            // Reference footer: API setup links
+            let ref_lines = vec![
+                Line::from(Span::raw(
+                    "Last.fm / Discogs / Genius: set tokens in ~/.config/youtui/config.toml",
+                )),
+                Line::from(Span::raw(
+                    "Metal Archives: export MA_COOKIE=cf_clearance=... (see docs/api-services.md)",
+                )),
+                Line::from(Span::styled(
+                    "Full docs: youtui/docs/",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ];
+            f.render_widget(Paragraph::new(ref_lines), ref_chunk);
             Some(effect)
         },
     );
