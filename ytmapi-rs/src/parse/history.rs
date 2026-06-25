@@ -92,8 +92,8 @@ pub struct HistoryItemEpisode {
 
 #[derive(PartialEq, Debug, Clone, Deserialize, Serialize)]
 #[non_exhaustive]
-// May need to be enum to track 'Not Available' case.
-// TODO: Move to common
+/// HistoryItemUploadSong is used only in history parsing. If it gains
+/// cross-module usage, move to `common.rs`.
 pub struct HistoryItemUploadSong {
     pub entity_id: UploadEntityID<'static>,
     pub video_id: VideoID<'static>,

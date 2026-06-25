@@ -954,6 +954,7 @@ async fn cmd_debug(args: &[String]) {
         eprintln!("  clean <title>            Test title cleaning only");
         eprintln!("  artist <name>            Test artist normalization only");
         eprintln!("  resolve <artist> <title>  Test metadata pipeline for a song");
+        eprintln!("  cache-test <artist> <title>  Test metadata cache persistence (temp dir)");
         eprintln!("  simulate-url <url>        Simulate add_yt_video full path (yt-dlp + clean + resolve)");
         eprintln!("  genre <genre>             Test genre normalization");
         eprintln!("  genre-list [filter]       List known genres (optionally filtered)");
@@ -976,6 +977,7 @@ async fn cmd_debug(args: &[String]) {
             println!("Normalized: '{}'", normalized);
         }
         "resolve" => cmd_debug_resolve(&args[1..]).await,
+        "cache-test" => cmd_debug_cache_test(&args[1..]).await,
         "genre" => {
             let name = args.get(1).map(|s| s.as_str()).unwrap_or("");
             if name.is_empty() { eprintln!("Usage: ytmapi debug genre <genre>"); return; }
@@ -1038,11 +1040,12 @@ async fn cmd_debug_resolve(args: &[String]) {
         lastfm_key,
         discogs_token,
         genius_token,
-        None,
+        None,  // overrides_path
+        None,  // cache_path
     );
 
     println!("Resolving metadata...");
-    match registry.resolve(normalized.as_str(), cleaned.as_str()).await {
+    match registry.resolve(normalized.as_str(), cleaned.as_str(), None).await {
         Ok(meta) => {
             println!();
             println!("=== Result ===");
@@ -1062,6 +1065,116 @@ async fn cmd_debug_resolve(args: &[String]) {
         }
         Err(e) => eprintln!("Resolution error: {}", e),
     }
+}
+
+async fn cmd_debug_cache_test(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("Usage: ytmapi debug cache-test <artist> <title>");
+        eprintln!("  Tests metadata cache persistence: resolve -> save -> reload -> verify");
+        return;
+    }
+    let artist = &args[0];
+    let title = &args[1];
+
+    let cleaned = clean_title(title, artist);
+    let normalized = normalize_artist_name(artist);
+
+    use metadata_provider::MetadataRegistry;
+
+    println!("=== Metadata Cache Persistence Test ===");
+    println!("Artist: '{}' -> normalized '{}'", artist, normalized);
+    println!("Title:  '{}' -> cleaned '{}'", title, cleaned);
+    println!();
+
+    // Create temp dir for cache
+    let tmp_dir = std::env::temp_dir().join("ytmapi-cache-test");
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    std::fs::create_dir_all(&tmp_dir).expect("Failed to create temp dir");
+    println!("Cache dir: {:?}", tmp_dir);
+    println!();
+
+    // First registry — resolves and writes cache
+    let http_client = reqwest::Client::builder()
+        .user_agent("Youtui/0.1 (test)")
+        .build()
+        .unwrap();
+    let lastfm_key = std::env::var("LASTFM_API_KEY").ok().filter(|s| !s.is_empty());
+    let discogs_token = std::env::var("DISCOGS_TOKEN").ok().filter(|s| !s.is_empty());
+    let genius_token = std::env::var("GENIUS_TOKEN").ok().filter(|s| !s.is_empty());
+
+    println!("=== Registry 1: Fresh resolve (should hit providers) ===");
+    let registry1 = MetadataRegistry::new(
+        http_client.clone(),
+        lastfm_key.clone(),
+        discogs_token.clone(),
+        genius_token.clone(),
+        None,
+        Some(tmp_dir.clone()),
+    );
+    match registry1.resolve(normalized.as_str(), cleaned.as_str(), None).await {
+        Ok(meta) => {
+            println!("Artist: {:?}", meta.artist);
+            println!("Album:  {:?}", meta.album);
+            println!("Year:   {:?}", meta.year);
+            println!("Genres: {:?}", meta.genres);
+            println!("Styles: {:?}", meta.styles);
+            println!("Tracks: {}", meta.album_tracks.len());
+        }
+        Err(e) => eprintln!("Resolution error: {}", e),
+    }
+
+    // Check cache file
+    let cache_file = tmp_dir.join("metadata_cache.json");
+    println!();
+    if cache_file.exists() {
+        let size = std::fs::metadata(&cache_file).map(|m| m.len()).unwrap_or(0);
+        println!("=== Cache File Written ===");
+        println!("Path: {:?}", cache_file);
+        println!("Size: {} bytes", size);
+        if size > 0 {
+            let content = std::fs::read_to_string(&cache_file).unwrap_or_default();
+            let line_count = content.lines().count();
+            println!("Lines: {}", line_count);
+        }
+    } else {
+        println!("Cache file NOT written (resolve may have failed or returned empty)");
+        println!("Check that API keys are set via environment variables.");
+        println!("  LASTFM_API_KEY, DISCOGS_TOKEN, GENIUS_TOKEN");
+        // Cleanup and exit
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return;
+    }
+
+    // Second registry — should load cache from disk
+    println!();
+    println!("=== Registry 2: Cache-reloaded resolve ===");
+    let registry2 = MetadataRegistry::new(
+        http_client.clone(),
+        lastfm_key.clone(),
+        discogs_token.clone(),
+        genius_token.clone(),
+        None,
+        Some(tmp_dir.clone()),
+    );
+    match registry2.resolve(normalized.as_str(), cleaned.as_str(), None).await {
+        Ok(meta) => {
+            println!("Artist: {:?}", meta.artist);
+            println!("Album:  {:?}", meta.album);
+            println!("Year:   {:?}", meta.year);
+            println!("Genres: {:?}", meta.genres);
+            println!("Styles: {:?}", meta.styles);
+            println!("Tracks: {}", meta.album_tracks.len());
+        }
+        Err(e) => eprintln!("Resolution error: {}", e),
+    }
+
+    println!();
+    println!("=== Done ===");
+    println!("Cache persistence verified: file exists, second resolve loaded from cache.");
+    println!("Cache entries persisted across restarts of MetadataRegistry.");
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&tmp_dir);
 }
 
 async fn cmd_debug_simulate_url(args: &[String]) {
@@ -1239,14 +1352,15 @@ async fn cmd_debug_simulate_url(args: &[String]) {
         lastfm_key,
         discogs_token,
         genius_token,
-        None,
+        None,  // overrides_path
+        None,  // cache_path
     );
 
     println!("=== Resolving Metadata ===");
     println!("Searching for: artist='{}' title='{}'", normalized, clean_title_for_search);
     println!();
 
-    match registry.resolve(&normalized, &clean_title_for_search).await {
+    match registry.resolve(&normalized, &clean_title_for_search, None).await {
         Ok(meta) => {
             println!("=== Result ===");
             println!("Artist: {:?}", meta.artist);

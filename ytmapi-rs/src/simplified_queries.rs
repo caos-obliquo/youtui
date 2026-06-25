@@ -1067,6 +1067,22 @@ impl<A: LoggedIn> YtMusic<A> {
             .unwrap_or_default();
         self.query(query).await
     }
+    /// Gets a list of all liked songs in your Library.
+    /// This is an alias for [`get_library_songs`] that clarifies intent.
+    /// ```no_run
+    /// # async {
+    /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE")
+    ///     .await
+    ///     .unwrap();
+    /// let results = yt.get_liked_songs(None).await;
+    /// # };
+    /// ```
+    pub async fn get_liked_songs(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<<GetLibrarySongsQuery as Query<A>>::Output> {
+        self.get_library_songs(sort_order).await
+    }
     /// Gets a list of all albums in your Library.
     /// # Additional functionality
     /// See [`GetLibraryAlbumsQuery`] and [`YtMusic.query()`]

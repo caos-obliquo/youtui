@@ -85,7 +85,7 @@ impl<T> YtMusicBuilder<T> {
             token,
         }
     }
-    // TODO: Improve how this handles building client.
+    // TODO: Refactor to pass client_options directly instead of extracting + reconstructing.
     pub fn with_browser_token_cookie(self, cookie: String) -> YtMusicBuilder<FromCookie> {
         let YtMusicBuilder {
             client_options,
@@ -97,7 +97,7 @@ impl<T> YtMusicBuilder<T> {
             token,
         }
     }
-    // TODO: Improve how this handles building client.
+    // TODO: Refactor to pass client_options directly instead of extracting + reconstructing.
     pub fn with_browser_token_cookie_file<P: AsRef<Path>>(
         self,
         cookie_file: P,
