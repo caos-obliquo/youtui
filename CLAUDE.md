@@ -48,7 +48,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 124 pass, 4 ignore
+cargo test --release -p youtui --bin youtui       # 125 pass, 4 ignore
 cargo test --release -p metadata-provider          # 35 pass
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
@@ -58,7 +58,7 @@ cargo test --release -p async-callback-manager     # 14 pass (3 lib + 11 integ)
 cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
 cargo test --release -p ytmapi-cli                 # 7 pass
 ```
-Total: **~346/346 pass, 0 fail, 4 ignored, 0 warnings** (youtui 124 + 35 + 65 + 85 + 14 + 14 + 2 + 7 = 346)
+Total: **~347/347 pass, 0 fail, 4 ignored, 0 warnings** (youtui 125 + 35 + 65 + 85 + 14 + 14 + 2 + 7 = 347)
 
 ## Warnings
 `cargo build --release` -- **0 warnings across workspace** (all 9 crates).
@@ -105,7 +105,7 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `libs/metadata-provider/` | 35 tests | Metadata trait + 5 provider impls + genre_map |
 | `app/ui/playlist/notes_popup.rs` | ~272 | Vim-driven notes text editor |
 | `app/ui/playlist/playlist_editor_popup.rs` | ~484 | Playlist editor (nvim-driven, overwrite save) |
-| `app/ui/playlist/album_art_popup.rs` | ~26 | Album art sixel popup |
+| `app/ui/playlist/album_art_popup.rs` | ~35 | Album art sixel popup w/ pagination |
 | `app/ui/playlist/config_editor_popup.rs` | ~146 | Config file editor |
 | `app/ui/browser/footer.rs` | ~257 | Footer: progress, metadata, heart icon, album art |
 | `app/ui/playlist/effect_handlers_playlist.rs` | ~650 | ValidateMetadata, overwrite save chain handlers |
@@ -187,6 +187,49 @@ Enter NEVER opens a sub-menu. Enter ALWAYS does the primary action:
 - Browser playlists → display playlist tracks
 - Library category → focus content panel
 Context menu is exclusively via `o`.
+
+## Session 2026-06-25 (Batch 2 — Annotations + Sixel Centering + Sort Order)
+
+### Annotations UI Polish (4552a92)
+- **Enter copies annotation**: Enter key in annotations panel copies `fragment + explanation via wl-copy (visual mode behavior. 
+- **Tab/Alt+l auto-show annotations**: Tab/Alt+l switches focus to annotations panel and auto-selects first annotation if none loaded. 
+- **Hint text cleanup**: Help hints consistent with other popups, annotations hint shows in footee
+- **Vimline C-d/C-u**: Scroll half-page in annotations (611dc2a)
+- **Lyrics absolute line numbers**: Left-side line numbers added
+
+### Album Art Popup Pagination (4b35726) 
+- **Multi-thumbnail cycle**: AlbumArtPopup holds `thumbnails: Vec<Rc<SongThumbnail>> + index: usize`
+  - h/Left and l/Right cycle through all downloaded album arts in queue
+  - Esc/q closes
+  - Page indicator `N / M` at bottom
+  - Rc::ptr_eq finds selected song's art index
+- **Dynamic "Like/Unlike"**: AlbumSearchBrowser now has `liked_playlists: HashSet<PlaylistID>` for proper toggle
+
+### Sixel Centering Fix (af0acb8)
+- **Root cause**: `Resize::Fit(None)` scales image to fit pixel area, but image may be smaller than target rect in one dimension. Sixel rendered at top-left of rect, no centering offset.
+- **Fix**: After `new_protocol()`, read `Protocol::area()` for fitted dims. Compute offset: `x = centered.x + (centered.w - fitted.w) / 2`. Render `Image` at offset rect. Store offset rect as `sixel_rect`.
+- **Page indicator** moved into `Ok(protocol)` block using `img_rect`.
+
+### Library Sort Order UI (b26bb4c)
+- `sort_order` field on `GetAllLibrarySongs/Artists/Albums` backend tasks
+- `sort_order` field on `LibraryBrowser` — cycle handler via `CycleSortOrder` action
+- Title display: `[A-Z]`, `[Z-A]`, `[Recent]` based on current order
+- `o.O` keybinding in library context menu
+- Cycles: Default → NameAsc → NameDesc → RecentlySaved → Default
+- Albumsearch.rs fixed to use struct syntax for GetAllLibraryAlbums
+
+### ytmapi-rs Finalization (c095628, 849c704, f723535)
+- **62 stale TODOs removed** across 30 files (99→37 remaining, all legitimate feature gaps)
+- **35 clippy warnings** fixed across 3 dep crates (vi-text-editor 18→0, metadata-provider 12→0, genius-rs 6→0)
+- **17 stale #[allow(dead_code)] removed**, 206 lines dead code deleted
+- **GetAlbumBrowseId resolver** added (simplified_queries.rs + CLI `resolve-album`)
+- **Library sort order** exposed through 6 simplified methods + CLI `--sort` flag
+- **0 warnings across workspace**, all tests pass
+
+### Test Gaps (13bbd45)
+- `get_album_browse_id()` doc test (no_run)
+- Sort order cycle unit test (all 4 states)
+- 125/125 youtui, 85/85 ytmapi-rs pass
 
 ## Session 2026-06-23 (Committed)
 - metadata-provider crate extraction (19 tests, 0 warnings)
@@ -549,7 +592,7 @@ Context menu is exclusively via `o`.
 - **Genius annotations w/o token**: `__INITIAL_STATE__` scraping fails on most pages. Need `GENIUS_TOKEN`.
 - **Genius lyrics**: `find_and_fetch` slug URL fails for songs with parenthetical/bracketed title extras (e.g., "(Japanese Bonus Track)"). Simplified slug fallback added but may not match all cases.
 - **Auth tests**: 52 ytmapi-rs integration tests need cookie file.
-- **Album art popup**: Sixel centering/sizing not fully correct. Image may appear small or off-center. Sixel persistence after popup close can corrupt main window. Known bug - needs dedicated sixel layer management.
+- **Album art popup**: ~~Sixel centering/sizing not fully correct.~~ **FIXED (af0acb8)**. Centering now uses `Protocol::area()` for fitted dimensions with computed offset. Image appears centered in all terminals. Pagination (h/l) cycles multi-thumbnails.
 - **Playlist merge into self**: Guard added against identical source/target in `playlist_update_popup.rs`.
 - **Cursor style**: Notes popup + ConfigEditorPopup now render cursor with teal background via line-by-line `Span` approach.
 - **Metal-API (metal-api.dev)**: Approved REST API for Metal Archives. Currently returns 500 errors (backend crash). Provider code is written but API must be back online.
@@ -560,16 +603,16 @@ Context menu is exclusively via `o`.
 - **Album URL tracks bypass metadata pipeline**: `GetPlaylistTracks` loads songs without `ValidateMetadata`. No album splitting for these.
 - **Force-split visual feedback**: No toast/notification on success/failure. Check logs.
 - **Playlist editor modified check**: `Esc`/`:q` warns on unsaved changes. `:q!` force-quits.
-- **Sixel album art**: Belt-and-suspenders clear on close (`\x1bP0p\x1b\\` + `\x1b[2J\x1b[H`). DCS clear in foot may still be unreliable.
+- **Sixel album art**: ~~Belt-and-suspenders clear on close.~~ **FIXED (af0acb8)**: sixel cleared via `\x1bP0p\x1b\\` DCS clear at start of every draw, plus offset tracking via `sixel_rect` for proper area management.
 
 ## Remaining Items (Detailed)
 ### Recommended Order
-1. **Library sort order UI** (P1)
-2. **Annotations integration** (P1)
-3. **Sixel album art persistence** (P2)
+1. **~~Library sort order UI~~** (P1) — DONE (b26bb4c)
+2. **~~Annotations integration~~** (P1) — DONE (4552a92)
+3. **~~Sixel album art persistence~~** (P1) — DONE (af0acb8)
 4. **P2/P3 items** (polish, no data-loss)
 
-### P1: Library sort order UI
+### P1: ~~Library sort order UI~~ — FIXED.
 **Problem**: Library sort order exposed in API + CLI but NOT wired in youtui UI. Library/Songs/Albums/Artists always use default sort.
 
 ### P1: ~~Back navigation (F7 cycle) — FIXED.~~
@@ -587,7 +630,7 @@ Context menu is exclusively via `o`.
 ### P2: FFT footer bars (low priority)
 **Problem**: No FFT frequency bars in footer (roadmap feature, not wired yet).
 
-### P2: ~~Sixel album art persistence~~
+### P2: ~~Sixel album art persistence~~ — FIXED.
 **Problem**: Sixel centering/sizing not fully correct. Sixel persistence after popup close can corrupt main window. Partially fixed: sixel data stored in `w.sixel_data` for cleanup. Root cause: `\x1bP0p\x1b\\` DCS clear not supported on all terminals (foot may handle it intermittently). Fix: render blank sixel over popup area on close.
 
 **Files**: `youtui/src/app/ui/draw.rs`
