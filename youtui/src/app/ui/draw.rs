@@ -47,12 +47,38 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                     Resize::Fit(None),
                 ) {
                     Ok(protocol) => {
+                        // Get the actual fitted area (may be smaller than centered due to aspect ratio)
+                        let fitted = protocol.area();
+                        // Center the fitted image within the centered rect
+                        let img_rect = Rect {
+                            x: centered.x + (centered.width.saturating_sub(fitted.width)) / 2,
+                            y: centered.y + (centered.height.saturating_sub(fitted.height)) / 2,
+                            width: fitted.width.max(1),
+                            height: fitted.height.max(1),
+                        };
                         // Store sixel data for proper cleanup on close
                         if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
                             w.sixel_data = Some(sixel.data.clone());
-                            w.sixel_rect = Some(centered);
                         }
-                        f.render_widget(Image::new(&protocol), centered);
+                        w.sixel_rect = Some(img_rect);
+                        f.render_widget(Image::new(&protocol), img_rect);
+                        // Page indicator when multiple album arts available
+                        if popup.total() > 1 {
+                            let indicator = format!(" {} / {} ", popup.index + 1, popup.total());
+                            let indicator_area = Rect {
+                                x: img_rect.x,
+                                y: img_rect.y + img_rect.height - 1,
+                                width: img_rect.width,
+                                height: 1,
+                            };
+                            f.render_widget(Clear, indicator_area);
+                            f.render_widget(
+                                Paragraph::new(indicator)
+                                    .style(Style::default().fg(Color::White))
+                                    .alignment(Alignment::Center),
+                                indicator_area,
+                            );
+                        }
                     }
                     Err(_) => {
                         w.sixel_data = None;
@@ -60,23 +86,6 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                         f.render_widget(Paragraph::new("Failed to load album art").centered(), area);
                     }
                 }
-            }
-            // Page indicator when multiple album arts available
-            if popup.total() > 1 {
-                let indicator = format!(" {} / {} ", popup.index + 1, popup.total());
-                let indicator_area = Rect {
-                    x: centered.x,
-                    y: centered.y + centered.height - 1,
-                    width: centered.width,
-                    height: 1,
-                };
-                f.render_widget(Clear, indicator_area);
-                f.render_widget(
-                    Paragraph::new(indicator)
-                        .style(Style::default().fg(Color::White))
-                        .alignment(Alignment::Center),
-                    indicator_area,
-                );
             }
         }
         return;
