@@ -8,7 +8,7 @@ use crate::app::structures::{AlbumOrUploadAlbumID, ListSongAlbum};
 
 use crate::app::server::{
     GetAllLibrarySongs, GetAllLibraryPlaylists, GetAllLibraryArtists, GetAllLibraryAlbums,
-    GetPlaylistTracks,
+    GetPlaylistTracks, EnrichFromMetadataCache,
 };
 use crate::app::structures::{
     BrowserSongsList, ListSong, ListSongArtist, ListSongDisplayableField, ListStatus, MaybeRc,
@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus};
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
@@ -122,6 +123,7 @@ impl Action for BrowserLibraryAction {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LibraryEffect {
     SongsLoaded(Vec<ListSong>),
+    SongsEnriched(Vec<(usize, Option<String>, Vec<String>, Vec<String>)>),
     PlaylistsLoaded(Vec<LibraryPlaylist>),
 
     ArtistsLoaded(Vec<LibraryArtist>),
@@ -143,6 +145,18 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
         match self {
             LibraryEffect::SongsLoaded(songs) => {
                 info!(count = %songs.len(), "Liked songs loaded");
+                // Build enrichment data BEFORE consuming songs
+                let enrich_data: Vec<(usize, String, String)> = songs.iter().enumerate()
+                    .filter_map(|(i, s)| {
+                        let artist: String = s.artists.iter()
+                            .map(|a| a.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        if artist.is_empty() { None } else { Some((i, artist, s.title.clone())) }
+                    })
+                    .collect();
+                let has_enrich = !enrich_data.is_empty();
+
                 target.loading = false;
                 target.error = None;
                 target.songs_fetched = true;
@@ -152,6 +166,23 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 target.cur_selected = 0;
                 target.widget_state = Default::default();
                 target.input_routing = InputRouting::Content;
+
+                if has_enrich {
+                    return AsyncTask::new_future_try(
+                        EnrichFromMetadataCache(enrich_data),
+                        HandleEnrichFromCacheOk,
+                        HandleEnrichFromCacheErr,
+                        None,
+                    );
+                }
+            }
+            LibraryEffect::SongsEnriched(results) => {
+                let count = results.len();
+                for (idx, year, genres, styles) in results {
+                    let year_rc = year.map(Rc::new);
+                    target.song_list.update_song_at(idx, year_rc, genres, styles);
+                }
+                info!(count = %count, "Library songs enriched from cache");
             }
             LibraryEffect::PlaylistsLoaded(playlists) => {
                 info!(count = %playlists.len(), "Library playlists loaded");
@@ -236,6 +267,10 @@ pub struct HandleLibraryRemoveItemsErr;
 pub struct HandleLibraryReorderItemsOk;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandleLibraryReorderItemsErr;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandleEnrichFromCacheOk;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandleEnrichFromCacheErr;
 
 impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrowser, |_, raw: Vec<TableListSong>| {
     let songs: Vec<ListSong> = raw.into_iter().map(|ts| {
@@ -367,6 +402,13 @@ impl_youtui_task_handler!(HandleLibraryReorderItemsOk, (), LibraryBrowser, |_, _
 });
 impl_youtui_task_handler!(HandleLibraryReorderItemsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     LibraryEffect::ReorderItemsError(err.to_string())
+});
+impl_youtui_task_handler!(HandleEnrichFromCacheOk, Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, LibraryBrowser, |_, results: Vec<(usize, Option<String>, Vec<String>, Vec<String>)>| {
+    LibraryEffect::SongsEnriched(results)
+});
+impl_youtui_task_handler!(HandleEnrichFromCacheErr, anyhow::Error, LibraryBrowser, |_, _: anyhow::Error| {
+    info!("Cache enrichment failed (non-critical): no metadata will be shown in library");
+    LibraryEffect::LoadError(String::new()) // silent, no UI error
 });
 
 pub struct LibraryBrowser {

@@ -955,6 +955,7 @@ async fn cmd_debug(args: &[String]) {
         eprintln!("  artist <name>            Test artist normalization only");
         eprintln!("  resolve <artist> <title>  Test metadata pipeline for a song");
         eprintln!("  cache-test <artist> <title>  Test metadata cache persistence (temp dir)");
+        eprintln!("  cache-check <artist> <title>  Test cache-only lookup (no HTTP)");
         eprintln!("  simulate-url <url>        Simulate add_yt_video full path (yt-dlp + clean + resolve)");
         eprintln!("  genre <genre>             Test genre normalization");
         eprintln!("  genre-list [filter]       List known genres (optionally filtered)");
@@ -978,6 +979,7 @@ async fn cmd_debug(args: &[String]) {
         }
         "resolve" => cmd_debug_resolve(&args[1..]).await,
         "cache-test" => cmd_debug_cache_test(&args[1..]).await,
+        "cache-check" => cmd_debug_cache_check(&args[1..]).await,
         "genre" => {
             let name = args.get(1).map(|s| s.as_str()).unwrap_or("");
             if name.is_empty() { eprintln!("Usage: ytmapi debug genre <genre>"); return; }
@@ -1175,6 +1177,96 @@ async fn cmd_debug_cache_test(args: &[String]) {
 
     // Cleanup
     let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+async fn cmd_debug_cache_check(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("Usage: ytmapi debug cache-check <artist> <title>");
+        eprintln!("  Tests cache-only lookup (lookup_cache) with no HTTP.");
+        eprintln!("  Runs resolve first to populate cache, then checks lookup_cache.");
+        return;
+    }
+    let artist = &args[0];
+    let title = &args[1];
+
+    let cleaned = clean_title(title, artist);
+    let normalized = normalize_artist_name(artist);
+
+    use metadata_provider::MetadataRegistry;
+
+    let tmp_dir = std::env::temp_dir().join("ytmapi-cache-check");
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    std::fs::create_dir_all(&tmp_dir).expect("Failed to create temp dir");
+
+    let http_client = reqwest::Client::builder()
+        .user_agent("Youtui/0.1 (test)")
+        .build()
+        .unwrap();
+    let lastfm_key = std::env::var("LASTFM_API_KEY").ok().filter(|s| !s.is_empty());
+    let discogs_token = std::env::var("DISCOGS_TOKEN").ok().filter(|s| !s.is_empty());
+    let genius_token = std::env::var("GENIUS_TOKEN").ok().filter(|s| !s.is_empty());
+
+    let cache_key = format!("{}::{}",
+        metadata_provider::util::norm_for_lfm(&normalized.to_lowercase()),
+        metadata_provider::util::norm_for_lfm(&cleaned.to_lowercase()),
+    );
+
+    println!("=== Cache-Only Lookup Test ===");
+    println!("Artist: '{}' -> '{}'", artist, normalized);
+    println!("Title:  '{}' -> '{}'", title, cleaned);
+    println!("Cache key: '{}'", cache_key);
+    println!();
+
+    // Registry 1: cache should be empty
+    let registry = MetadataRegistry::new(
+        http_client.clone(),
+        lastfm_key.clone(),
+        discogs_token.clone(),
+        genius_token.clone(),
+        None,
+        Some(tmp_dir.clone()),
+    );
+
+    // Phase 1: lookup_cache — should miss (cache empty)
+    println!("=== Phase 1: Cache lookup BEFORE resolve ===");
+    match registry.lookup_cache(&cache_key) {
+        Some(meta) => println!("HIT (unexpected — cache should be empty): {:?}", meta),
+        None => println!("MISS (expected — cache empty)"),
+    }
+    println!();
+
+    // Phase 2: resolve to populate cache
+    println!("=== Phase 2: Resolve (populates cache) ===");
+    match registry.resolve(normalized.as_str(), cleaned.as_str(), None).await {
+        Ok(meta) => {
+            println!("Artist: {:?}", meta.artist);
+            println!("Album:  {:?}", meta.album);
+            println!("Year:   {:?}", meta.year);
+            println!("Genres: {:?}", meta.genres);
+            println!("Styles: {:?}", meta.styles);
+        }
+        Err(e) => eprintln!("Resolution error: {}", e),
+    }
+    println!();
+
+    // Phase 3: lookup_cache — should hit now
+    println!("=== Phase 3: Cache lookup AFTER resolve ===");
+    match registry.lookup_cache(&cache_key) {
+        Some(meta) => {
+            println!("HIT — cached data:");
+            println!("  Artist: {:?}", meta.artist);
+            println!("  Album:  {:?}", meta.album);
+            println!("  Year:   {:?}", meta.year);
+            println!("  Genres: {:?}", meta.genres);
+            println!("  Styles: {:?}", meta.styles);
+        }
+        None => println!("MISS — cache did not populate (resolve may have returned default)"),
+    }
+    println!();
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    println!("=== Done ===");
 }
 
 async fn cmd_debug_simulate_url(args: &[String]) {

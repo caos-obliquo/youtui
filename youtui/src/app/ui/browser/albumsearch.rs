@@ -144,7 +144,6 @@ impl AlbumSearchBrowser {
         (AsyncTask::new_no_op(), None)
     }
 
-    pub fn is_text_handling(&self) -> bool { false }
     pub fn handle_toggle_search(&mut self) {
         if self.search_popped {
             self.search_popped = false;

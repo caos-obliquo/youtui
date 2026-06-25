@@ -725,6 +725,17 @@ impl BrowserSongsList {
         self.list.get(idx)
     }
 
+    /// Update year/genres/styles at a specific index (cache enrichment).
+    pub fn update_song_at(&mut self, idx: usize, year: Option<Rc<String>>, genres: Vec<String>, styles: Vec<String>) {
+        if let Some(song) = self.list.get_mut(idx) {
+            if year.is_some() || !genres.is_empty() || !styles.is_empty() {
+                song.year = year;
+                song.genres = genres;
+                song.styles = styles;
+            }
+        }
+    }
+
 }
 
 /// Score-based fuzzy match: returns Some(score) if all query chars appear in target in order.

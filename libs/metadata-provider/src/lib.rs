@@ -229,6 +229,13 @@ impl MetadataRegistry {
         }
     }
 
+    /// Cache-only lookup — no HTTP, no provider resolution.
+    /// Returns None if not in LRU cache or if result is sparse (no album/year).
+    pub fn lookup_cache(&self, key: &str) -> Option<ValidatedMetadata> {
+        self.cache.lock().unwrap().get(key).cloned()
+            .filter(|m| m.album.is_some() || m.year.is_some())
+    }
+
     pub fn save_override(&self, artist: &str, title: &str, meta: &ValidatedMetadata) {
         let mut overrides = self.overrides.lock().unwrap();
         overrides.set(artist, title, meta);
