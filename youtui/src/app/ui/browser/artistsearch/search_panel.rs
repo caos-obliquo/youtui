@@ -171,6 +171,6 @@ impl ListView for ArtistSearchPanel {
 }
 impl HasTitle for ArtistSearchPanel {
     fn get_title(&self) -> Cow<'_, str> {
-        "Artists".into()
+        format!("Artists - {} results", self.list.len()).into()
     }
 }

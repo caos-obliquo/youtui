@@ -842,14 +842,14 @@ impl AdvancedTableView for LibraryBrowser {
 impl HasTitle for LibraryBrowser {
     fn get_title(&self) -> Cow<'_, str> {
         if self.show_playlist_tracks {
+            let total = self.playlist_tracks.len();
             let search_tag = if !self.local_filter_text.is_empty() {
-                let total = self.playlist_tracks.len();
                 let count = self.get_tracks_filtered_list_iter().count();
                 format!(" [SEARCH: {} ({}/{})]", self.local_filter_text, count, total)
             } else {
                 String::new()
             };
-            format!("Playlist Tracks{}", search_tag).into()
+            format!("Playlist Tracks - {} tracks{}", total, search_tag).into()
         } else {
             let sort_label = match self.sort_order {
                 GetLibrarySortOrder::Default => "",

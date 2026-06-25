@@ -345,10 +345,11 @@ pub fn draw_library_browser(
             } else {
                 Style::default()
             };
+            let count = browser.song_list.get_list_iter().count();
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
-                .title(browser.category.label());
+                .title(format!("{} - {} songs", browser.category.label(), count));
             let inner = block.inner(content_chunk);
             f.render_widget(block, content_chunk);
 
@@ -380,7 +381,6 @@ pub fn draw_library_browser(
             f.render_stateful_widget(list, inner, &mut state);
         }
         LibraryCategory::Playlists => {
-            let title = "Playlists";
             let border_style = if right_selected {
                 Style::default().fg(SELECTED_BORDER_COLOUR)
             } else {
@@ -389,7 +389,7 @@ pub fn draw_library_browser(
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
-                .title(title);
+                .title(format!("Playlists - {}", browser.playlist_data.len()));
             let inner = block.inner(content_chunk);
             f.render_widget(block, content_chunk);
             let items: Vec<ListItem> = browser
@@ -421,7 +421,7 @@ pub fn draw_library_browser(
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
-                .title("Artists");
+                .title(format!("Artists - {}", browser.artist_data.len()));
             let inner = block.inner(content_chunk);
             f.render_widget(block, content_chunk);
 
@@ -454,7 +454,7 @@ pub fn draw_library_browser(
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
-                .title("Albums");
+                .title(format!("Albums - {}", browser.album_data.len()));
             let inner = block.inner(content_chunk);
             f.render_widget(block, content_chunk);
 
