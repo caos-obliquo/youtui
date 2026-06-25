@@ -2,7 +2,7 @@
 name = "ytmapi-rs"
 version = "0.3.2"
 edition = "2024"
-authors = ["caos-obliquo"]
+authors = ["nick42d"]
 license = "MIT"
 description = "An asynchronous (tokio) pure Rust API for Youtube Music using Google's internal API"
 homepage = "https://github.com/nick42d/youtui"

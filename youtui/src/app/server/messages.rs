@@ -350,6 +350,38 @@ impl BackendTask<ArcServer> for GetAllLibraryAlbums {
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::WatchPlaylistTrack;
 
+/// Cache-only enrichment for library songs — no HTTP.
+/// Input: (index_in_browser, artist, title)
+/// Output: (index, year, genres, styles) for cache hits only.
+#[derive(Debug, PartialEq)]
+pub struct EnrichFromMetadataCache(pub Vec<(usize, String, String)>);
+
+impl BackendTask<ArcServer> for EnrichFromMetadataCache {
+    type Output = Result<Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, anyhow::Error>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let registry = backend.metadata_registry.clone();
+        let total = self.0.len();
+        async move {
+            let mut results = Vec::new();
+            for (idx, artist, title) in &self.0 {
+                let key = format!("{}::{}",
+                    metadata_provider::util::norm_for_lfm(&artist.to_lowercase()),
+                    metadata_provider::util::norm_for_lfm(&title.to_lowercase()),
+                );
+                if let Some(cached) = registry.lookup_cache(&key) {
+                    results.push((*idx, cached.year, cached.genres, cached.styles));
+                }
+            }
+            tracing::info!(hits = %results.len(), total = %total, "Cache enrichment done");
+            Ok(results)
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct GetPlaylistTracks(pub PlaylistID<'static>);
 
