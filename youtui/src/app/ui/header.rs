@@ -67,6 +67,14 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
             ]
         },
     ));
+    // Append 'o (Menu)' hint for contexts with context menu support
+    if matches!(w.context, WindowContext::Playlist | WindowContext::Browser) {
+        spans.push(Span::styled(
+            "o",
+            Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
+        ));
+        spans.push(Span::raw(" (Menu) "));
+    }
     let help_string = Line::from_iter(spans);
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
     let commands_widget = Paragraph::new(help_string).wrap(Wrap { trim: true });
