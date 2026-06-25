@@ -9,6 +9,7 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | [01-architecture](01-architecture.md) | 3-layer callback system, crate dependency graph |
 | [02-crates/youtui](02-crates/youtui.md) | Main app crate (29k LOC, 73 files) |
 | [02-crates/ytmapi-rs](02-crates/ytmapi-rs.md) | YTM API client (12.8k LOC, 48 files) |
+| [api-services](api-services.md) | External API setup (Last.fm, Discogs, Genius, Metal Archives) |
 | [02-crates/async-callback-manager](02-crates/async-callback-manager.md) | Task/effect system (1.8k LOC) |
 | [02-crates/json-crawler](02-crates/json-crawler.md) | serde_json wrapper (1k LOC) |
 | [02-crates/vi-text-editor](02-crates/vi-text-editor.md) | Full VTE reference (2.3k LOC) |
