@@ -161,10 +161,10 @@ impl MetadataRegistry {
             }
         }
 
-        if let Some((_, mut meta, priority)) = best {
+        if let Some((score, mut meta, priority)) = best {
             tracing::info!(
                 "Metadata resolved by provider priority {} (score {}) for {} - {}",
-                priority, Self::score_result(&meta, artist, title), artist, title
+                priority, score, artist, title
             );
             if !meta.genres.is_empty() {
                 meta.genres = crate::genre_map::normalize_genres(&meta.genres);
@@ -172,8 +172,11 @@ impl MetadataRegistry {
             if !meta.styles.is_empty() {
                 meta.styles = crate::genre_map::normalize_genres(&meta.styles);
             }
-            self.cache.lock().unwrap().put(cache_key, meta.clone());
-            self.save_cache();
+            // Only cache meaningful results (score >= 20: album match + artist or better)
+            if score >= 20 {
+                self.cache.lock().unwrap().put(cache_key, meta.clone());
+                self.save_cache();
+            }
             return Ok(meta);
         }
 

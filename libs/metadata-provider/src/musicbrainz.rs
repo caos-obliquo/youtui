@@ -15,7 +15,7 @@ impl MusicBrainzProvider {
 }
 
 impl MetadataProvider for MusicBrainzProvider {
-    fn priority(&self) -> u8 { 50 }
+    fn priority(&self) -> u8 { 7 }
 
     fn lookup<'a>(
         &'a self,
@@ -41,7 +41,7 @@ impl MetadataProvider for MusicBrainzProvider {
                 .and_then(|c| c.get("name"))?.as_str()?.to_string();
             let year = rec.get("releases")?.as_array()?.first()
                 .and_then(|r| r.get("date"))?.as_str()
-                .and_then(|d| d.get(..4)).map(|s| s.to_string());
+                .and_then(|d| d.get(..4)).filter(|s| s.len() >= 4).map(|s| s.to_string());
             let album = rec.get("releases")?.as_array()?.first()
                 .and_then(|r| r.get("title"))?.as_str()?.to_string();
 
@@ -82,5 +82,24 @@ mod tests {
         assert_eq!(artist, Some("Test Artist".to_string()));
         assert_eq!(year, Some("2003".to_string()));
         assert_eq!(album, Some("Test Album".to_string()));
+    }
+
+    #[test]
+    fn parse_musicbrainz_short_date_rejected() {
+        let json = serde_json::json!({
+            "recordings": [{
+                "id": "abc-123",
+                "title": "Test Song",
+                "artist-credit": [{"name": "Test Artist"}],
+                "releases": [
+                    {"id": "def-456", "title": "Test Album", "date": "07"}
+                ]
+            }]
+        });
+        let rec = json.get("recordings").and_then(|a| a.as_array()).and_then(|a| a.first()).unwrap();
+        let year = rec.get("releases").and_then(|a| a.as_array()).and_then(|a| a.first())
+            .and_then(|r| r.get("date")).and_then(|d| d.as_str())
+            .and_then(|d| d.get(..4)).filter(|s| s.len() >= 4).map(|s| s.to_string());
+        assert_eq!(year, None, "Short date '07' should be rejected");
     }
 }

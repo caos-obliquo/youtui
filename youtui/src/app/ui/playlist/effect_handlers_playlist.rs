@@ -626,23 +626,39 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
                         if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
-                            // Proper validation: check if original YouTube title indicates album upload
+                            // Primary check: YouTube title has album indicator tags ("[Full Album]", "(EP)", etc.)
                             let original_title = song.title.as_str();
                             let is_album_upload = has_album_indicator_tags(original_title);
-                            if !is_album_upload {
-                                info!("Album tracklist rejected: original title {:?} has no album indicator tags", original_title);
+                            // Secondary check: song is album-length (> 15 min) — trust metadata provider
+                            let is_album_length = song.actual_duration
+                                .map(|d| d.as_secs_f64() > 900.0)
+                                .unwrap_or(false);
+                            if !is_album_upload && !is_album_length {
+                                info!("Album tracklist rejected: title {:?} has no album tags and duration ({:.0}s) < 900s",
+                                    original_title, song.actual_duration.map_or(0.0, |d| d.as_secs_f64()));
                                 return AsyncTask::new_no_op();
                             }
-                            // Secondary check: zero-duration tracks indicate broken tracklist
-                            let valid_tracks = data.album_tracks.iter().all(|t| t.duration_secs > 0.0);
-                            if !valid_tracks {
-                                let count = data.album_tracks.iter().filter(|t| t.duration_secs <= 0.0).count();
-                                info!("Album tracklist rejected: {} tracks have zero duration", count);
+                            if is_album_length && !is_album_upload {
+                                info!("Album tracklist accepted by duration heuristic ({:.0}s > 900s)",
+                                    song.actual_duration.map_or(0.0, |d| d.as_secs_f64()));
+                            }
+                            // Filter out zero-duration tracks (broken metadata from some providers)
+                            let valid_tracks: Vec<_> = data.album_tracks.iter()
+                                .filter(|t| t.duration_secs > 0.0)
+                                .cloned()
+                                .collect();
+                            if valid_tracks.is_empty() {
+                                info!("Album tracklist rejected: all {} tracks have zero duration",
+                                    data.album_tracks.len());
                                 return AsyncTask::new_no_op();
                             }
-                            target.album_tracks = Some(data.album_tracks.clone());
+                            if valid_tracks.len() < data.album_tracks.len() {
+                                info!("Album tracklist: {} zero-duration tracks filtered out, {} remaining",
+                                    data.album_tracks.len() - valid_tracks.len(), valid_tracks.len());
+                            }
+                            target.album_tracks = Some(valid_tracks.clone());
                             target.album_current_track = 0;
-                            let play_effect = target.insert_album_tracks(song_id, &data.album_tracks, &data.artist, &data.album, &data.year, &original_album);
+                            let play_effect = target.insert_album_tracks(song_id, &valid_tracks, &data.artist, &data.album, &data.year, &original_album);
                             info!("Album mode: {} tracks loaded for song {:?}",
                                 target.album_tracks.as_ref().map_or(0, |t| t.len()), song_id);
 
