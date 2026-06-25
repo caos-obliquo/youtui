@@ -994,7 +994,7 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
             // Query Last.fm album.getInfo for image URL
             let info_url = format!(
                 "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
-                api_key, urlencoding(&artist), urlencoding(&album)
+                api_key, metadata_provider::util::urlencoding(&artist), metadata_provider::util::urlencoding(&album)
             );
             let image_url = if api_key.is_empty() {
                 None
@@ -1069,10 +1069,15 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                             use ytmapi_rs::query::GetAlbumQuery;
                             use super::api::query_api_with_retry;
                             let query = GetAlbumQuery::new(&album_result.album_id);
-                            match query_api_with_retry(
-                                &api.get_api().await.map_err(|e| anyhow::anyhow!("{}", e))?,
-                                query,
-                            ).await {
+                            // Best-effort: API failures don't discard already-resolved metadata
+                            let api_guard = match api.get_api().await {
+                                Ok(g) => g,
+                                Err(e) => {
+                                    tracing::debug!("YTM API unavailable for enrichment: {}", e);
+                                    return Ok(result);
+                                }
+                            };
+                            match query_api_with_retry(&api_guard, query).await {
                                 Ok(album_data) => {
                                     if !album_data.year.is_empty() {
                                         tracing::debug!("YTM album enrichment: year={}", album_data.year);
@@ -1096,20 +1101,7 @@ impl BackendTask<ArcServer> for ValidateMetadata {
     }
 }
 
-fn urlencoding(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => out.push(c),
-            ' ' => out.push('+'),
-            _ => {
-                out.push('%');
-                out.push_str(&format!("{:02X}", c as u8));
-            }
-        }
-    }
-    out
-}
+
 
 impl BackendTask<ArcServer> for SearchPlaylists {
     type Output = Result<Vec<SearchResultPlaylist>>;

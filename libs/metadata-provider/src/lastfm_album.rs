@@ -65,16 +65,19 @@ impl MetadataProvider for AlbumSearchProvider {
                     .and_then(util::extract_year);
 
                 let mut album_tracks = Vec::new();
-                if let Some(tracklist) = album_data
-                    .get("tracks")?.get("track")?.as_array()
-                {
-                    for entry in tracklist {
-                        let t_title = entry.get("name")?.as_str()?.to_string();
-                        let duration_secs = util::extract_duration(
-                            entry.get("duration").unwrap_or(&serde_json::Value::Null)
-                        );
-                        album_tracks.push(AlbumTrack { title: t_title, duration_secs });
-                    }
+                let tracks_val = album_data.get("tracks")?.get("track")?;
+                let track_iter: Box<dyn Iterator<Item = &serde_json::Value>> = if let Some(arr) = tracks_val.as_array() {
+                    Box::new(arr.iter())
+                } else {
+                    // Single-track album: Last.fm returns object instead of array
+                    Box::new(std::iter::once(tracks_val))
+                };
+                for entry in track_iter {
+                    let t_title = entry.get("name")?.as_str()?.to_string();
+                    let duration_secs = util::extract_duration(
+                        entry.get("duration").unwrap_or(&serde_json::Value::Null)
+                    );
+                    album_tracks.push(AlbumTrack { title: t_title, duration_secs });
                 }
                 let genres: Vec<String> = album_data
                     .get("toptags").and_then(|t| t.get("tag")).and_then(|t| t.as_array())

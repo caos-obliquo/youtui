@@ -843,11 +843,11 @@ impl TableView for Playlist {
             let first_field: Cow<'_, str> = if Some(visual_i) == cur_playing_visual {
                 match self.play_status {
                     PlayState::NotPlaying => Cow::Borrowed(">>>"),
-                    PlayState::Playing(_) => Cow::Borrowed(""),
-                    PlayState::Paused(_) => Cow::Borrowed(""),
+                    PlayState::Playing(_) | PlayState::Paused(_) | PlayState::Buffering(_) => {
+                        Cow::Owned((visual_i + 1).to_string())
+                    }
                     PlayState::Stopped => Cow::Borrowed(">>>"),
                     PlayState::Error(_) => Cow::Borrowed(">>>"),
-                    PlayState::Buffering(_) => Cow::Borrowed(""),
                 }
             } else {
                 Cow::Owned((visual_i + 1).to_string())
@@ -1034,7 +1034,7 @@ impl Playlist {
         let Some(src_idx) = self.get_index_from_id(song_id) else { return None; };
 
         // Extract all data from src_song before any mutable borrows
-        let (video_raw, album_artist, album_year, src_arc, parent_duration) = {
+        let (video_raw, album_artist, album_year, src_arc, parent_duration, src_genres, src_styles, src_thumbnails, src_album_art, src_like_status) = {
             let Some(src_song) = self.get_song_from_idx(src_idx) else { return None; };
             let video_raw = src_song.video_id.get_raw().to_string();
             let album_artist = crate::app::structures::normalize_artist_name(&artist.clone().unwrap_or_else(|| {
@@ -1049,7 +1049,12 @@ impl Playlist {
                 _ => None,
             };
             let parent_duration = src_song.actual_duration;
-            (video_raw, album_artist, album_year, src_arc, parent_duration)
+            let src_genres = src_song.genres.clone();
+            let src_styles = src_song.styles.clone();
+            let src_thumbnails = src_song.thumbnails.clone();
+            let src_album_art = src_song.album_art.clone();
+            let src_like_status = src_song.like_status.clone();
+            (video_raw, album_artist, album_year, src_arc, parent_duration, src_genres, src_styles, src_thumbnails, src_album_art, src_like_status)
         };
         // Use metadata-provided album name, fall back to original YouTube title
         let album_name = album.clone().or_else(|| original_album.clone());
@@ -1115,13 +1120,13 @@ impl Playlist {
                 },
                 start_offset: Some(std::time::Duration::from_secs_f64(accum)),
                 year: album_year.clone(),
-                album_art: crate::app::structures::AlbumArtState::None,
-                genres: Vec::new(),
-                styles: Vec::new(),
+                album_art: src_album_art.clone(),
+                genres: src_genres.clone(),
+                styles: src_styles.clone(),
                 artists: crate::app::structures::MaybeRc::Owned(list_artists),
-                thumbnails: crate::app::structures::MaybeRc::Owned(Vec::new()),
+                thumbnails: src_thumbnails.clone(),
                 album: list_album,
-                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+                like_status: src_like_status.clone(),
             };
             self.list.insert_after(src_idx + i, list_song);
             accum += track.duration_secs;
@@ -1178,7 +1183,7 @@ impl Playlist {
             let art_lower = artist.to_lowercase();
             if lower.starts_with(&format!("{} - ", art_lower)) {
                 title[artist.len() + 3..].trim().to_string()
-            } else if lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
+            } else if artist.len() >= 2 && lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
                 title[artist.len()..].trim().to_string()
             } else {
                 title.to_string()
