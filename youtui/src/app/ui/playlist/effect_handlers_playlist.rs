@@ -626,21 +626,31 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
                         if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
-                            // Primary check: YouTube title has album indicator tags ("[Full Album]", "(EP)", etc.)
+                            // Determine if we should split. Priority cascade:
+                            //   1. YouTube title has album indicator tags ("[Full Album]", "(EP)", etc.)
+                            //   2. Song is album-length (> 10 min) — trust metadata provider
+                            //   3. Tracklist >= 4 tracks AND metadata artist matches song artist exactly
                             let original_title = song.title.as_str();
                             let is_album_upload = has_album_indicator_tags(original_title);
-                            // Secondary check: song is album-length (> 15 min) — trust metadata provider
                             let is_album_length = song.actual_duration
-                                .map(|d| d.as_secs_f64() > 900.0)
+                                .map(|d| d.as_secs_f64() > 600.0) // 10 min
                                 .unwrap_or(false);
-                            if !is_album_upload && !is_album_length {
-                                info!("Album tracklist rejected: title {:?} has no album tags and duration ({:.0}s) < 900s",
-                                    original_title, song.actual_duration.map_or(0.0, |d| d.as_secs_f64()));
+                            let has_many_tracks = data.album_tracks.len() >= 4
+                                && data.artist.as_deref().map_or(false, |meta_artist| {
+                                    song.artists.iter().any(|a| {
+                                        a.name.eq_ignore_ascii_case(meta_artist)
+                                    })
+                                });
+                            if !is_album_upload && !is_album_length && !has_many_tracks {
+                                info!("Album tracklist rejected: title {:?} no tags, dur={:.0}s, tracks={}",
+                                    original_title, song.actual_duration.map_or(0.0, |d| d.as_secs_f64()),
+                                    data.album_tracks.len());
                                 return AsyncTask::new_no_op();
                             }
-                            if is_album_length && !is_album_upload {
-                                info!("Album tracklist accepted by duration heuristic ({:.0}s > 900s)",
-                                    song.actual_duration.map_or(0.0, |d| d.as_secs_f64()));
+                            if !is_album_upload {
+                                info!("Album tracklist accepted (dur={:.0}s or {} tracks)",
+                                    song.actual_duration.map_or(0.0, |d| d.as_secs_f64()),
+                                    data.album_tracks.len());
                             }
                             // Filter out zero-duration tracks (broken metadata from some providers)
                             let valid_tracks: Vec<_> = data.album_tracks.iter()
