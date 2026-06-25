@@ -626,31 +626,36 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
                         if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
-                            // Determine if we should split. Priority cascade:
-                            //   1. YouTube title has album indicator tags ("[Full Album]", "(EP)", etc.)
-                            //   2. Song is album-length (> 10 min) — trust metadata provider
-                            //   3. Tracklist >= 4 tracks AND metadata artist matches song artist exactly
+                            // Duration ratio: compare video duration to metadata tracklist total.
+                            // If video IS the full album (ratio >= 0.5), split.
+                            // If video is just one song from album (ratio < 0.5), don't split.
+                            // This handles: same-name song/album, extreme music with short tracks,
+                            // goregrind 30-song EPs, etc.
                             let original_title = song.title.as_str();
-                            let is_album_upload = has_album_indicator_tags(original_title);
-                            let is_album_length = song.actual_duration
-                                .map(|d| d.as_secs_f64() > 600.0) // 10 min
-                                .unwrap_or(false);
-                            let has_many_tracks = data.album_tracks.len() >= 4
-                                && data.artist.as_deref().map_or(false, |meta_artist| {
-                                    song.artists.iter().any(|a| {
-                                        a.name.eq_ignore_ascii_case(meta_artist)
-                                    })
-                                });
-                            if !is_album_upload && !is_album_length && !has_many_tracks {
-                                info!("Album tracklist rejected: title {:?} no tags, dur={:.0}s, tracks={}",
-                                    original_title, song.actual_duration.map_or(0.0, |d| d.as_secs_f64()),
-                                    data.album_tracks.len());
+                            let meta_total: f64 = data.album_tracks.iter()
+                                .map(|t| t.duration_secs).sum();
+                            let video_dur = song.actual_duration
+                                .map(|d| d.as_secs_f64());
+                            let ratio_ok = match (video_dur, meta_total > 0.0) {
+                                (Some(v), true) => v / meta_total >= 0.3, // 0.3: handles bonus/deluxe editions (3x length)
+                                _ => false, // missing durations → try fallbacks
+                            };
+                            // Fallback heuristics when ratio can't be computed
+                            let fallback_ok = meta_total <= 0.0 || video_dur.is_none()
+                                && (has_album_indicator_tags(original_title)
+                                    || video_dur.map_or(false, |d| d > 600.0)   // > 10 min
+                                    || (data.album_tracks.len() >= 4
+                                        && data.artist.as_deref().map_or(false, |meta_artist| {
+                                            song.artists.iter().any(|a| a.name.eq_ignore_ascii_case(meta_artist))
+                                        })));
+                            if !ratio_ok && !fallback_ok {
+                                info!("Album tracklist rejected: title={:?}, meta_total={:.0}s, video_dur={:.0}s, ratio={:.2}",
+                                    original_title, meta_total, video_dur.unwrap_or(0.0),
+                                    video_dur.map(|v| v / meta_total.max(1.0)).unwrap_or(0.0));
                                 return AsyncTask::new_no_op();
                             }
-                            if !is_album_upload {
-                                info!("Album tracklist accepted (dur={:.0}s or {} tracks)",
-                                    song.actual_duration.map_or(0.0, |d| d.as_secs_f64()),
-                                    data.album_tracks.len());
+                            if ratio_ok {
+                                info!("Album tracklist accepted by duration ratio ({:.2} >= 0.3)", video_dur.unwrap_or(0.0) / meta_total.max(1.0));
                             }
                             // Filter out zero-duration tracks (broken metadata from some providers)
                             let valid_tracks: Vec<_> = data.album_tracks.iter()
