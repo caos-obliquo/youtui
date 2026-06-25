@@ -106,5 +106,4 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - Related tracks metadata enrichment (YTM API doesn't return album/year)
 
 ## Known Gaps (Consistency)
-- **Library tab missing playing indicator**: No second highlight showing which song is currently playing
 - **Footer album art**: Fetches async, brief blank on song change. Cache helps but not instantaneous.
