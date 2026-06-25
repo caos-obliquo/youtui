@@ -24,6 +24,7 @@ use async_callback_manager::{AsyncTask, BackendTask};
 use lru::LruCache;
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
+use std::collections::HashSet;
 use tracing::{info, warn};
 use vi_text_editor::ViTextEditor;
 use ytmapi_rs::parse::{SearchResultAlbum, AlbumSong, ParsedSongAlbum, ParsedSongArtist};
@@ -60,6 +61,7 @@ pub struct AlbumSearchBrowser {
     last_search_query: Option<String>,
     pub local_filter_text: String,
     pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
+    pub liked_playlists: HashSet<PlaylistID<'static>>,
 }
 
 impl_youtui_component!(AlbumSearchBrowser);
@@ -88,6 +90,7 @@ impl AlbumSearchBrowser {
             last_search_query: None,
             local_filter_text: String::new(),
             cur_playing_video_id: None,
+            liked_playlists: HashSet::new(),
         }
     }
 
@@ -436,7 +439,7 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
             BrowserSongsAction::RatePlaylist => {
                 if self.show_tracks {
                     if let Some(pl_id) = &self.album_playlist_id {
-                        let was_liked = false; // No local cache, always send Liked
+                        let was_liked = !self.liked_playlists.insert(pl_id.clone());
                         let rating = if was_liked { LikeStatus::Indifferent } else { LikeStatus::Liked };
                         return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(pl_id.clone(), rating)));
                     }

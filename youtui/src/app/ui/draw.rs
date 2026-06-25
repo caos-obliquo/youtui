@@ -22,45 +22,61 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     w.sixel_data = None;
     w.sixel_rect = None;
 
-    // Album art popup: draw full-screen, store sixel data for cleanup on close
+    // Album art popup: centered in terminal with proportional margins
     if w.album_art_popup.is_some() {
         if let Some(popup) = &mut w.album_art_popup {
-            use ratatui::layout::{Constraint, Direction, Layout};
+            use ratatui::layout::Margin;
+            use ratatui::layout::Alignment;
             use ratatui_image::{Image, Resize};
             use ratatui::widgets::{Clear, Paragraph};
+            use ratatui::style::{Style, Color};
             let area = f.area();
             f.render_widget(Clear, area);
-            // Symmetric centered rect (3% margin on each side)
-            let vert = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(3), Constraint::Percentage(94), Constraint::Percentage(3)])
-                .areas::<3>(area);
-            let centered = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(3), Constraint::Percentage(94), Constraint::Percentage(3)])
-                .areas::<3>(vert[1])[1];
+            // Center image with 1/6 vertical and 1/8 horizontal margins
+            let margin_v = (area.height / 6).max(1);
+            let margin_h = (area.width / 8).max(1);
+            let centered = area.inner(Margin { vertical: margin_v, horizontal: margin_h });
             if centered.width < 4 || centered.height < 4 {
                 f.render_widget(Paragraph::new("Terminal too small").centered(), area);
                 return;
             }
-            match terminal_image_capabilities.new_protocol(
-                popup.thumbnail.in_mem_image.clone(),
-                centered,
-                Resize::Fit(None),
-            ) {
-                Ok(protocol) => {
-                    // Store sixel data for proper cleanup on close
-                    if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
-                        w.sixel_data = Some(sixel.data.clone());
-                        w.sixel_rect = Some(centered);
+            if let Some(thumb) = popup.current_thumbnail() {
+                match terminal_image_capabilities.new_protocol(
+                    thumb.in_mem_image.clone(),
+                    centered,
+                    Resize::Fit(None),
+                ) {
+                    Ok(protocol) => {
+                        // Store sixel data for proper cleanup on close
+                        if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
+                            w.sixel_data = Some(sixel.data.clone());
+                            w.sixel_rect = Some(centered);
+                        }
+                        f.render_widget(Image::new(&protocol), centered);
                     }
-                    f.render_widget(Image::new(&protocol), centered);
+                    Err(_) => {
+                        w.sixel_data = None;
+                        w.sixel_rect = None;
+                        f.render_widget(Paragraph::new("Failed to load album art").centered(), area);
+                    }
                 }
-                Err(_) => {
-                    w.sixel_data = None;
-                    w.sixel_rect = None;
-                    f.render_widget(Paragraph::new("Failed to load album art").centered(), area);
-                }
+            }
+            // Page indicator when multiple album arts available
+            if popup.total() > 1 {
+                let indicator = format!(" {} / {} ", popup.index + 1, popup.total());
+                let indicator_area = Rect {
+                    x: centered.x,
+                    y: centered.y + centered.height - 1,
+                    width: centered.width,
+                    height: 1,
+                };
+                f.render_widget(Clear, indicator_area);
+                f.render_widget(
+                    Paragraph::new(indicator)
+                        .style(Style::default().fg(Color::White))
+                        .alignment(Alignment::Center),
+                    indicator_area,
+                );
             }
         }
         return;
