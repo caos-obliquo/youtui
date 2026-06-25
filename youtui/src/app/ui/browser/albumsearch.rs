@@ -28,7 +28,7 @@ use std::collections::HashSet;
 use tracing::{info, warn};
 use vi_text_editor::ViTextEditor;
 use ytmapi_rs::parse::{SearchResultAlbum, AlbumSong, ParsedSongAlbum, ParsedSongArtist};
-use ytmapi_rs::common::{AlbumID, PlaylistID, SearchSuggestion, Thumbnail, YoutubeID, LikeStatus};
+use ytmapi_rs::common::{AlbumID, PlaylistID, SearchSuggestion, Thumbnail, YoutubeID, LikeStatus, LibraryStatus};
 
 #[derive(Default)]
 pub enum InputRouting {
@@ -614,6 +614,7 @@ impl BackendTask<crate::app::server::ArcServer> for FetchAlbumTracks {
                 thumbnails: album.thumbnails,
                 tracks: album.tracks,
                 audio_playlist_id: album.audio_playlist_id,
+                library_status: album.library_status,
             })
         }
     }
@@ -627,6 +628,7 @@ pub struct AlbumFetchResult {
     pub thumbnails: Vec<Thumbnail>,
     pub tracks: Vec<AlbumSong>,
     pub audio_playlist_id: Option<PlaylistID<'static>>,
+    pub library_status: LibraryStatus,
 }
 
 #[derive(Debug, PartialEq)]
@@ -663,6 +665,14 @@ impl_youtui_task_handler!(HandleFetchAlbumTracksOk, AlbumFetchResult, AlbumSearc
         target.album_artist = result.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
         target.album_playlist_id = result.audio_playlist_id;
         target.album_artists = result.artists.clone();
+        // Pre-populate liked_playlists from API library_status
+        if let Some(ref pl_id) = target.album_playlist_id {
+            if result.library_status == LibraryStatus::InLibrary {
+                target.liked_playlists.insert(pl_id.clone());
+            } else {
+                target.liked_playlists.remove(pl_id);
+            }
+        }
         let album = ParsedSongAlbum { name: result.title, id: result.album_id };
         target.track_list.append_raw_album_songs(result.tracks, album, result.year, result.artists, result.thumbnails);
         AsyncTask::new_no_op()
