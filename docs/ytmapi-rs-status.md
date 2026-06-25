@@ -139,7 +139,7 @@
 | Item | Status | Notes |
 |------|--------|-------|
 | Clippy warnings | ✅ | **0 across all 9 crates** (fixed 35) |
-| `#[allow(dead_code)]` | [~] | 7 proposital, 21 stale (partially cleaned) |
+| `#[allow(dead_code)]` | [~] | 3 proposital, 0 stale (cleaned in f723535, 206 lines deleted) |
 | `unwrap()` in production | ✅ | **0** — all in doc tests/tests |
 | Stale TODOs removed | ✅ | **62 removed**, 37 legitimate remain |
 | Tests | ✅ | ytmapi-rs: 85/85 lib, 28/52 auth |
@@ -165,10 +165,10 @@ All 37 remaining TODOs are legitimate feature gaps but LOW value for youtui:
 
 **85% parity** (40/47 endpoints). 
 
-**High-value gaps (will implement):**
-1. Library sort order → wire in youtui UI
-2. Code trim → finish dead_code cleanup
-3. Doc polish → update CLAUDE.md, TODO.md, roadmap
+**High-value gaps (all DONE):**
+1. ~~Library sort order~~ → wired in youtui UI (b26bb4c)
+2. ~~Code trim~~ → dead_code cleanup done (f723535)
+3. ~~Doc polish~~ → CLAUDE.md, TODO.md, roadmap udpated
 
 **Low-value gaps (skip):**
 - GetSavedEpisodes (podcasts not wired)

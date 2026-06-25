@@ -48,8 +48,8 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 135 pass, 4 ignore
-cargo test --release -p metadata-provider          # 45 pass
+cargo test --release -p youtui --bin youtui       # 136 pass, 4 ignore
+cargo test --release -p metadata-provider          # 46 pass
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
 cargo test --release -p ytmapi-rs                  # 28/52 auth (needs cookie)
@@ -58,7 +58,7 @@ cargo test --release -p async-callback-manager     # 14 pass (3 lib + 11 integ)
 cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
 cargo test --release -p ytmapi-cli                 # 7 pass
 ```
-Total: **~357/357 pass, 0 fail, 4 ignored, 0 warnings** (youtui 135 + 45 + 65 + 85 + 14 + 14 + 2 + 7 = 357)
+Total: **~369/369 pass, 0 fail, 4 ignored, 0 warnings** (youtui 136 + 46 + 65 + 85 + 14 + 14 + 2 + 7 = 369)
 
 ## Warnings
 `cargo build --release` -- **0 warnings across workspace** (all 9 crates).
@@ -75,7 +75,7 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `youtui` | Main binary | 135 |
 | `ytmapi-rs` | YT Music API client | 85 lib + 28/52 auth |
 | `vi-text-editor` | Vim text editor widget | 65 |
-| `metadata-provider` | Metadata trait + impls | 45 |
+| `metadata-provider` | Metadata trait + impls | 46 |
 | `genius-rs` | Genius lyrics/annotations | 14 |
 | `async-callback-manager` | Async task dispatch | 15 |
 | `json-crawler` | JSON path parser | 8 |
@@ -102,7 +102,7 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `app/ui/browser/albumsearch.rs` | ~720 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
 | `config/keymap.rs` | ~2130 | All keybindings by context |
 | `app/ui.rs` | ~1591 | Main window, event routing |
-| `libs/metadata-provider/` | 45 tests | Metadata trait + 5 provider impls + genre_map |
+| `libs/metadata-provider/` | 46 tests | Metadata trait + 6 provider impls + genre_map |
 | `app/ui/playlist/notes_popup.rs` | ~272 | Vim-driven notes text editor |
 | `app/ui/playlist/playlist_editor_popup.rs` | ~484 | Playlist editor (nvim-driven, overwrite save) |
 | `app/ui/playlist/album_art_popup.rs` | ~35 | Album art sixel popup w/ pagination |
@@ -577,6 +577,64 @@ Context menu is exclusively via `o`.
 - **docs/ytmapi-rs-status.md**: new endpoint-by-endpoint gap analysis
 - **TODO.md**: updated with current state
 - **CLAUDE.md**: this update
+
+## Session 2026-06-25 (Split Pipeline Revision — fix/split-pipeline-revision, 13 commits)
+
+### Split Pipeline Revision Core (f0e7fac)
+- **Word-boundary tag matching**: `clean_title_for_metadata` splits tokens by
+  alphanumeric boundaries. Tags like `full album` match as consecutive tokens
+  (not substring). Fixes false match "ep" in "Epic".
+- **Album name in provider lookup**: `ValidateMetadata` passes
+  `song.album` to `MetadataRegistry::resolve()`. All 6 providers receive
+  `album: Option<&str>` param.
+- **Last track duration**: `parent_duration` extracted from src_song, last track
+  fills remaining time (`parent - accum`).
+- **Genre aliasing single-word fix**: Auto-inference catches single-word genres
+  (Punk, Metal, Rock) by also checking single-word canonical entries.
+- **normalize_artist_name preserves lowercase**: `"data da morte"` keeps intentional
+  lowercase (was uppercasing first char).
+
+### Metadata Pipeline Fixes (52847d2)
+- **MusicBrainz short date filter**: rejects date strings < 4 chars ("07").
+- **Zero-duration track filter**: filters out zero-dur tracks instead of
+  rejecting the entire album.
+- **Single-track albums**: LastfmAlbum now handles non-array tracklist (JSON
+  object for 1-track albums). Discogs `>=2` guard removed.
+- **Cache threshold**: minimum score >= 20 before caching. Prevents sparse
+  results from blocking re-resolution.
+- **MA_COOKIE reorder**: try_direct_ma() before metal_api (broken API).
+- **Split tracks propagate parent state**: genres, styles, thumbnails,
+  like_status copied to all split tracks.
+
+### Duration Ratio Heuristic (289e585)
+- Compares video duration to metadata tracklist total.
+- Ratio >= 0.3 = split (video IS the album/EP).
+- Fallbacks: album indicator tags, >10min + >=4 tracks with artist match.
+- Prevents false split for single tracks whose metadata returns full album
+  tracklist (e.g., MusicBrainz).
+
+### Feature Commits
+- **Library album library_status** (0dabd7e): GetAlbum now propagates
+  `library_status` (InLibrary/NotInLibrary) for correct `o.t` toggle state.
+- **YTM album enrichment** (d33c61b): Post-registry YTM API call enhances
+  resolved metadata with artist/album/year/genres. Best-effort: failure
+  logs warning, keeps original data.
+- **Count-in-header** (8791c1a): All browser tabs now show `"N results"` in
+  title. Standardized format across Songs, Albums, Artists, Playlists,
+  PlaylistSearch, Library.
+- **albumsearch is_text_handling shadowing** (5962e6f): Inherent method shadowed
+  trait impl, broke text input in Albums tab search. Fixed.
+- **Metadata cache enrichment** (5962e6f): Library songs get deferred metadata
+  cache lookup (genre/year enrichment without API call).
+- **ytmapi-rs cleanup** (6eca1c8): 8 remaining stale TODOs removed (feedback
+  tokens confirmed unimplementable). GetLikedSongs wrapper. CLI cache-test.
+  docs/ updated.
+- **Docs overhaul** (84e9363/8c43cf1/4bfdc46): `?` global toggle help binding,
+  `o (Menu)` in header, API setup URLs in help popup, context menu descriptions
+  clarified, api-services.md created.
+
+### Test counts: 136/136 youtui, 46/46 metadata-provider, 85/85 ytmapi-rs
+### 0 warnings across workspace
 
 ### Previous Session Features (Unchanged)
 - Metadata pipeline (providers, Discogs, MA_COOKIE, genre aliasing).

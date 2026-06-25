@@ -13,6 +13,8 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | [02-crates/async-callback-manager](02-crates/async-callback-manager.md) | Task/effect system (1.8k LOC) |
 | [02-crates/json-crawler](02-crates/json-crawler.md) | serde_json wrapper (1k LOC) |
 | [02-crates/vi-text-editor](02-crates/vi-text-editor.md) | Full VTE reference (2.3k LOC) |
+| [02-crates/genius-rs](02-crates/genius-rs.md) | Genius lyrics + annotations SDK |
+| [02-crates/metadata-provider](02-crates/metadata-provider.md) | Metadata resolution (6 providers, 46 tests) |
 | [03-data-flow](03-data-flow.md) | Event routing, task spawning, effect chain |
 | [04-configuration](04-configuration.md) | All config.toml fields with defaults |
 | [05-keybindings](05-keybindings.md) | All contexts, actions, default keys |
@@ -52,7 +54,7 @@ cargo build --release
 target/release/youtui
 
 # Tests
-cargo test --release -p youtui --bin youtui    # 126 tests
+cargo test --release -p youtui --bin youtui    # 136 tests
 cargo test --release -p vi-text-editor          # 65 tests
 cargo test --release -p ytmapi-rs              # 80 tests
 ```
