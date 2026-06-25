@@ -231,6 +231,16 @@ Context menu is exclusively via `o`.
 - Sort order cycle unit test (all 4 states)
 - 125/125 youtui, 85/85 ytmapi-rs pass
 
+## Session 2026-06-25 (Metadata Cache Persistence + Library Album Fix)
+- **Metadata cache persistence**: `~/.local/share/youtui/metadata_cache.json` (JSON, atomic write). Loaded on startup, saved after each successful resolve.
+- **ValidatedMetadata + AlbumTrack now Serialize/Deserialize**: enabled disk cache serialization.
+- **Library songs keep album data**: `HandleLibrarySongsOk` maps `ts.album.name`/`ts.album.id` (was `None`). Artist IDs also preserved.
+- **Genre pipeline closed**: `MetadataEffect::Validated` copies `data.genres`/`data.styles` into `ListSong`. SongInfoPopup (`o.I`) shows real genres.
+- **CLI cache-test**: `ytmapi debug cache-test <artist> <title>` verifies end-to-end.
+- **Tests**: 134/134 youtui, 35/35 metadata-provider, 85/85 ytmapi-rs pass.
+- **`has_album_indicator_tags` fix**: split tags by non-alphanumeric same as title → `"full-length"` matches `"Full-Length Album Title"`.
+- **author fixed**: `metadata-provider/Cargo.toml` `nick42d` → `caos-obliquo`.
+
 ## Session 2026-06-23 (Committed)
 - metadata-provider crate extraction (19 tests, 0 warnings)
 - CRITICAL: PlaylistSearch tab fixed (deprecated no-op types removed, dispatch wired, keybindings populated)

@@ -147,6 +147,7 @@ Get cookie: Export `music.youtube.com` cookies via browser extension (Get cookie
 | `debug clean <title>` | title | Test title cleaning only |
 | `debug artist <name>` | name | Test artist normalization only |
 | `debug resolve <artist> <title>` | artist, title | Test full metadata resolution pipeline |
+| `debug cache-test <artist> <title>` | artist, title | Test metadata cache persistence (resolve → save → reload → verify) |
 | `debug genre <genre>` | genre | Test genre normalization |
 | `debug genre-list [filter]` | [filter] | List known genres with optional filter |
 

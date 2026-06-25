@@ -3,7 +3,7 @@ name = "youtui"
 version = "0.0.37"
 # Required for let chains
 edition = "2024"
-authors = ["nick42d"]
+authors = ["caos-obliquo"]
 license = "MIT"
 description = "A simple TUI YouTube Music player"
 homepage = "https://github.com/nick42d/youtui"

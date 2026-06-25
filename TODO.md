@@ -37,6 +37,14 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 
 ## Done
 
+### Session 2026-06-25 — Metadata Cache Persistence + Library Album Fix
+
+- **Library songs now keep album data**: `HandleLibrarySongsOk` no longer drops `ts.album.name` and `ts.album.id` — Album column in library browser now shows real names from YTM API.
+- **Genre pipeline loop closed**: `MetadataEffect::Validated` handler now copies `data.genres`/`data.styles` into `ListSong` — SongInfoPopup (`o.I`) shows real genres where providers return them.
+- **Metadata cache persists to disk**: `~/.local/share/youtui/metadata_cache.json` — JSON file, atomic write via `.tmp`+rename. Loaded on startup, saved after each successful resolve. Survives restart.
+- **youtui tests**: 134 passed (was 133 — 1 new `full_length_detected` test fixed via tag normalization)
+- **CLI cache-test**: `ytmapi debug cache-test <artist> <title>` — verifies cache file write+reload end-to-end.
+
 ### Phases A–M (All Implemented)
 - **A**: Annotations cutoff fixed — `lyrics_popup.rs:547` added `.saturating_sub(1)`
 - **B**: GoToArtist/Album moved to `o.a`/`o.b` in context menu (was broken `g` mode shadowed by list keybinds)
