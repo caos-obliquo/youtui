@@ -236,7 +236,7 @@ impl Youtui {
                     task.type_debug, task.type_id, task.constraint
                 )
             });
-        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config, crate::get_config_dir().ok().map(|d| d.join("metadata_overrides.json"))));
+        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config, crate::get_config_dir().ok().map(|d| d.join("metadata_overrides.json")), crate::get_data_dir().ok().map(|d| d.to_path_buf())));
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
         // The docs for this function state that it must be run after entering alternate

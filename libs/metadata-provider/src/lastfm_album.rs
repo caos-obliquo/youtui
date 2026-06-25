@@ -19,6 +19,7 @@ impl MetadataProvider for AlbumSearchProvider {
         &'a self,
         artist: &'a str,
         title: &'a str,
+        album: Option<&'a str>,
         client: &'a reqwest::Client,
     ) -> BoxFuture<'a, Option<ValidatedMetadata>> {
         let lastfm_key = self.lastfm_key.clone();
@@ -26,7 +27,7 @@ impl MetadataProvider for AlbumSearchProvider {
             let key = lastfm_key.as_deref()?;
             if key.is_empty() { return None; }
 
-            let search_album = util::norm_for_lfm(title);
+            let search_album = album.map(util::norm_for_lfm).unwrap_or_else(|| util::norm_for_lfm(title));
             let album_search_url = format!(
                 "https://ws.audioscrobbler.com/2.0/?method=album.search&api_key={}&album={}&format=json&limit=5",
                 util::urlencoding(key), util::urlencoding(&search_album)

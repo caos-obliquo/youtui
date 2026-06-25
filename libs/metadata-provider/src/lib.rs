@@ -30,6 +30,7 @@ pub trait MetadataProvider: Send + Sync {
         &'a self,
         artist: &'a str,
         title: &'a str,
+        album: Option<&'a str>,
         client: &'a reqwest::Client,
     ) -> BoxFuture<'a, Option<ValidatedMetadata>>;
 }
@@ -40,6 +41,7 @@ pub struct MetadataRegistry {
     cache: Mutex<LruCache<String, ValidatedMetadata>>,
     overrides: Mutex<overrides::MetadataOverrides>,
     overrides_path: Option<PathBuf>,
+    cache_path: Option<PathBuf>,
 }
 
 impl MetadataRegistry {
@@ -49,6 +51,7 @@ impl MetadataRegistry {
         discogs_token: Option<String>,
         genius_token: Option<String>,
         overrides_path: Option<PathBuf>,
+        cache_path: Option<PathBuf>,
     ) -> Self {
         let mut providers: Vec<Box<dyn MetadataProvider>> = vec![
             Box::new(MetalApiProvider::new()),
@@ -59,13 +62,16 @@ impl MetadataRegistry {
             Box::new(MusicBrainzProvider::new()),
         ];
         providers.sort_by_key(|p| p.priority());
-        Self {
+        let reg = Self {
             providers,
             http_client,
             cache: Mutex::new(LruCache::new(NonZeroUsize::new(200).unwrap())),
             overrides: Mutex::new(overrides::MetadataOverrides::load(overrides_path.clone())),
             overrides_path,
-        }
+            cache_path,
+        };
+        reg.load_cache();
+        reg
     }
 
     /// Score how closely a provider result matches the search query
@@ -115,6 +121,7 @@ impl MetadataRegistry {
         &self,
         artist: &str,
         title: &str,
+        album: Option<&str>,
     ) -> Result<ValidatedMetadata, anyhow::Error> {
         let cache_key = format!("{}::{}",
             util::norm_for_lfm(&artist.to_lowercase()),
@@ -134,7 +141,7 @@ impl MetadataRegistry {
         // Try ALL providers, collect results, pick the best-scoring one
         let mut best: Option<(i32, ValidatedMetadata, u8)> = None;
         for provider in &self.providers {
-            if let Some(meta) = provider.lookup(artist, title, &self.http_client).await {
+            if let Some(meta) = provider.lookup(artist, title, album, &self.http_client).await {
                 let score = Self::score_result(&meta, artist, title);
                 tracing::debug!(
                     "Provider priority {} scored {} for {} - {} (album: {:?}, tracks: {})",
@@ -166,10 +173,60 @@ impl MetadataRegistry {
                 meta.styles = crate::genre_map::normalize_genres(&meta.styles);
             }
             self.cache.lock().unwrap().put(cache_key, meta.clone());
+            self.save_cache();
             return Ok(meta);
         }
 
         Ok(ValidatedMetadata::default())
+    }
+
+    fn cache_file_path(&self) -> Option<PathBuf> {
+        self.cache_path.as_ref().map(|p| p.join("metadata_cache.json"))
+    }
+
+    fn load_cache(&self) {
+        let Some(path) = self.cache_file_path() else { return; };
+        if !path.exists() { return; }
+        match std::fs::read_to_string(&path) {
+            Ok(data) => {
+                match serde_json::from_str::<Vec<(String, ValidatedMetadata)>>(&data) {
+                    Ok(entries) => {
+                        let mut cache = self.cache.lock().unwrap();
+                        for (key, meta) in entries {
+                            cache.put(key, meta);
+                        }
+                        tracing::info!("Loaded {} entries from metadata cache", cache.len());
+                    }
+                    Err(e) => tracing::warn!("Failed to parse metadata cache: {}", e),
+                }
+            }
+            Err(e) => tracing::warn!("Failed to read metadata cache: {}", e),
+        }
+    }
+
+    fn save_cache(&self) {
+        let Some(path) = self.cache_file_path() else { return; };
+        let entries: Vec<(String, ValidatedMetadata)> = {
+            let cache = self.cache.lock().unwrap();
+            cache.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        };
+        if entries.is_empty() { return; }
+        match serde_json::to_string_pretty(&entries) {
+            Ok(json) => {
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                // Atomic write via temp file
+                let tmp = path.with_extension("json.tmp");
+                match std::fs::write(&tmp, &json) {
+                    Ok(_) => {
+                        let _ = std::fs::rename(&tmp, &path);
+                    }
+                    Err(e) => tracing::warn!("Failed to write metadata cache: {}", e),
+                }
+            }
+            Err(e) => tracing::warn!("Failed to serialize metadata cache: {}", e),
+        }
     }
 
     pub fn save_override(&self, artist: &str, title: &str, meta: &ValidatedMetadata) {

@@ -617,20 +617,27 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                         if let Some(tn) = data.track_no {
                             song.track_no = Some(tn);
                         }
-                        info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?})",
-                            song_id, data.artist, data.album, data.year, data.track_no);
+                        if !data.genres.is_empty() {
+                            song.genres = data.genres.clone();
+                        }
+                        if !data.styles.is_empty() {
+                            song.styles = data.styles.clone();
+                        }
+                        info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
+                            song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
                         if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
-                            // Quality guard: verify tracklist before splitting
+                            // Proper validation: check if original YouTube title indicates album upload
+                            let original_title = song.title.as_str();
+                            let is_album_upload = has_album_indicator_tags(original_title);
+                            if !is_album_upload {
+                                info!("Album tracklist rejected: original title {:?} has no album indicator tags", original_title);
+                                return AsyncTask::new_no_op();
+                            }
+                            // Secondary check: zero-duration tracks indicate broken tracklist
                             let valid_tracks = data.album_tracks.iter().all(|t| t.duration_secs > 0.0);
-                            let total_dur: f64 = data.album_tracks.iter().map(|t| t.duration_secs).sum();
-                            let video_dur = song.actual_duration.map(|d| d.as_secs_f64()).unwrap_or(0.0);
-                            let duration_ok = video_dur == 0.0 || total_dur >= video_dur * 0.5;
-                            if !valid_tracks || !duration_ok {
-                                target.last_error = Some(format!(
-                                    "Album tracklist rejected: {} tracks, {:.0}s total vs video {:.0}s {}",
-                                    data.album_tracks.len(), total_dur, video_dur,
-                                    if !valid_tracks { "(zero-duration tracks)" } else { "" }
-                                ));
+                            if !valid_tracks {
+                                let count = data.album_tracks.iter().filter(|t| t.duration_secs <= 0.0).count();
+                                info!("Album tracklist rejected: {} tracks have zero duration", count);
                                 return AsyncTask::new_no_op();
                             }
                             target.album_tracks = Some(data.album_tracks.clone());
@@ -1034,3 +1041,83 @@ impl_youtui_task_handler!(HandleAddPlaylistToPlaylistError, anyhow::Error, Playl
         AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
     }
 });
+
+/// Definite album indicator tags: if the original YouTube title contains any of these
+/// (word-boundary matched), the upload is intended as a full album/EP/split.
+const ALBUM_INDICATOR_TAGS: &[&str] = &[
+    "full album", "full-length album", "full-length",
+    "full ep", "full lp", "full demo", "full single",
+    "studio album", "live album", "official album",
+    "compilation", "bootleg", "anthology", "collection",
+    "self-titled", "self titled", "s/t",
+];
+
+fn has_album_indicator_tags(title: &str) -> bool {
+    let lower = title.to_lowercase();
+    let tokens: Vec<&str> = lower
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .collect();
+    ALBUM_INDICATOR_TAGS.iter().any(|tag| {
+        // Normalize tag same way as title: split by non-alphanumeric,
+        // so "full-length" matches "Full-Length Album Title"
+        let tag_tokens: Vec<&str> = tag
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|t| !t.is_empty())
+            .collect();
+        if tag_tokens.is_empty() {
+            return false;
+        }
+        tokens.windows(tag_tokens.len()).any(|w| w == tag_tokens.as_slice())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bare_song_no_tags() {
+        assert!(!has_album_indicator_tags("My Parents House"));
+    }
+
+    #[test]
+    fn full_album_tag_detected() {
+        assert!(has_album_indicator_tags("Nice To Meet You I Hate You (Full Album)"));
+    }
+
+    #[test]
+    fn full_album_bracketed_tag() {
+        assert!(has_album_indicator_tags("Album Name [Full Album]"));
+    }
+
+    #[test]
+    fn compilation_tag() {
+        assert!(has_album_indicator_tags("Greatest Hits (Compilation)"));
+    }
+
+    #[test]
+    fn no_false_positive_epic() {
+        assert!(!has_album_indicator_tags("Epic Music Video"));
+    }
+
+    #[test]
+    fn self_titled_detected() {
+        assert!(has_album_indicator_tags("Band Name [Self-Titled]"));
+    }
+
+    #[test]
+    fn single_tag_not_indicator() {
+        assert!(!has_album_indicator_tags("My Song (Single)"));
+    }
+
+    #[test]
+    fn live_album_tag() {
+        assert!(has_album_indicator_tags("Live At Wembley (Live Album)"));
+    }
+
+    #[test]
+    fn full_length_detected() {
+        assert!(has_album_indicator_tags("Full-Length Album Title"));
+    }
+}

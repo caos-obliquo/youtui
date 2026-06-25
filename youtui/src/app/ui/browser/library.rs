@@ -240,6 +240,9 @@ pub struct HandleLibraryReorderItemsErr;
 impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrowser, |_, raw: Vec<TableListSong>| {
     let songs: Vec<ListSong> = raw.into_iter().map(|ts| {
         use crate::app::structures::ListSongID;
+        use crate::app::structures::ListSongArtist;
+        use crate::app::structures::ArtistOrUploadArtistID;
+        use ytmapi_rs::common::AlbumID;
         ListSong {
             video_id: ts.video_id,
             track_no: None,
@@ -257,10 +260,13 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
             album_art: AlbumArtState::None,
             artists: MaybeRc::Owned(ts.artists.into_iter().map(|a| ListSongArtist {
                 name: a.name,
-                id: None,
+                id: a.id.map(ArtistOrUploadArtistID::Artist),
             }).collect()),
             thumbnails: MaybeRc::Owned(ts.thumbnails),
-            album: None,
+            album: Some(MaybeRc::Owned(ListSongAlbum {
+                name: ts.album.name,
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw(ts.album.id.get_raw().to_string())),
+            })),
             like_status: ts.like_status,
         }
     }).collect();
