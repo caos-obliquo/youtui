@@ -100,7 +100,7 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::DeletePlaylist => "Delete Playlist",
             BrowserSongsAction::RenamePlaylist => "Rename Playlist",
             BrowserSongsAction::EditPlaylistDetails => "Edit Details",
-            BrowserSongsAction::RatePlaylist => "Like / Unlike Playlist",
+            BrowserSongsAction::RatePlaylist => "Like / Unlike Album",
             BrowserSongsAction::GetPlaylistDetails => "View Details",
             BrowserSongsAction::RemoveTrackFromPlaylist => "Remove from Playlist",
             BrowserSongsAction::MoveTrackUp => "Move Track Up",

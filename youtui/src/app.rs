@@ -27,6 +27,7 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleOverwriteGetTracks, HandleOverwriteGetTracksErr,
 };
 use std::borrow::Cow;
+use std::rc::Rc;
 use std::time::Duration;
 use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID};
 
@@ -551,23 +552,39 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ViewAlbumCover => {
-                use crate::app::structures::PlayState;
-                // Selected song first, then playing song, then last album art
-                let thumb = self.window_state.playlist.get_selected_album_art()
-                    .or_else(|| match &self.window_state.playlist.play_status {
+                use crate::app::structures::{PlayState, AlbumArtState};
+                // Collect all downloaded album arts from the queue
+                let thumbs: Vec<_> = self.window_state.playlist.list.get_list_iter()
+                    .filter_map(|s| match &s.album_art {
+                        AlbumArtState::Downloaded(t) => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                if !thumbs.is_empty() {
+                    // Find index of selected/playing song's album art
+                    let sel_song = self.window_state.playlist.get_selected_album_art();
+                    let start_idx = sel_song.and_then(|sel| {
+                        thumbs.iter().position(|t| Rc::ptr_eq(t, &sel))
+                    }).unwrap_or(0);
+                    self.window_state.album_art_popup =
+                        Some(ui::playlist::album_art_popup::AlbumArtPopup::new(thumbs, start_idx));
+                } else {
+                    // Fallback: single thumbnail from playing song or last art
+                    let thumb = match &self.window_state.playlist.play_status {
                         PlayState::Playing(id) | PlayState::Paused(id) |
                         PlayState::Buffering(id) => {
                             self.window_state.playlist.get_song_from_id(*id)
                                 .and_then(|s| match &s.album_art {
-                                    crate::app::structures::AlbumArtState::Downloaded(t) => Some(t.clone()),
+                                    AlbumArtState::Downloaded(t) => Some(t.clone()),
                                     _ => None,
                                 })
                         }
                         _ => None,
-                    })
-                    .or_else(|| self.window_state.last_album_art.clone());
-                if let Some(thumb) = thumb {
-                    self.window_state.album_art_popup = Some(ui::playlist::album_art_popup::AlbumArtPopup::new(thumb));
+                    }.or_else(|| self.window_state.last_album_art.clone());
+                    if let Some(t) = thumb {
+                        self.window_state.album_art_popup =
+                            Some(ui::playlist::album_art_popup::AlbumArtPopup::new(vec![t], 0));
+                    }
                 }
             }
             AppCallback::UpdateSongInfo { id, song } => {
