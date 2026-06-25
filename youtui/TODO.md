@@ -36,14 +36,14 @@
 - Album art centering
 - Comprehensive docs (5.4k-line reference manual, man pages)
 
-#### Session 2026-06-23 (Committed)
+#### Session 2026-06-23
 - ytmapi-rs locale parameterization (language/location, builder methods, 3 tests)
 - ytmapi-cli watch-playlist subcommand (Debug-First compliance)
 - Metadata-provider crate extraction (19 tests, 0 warnings)
 - Queue sort popup improvements (j/k nav, Enter/Esc, o.S)
 - Lyrics race guard (generation: u64 counter)
 - LRU lyrics cache + negative TTL (5-min error cache, cross-song)
-- **CRITICAL: PlaylistSearch tab fixed** - deprecated no-op types replaced with real dispatch
+- CRITICAL: PlaylistSearch tab fixed
 - Recommendations o.r context menu (GetRelatedTracks -> GetWatchPlaylistQuery)
 - NavigationController: fix albumsearch.rs GoToAlbum
 - Library refresh: 4 missing playlists_fetched = false paths
@@ -52,7 +52,7 @@
 - Keybinding additions: o.q/o.L/o.Q/o.m/o.n (queue), o.r (library)
 - Dead code cleanup
 
-#### Session 2026-06-24 Batches A-E (Committed)
+#### Session 2026-06-24 Batches A-E
 - Footer: 5-line Status block, album art 7-char, heart icon, MDI Nerd Font icons
 - Library tracks Phase C+D: sort/filter popups, [SEARCH] indicator
 - Like/subscribe/unsubscribe from album tracks view (o.t/o.S/o.U)
@@ -79,48 +79,53 @@
 - ytmapi-cli: Full 44-command coverage (was 16) across all ytmapi-rs endpoints
 - 7/7 tests pass, 0 warnings
 
-#### Session 2026-06-24 (ytmapi-rs Polish, uncommitted)
-- **62 stale TODOs removed** across 30 files (99->37 remaining)
-- **0 warnings across workspace** (fixed 35 clippy warnings in 3 dep crates)
-- Library sort order exposed through 6 simplified API methods + ytmapi-cli `--sort` flag
-- GetAlbumBrowseId resolver (`resolve_album_browse_id()` fn)
-- `#[allow(dead_code)]` cleanup: 7 proposital kept, partial stale removal
-- Clippy: vi-text-editor 18→0, metadata-provider 12→0, genius-rs 6→0
+#### Session 2026-06-25 (ytmapi-rs Finalization)
+- **62 stale TODOs removed** across 30 ytmapi-rs files (99 -> 37 remaining)
+- **35 clippy warnings** fixed: vi-text-editor 18->0, metadata-provider 12->0, genius-rs 6->0
+- **17 stale #[allow(dead_code)] removed**, 206 lines dead code deleted across youtui
+- **Library sort order** exposed through 6 simplified API methods + CLI `--sort` flag
+- **GetAlbumBrowseId resolver** (simplified_queries.rs + CLI `resolve-album`)
+- **0 warnings across workspace**, all tests pass
+
+#### Session 2026-06-25 (Annotations + Sort Order UI + Art Popup)
+- **Library sort order UI**: `o.O` key in library context menu. Cycles Default->A-Z->Z-A->Recent. Title displays `[A-Z]`/`[Z-A]`/`[Recent]`. Resets fetch flags, re-fetches with new sort.
+- **Album art popup pagination**: h/l cycles through all downloaded album arts in queue. Page indicator `N / M`.
+- **AlbumSearchBrowser like/unlike**: `liked_playlists: HashSet<PlaylistID>` for proper toggle (was always sending Liked).
+- **Sixel centering FIXED**: Root cause found - `Resize::Fit(None)` may output smaller image than target rect. No centering offset was applied. Fix: read `Protocol::area()` after `new_protocol()`, compute offset `(centered - fitted) / 2`, render Image at offset rect.
+- **Annotations UI polish**: Enter copies annotation body via wl-copy. Tab/Alt+l auto-selects first annotation. Vimline C-d/C-u for half-page scroll. Absolute line numbers in lyrics.
+- **GetAlbumBrowseId doc test** (no_run) + sort order cycle unit test (4 states).
+- **Album art popup docs**: Created `docs/subsystems/album_art_popup.md` with full architecture.
 
 ## Test Status
-- youtui: 124/124 pass, 4 ignored, 0 warnings
-- metadata-provider: 19/19 pass, 0 warnings
+- youtui: 125/125 pass, 4 ignored, 0 warnings
+- metadata-provider: 35/35 pass, 0 warnings
 - ytmapi-rs lib: 85/85 pass, 0 warnings
 - ViTextEditor: 65/65 pass, 0 warnings
 - genius-rs: 14/14 pass, 0 warnings
 - ytmapi-cli: 7/7 pass, 0 warnings
 - json-crawler: 2/2 pass
 - async-callback-manager: 14/14 pass
-- **Total: ~330 non-auth pass, 0 fail, 0 warnings across workspace**
+- **Total: ~347 non-auth pass, 0 fail, 0 warnings across workspace**
 
 ## Remaining (Priority Order)
 
-### P1 (This Session)
-- Finish dead_code cleanup: remove 17 stale annotations + truly dead methods
-- Wire library sort order in youtui UI
-- Update docs: CLAUDE.md, TODO.md, roadmap
-
 ### P2
 - FFT footer bars - real-time audio spectrum (needs rustfft + Source adapter)
-- Sixel album art centering/persistence fix
 - Like album to library (o.t adds to YT Music profile Albums)
 
 ### P3
 - Genius annotations fallback (page scrape when no GENIUS_TOKEN)
 - Genius lyrics: Musixmatch/LRCLIB integration
-- Crate extraction: audio-player (deep async_rodio_sink coupling)
+- Crate extraction: audio-player
 - Related tracks metadata enrichment
 - Album browser j/k routing when show_tracks
 - Metal-API (metal-api.dev) returns 500
+- Count-in-header standardization
 
 ### Skipped (Low Value)
-- **GetSavedEpisodes** — podcasts not wired in UI
-- **GetAccountInfo** — no UI use case
-- **GetPodcast continuations** — podcasts not wired
-- **GetSong (full)** — not planned by upstream
-- **37 remaining ytmapi-rs TODOs** — all low-value feature gaps (artist categories, i18n, VL prefix, consolidation)
+- **GetSavedEpisodes** - podcasts not wired in UI
+- **GetAccountInfo** - no UI use case
+- **GetPodcast continuations** - podcasts not wired
+- **GetSong (full)** - not planned by upstream
+- **37 remaining ytmapi-rs TODOs** - all low-value feature gaps
+- **RYM cookie proxy** - exploratory, Cloudflare-blocked
