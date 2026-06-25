@@ -31,7 +31,7 @@ impl MetadataProvider for MetalApiProvider {
     fn priority(&self) -> u8 { 5 }
 
     fn lookup<'a>(
-        &'a self, artist: &'a str, title: &'a str, client: &'a reqwest::Client,
+        &'a self, artist: &'a str, title: &'a str, _album: Option<&'a str>, client: &'a reqwest::Client,
     ) -> BoxFuture<'a, Option<ValidatedMetadata>> {
         Box::pin(do_lookup(artist, title, client))
     }

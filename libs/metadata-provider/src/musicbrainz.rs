@@ -21,6 +21,7 @@ impl MetadataProvider for MusicBrainzProvider {
         &'a self,
         artist: &'a str,
         title: &'a str,
+        _album: Option<&'a str>,
         client: &'a reqwest::Client,
     ) -> BoxFuture<'a, Option<ValidatedMetadata>> {
         let artist = artist.to_string();

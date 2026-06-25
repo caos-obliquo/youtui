@@ -43,7 +43,7 @@ pub struct GetLyrics(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
 pub struct GetAnnotations(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
-pub struct ValidateMetadata(pub String, pub String, pub crate::app::structures::ListSongID, pub String, pub Option<String>);
+pub struct ValidateMetadata(pub String, pub String, pub crate::app::structures::ListSongID, pub String, pub Option<String>, pub Option<String>);
 
 #[derive(Debug, PartialEq)]
 pub struct GetSearchSuggestions(pub String);
@@ -1021,7 +1021,8 @@ impl BackendTask<ArcServer> for ValidateMetadata {
             let artist = self.0;
             let title = self.1;
             let _song_id = self.2;
-            registry.resolve(&artist, &title).await
+            let album = self.5;
+            registry.resolve(&artist, &title, album.as_deref()).await
         }
     }
 }

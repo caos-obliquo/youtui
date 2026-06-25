@@ -2,7 +2,7 @@
 name = "metadata-provider"
 version = "0.1.0"
 edition = "2021"
-authors = ["nick42d"]
+authors = ["caos-obliquo"]
 license = "MIT"
 description = "Metadata provider trait and implementations for youtui"
 
