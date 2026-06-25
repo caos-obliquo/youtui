@@ -47,7 +47,7 @@ impl Action for BrowserArtistsAction {
     }
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match self {
-            Self::DisplaySelectedArtistAlbums => "Display albums for selected artist",
+            Self::DisplaySelectedArtistAlbums => "Show artist albums",
             Self::SubscribeToArtist => "Subscribe to artist",
             Self::UnsubscribeFromArtist => "Unsubscribe from artist",
         }

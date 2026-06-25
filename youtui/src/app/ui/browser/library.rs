@@ -109,12 +109,12 @@ impl Action for BrowserLibraryAction {
         match self {
             BrowserLibraryAction::SwitchToNextCategory => "Next category",
             BrowserLibraryAction::SwitchToPrevCategory => "Previous category",
-            BrowserLibraryAction::FocusContent => "Focus content panel",
-            BrowserLibraryAction::FocusCategory => "Focus category list",
-            BrowserLibraryAction::ActivateSelected => "Activate selected",
-            BrowserLibraryAction::DismissTracks => "Go back from tracks",
-            BrowserLibraryAction::ReloadCategory => "Reload category",
-            BrowserLibraryAction::CycleSortOrder => "Cycle sort order",
+            BrowserLibraryAction::FocusContent => "Focus tracks panel",
+            BrowserLibraryAction::FocusCategory => "Focus categories",
+            BrowserLibraryAction::ActivateSelected => "Open selected",
+            BrowserLibraryAction::DismissTracks => "Back from tracks",
+            BrowserLibraryAction::ReloadCategory => "Refresh category",
+            BrowserLibraryAction::CycleSortOrder => "Sort: A-Z / Z-A / Recent",
         }
         .into()
     }

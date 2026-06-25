@@ -76,7 +76,7 @@ impl Action for BrowserPlaylistsAction {
     }
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match self {
-            Self::DisplaySelectedPlaylist => "Display selected playlist",
+            Self::DisplaySelectedPlaylist => "Show playlist tracks",
         }
         .into()
     }
