@@ -803,10 +803,39 @@ pub fn has_japanese(text: &str) -> bool {
     })
 }
 
-/// Copy text to system clipboard using `wl-copy`.
-/// Wayland-only.
+/// Copy text to system clipboard.
+/// Fallback chain: wl-copy (Wayland) -> xclip -> xsel -> pbcopy (macOS).
+/// Silently no-op if none found.
 pub fn copy_to_clipboard(text: &str) {
-    let _ = std::process::Command::new("wl-copy").arg(text).spawn();
+    let chain: &[(&str, &[&str])] = &[
+        ("wl-copy", &[text]),
+        ("xclip", &["-selection", "clipboard", text]),
+        ("xsel", &["-ib", text]),
+        ("pbcopy", &[]), // stdin-based on macOS
+    ];
+    for &(cmd, args) in chain {
+        if cmd == "pbcopy" {
+            // pbcopy reads from stdin
+            if let Ok(mut child) = std::process::Command::new(cmd)
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+            {
+                use std::io::Write;
+                let _ = child.stdin.as_mut().map(|stdin| stdin.write_all(text.as_bytes()));
+                let _ = child.wait();
+                return;
+            }
+        } else if std::process::Command::new(cmd)
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .is_ok()
+        {
+            return;
+        }
+    }
+    // No clipboard tool found — silently no-op.
 }
 
 #[cfg(test)]

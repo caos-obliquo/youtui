@@ -190,6 +190,7 @@ where
             // a seperate thread all stderr for the whole app may be gagged.
             // Also seems to spew out characters?
             // TODO: Try to handle the errors from Rodio or write to a file.
+            #[cfg(unix)]
             let _gag = match gag::Gag::stderr() {
                 Ok(gag) => gag,
                 Err(e) => {
@@ -197,6 +198,8 @@ where
                     return;
                 }
             };
+            #[cfg(not(unix))]
+            let _gag = ();
             let mixer_device_sink = match rodio::DeviceSinkBuilder::open_default_sink() {
                 Ok(sink) => sink,
                 Err(e) => {

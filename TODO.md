@@ -61,7 +61,7 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - **PlayDebouncer struct** extracted to `app.rs` — testable enter-spam guard (300ms cooldown)
 - **invalidate_protocol_cache()** added to `YoutuiWindow` — clears cached ratatui_image::Protocol
 - **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy iterator (4)
-- Test counts: youtui 151, workspace ~403
+- Test counts: youtui 164, workspace ~416
 
 ### Session 2026-06-25 — Metadata Cache Persistence + Library Album Fix
 
@@ -96,7 +96,7 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 ### Session 2026-06-25 — Docs overhaul (17 files)
 - **17 docs files updated**: README.md (full rewrite w/ accurate keybinds), CLAUDE.md (paths, test counts, crate count), CODEBASE_GUIDE.md (complete rewrite), docs/04-configuration.md (removed api_url ghost, added discogs_token), docs/05-keybindings.md (fixed wrong keybinds, added missing contexts), docs/api-services.md (removed api_url, added LRCLIB), docs/06-subsystems/*.md (fixed paths, removed stale content), docs/02-crates/*.md (fixed test counts), docs/README.md (fixed TOC), youtui/TODO.md (test status updated)
 - **Build**: 0 errors, 0 warnings across workspace
-- **Tests**: 388/388 pass across 11 crates
+- **Tests**: 416/416 pass across 11 crates
 - **PR #2 merged**: 34 commits, 112 files changed, clean merge to main
 
 ### Phases A–M (All Implemented)
@@ -194,10 +194,21 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 |---|------|--------|
 | 1 | yt-dlp per-video bounded concurrent (max 30, 5 semaphore) enrichment | ✅ done |
 
-### Phase 6 — Cross-platform clipboard 🔴 NOT STARTED
-| # | Step | Note |
-|---|------|------|
-| 1 | X11/macOS clipboard support | Wayland-only `wl-copy` today |
+### Phase 6 — Cross-platform compatibility ✅ DONE
+All 5 items fixed + Windows compile-time block.
+
+### Session 2026-06-26 — Platform Compatibility Fixes
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Clipboard wl-copy → fallback chain (wl-copy/xclip/xsel/pbcopy) | ✅ done |
+| 2 | gag crate #[cfg(unix)] gate | ✅ done |
+| 3 | /tmp/ → std::env::temp_dir() in player.rs | ✅ done |
+| 4 | cookie_browser config field (default "chromium") | ✅ done |
+| 5 | Windows compile_error! block in main.rs | ✅ done |
+| 6 | SignalWatcher already has unix+windows impls | ✅ N/A |
+
+**Test counts updated**: youtui 164/164 (was 161), workspace 416/416 (was 413).
 
 ### Notes Popup — additional fixes ✅ DONE
 | Item | File(s) |
@@ -213,9 +224,6 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - Config template syntax (`o.enter`/`enter.enter` 2 pre-existing test failures)
 - YouTube API format drift (external issue)
 - Crossterm 0.29 `Event::Key` destructure mismatch (pre-existing, not our changes)
-
-## Planned Features
-- **Liked songs in table**: Show `LikeStatus` column in browser tables (Songs/Albums/Library) — not just footer heart on current track. Needs: parse `like_status` from YTM search response (SearchResultSong), wire into table rendering. Medium effort.
 
 ## Known Gaps (Consistency)
 - **Footer album art**: Fetches async, brief blank on song change. Cache helps but not instantaneous.

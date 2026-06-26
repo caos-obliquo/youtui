@@ -115,6 +115,7 @@ pub struct Playlist {
     pub album_current_track: usize,
     pub scrobbling_config: crate::config::ScrobblingConfig,
     pub yt_dlp_cookie_path: Option<String>,
+    pub cookie_browser: String,
     pub repeat_mode: crate::app::structures::RepeatMode,
     pub radio_mode: bool,
     /// Transient error message shown in playlist header (clears on next action)
@@ -929,6 +930,7 @@ impl Playlist {
             album_tracks: None,
             album_current_track: 0,
             yt_dlp_cookie_path: None,
+            cookie_browser: String::from("chromium"),
             repeat_mode: crate::app::structures::RepeatMode::Off,
             radio_mode: false,
             last_error: None,
@@ -1345,7 +1347,7 @@ impl Playlist {
         let mut meta_cmd = std::process::Command::new("yt-dlp");
         meta_cmd.args(["--dump-json", "--no-warnings", "--flat-playlist"]);
         if self.yt_dlp_cookie_path.is_some() {
-            meta_cmd.args(["--cookies-from-browser", "chromium"]);
+            meta_cmd.args(["--cookies-from-browser", &self.cookie_browser]);
         }
         meta_cmd.arg(&format!("https://youtu.be/{}", raw_id));
         let (title, artist, year) = match meta_cmd.output()
