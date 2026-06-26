@@ -370,6 +370,7 @@ impl TableView for SongSearchBrowser {
             BasicConstraint::Percentage(Percentage(30)),
             BasicConstraint::Length(8),
             BasicConstraint::Length(10),
+            BasicConstraint::Length(4),
         ]
     }
     fn get_highlighted_row(&self) -> Option<usize> {

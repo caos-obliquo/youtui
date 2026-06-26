@@ -396,6 +396,7 @@ impl TableView for AlbumSongsPanel {
             BasicConstraint::Percentage(Percentage(50)),
             BasicConstraint::Length(8),
             BasicConstraint::Length(5),
+            BasicConstraint::Length(4),
         ]
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
