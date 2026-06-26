@@ -532,7 +532,7 @@ pub enum GetPlaylistSongsProgressUpdate {
 fn get_playlist_songs(
     api: Arc<AsyncCell<Result<ConcurrentApi, DynamicApiError>>>,
     playlist_id: PlaylistID<'static>,
-    _max_results: usize,
+    max_results: usize,
 ) -> impl Stream<Item = GetPlaylistSongsProgressUpdate> + 'static {
     let (tx, rx) = tokio::sync::mpsc::channel(CALLBACK_CHANNEL_SIZE);
     let handle = tokio::spawn(async move {
@@ -554,12 +554,14 @@ fn get_playlist_songs(
             Ok(api) => api,
         };
         let query = ytmapi_rs::query::GetPlaylistTracksQuery::new((&playlist_id).into());
-        // TODO: Streaming
-        let first_tracks = query_api_with_retry(&api, query).await;
-        match first_tracks {
-            Ok(t) => {
-                info!("Sending caller tracks for {:?}", playlist_id);
-                send_or_error(&tx, GetPlaylistSongsProgressUpdate::Songs(t)).await;
+        let max_pages = (max_results / 100).clamp(1, 50);
+        let tracks: Result<Vec<Vec<PlaylistItem>>> =
+            stream_api_with_retry_n(&api, &query, max_pages).await;
+        match tracks {
+            Ok(pages) => {
+                let tracks: Vec<PlaylistItem> = pages.into_iter().flatten().collect();
+                info!("Sending {} caller tracks for {:?}", tracks.len(), playlist_id);
+                send_or_error(&tx, GetPlaylistSongsProgressUpdate::Songs(tracks)).await;
             }
             Err(error) => {
                 error!("Error with GetPlaylistTracksQuery");
