@@ -58,10 +58,10 @@ cargo build --release
 target/release/youtui
 
 # Tests
-cargo test --release -p youtui --bin youtui    # 136 tests
+cargo test --release -p youtui --bin youtui    # 161 tests
 cargo test --release -p vi-text-editor          # 65 tests
 cargo test --release -p ytmapi-rs --lib         # 85 tests (no auth)
-cargo test --release -p ytmapi-rs              # 28/52 auth (needs cookie)
+cargo test --release -p ytmapi-rs              # 29/51 auth (needs cookie)
 ```
 
 ## Key Files

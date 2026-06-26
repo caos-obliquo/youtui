@@ -1,6 +1,6 @@
 # Crate: vi-text-editor
 
-**2,320 LOC, 1 file** — Standalone vim-mode text editor widget for Ratatui TUI.
+**2,486 LOC, 1 file** — Standalone vim-mode text editor widget for Ratatui TUI.
 
 ## Modes
 

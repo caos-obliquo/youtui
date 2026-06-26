@@ -46,7 +46,7 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - **Persistent scrobble cache**: `~/.config/youtui/scrobble_cache.json`. save_failed_scrobble() on submission failure, retry_failed_scrobbles() on startup, 3 max retries per entry.
 - **CLI test-scrobble**: `youtui test-scrobble --artist "A" --title "B" --album "C" --duration 180` — tests full scrobble pipeline directly.
 - **Known issue**: Rescrobbled systemd service double-submits. Must stop/disable rescrobbled.
-- Test counts: youtui 141, workspace ~393/393
+- Test counts: youtui 161, workspace ~413/413
 
 ### Session 2026-06-25 — Test gaps + dead_code + add-to-playlist + lowercase preserve
 
