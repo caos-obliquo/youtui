@@ -57,6 +57,7 @@ pub enum BrowserSongsAction {
     AddSongsToPlaylist,
     SaveToExistingPlaylist,
     InsertNext,
+    QueueSong,
     ViewLyrics,
     CopySongUrl,
     GoToArtist,
@@ -95,6 +96,7 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::AddSongsToPlaylist => "Add songs to playlist",
             BrowserSongsAction::SaveToExistingPlaylist => "Add to existing playlist",
             BrowserSongsAction::InsertNext => "Play next",
+            BrowserSongsAction::QueueSong => "Queue song",
             BrowserSongsAction::ViewLyrics => "View Lyrics",
             BrowserSongsAction::CopySongUrl => "Copy Song URL",
             BrowserSongsAction::GoToArtist => "Go to Artist",
@@ -311,6 +313,7 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::AddSongsToPlaylist => return self.add_songs_to_playlist().into(),
             BrowserSongsAction::SaveToExistingPlaylist => return self.save_to_existing_playlist().into(),
             BrowserSongsAction::InsertNext => return self.insert_next().into(),
+            BrowserSongsAction::QueueSong => return self.queue_song().into(),
             BrowserSongsAction::ViewLyrics => return self.view_lyrics().into(),
             BrowserSongsAction::CopySongUrl => return self.copy_song_url().into(),
             BrowserSongsAction::GoToArtist => return self.go_to_artist().into(),
@@ -783,6 +786,13 @@ impl SongSearchBrowser {
             return (AsyncTask::new_no_op(), None);
         }
         (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)))
+    }
+    pub fn queue_song(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        if let Some(song) = self.get_song_from_idx(cur_idx) {
+            return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song.clone()])));
+        }
+        (AsyncTask::new_no_op(), None)
     }
     pub fn insert_next(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();

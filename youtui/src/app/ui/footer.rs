@@ -82,7 +82,7 @@ pub fn draw_footer(
             let mut artist_song = String::new();
             for (i, artist) in song.artists.iter().enumerate() {
                 if i > 0 { artist_song.push_str(", "); }
-                artist_song.push_str(&artist.name);
+                artist_song.push_str(&crate::app::structures::normalize_artist_name(&artist.name));
             }
             artist_song.push_str(" - ");
             artist_song.push_str(&song.title);

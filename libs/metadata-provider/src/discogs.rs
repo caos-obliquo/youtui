@@ -96,7 +96,12 @@ impl MetadataProvider for DiscogsProvider {
                 let title = entry.get("title")?.as_str()?.to_string();
                 let dur_str = entry.get("duration")?.as_str()?;
                 let duration_secs = util::parse_discogs_duration(dur_str);
-                Some(AlbumTrack { title, duration_secs })
+                let track_artist = entry.get("artists").and_then(|a| a.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|a| a.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.to_string());
+                Some(AlbumTrack { title, duration_secs, artist: track_artist })
             }).collect();
 
             if !tracks.is_empty() {
