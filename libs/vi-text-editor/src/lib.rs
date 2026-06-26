@@ -342,15 +342,20 @@ impl ViTextEditor {
             | crossterm::event::KeyCode::Char('K')
             | crossterm::event::KeyCode::Up if self.multiline => {
                 let col = self.cursor_col();
-                let before = &self.buffer[..self.cursor];
-                if let Some(nl) = before[..before.len().saturating_sub(1)].rfind('\n') {
-                    self.cursor = nl + 1;
-                    let line_len = self.buffer[self.cursor..].find('\n')
-                        .unwrap_or(self.buffer.len() - self.cursor);
-                    self.cursor += col.min(line_len);
+                let line_start_pos = self.cursor - self.cursor_col();
+                if line_start_pos > 0 {
+                    let before_line = &self.buffer[..line_start_pos.saturating_sub(1)];
+                    if let Some(nl) = before_line.rfind('\n') {
+                        self.cursor = nl + 1;
+                    } else {
+                        self.cursor = 0;
+                    }
                 } else {
                     self.cursor = 0;
                 }
+                let line_len = self.buffer[self.cursor..].find('\n')
+                    .unwrap_or(self.buffer.len() - self.cursor);
+                self.cursor += col.min(line_len);
             }
             crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
                 self.cursor = self.line_start();
@@ -525,15 +530,20 @@ impl ViTextEditor {
             | crossterm::event::KeyCode::Char('K')
             | crossterm::event::KeyCode::Up if self.multiline => {
                 let col = self.cursor_col();
-                let before = &self.buffer[..self.cursor];
-                if let Some(nl) = before[..before.len().saturating_sub(1)].rfind('\n') {
-                    self.cursor = nl + 1;
-                    let line_len = self.buffer[self.cursor..].find('\n')
-                        .unwrap_or(self.buffer.len() - self.cursor);
-                    self.cursor += col.min(line_len);
+                let line_start_pos = self.cursor - self.cursor_col();
+                if line_start_pos > 0 {
+                    let before_line = &self.buffer[..line_start_pos.saturating_sub(1)];
+                    if let Some(nl) = before_line.rfind('\n') {
+                        self.cursor = nl + 1;
+                    } else {
+                        self.cursor = 0;
+                    }
                 } else {
                     self.cursor = 0;
                 }
+                let line_len = self.buffer[self.cursor..].find('\n')
+                    .unwrap_or(self.buffer.len() - self.cursor);
+                self.cursor += col.min(line_len);
             }
             crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
                 self.cursor = self.line_start();
@@ -695,7 +705,7 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Char('I') => {
                 self.insert_buffer.clear();
-                self.cursor = 0;
+                self.cursor = if self.multiline { self.line_first_non_whitespace() } else { 0 };
                 self.mode = ViMode::Insert;
             }
             crossterm::event::KeyCode::Char('A') => {
@@ -962,15 +972,20 @@ impl ViTextEditor {
                 if self.multiline {
                     let col = self.want_col.unwrap_or_else(|| self.cursor_col());
                     self.want_col = Some(col);
-                    let before = &self.buffer[..self.cursor];
-                    if let Some(nl) = before[..before.len().saturating_sub(1)].rfind('\n') {
-                        self.cursor = nl + 1;
-                        let line_len = self.buffer[self.cursor..].find('\n')
-                            .unwrap_or(self.buffer.len() - self.cursor);
-                        self.cursor += col.min(line_len);
+                    let line_start_pos = self.cursor - self.cursor_col();
+                    if line_start_pos > 0 {
+                        let before_line = &self.buffer[..line_start_pos.saturating_sub(1)];
+                        if let Some(nl) = before_line.rfind('\n') {
+                            self.cursor = nl + 1;
+                        } else {
+                            self.cursor = 0;
+                        }
                     } else {
                         self.cursor = 0;
                     }
+                    let line_len = self.buffer[self.cursor..].find('\n')
+                        .unwrap_or(self.buffer.len() - self.cursor);
+                    self.cursor += col.min(line_len);
                 } else if self.history_pos > 0 {
                     self.history_pos -= 1;
                     self.buffer = self.history[self.history_pos].clone();

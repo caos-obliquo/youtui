@@ -4,7 +4,7 @@ Full-screen vim-driven playlist editor popup. Opens from Browser > Library > Pla
 
 ## Files
 
-- `app/ui/playlist/playlist_editor_popup.rs` (~484 lines) — editor UI + keybindings
+- `app/ui/playlist/playlist_editor_popup.rs` (~748 lines) — editor UI + keybindings
 - `app/ui/playlist/effect_handlers_playlist.rs` — overwrite save chain handlers
 - `app.rs` — `OpenPlaylistEditor`, `OverwritePlaylistTracks` callbacks
 

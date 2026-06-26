@@ -58,6 +58,8 @@ Unlike scrobbling only at song change, youtui checks `should_scrobble()` on ever
 
 File: `~/.config/youtui/scrobble_cache.json`
 
+> **Cross-Platform:** Path resolved via `directories` crate (`ProjectDirs::config_local_dir()`) — `~/.config/youtui/` on Linux, `~/Library/Application Support/com.nick42.youtui/` on macOS. Temp files use `std::env::temp_dir()` for platform-correct temp directory.
+
 Failed scrobbles are persisted to disk and retried:
 
 - `save_failed_scrobble()` — writes failed submission to JSON array with `retry_count` field

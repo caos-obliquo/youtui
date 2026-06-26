@@ -9,12 +9,12 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | [01-architecture](01-architecture.md) | 3-layer callback system, crate dependency graph |
 | [02-crates/youtui](02-crates/youtui.md) | Main app crate (~35k LOC, 71 files) |
 | [02-crates/ytmapi-rs](02-crates/ytmapi-rs.md) | YTM API client (12.8k LOC, 48 files) |
-| [api-services](api-services.md) | External API setup (Last.fm, Discogs, Genius, Metal Archives) |
+| [api-services](api-services.md) | API keys, tokens, per-platform setup (Linux/macOS/BSD) |
 | [02-crates/async-callback-manager](02-crates/async-callback-manager.md) | Task/effect system (1.8k LOC) |
 | [02-crates/json-crawler](02-crates/json-crawler.md) | serde_json wrapper (1k LOC) |
-| [02-crates/vi-text-editor](02-crates/vi-text-editor.md) | Full VTE reference (2.3k LOC) |
+| [02-crates/vi-text-editor](02-crates/vi-text-editor.md) | Full VTE reference (2.6k LOC) |
 | [02-crates/genius-rs](02-crates/genius-rs.md) | Genius lyrics + annotations SDK |
-| [02-crates/metadata-provider](02-crates/metadata-provider.md) | Metadata resolution (6 providers, 47 tests) |
+| [02-crates/metadata-provider](02-crates/metadata-provider.md) | Metadata resolution (6 providers, 48 tests) |
 | [03-data-flow](03-data-flow.md) | Event routing, task spawning, effect chain |
 | [04-configuration](04-configuration.md) | All config.toml fields with defaults |
 | [05-keybindings](05-keybindings.md) | All contexts, actions, default keys |
@@ -48,6 +48,43 @@ man genius-rs
 man ytmapi-cli
 ```
 
+## System Dependencies
+
+| Tool | Required? | Purpose |
+|------|-----------|---------|
+| `yt-dlp` | **Required** | Download audio from YouTube Music |
+| `ffmpeg` | **Required** | Decode audio into raw PCM for playback |
+| `rustc`/`cargo` | Build-time | Rust nightly (1.97.0+) |
+
+**Audio backend** per platform (auto-detected, no manual install):
+
+| Platform | Backend | Notes |
+|----------|---------|-------|
+| Linux | ALSA (`alsa-lib`) | Install via system package manager |
+| macOS | CoreAudio | Built-in — no extra install |
+| BSD | OSS | Built-in — no extra install |
+
+Install runtime deps per platform:
+```bash
+# Arch Linux
+sudo pacman -S yt-dlp ffmpeg alsa-lib
+
+# Debian / Ubuntu
+sudo apt install yt-dlp ffmpeg libasound2-dev
+
+# Fedora
+sudo dnf install yt-dlp ffmpeg alsa-lib-devel
+
+# macOS (Homebrew)
+brew install yt-dlp ffmpeg
+
+# macOS (MacPorts)
+sudo port install yt-dlp ffmpeg
+
+# FreeBSD / OpenBSD
+sudo pkg install yt-dlp ffmpeg
+```
+
 ## Quick Reference
 
 ```bash
@@ -58,11 +95,13 @@ cargo build --release
 target/release/youtui
 
 # Tests
-cargo test --release -p youtui --bin youtui    # 161 tests
-cargo test --release -p vi-text-editor          # 65 tests
+cargo test --release -p youtui --bin youtui    # 164 tests
+cargo test --release -p vi-text-editor          # 67 tests
 cargo test --release -p ytmapi-rs --lib         # 85 tests (no auth)
 cargo test --release -p ytmapi-rs              # 29/51 auth (needs cookie)
 ```
+
+All paths use XDG convention (`~/.config/youtui/`, `~/.local/share/youtui/`) — compatible with Linux, macOS, and BSD.
 
 ## Key Files
 
@@ -78,4 +117,4 @@ cargo test --release -p ytmapi-rs              # 29/51 auth (needs cookie)
 | `youtui/src/app/ui/browser.rs` | ~1012 | Browser routing, tab dispatch |
 | `youtui/src/app/ui/browser/albumsearch.rs` | ~731 | Albums tab |
 | `youtui/src/config/keymap.rs` | ~2142 | All keybindings by context |
-| `libs/vi-text-editor/src/lib.rs` | ~2486 | Vi-mode text editor |
+| `libs/vi-text-editor/src/lib.rs` | ~2648 | Vi-mode text editor |

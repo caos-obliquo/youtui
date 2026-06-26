@@ -6,11 +6,19 @@ Three authentication strategies for YTM API access.
 
 File: `ytmapi-rs/src/auth/browser.rs`
 
-**Requires:** `cookie.txt` from yt-dlp.
+**Requires:** `cookie.txt` from yt-dlp. Browser is configurable via `cookie_browser` in `config.toml` (default: `chromium`).
 
-```bash
-yt-dlp --cookies-from-browser chromium --cookies cookie.txt
-```
+Extract per platform:
+
+| Platform | Command | Notes |
+|----------|---------|-------|
+| Linux (Chromium) | `yt-dlp --cookies-from-browser chromium --cookies cookie.txt` | Default browser |
+| Linux (Firefox) | `yt-dlp --cookies-from-browser firefox --cookies cookie.txt` | Also works on BSD |
+| Linux (Brave) | `yt-dlp --cookies-from-browser brave --cookies cookie.txt` | |
+| macOS (Safari) | `yt-dlp --cookies-from-browser safari --cookies cookie.txt` | Built-in |
+| macOS (Chrome) | `yt-dlp --cookies-from-browser chrome --cookies cookie.txt` | |
+| macOS (Firefox) | `yt-dlp --cookies-from-browser firefox --cookies cookie.txt` | Also works on BSD |
+| BSD (Firefox) | `yt-dlp --cookies-from-browser firefox --cookies cookie.txt` | Widest compatibility |
 
 **Flow:**
 1. Parse Netscape-format cookie file
@@ -67,4 +75,8 @@ pub async fn refresh_token(&mut self) -> Result<Option<OAuthToken>>
 
 ## Cookie File Location
 
-`~/.config/youtui/cookie.txt` — path flows from `main.rs → app.rs → YoutuiWindow::new → Playlist → Server`.
+`~/.config/youtui/cookie.txt` (XDG — works on Linux, macOS, BSD). Path flows from `main.rs → app.rs → YoutuiWindow::new → Playlist → Server`.
+
+## OAuth Token Location
+
+`~/.local/share/youtui/` (XDG — works on all platforms). Token file auto-generated on first OAuth flow.

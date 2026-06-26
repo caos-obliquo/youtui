@@ -45,13 +45,13 @@ If things break, rollback and re-apply one-by-one.
 - Workspace root: `/home/caos/builds/youtui/`
 - Rust nightly (1.97.0)
 - Binary: `cargo build --release` -> `target/release/youtui`
-- Dependencies: yt-dlp, ffmpeg, alsa-lib (system packages via pacman)
+- Dependencies: yt-dlp, ffmpeg (all platforms). Linux: alsa-lib (pacman). macOS: CoreAudio (built-in). BSD: OSS (built-in)
 
 ## Tests
 ```bash
 cargo test --release -p youtui --bin youtui       # 164 pass, 4 ignore
-cargo test --release -p metadata-provider          # 47 pass
-cargo test --release -p vi-text-editor             # 65 pass
+cargo test --release -p metadata-provider          # 48 pass
+cargo test --release -p vi-text-editor             # 67 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
 cargo test --release -p ytmapi-rs                  # 29/51 auth (needs cookie)
 cargo test --release -p genius-rs                  # 18 pass
@@ -61,7 +61,7 @@ cargo test --release -p ytmapi-cli                 # 7 pass
 cargo test --release -p lrclib-rs                  # 4 pass
 cargo test --release -p rym-genre-data             # 10 pass
 ```
-Total: **~416/416 pass, 0 fail, 4 ignored, 0 warnings** (164 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 416)
+Total: **~419/419 pass, 0 fail, 4 ignored, 0 warnings** (164 + 48 + 67 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 419)
 
 ## Warnings
 `cargo build --release` — **0 warnings across workspace** (all 11 crates clean).
@@ -110,8 +110,8 @@ See `docs/` for full reference (4.1k lines, 31 files).
 |---|---|---|
 | `youtui` | Main binary | 164 |
 | `ytmapi-rs` | YT Music API client | 85 lib + 29/51 auth |
-| `vi-text-editor` | Vim text editor widget | 65 |
-| `metadata-provider` | Metadata trait + impls | 47 |
+| `vi-text-editor` | Vim text editor widget | 67 |
+| `metadata-provider` | Metadata trait + impls | 48 |
 | `genius-rs` | Genius lyrics/annotations | 18 |
 | `async-callback-manager` | Async task dispatch | 14 |
 | `json-crawler` | JSON path parser | 2 |
@@ -140,7 +140,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 | `youtui/src/app/ui/browser/albumsearch.rs` | ~731 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
 | `youtui/src/config/keymap.rs` | ~2142 | All keybindings by context |
 | `youtui/src/app/ui.rs` | ~1779 | Main window, event routing |
-| `libs/metadata-provider/` | 47 tests | Metadata trait + 6 provider impls + genre_map |
+| `libs/metadata-provider/` | 48 tests | Metadata trait + 6 provider impls + genre_map |
 | `youtui/src/app/ui/playlist/notes_popup.rs` | ~254 | Vim-driven notes text editor |
 | `youtui/src/app/ui/playlist/playlist_editor_popup.rs` | ~748 | Playlist editor (nvim-driven, overwrite save) |
 | `youtui/src/app/ui/playlist/album_art_popup.rs` | ~54 | Album art sixel popup w/ pagination |
@@ -388,5 +388,5 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 161/161 pass, 4 ignored, 0 warnings across workspace
+- 164/164 pass, 4 ignored, 0 warnings across workspace
 - Suckless refactoring adds 0 tests (refactors existing code only)
