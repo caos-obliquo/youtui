@@ -396,6 +396,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Violin Concerto in A Minor, BWV 1041: I. Allegro",
@@ -427,6 +428,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Deep Sleep Music: Deeper Relaxation",
@@ -458,6 +460,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
     ],
     videos: [
