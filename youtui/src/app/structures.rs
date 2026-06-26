@@ -174,7 +174,9 @@ pub fn normalize_artist_name(name: &str) -> String {
     };
     // Respect intentional lowercase names (e.g. "data da morte" should not become "Data da morte")
     let mut chars = trimmed.chars();
-    let first = chars.next().unwrap();
+    let Some(first) = chars.next() else {
+        return trimmed.to_string();
+    };
     if first.is_lowercase() {
         return trimmed.to_string();
     }

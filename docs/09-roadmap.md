@@ -142,7 +142,7 @@
 
 | Crate | Passed | Ignored |
 |-------|--------|---------|
-| youtui | 136 | 4 |
+| youtui | 141 | 4 |
 | metadata-provider | 47 | 0 |
 | vi-text-editor | 65 | 0 |
 | ytmapi-rs (lib) | 85 | 0 |
@@ -152,9 +152,33 @@
 | ytmapi-cli | 7 | 0 |
 | lrclib-rs | 4 | 0 |
 | rym-genre-data | 10 | 0 |
-| **Total** | **388** | **4** |
+| **Total** | **393** | **4** |
 
 1 warning (pre-existing ytmapi-cli deprecation), 0 failures across workspace.
+
+## 2026-06-26 — Scrobbler Integration + Suckless Refactoring
+
+### Scrobbler Fixes (fix/scrobbler-signature branch)
+| # | Item | Status | Files |
+|---|------|--------|-------|
+| 71 | params.sort_by() before HMAC signing (Last.fm alpha requirement) | ✅ | scrobbler.rs |
+| 72 | Remove should_scrobble() guard on album tracks | ✅ | playlist.rs |
+| 73 | scrobble_pending guard in play_song_id() and stop() | ✅ | playlist.rs |
+| 74 | Remove rescrobbled spawn (no systemd duplicates) | ✅ | app.rs |
+| 75 | 5 scrobbler unit tests | ✅ | scrobbler.rs |
+| 76 | Persistent scrobble cache (save/retry/remove) | ✅ | scrobbler.rs, ui.rs |
+| 77 | CLI test-scrobble tool | ✅ | querybuilder.rs, app.rs |
+| 78 | Known: stop/disable rescrobbled systemd service | ✅ | docs |
+
+### Suckless Refactoring (refactor/suckless branch, -630 lines)
+| # | Item | Status | Files |
+|---|------|--------|-------|
+| 79 | Batch 1: Fix 6 panic paths | ✅ | api.rs, playlist.rs, shared_components.rs, keybind.rs, structures.rs, core.rs |
+| 80 | Batch 2: Delete dead crates (metal-proxy, rym-definitions, -606 lines) | ✅ | Cargo.toml |
+| 81 | Batch 3: Extract boilerplate (macro, conversion, thumbnail) | ✅ | effect_handlers_playlist.rs |
+| 82 | Batch 4a: Subdivide MetadataEffect::apply (180→40 lines) | ✅ | effect_handlers_playlist.rs |
+| 83 | Batch 4b: Split clean_title_for_metadata into 4 helpers | ✅ | playlist.rs |
+| 84 | Batch 4d: Extract handle_force_split (75→1 line in apply_action) | ✅ | playlist.rs |
 
 ## Medium Term
 

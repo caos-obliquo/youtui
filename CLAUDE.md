@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 136 pass, 4 ignore
+cargo test --release -p youtui --bin youtui       # 141 pass, 4 ignore
 cargo test --release -p metadata-provider          # 47 pass
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
@@ -61,7 +61,7 @@ cargo test --release -p ytmapi-cli                 # 7 pass
 cargo test --release -p lrclib-rs                  # 4 pass
 cargo test --release -p rym-genre-data             # 10 pass
 ```
-Total: **~388/388 pass, 0 fail, 4 ignored, 0 warnings** (136 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 388)
+Total: **~393/393 pass, 0 fail, 4 ignored, 0 warnings** (141 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 393)
 
 ## Warnings
 `cargo build --release` — **0 warnings across workspace** (all 11 crates clean).
@@ -75,7 +75,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## 11 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 136 |
+| `youtui` | Main binary | 141 |
 | `ytmapi-rs` | YT Music API client | 85 lib + 28/52 auth |
 | `vi-text-editor` | Vim text editor widget | 65 |
 | `metadata-provider` | Metadata trait + impls | 47 |
@@ -226,6 +226,30 @@ See `docs/09-roadmap.md` for detailed session history.
 - **Album `audio_playlist_id`**: May be `None` for some album types (singles/EPs). `o.t` shows feedback message now.
 - **Playlist editor modified check**: `Esc`/`:q` warns on unsaved changes. `:q!` force-quits.
 - **Sixel album art**: Belt-and-suspenders clear on close fixed in af0acb8. Sixel cleared via `\x1bP0p\x1b\\` DCS clear at start of every draw, plus offset tracking via `sixel_rect` for proper area management.
+- **Scrobbler rate limit**: Rescrobbled systemd service double-submits scrobbles. Must stop/disable rescrobbled before using native scrobbler. `sudo systemctl stop --user rescrobbled && sudo systemctl disable --user rescrobbled`.
+- **Scrobble cache**: Persistent retry file at `~/.config/youtui/scrobble_cache.json`. Failed scrobbles saved to disk with retry count; retried on next youtui startup.
+
+## Scrobbler Integration
+
+### Fixes in `fix/scrobbler-signature` branch
+- **Signature sort**: Last.fm API requires params sorted alphabetically before signing (`params.sort_by()` added before HMAC signing)
+- **Album track scrobbling**: Removed `should_scrobble()` guard on album track submission — all album split tracks now scrobble
+- **scrobble_pending guard**: `self.scrobble_pending = false` cleared in `play_song_id()` and `stop()` to prevent stale state
+- **Rescrobbled spawn removed**: `extend_rescrobbled_process_keepalive` dropped — no duplicate scrobbles from systemd+embedded scrobbler
+- **5 scrobbler tests**: Unit tests covering scrobble state timing, session_key usage, signature sorting, rate limiting, error handling
+
+### Persistent Scrobble Cache
+- File: `~/.config/youtui/scrobble_cache.json` — JSON array of failed scrobble payloads
+- `save_failed_scrobble()` — writes failed submission to disk with retry_count field
+- `retry_failed_scrobbles()` — called on YoutuiWindow::new() startup; retries cached failures
+- `remove_cached_scrobble()` — removes entry after successful retry
+- Max retries: 3 per entry (incremented each attempt, entries dropped after 3 failures)
+
+### CLI Scrobble Test Tool
+- `youtui test-scrobble` — direct scrobble submission command
+- Usage: `youtui test-scrobble --artist "Artist" --title "Song" --album "Album" --duration 180`
+- Tests the full scrobble pipeline: session_key retrieval, HMAC signing, Last.fm API submission
+- Returns API response status + timing info
 
 ## Remaining Items (Detailed)
 ### Blocked: Cross-platform clipboard
@@ -299,3 +323,29 @@ See `docs/09-roadmap.md` for detailed session history.
 
 ### Phase 6 🔴 — Cross-platform clipboard
 - Wayland-only `wl-copy`. No X11/macOS fallback.
+
+## Suckless Refactoring (refactor/suckless branch)
+Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.md`.
+
+### Done
+| Batch | Item | Δ Lines | Status |
+|---|---|---|---|
+| 1 | Replace 6 panic paths with proper error handling | -0 | `48c7eaa` |
+| 2 | Delete dead crates (metal-proxy, rym-definitions) | -606 | `19f4e46` |
+| 3 | Extract boilerplate (7 CRUD macro pairs, conversion fn, thumbnail fn) | -24 | `7fc6252` |
+| 4a | Subdivide MetadataEffect::apply (180→40 lines) | -0 | `35bf646` |
+| 4b | Extract clean_title_for_metadata into 4 named helpers | -0 | `35bf646` |
+| 4d | Extract handle_force_split from apply_action (75→1 line arm) | -0 | `096fa0f` |
+| **Total** | | **-630** | |
+
+### Not Done (low value)
+| Skipped | Reason |
+|---|---|
+| Batch 4c: handle_callback split | Most arms are 1-3 lines, splitting adds indirection |
+| Batch 4e: api.rs retry dedup | Complexity too high for 15-line savings |
+| Batch 4f: keymap.rs dead bindings | No automated dead binding detection |
+| Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
+
+### Verification
+- 141/141 pass, 4 ignored, 0 warnings across workspace
+- Suckless refactoring adds 0 tests (refactors existing code only)

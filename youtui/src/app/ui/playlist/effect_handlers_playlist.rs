@@ -4,7 +4,7 @@ use crate::app::server::ValidatedMetadata;
 use crate::app::server::{
     ArcServer, TaskMetadata, AddSongsToPlaylist, EnrichRelatedTracks, RemovePlaylistItems, ValidateMetadata,
 };
-use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
+use crate::app::structures::{AlbumOrUploadAlbumID, ListSong, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
 use crate::app::ui::playlist::Playlist;
 use crate::app::ui::playlist::lyrics_popup::LyricsPopup;
@@ -17,6 +17,33 @@ use ytmapi_rs::common::{AlbumID, PlaylistID, VideoID, SetVideoID, YoutubeID};
 use ytmapi_rs::parse::LibraryPlaylist;
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::WatchPlaylistTrack;
+
+/// Generate a CRUD OK handler: logs, sets `library_playlist_mutated = true`.
+macro_rules! playlist_ok_handler {
+    ($name:ident, $log:literal) => {
+        impl_youtui_task_handler!($name, (), Playlist, |_, _: ()| {
+            |this: &mut Playlist| {
+                info!($log);
+                this.library_playlist_mutated = true;
+                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            }
+        });
+    };
+}
+
+/// Generate a CRUD error handler: logs error, sets `last_error`.
+macro_rules! playlist_err_handler {
+    ($name:ident, $op:literal, $label:literal) => {
+        impl_youtui_task_handler!($name, anyhow::Error, Playlist, |_, err: anyhow::Error| {
+            let msg = err.to_string();
+            move |this: &mut Playlist| {
+                error!("Failed to {}: {}", $op, msg);
+                this.last_error = Some(format!("{}: {}", $label, msg));
+                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            }
+        });
+    };
+}
 
 #[derive(Debug, PartialEq)]
 pub struct HandleRateSongOk;
@@ -131,7 +158,6 @@ impl_youtui_task_handler!(
         PlaylistEffect::CreatePlaylistError
     }
 );
-
 impl_youtui_task_handler!(
     HandleAddSongsOk,
     (),
@@ -177,116 +203,14 @@ impl_youtui_task_handler!(
     }
 );
 
-impl_youtui_task_handler!(
-    HandleDeletePlaylistOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |this: &mut Playlist| {
-            info!("Playlist deleted successfully");
-            this.library_playlist_mutated = true;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleDeletePlaylistError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to delete playlist: {}", msg);
-            this.last_error = Some(format!("Delete failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleEditPlaylistDetailsOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |this: &mut Playlist| {
-            info!("Playlist details updated");
-            this.library_playlist_mutated = true;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleEditPlaylistDetailsError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to update playlist details: {}", msg);
-            this.last_error = Some(format!("Edit failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleRatePlaylistOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |this: &mut Playlist| {
-            info!("Playlist rated successfully");
-            this.library_playlist_mutated = true;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleRatePlaylistError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to rate playlist: {}", msg);
-            this.last_error = Some(format!("Rate failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-
-
-
-impl_youtui_task_handler!(
-    HandleRenamePlaylistOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |this: &mut Playlist| {
-            info!("Playlist renamed successfully");
-            this.library_playlist_mutated = true;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleRenamePlaylistError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to rename playlist: {}", msg);
-            this.last_error = Some(format!("Rename failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
+playlist_ok_handler!(HandleDeletePlaylistOk, "Playlist deleted successfully");
+playlist_err_handler!(HandleDeletePlaylistError, "delete playlist", "Delete failed");
+playlist_ok_handler!(HandleEditPlaylistDetailsOk, "Playlist details updated");
+playlist_err_handler!(HandleEditPlaylistDetailsError, "update playlist details", "Edit failed");
+playlist_ok_handler!(HandleRatePlaylistOk, "Playlist rated successfully");
+playlist_err_handler!(HandleRatePlaylistError, "rate playlist", "Rate failed");
+playlist_ok_handler!(HandleRenamePlaylistOk, "Playlist renamed successfully");
+playlist_err_handler!(HandleRenamePlaylistError, "rename playlist", "Rename failed");
 
 
 
@@ -566,179 +490,193 @@ pub enum MetadataEffect {
     ValidationError,
 }
 
+/// Apply metadata fields (album, year, artist, track_no, genres, styles) to a song.
+/// Returns the original album name before overwriting.
+fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -> Option<String> {
+    let original_album = song.album.as_ref().map(|a| a.as_ref().name.clone());
+    if let Some(ref album) = data.album {
+        // Only override album when YTM has none (preserve YTM's album to prevent
+        // wrong metadata from overwriting correct data, e.g. Phyllomedusa albums)
+        let ytm_empty = song.album.as_ref().map_or(true, |a| a.as_ref().name.is_empty());
+        if ytm_empty {
+            song.album = Some(MaybeRc::Owned(ListSongAlbum {
+                name: album.clone(),
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+            }));
+        } else {
+            debug!(
+                ytm = ?song.album.as_ref().map(|a| a.as_ref().name.as_str()),
+                provider = %album,
+                "ValidateMetadata: keeping YTM album, skipping provider override"
+            );
+        }
+    }
+    if let Some(ref year) = data.year {
+        song.year = Some(Rc::new(year.clone()));
+    } else if let Some(ref album) = data.album {
+        // Fallback: extract year from album name
+        if let Some(y) = album.split(|c: char| !c.is_ascii_digit())
+            .find(|p| p.len() == 4)
+            .and_then(|p| p.parse::<u16>().ok())
+            .filter(|y| (1900..2100).contains(y))
+        {
+            song.year = Some(Rc::new(y.to_string()));
+        }
+    }
+    // Fallback: extract year from song title (e.g. "ST LP 2023")
+    if song.year.is_none() {
+        if let Some(y) = song.title.split(|c: char| !c.is_ascii_digit())
+            .find(|p| p.len() == 4)
+            .and_then(|p| p.parse::<u16>().ok())
+            .filter(|y| (1900..2100).contains(y))
+        {
+            song.year = Some(Rc::new(y.to_string()));
+        }
+    }
+    if let Some(ref artist) = data.artist {
+        let normalized = crate::app::structures::normalize_artist_name(artist);
+        song.artists = MaybeRc::Owned(vec![
+            ListSongArtist {
+                name: normalized,
+                id: None,
+            },
+        ]);
+    }
+    if let Some(tn) = data.track_no {
+        song.track_no = Some(tn);
+    }
+    if !data.genres.is_empty() {
+        song.genres = data.genres.clone();
+    }
+    if !data.styles.is_empty() {
+        song.styles = data.styles.clone();
+    }
+    original_album
+}
+
+/// Handle album split decision: validate duration ratio, tracklist match, insert tracks, fetch album art.
+/// Returns an optional chained effect if album split occurs.
+fn handle_album_split(
+    target: &mut Playlist,
+    song_id: ListSongID,
+    data: &ValidatedMetadata,
+    original_album: &Option<String>,
+    original_title: &str,
+    video_dur: Option<f64>,
+) -> Option<AsyncTask<Playlist, ArcServer, TaskMetadata>> {
+    let meta_total: f64 = data.album_tracks.iter()
+        .map(|t| t.duration_secs).sum();
+    let ratio_ok = match (video_dur, meta_total > 0.0) {
+        (Some(v), true) => v / meta_total >= 0.3,
+        _ => false,
+    };
+    let fallback_ok = has_album_indicator_tags(original_title);
+    if !ratio_ok && !fallback_ok {
+        info!("Album tracklist rejected: title={:?}, meta_total={:.0}s, video_dur={:.0}s, ratio={:.2}",
+            original_title, meta_total, video_dur.unwrap_or(0.0),
+            video_dur.map(|v| v / meta_total.max(1.0)).unwrap_or(0.0));
+        target.last_error = Some("Album split failed: duration mismatch, no album tags".to_string());
+        return None;
+    }
+    // Track title must appear in album tracklist (skip when ratio_ok)
+    if !ratio_ok && !data.album_tracks.is_empty() {
+        let title_norm: String = original_title.to_lowercase().chars()
+            .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+        let title_norm = title_norm.trim();
+        let track_in_list = data.album_tracks.iter().any(|t| {
+            let t_norm: String = t.title.to_lowercase().chars()
+                .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+            let t_norm = t_norm.trim();
+            t_norm == title_norm
+                || t_norm.contains(title_norm)
+                || title_norm.contains(t_norm)
+        });
+        if !track_in_list {
+            info!("Album tracklist rejected: track '{:?}' not found in album tracklist, skipping split to avoid wrong album", original_title);
+            target.last_error = Some("Album split failed: track not in provider tracklist".to_string());
+            return None;
+        }
+    }
+    if ratio_ok {
+        info!("Album tracklist accepted by duration ratio ({:.2} >= 0.3)", video_dur.unwrap_or(0.0) / meta_total.max(1.0));
+    }
+    // Filter out zero-duration tracks
+    let valid_tracks: Vec<_> = data.album_tracks.iter()
+        .filter(|t| t.duration_secs > 0.0)
+        .cloned()
+        .collect();
+    if valid_tracks.is_empty() {
+        info!("Album tracklist rejected: all {} tracks have zero duration",
+            data.album_tracks.len());
+        target.last_error = Some("Album split failed: all tracks have zero duration".to_string());
+        return None;
+    }
+    if valid_tracks.len() < data.album_tracks.len() {
+        info!("Album tracklist: {} zero-duration tracks filtered out, {} remaining",
+            data.album_tracks.len() - valid_tracks.len(), valid_tracks.len());
+    }
+    target.album_tracks = Some(valid_tracks.clone());
+    target.album_current_track = 0;
+    let play_effect = target.insert_album_tracks(song_id, &valid_tracks, &data.artist, &data.album, &data.year, original_album);
+    info!("Album mode: {} tracks loaded for song {:?}",
+        target.album_tracks.as_ref().map_or(0, |t| t.len()), song_id);
+    target.last_status = Some(format!("Album split: {} tracks", valid_tracks.len()));
+
+    // Fetch album art from Last.fm
+    let api_key = target.scrobbling_config.api_key.clone();
+    let mut effect = AsyncTask::new_no_op();
+    if !api_key.is_empty() {
+        let art_artist = data.artist.clone()
+            .or_else(|| target.get_song_from_id(song_id)
+                .map(|s| s.artists.iter().map(|a| a.name.as_str())
+                    .collect::<Vec<_>>().join(", ")));
+        let art_album = data.album.clone()
+            .or_else(|| target.get_song_from_id(song_id)
+                .and_then(|s| s.album.as_ref().map(|a| a.name.clone())));
+        if let (Some(ref aa), Some(ref ab)) = (art_artist, art_album) {
+            if !aa.is_empty() && !ab.is_empty() {
+                use crate::app::server::FetchAlbumArt;
+                let art_task = AsyncTask::new_future_try(
+                    FetchAlbumArt(aa.clone(), ab.clone(), api_key.clone()),
+                    HandleFetchAlbumArtOk,
+                    HandleFetchAlbumArtErr,
+                    None,
+                );
+                effect = effect.push(art_task);
+            }
+        }
+    }
+    if let Some(e) = play_effect {
+        effect = effect.push(e);
+    }
+    Some(effect)
+}
+
 impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
     fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
         match self {
-            // Album metadata found: update song fields, split into tracks, spawn per-track validation + album art
             MetadataEffect::Validated(data, song_id) => {
-                if let Some(idx) = target.get_index_from_id(song_id) {
+                // Step 1: Apply metadata fields to song (borrows song, not target)
+                let (original_album, original_title, video_dur) = if let Some(idx) = target.get_index_from_id(song_id) {
                     if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
-                        // Save original album before metadata overwrites it
-                        let original_album = song.album.as_ref().map(|a| a.as_ref().name.clone());
-                        if let Some(ref album) = data.album {
-                            // Only override album when YTM has none (preserve YTM's album to prevent
-                            // wrong metadata from overwriting correct data, e.g. Phyllomedusa albums)
-                            let ytm_empty = song.album.as_ref().map_or(true, |a| a.as_ref().name.is_empty());
-                            if ytm_empty {
-                                song.album = Some(crate::app::structures::MaybeRc::Owned(
-                                    crate::app::structures::ListSongAlbum {
-                                        name: album.clone(),
-                                        id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
-                                    },
-                                ));
-                            } else {
-                                debug!(
-                                    ytm = ?song.album.as_ref().map(|a| a.as_ref().name.as_str()),
-                                    provider = %album,
-                                    "ValidateMetadata: keeping YTM album, skipping provider override"
-                                );
-                            }
-                        }
-                        if let Some(ref year) = data.year {
-                            song.year = Some(Rc::new(year.clone()));
-                        } else if let Some(ref album) = data.album {
-                            // Fallback: extract year from album name
-                            if let Some(y) = album.split(|c: char| !c.is_ascii_digit())
-                                .find(|p| p.len() == 4)
-                                .and_then(|p| p.parse::<u16>().ok())
-                                .filter(|y| (1900..2100).contains(y))
-                            {
-                                song.year = Some(Rc::new(y.to_string()));
-                            }
-                        }
-                        // Fallback: extract year from song title (e.g. "ST LP 2023")
-                        if song.year.is_none() {
-                            if let Some(y) = song.title.split(|c: char| !c.is_ascii_digit())
-                                .find(|p| p.len() == 4)
-                                .and_then(|p| p.parse::<u16>().ok())
-                                .filter(|y| (1900..2100).contains(y))
-                            {
-                                song.year = Some(Rc::new(y.to_string()));
-                            }
-                        }
-                        if let Some(ref artist) = data.artist {
-                            let normalized = crate::app::structures::normalize_artist_name(artist);
-                            song.artists = crate::app::structures::MaybeRc::Owned(vec![
-                                crate::app::structures::ListSongArtist {
-                                    name: normalized,
-                                    id: None,
-                                },
-                            ]);
-                        }
-                        if let Some(tn) = data.track_no {
-                            song.track_no = Some(tn);
-                        }
-                        if !data.genres.is_empty() {
-                            song.genres = data.genres.clone();
-                        }
-                        if !data.styles.is_empty() {
-                            song.styles = data.styles.clone();
-                        }
+                        let orig_album = apply_metadata_fields(song, &data);
+                        let title = song.title.clone();
+                        let dur = song.actual_duration.map(|d| d.as_secs_f64());
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
-                        if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
-                            // Duration ratio: compare video duration to metadata tracklist total.
-                            // If video IS the full album (ratio >= 0.5), split.
-                            // If video is just one song from album (ratio < 0.5), don't split.
-                            // This handles: same-name song/album, extreme music with short tracks,
-                            // goregrind 30-song EPs, etc.
-                            let original_title = song.title.as_str();
-                            let meta_total: f64 = data.album_tracks.iter()
-                                .map(|t| t.duration_secs).sum();
-                            let video_dur = song.actual_duration
-                                .map(|d| d.as_secs_f64());
-                            let ratio_ok = match (video_dur, meta_total > 0.0) {
-                                (Some(v), true) => v / meta_total >= 0.3, // 0.3: handles bonus/deluxe editions (3x length)
-                                _ => false, // missing durations → try fallbacks
-                            };
-                            // Fallback: only split on explicit album indicator tags in title.
-                            // No duration heuristic — drone/ambient tracks exceed 10 min.
-                            // Ratio check (above) already handles full-album uploads with duration metadata.
-                            let fallback_ok = has_album_indicator_tags(original_title);
-                            if !ratio_ok && !fallback_ok {
-                                info!("Album tracklist rejected: title={:?}, meta_total={:.0}s, video_dur={:.0}s, ratio={:.2}",
-                                    original_title, meta_total, video_dur.unwrap_or(0.0),
-                                    video_dur.map(|v| v / meta_total.max(1.0)).unwrap_or(0.0));
-                                target.last_error = Some("Album split failed: duration mismatch, no album tags".to_string());
-                                return AsyncTask::new_no_op();
-                            }
-                            // Verify searched track title appears in album tracklist.
-                            // Prevents splitting when YTM's album name is wrong and provider
-                            // returns a different album's tracklist (same artist, diff album).
-                            // Skip this check when ratio_ok (video IS the full album: duration matches).
-                            if !ratio_ok && !data.album_tracks.is_empty() {
-                                let title_norm: String = original_title.to_lowercase().chars()
-                                    .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
-                                let title_norm = title_norm.trim();
-                                let track_in_list = data.album_tracks.iter().any(|t| {
-                                    let t_norm: String = t.title.to_lowercase().chars()
-                                        .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
-                                    let t_norm = t_norm.trim();
-                                    t_norm == title_norm
-                                        || t_norm.contains(title_norm)
-                                        || title_norm.contains(t_norm)
-                                });
-                                if !track_in_list {
-                                    info!("Album tracklist rejected: track '{:?}' not found in album tracklist, skipping split to avoid wrong album", original_title);
-                                    target.last_error = Some("Album split failed: track not in provider tracklist".to_string());
-                                    return AsyncTask::new_no_op();
-                                }
-                            }
-                            if ratio_ok {
-                                info!("Album tracklist accepted by duration ratio ({:.2} >= 0.3)", video_dur.unwrap_or(0.0) / meta_total.max(1.0));
-                            }
-                            // Filter out zero-duration tracks (broken metadata from some providers)
-                            let valid_tracks: Vec<_> = data.album_tracks.iter()
-                                .filter(|t| t.duration_secs > 0.0)
-                                .cloned()
-                                .collect();
-                            if valid_tracks.is_empty() {
-                                info!("Album tracklist rejected: all {} tracks have zero duration",
-                                    data.album_tracks.len());
-                                target.last_error = Some("Album split failed: all tracks have zero duration".to_string());
-                                return AsyncTask::new_no_op();
-                            }
-                            if valid_tracks.len() < data.album_tracks.len() {
-                                info!("Album tracklist: {} zero-duration tracks filtered out, {} remaining",
-                                    data.album_tracks.len() - valid_tracks.len(), valid_tracks.len());
-                            }
-                            target.album_tracks = Some(valid_tracks.clone());
-                            target.album_current_track = 0;
-                            let play_effect = target.insert_album_tracks(song_id, &valid_tracks, &data.artist, &data.album, &data.year, &original_album);
-                            info!("Album mode: {} tracks loaded for song {:?}",
-                                target.album_tracks.as_ref().map_or(0, |t| t.len()), song_id);
-                            target.last_status = Some(format!("Album split: {} tracks", valid_tracks.len()));
-
-                            // Fetch album art from Last.fm
-                            let api_key = target.scrobbling_config.api_key.clone();
-                            let mut effect = AsyncTask::new_no_op();
-                            if !api_key.is_empty() {
-                                let art_artist = data.artist.clone()
-                                    .or_else(|| target.get_song_from_id(song_id)
-                                        .map(|s| s.artists.iter().map(|a| a.name.as_str())
-                                            .collect::<Vec<_>>().join(", ")));
-                                let art_album = data.album.clone()
-                                    .or_else(|| target.get_song_from_id(song_id)
-                                        .and_then(|s| s.album.as_ref().map(|a| a.name.clone())));
-                                if let (Some(ref aa), Some(ref ab)) = (art_artist, art_album) {
-                                    if !aa.is_empty() && !ab.is_empty() {
-                                        use crate::app::server::FetchAlbumArt;
-                                        let art_task = AsyncTask::new_future_try(
-                                            FetchAlbumArt(aa.clone(), ab.clone(), api_key.clone()),
-                                            HandleFetchAlbumArtOk,
-                                            HandleFetchAlbumArtErr,
-                                            None,
-                                        );
-                                        effect = effect.push(art_task);
-                                    }
-                                }
-                            }
-
-                            if let Some(e) = play_effect {
-                                effect = effect.push(e);
-                            }
-                            return effect;
-                        }
+                        (orig_album, title, dur)
+                    } else {
+                        (None, String::new(), None)
+                    }
+                } else {
+                    (None, String::new(), None)
+                };
+                // Step 2: Album split decision (borrows target, song reference is dropped)
+                if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
+                    if let Some(effect) = handle_album_split(
+                        target, song_id, &data, &original_album, &original_title, video_dur,
+                    ) {
+                        return effect;
                     }
                 }
             }
@@ -844,50 +782,53 @@ pub enum LoadPlaylistEffect {
     FetchError,
 }
 
+fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
+    let mut list_songs = Vec::with_capacity(songs.len());
+    for s in songs {
+        let list_artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist {
+            name: a.name,
+            id: None,
+        }).collect());
+        let album_name = s.album.name.clone();
+        let list_album = Some(MaybeRc::Owned(ListSongAlbum {
+            name: album_name.clone(),
+            id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+        }));
+        let year = s.year.clone().or_else(|| {
+            album_name.split('(').last().and_then(|s| s.get(..4))
+                .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                .map(|y| y.to_string())
+        });
+        list_songs.push(ListSong {
+            video_id: s.video_id,
+            track_no: None,
+            plays: String::new(),
+            title: s.title,
+            explicit: Some(s.explicit),
+            download_status: DownloadStatus::None,
+            id: ListSongID(0),
+            duration_string: s.duration,
+            actual_duration: None,
+            start_offset: None,
+            year: year.map(Rc::new),
+            album_art: AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
+            artists: list_artists,
+            thumbnails: MaybeRc::Owned(s.thumbnails),
+            album: list_album,
+            like_status: s.like_status,
+        });
+    }
+    list_songs
+}
+
 impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
     fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
         match self {
             LoadPlaylistEffect::TracksFetched(songs) => {
                 let count = songs.len();
-                let mut list_songs: Vec<crate::app::structures::ListSong> = Vec::new();
-                for s in songs {
-                    use ytmapi_rs::common::YoutubeID;
-                    let list_artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist {
-                        name: a.name,
-                        id: None,
-                    }).collect());
-                    let list_album = Some(MaybeRc::Owned(ListSongAlbum {
-                        name: s.album.name.clone(),
-                        id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
-                    }));
-                    // Extract year from album name as fallback
-                    let year = s.year.clone().or_else(|| {
-                        let name = &s.album.name;
-                        name.split('(').last().and_then(|s| s.get(..4))
-                            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-                            .map(|y| y.to_string())
-                    });
-                    list_songs.push(crate::app::structures::ListSong {
-                        video_id: s.video_id,
-                        track_no: None,
-                        plays: String::new(),
-                        title: s.title,
-                        explicit: Some(s.explicit),
-                        download_status: DownloadStatus::None,
-                        id: crate::app::structures::ListSongID(0),
-                        duration_string: s.duration,
-                        actual_duration: None,
-                        start_offset: None,
-                        year: year.map(Rc::new),
-                        album_art: AlbumArtState::None,
-                        genres: Vec::new(),
-                        styles: Vec::new(),
-                        artists: list_artists,
-                        thumbnails: MaybeRc::Owned(s.thumbnails),
-                        album: list_album,
-                        like_status: s.like_status,
-                    });
-                }
+                let list_songs = convert_playlist_songs(songs);
                 // Replace playlist
                 target.list.clear();
                 target.list.next_id = ListSongID(0);
@@ -919,46 +860,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
             }
             LoadPlaylistEffect::TracksAppended(songs) => {
                 let count = songs.len();
-                let mut list_songs: Vec<crate::app::structures::ListSong> = Vec::new();
-                for s in songs {
-                    use ytmapi_rs::common::YoutubeID;
-                    let list_artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist {
-                        name: a.name,
-                        id: None,
-                    }).collect());
-                    let album_name = s.album.name.clone();
-                    let list_album = Some(MaybeRc::Owned(ListSongAlbum {
-                        name: album_name.clone(),
-                        id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
-                    }));
-                    // Extract year from album name as fallback
-                    let year = s.year.clone().or_else(|| {
-                        let name = &album_name;
-                        name.split('(').last().and_then(|s| s.get(..4))
-                            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-                            .map(|y| y.to_string())
-                    });
-                    list_songs.push(crate::app::structures::ListSong {
-                        video_id: s.video_id,
-                        track_no: None,
-                        plays: String::new(),
-                        title: s.title,
-                        explicit: Some(s.explicit),
-                        download_status: DownloadStatus::None,
-                        id: crate::app::structures::ListSongID(0),
-                        duration_string: s.duration,
-                        actual_duration: None,
-                        start_offset: None,
-                        year: year.map(Rc::new),
-                        album_art: AlbumArtState::None,
-                        genres: Vec::new(),
-                        styles: Vec::new(),
-                        artists: list_artists,
-                        thumbnails: MaybeRc::Owned(s.thumbnails),
-                        album: list_album,
-                        like_status: s.like_status,
-                    });
-                }
+                let list_songs = convert_playlist_songs(songs);
                 // Append to existing queue
                 let first_id = target.list.push_song_list(list_songs);
                 info!("Appended {} songs to queue from YouTube Music playlist", count);
@@ -1167,14 +1069,7 @@ impl_youtui_task_handler!(HandleSubscribeToArtistOk, (), Playlist, |_, _: ()| {
     }
 });
 
-impl_youtui_task_handler!(HandleSubscribeToArtistError, anyhow::Error, Playlist, |_, err: anyhow::Error| {
-    let msg = err.to_string();
-    move |this: &mut Playlist| {
-        error!("Failed to subscribe to artist: {}", msg);
-        this.last_error = Some(format!("Subscribe failed: {}", msg));
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-    }
-});
+playlist_err_handler!(HandleSubscribeToArtistError, "subscribe to artist", "Subscribe failed");
 
 #[derive(Debug, PartialEq)]
 pub struct HandleUnsubscribeFromArtistsOk;
@@ -1188,38 +1083,15 @@ impl_youtui_task_handler!(HandleUnsubscribeFromArtistsOk, (), Playlist, |_, _: (
     }
 });
 
-impl_youtui_task_handler!(HandleUnsubscribeFromArtistsError, anyhow::Error, Playlist, |_, err: anyhow::Error| {
-    let msg = err.to_string();
-    move |this: &mut Playlist| {
-        error!("Failed to unsubscribe from artist: {}", msg);
-        this.last_error = Some(format!("Unsubscribe failed: {}", msg));
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-    }
-});
-
-
+playlist_err_handler!(HandleUnsubscribeFromArtistsError, "unsubscribe from artist", "Unsubscribe failed");
 
 #[derive(Debug, PartialEq)]
 pub struct HandleAddPlaylistToPlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleAddPlaylistToPlaylistError;
 
-impl_youtui_task_handler!(HandleAddPlaylistToPlaylistOk, (), Playlist, |_, _: ()| {
-    |this: &mut Playlist| {
-        info!("Playlist merged successfully");
-        this.library_playlist_mutated = true;
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-    }
-});
-
-impl_youtui_task_handler!(HandleAddPlaylistToPlaylistError, anyhow::Error, Playlist, |_, err: anyhow::Error| {
-    let msg = err.to_string();
-    move |this: &mut Playlist| {
-        error!("Failed to merge playlist: {}", msg);
-        this.last_error = Some(format!("Merge failed: {}", msg));
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-    }
-});
+playlist_ok_handler!(HandleAddPlaylistToPlaylistOk, "Playlist merged successfully");
+playlist_err_handler!(HandleAddPlaylistToPlaylistError, "merge playlist", "Merge failed");
 
 /// Definite album indicator tags: if the original YouTube title contains any of these
 /// (word-boundary matched), the upload is intended as a full album/EP/split.

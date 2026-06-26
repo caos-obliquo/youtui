@@ -89,7 +89,6 @@ pub struct Youtui {
     /// Capabilities of the user's terminal in regards to image rendering - ie,
     /// font size / kitty protocal etc. This
     terminal_image_capabilities: Picker,
-    rescrobbled_process: Option<tokio::process::Child>,
     /// Render throttle: only redraw when needed, max ~30fps
     needs_redraw: bool,
     render_interval: tokio::time::Interval,
@@ -261,7 +260,6 @@ impl Youtui {
             (Some(media_controls), Some(media_control_event_stream))
         };
         let event_handler = EventHandler::new(EVENT_CHANNEL_SIZE, media_control_event_stream)?;
-        let rescrobbled_process = Self::spawn_rescrobbled(&config);
         let (window_state, effect) = YoutuiWindow::new(config, cookie_path, url);
         // Even the creation of a YoutuiWindow causes an effect. We'll spawn it straight
         // away.
@@ -275,29 +273,10 @@ impl Youtui {
             terminal,
             media_controls,
             terminal_image_capabilities,
-            rescrobbled_process,
             needs_redraw: false,
             render_interval: tokio::time::interval(Duration::from_millis(33)),
             last_play_time: None,
         })
-    }
-    fn spawn_rescrobbled(config: &crate::config::Config) -> Option<tokio::process::Child> {
-        if !config.scrobbling.enabled {
-            return None;
-        }
-        match tokio::process::Command::new("rescrobbled")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn() {
-            Ok(child) => {
-                tracing::info!("Rescrobbled spawned successfully");
-                Some(child)
-            }
-            Err(e) => {
-                tracing::warn!("Failed to spawn rescrobbled: {}", e);
-                None
-            }
-        }
     }
     pub async fn run(&mut self) -> Result<()> {
         let is_tmux = std::env::var("TERM").ok().map_or(false, |t| t.starts_with("tmux"));
@@ -347,10 +326,6 @@ impl Youtui {
                     }
                 }
                 AppStatus::Exiting(s) => {
-                    if let Some(mut child) = self.rescrobbled_process.take() {
-                        let _ = child.start_kill();
-                        tracing::info!("Rescrobbled stopped");
-                    }
                     destruct_terminal()?;
                     println!("{s}");
                     break;

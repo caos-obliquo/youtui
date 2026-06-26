@@ -585,6 +585,11 @@ impl YoutuiWindow {
     pub fn new(config: Config, cookie_path: Option<String>, url: Option<String>) -> (YoutuiWindow, ComponentEffect<YoutuiWindow>) {
         let (mut playlist, task) = Playlist::new();
         playlist.set_scrobbling_config(config.scrobbling.clone());
+        // Retry failed scrobbles from persistent cache
+        let retry_config = config.scrobbling.clone();
+        tokio::spawn(async move {
+            crate::app::scrobbler::retry_failed_scrobbles(&retry_config).await;
+        });
         playlist.yt_dlp_cookie_path = cookie_path;
         let mut this = YoutuiWindow {
             context: WindowContext::Browser,

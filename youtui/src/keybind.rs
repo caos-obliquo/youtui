@@ -30,7 +30,7 @@ impl Keybind {
 }
 impl Ord for Keybind {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).expect("Keybind should be able to provide ordering for any values. Has crossterm made a breaking change?")
+        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
     }
 }
 impl TryFrom<String> for Keybind {

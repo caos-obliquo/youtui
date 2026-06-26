@@ -39,6 +39,15 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 
 ## Done
 
+### Session 2026-06-26 — Suckless refactoring + Scrobbler fixes + Persistent cache + CLI tool
+
+- **Suckless refactoring**: 5-batch plan. -630 lines. 6 panic paths fixed, dead crates removed (metal-proxy, rym-definitions), boilerplate extracted (macro+helpers), MetadataEffect::apply subdivided (180→40 lines), clean_title_for_metadata split into 4 named helpers, handle_force_split extracted (75→1 line). Branch `refactor/suckless`.
+- **Scrobbler fixes** (fix/scrobbler-signature branch): params.sort_by() before HMAC signing (Last.fm alphabet requirement), removed should_scrobble() guard on album tracks, added scrobble_pending guard in play_song_id()/stop(), removed rescrobbled spawn (no duplicates). 5 scrobbler unit tests.
+- **Persistent scrobble cache**: `~/.config/youtui/scrobble_cache.json`. save_failed_scrobble() on submission failure, retry_failed_scrobbles() on startup, 3 max retries per entry.
+- **CLI test-scrobble**: `youtui test-scrobble --artist "A" --title "B" --album "C" --duration 180` — tests full scrobble pipeline directly.
+- **Known issue**: Rescrobbled systemd service double-submits. Must stop/disable rescrobbled.
+- Test counts: youtui 141, workspace ~393/393
+
 ### Session 2026-06-25 — Test gaps + dead_code + add-to-playlist + lowercase preserve
 
 - **3 test holes filled**: resolve() integration (3 tests), metal_api parsing (6 tests), insert_album_tracks propagation (1 test)
