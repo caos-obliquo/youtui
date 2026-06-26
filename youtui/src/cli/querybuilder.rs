@@ -32,13 +32,14 @@ use ytmapi_rs::query::{
     GetArtistAlbumsQuery, GetArtistQuery, GetChannelEpisodesQuery, GetChannelQuery,
     GetContinuationsQuery, GetEpisodeQuery, GetHistoryQuery, GetLibraryAlbumsQuery,
     GetLibraryArtistSubscriptionsQuery, GetLibraryArtistsQuery, GetLibraryPlaylistsQuery,
-    GetLibrarySongsQuery, GetLibraryUploadAlbumQuery, GetLibraryUploadAlbumsQuery,
-    GetLibraryUploadArtistQuery, GetLibraryUploadArtistsQuery, GetLibraryUploadSongsQuery,
-    GetLyricsIDQuery, GetLyricsQuery, GetMoodCategoriesQuery, GetMoodPlaylistsQuery,
-    GetNewEpisodesQuery, GetPlaylistTracksQuery, GetPodcastQuery, GetSearchSuggestionsQuery,
-    GetTasteProfileQuery, GetUserPlaylistsQuery, GetUserQuery, GetUserVideosQuery,
-    GetWatchPlaylistQuery, PostQuery, Query, RemoveHistoryItemsQuery, RemovePlaylistItemsQuery,
-    SearchQuery, SetTasteProfileQuery, SubscribeArtistQuery, UnsubscribeArtistsQuery,
+    GetLibrarySongsQuery, GetLibrarySortOrder, GetLibraryUploadAlbumQuery,
+    GetLibraryUploadAlbumsQuery, GetLibraryUploadArtistQuery, GetLibraryUploadArtistsQuery,
+    GetLibraryUploadSongsQuery, GetLyricsIDQuery, GetLyricsQuery, GetMoodCategoriesQuery,
+    GetMoodPlaylistsQuery, GetNewEpisodesQuery, GetPlaylistTracksQuery, GetPodcastQuery,
+    GetSearchSuggestionsQuery, GetTasteProfileQuery, GetUserPlaylistsQuery, GetUserQuery,
+    GetUserVideosQuery, GetWatchPlaylistQuery, PostQuery, Query, RemoveHistoryItemsQuery,
+    RemovePlaylistItemsQuery, SearchQuery, SetTasteProfileQuery, SubscribeArtistQuery,
+    UnsubscribeArtistsQuery,
 };
 
 pub struct CliQuery {
@@ -49,6 +50,16 @@ pub struct CliQuery {
 pub enum QueryType {
     FromSourceFiles(Vec<String>),
     FromApi,
+}
+
+fn parse_sort_order(s: Option<String>) -> GetLibrarySortOrder {
+    match s.as_deref() {
+        Some("name-asc") => GetLibrarySortOrder::NameAsc,
+        Some("name-desc") => GetLibrarySortOrder::NameDesc,
+        Some("recent") => GetLibrarySortOrder::RecentlySaved,
+        Some("default") | None => GetLibrarySortOrder::Default,
+        Some(_other) => GetLibrarySortOrder::Default,
+    }
 }
 
 pub async fn command_to_query(
@@ -343,55 +354,73 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryArtists { max_pages } => {
+        Command::GetLibraryArtists {
+            max_pages,
+            sort,
+        } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
-                GetLibraryArtistsQuery::default(),
+                GetLibraryArtistsQuery::new(parse_sort_order(sort)),
                 cli_query,
                 max_pages,
             )
             .await
         }
-        Command::GetLibrarySongs { max_pages } => {
+        Command::GetLibrarySongs {
+            max_pages,
+            sort,
+        } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
-                GetLibrarySongsQuery::default(),
+                GetLibrarySongsQuery::new(parse_sort_order(sort)),
                 cli_query,
                 max_pages,
             )
             .await
         }
-        Command::GetLibraryAlbums { max_pages } => {
+        Command::GetLibraryAlbums {
+            max_pages,
+            sort,
+        } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
-                GetLibraryAlbumsQuery::default(),
+                GetLibraryAlbumsQuery::new(parse_sort_order(sort)),
                 cli_query,
                 max_pages,
             )
             .await
         }
-        Command::GetLibraryArtistSubscriptions { max_pages } => {
+        Command::GetLibraryArtistSubscriptions {
+            max_pages,
+            sort,
+        } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
-                GetLibraryArtistSubscriptionsQuery::default(),
+                GetLibraryArtistSubscriptionsQuery::new(parse_sort_order(sort)),
                 cli_query,
                 max_pages,
             )
             .await
         }
-        Command::GetLibraryPodcasts { max_pages } => {
+        Command::GetLibraryPodcasts {
+            max_pages,
+            sort,
+        } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
-                GetLibraryPodcastsQuery::default(),
+                GetLibraryPodcastsQuery::new(parse_sort_order(sort)),
                 cli_query,
                 max_pages,
             )
             .await
         }
-        Command::GetLibraryChannels { max_pages } => {
+        Command::GetLibraryChannels {
+            max_pages,
+            sort,
+        } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
-                GetLibraryChannelsQuery::default(),
+                GetLibraryChannelsQuery::new(parse_sort_order(sort)),
                 cli_query,
                 max_pages,
             )
@@ -466,28 +495,37 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryUploadSongs { max_pages } => {
+        Command::GetLibraryUploadSongs {
+            max_pages,
+            sort,
+        } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
-                GetLibraryUploadSongsQuery::default(),
+                GetLibraryUploadSongsQuery::new(parse_sort_order(sort)),
                 cli_query,
                 max_pages,
             )
             .await
         }
-        Command::GetLibraryUploadArtists { max_pages } => {
+        Command::GetLibraryUploadArtists {
+            max_pages,
+            sort,
+        } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
-                GetLibraryUploadArtistsQuery::default(),
+                GetLibraryUploadArtistsQuery::new(parse_sort_order(sort)),
                 cli_query,
                 max_pages,
             )
             .await
         }
-        Command::GetLibraryUploadAlbums { max_pages } => {
+        Command::GetLibraryUploadAlbums {
+            max_pages,
+            sort,
+        } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
-                GetLibraryUploadAlbumsQuery::default(),
+                GetLibraryUploadAlbumsQuery::new(parse_sort_order(sort)),
                 cli_query,
                 max_pages,
             )
