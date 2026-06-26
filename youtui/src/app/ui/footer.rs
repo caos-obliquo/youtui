@@ -51,10 +51,6 @@ pub fn draw_footer(
 ) {
     let mut duration = 0;
     let mut progress = Duration::default();
-    let play_button_label = match &w.playlist.play_status {
-        PlayState::Playing(_) => " ⏸ ",
-        _ => " ▶ ",
-    };
     let play_ratio = match &w.playlist.play_status {
         PlayState::Playing(id) | PlayState::Paused(id) => {
             duration = w
@@ -116,17 +112,6 @@ pub fn draw_footer(
                 .bg(PROGRESS_BG_COLOUR),
         )
         .ratio(play_ratio);
-    let play_pause = Paragraph::new(Line::from(vec![
-        Span::raw(" "),
-        Span::styled(
-            play_button_label,
-            Style::new()
-                .fg(BUTTON_FG_COLOUR)
-                .bg(BUTTON_BG_COLOUR)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-    ]));
     let left_arrow = Paragraph::new(Line::from(vec![
         Span::styled(
             "< [",
@@ -239,15 +224,13 @@ pub fn draw_footer(
         Constraint::Length(1),
         Constraint::Length(1),
     ]).areas(right_area);
-    let [left_arrow_chunk, play_pause_chunk, mid_bar_chunk, right_arrow_chunk] = Layout::horizontal([
-        Constraint::Max(4),
+    let [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk] = Layout::horizontal([
         Constraint::Max(4),
         Constraint::Min(1),
         Constraint::Max(4),
     ]).areas(bar_chunk);
     f.render_widget(bar, mid_bar_chunk);
     f.render_widget(left_arrow, left_arrow_chunk);
-    f.render_widget(play_pause, play_pause_chunk);
     f.render_widget(right_arrow, right_arrow_chunk);
     f.render_widget(Paragraph::new(Line::from(song_artist_line)), line1);
     let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
