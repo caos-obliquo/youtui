@@ -12,7 +12,7 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
     // Handle TestScrobble — not a YTM API command
     match &cli.command {
         Some(crate::Command::TestScrobble { artist, track, album, duration }) => {
-            use crate::app::scrobbler::{submit_scrobble, ScrobbleState};
+            use crate::app::scrobbler::{ScrobbleState, submit_scrobble_inner};
             use std::time::Duration;
             let state = ScrobbleState::new(
                 artist.clone(),
@@ -20,7 +20,25 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 album.clone(),
                 Duration::from_secs(*duration),
             );
-            submit_scrobble(&config.scrobbling, &state).await;
+            println!("ARTIST={}", state.artist);
+            println!("TRACK={}", state.track);
+            println!("ALBUM={:?}", state.album);
+            println!("DURATION={}s", state.duration.as_secs());
+            println!("API_KEY={}", config.scrobbling.api_key);
+            println!("API_SECRET_PRESENT={}", !config.scrobbling.api_secret.is_empty());
+            println!("SESSION_KEY={}", config.scrobbling.session_key);
+            eprintln!("--- Sending scrobble request ---");
+            match submit_scrobble_inner(&config.scrobbling, &state).await {
+                crate::app::scrobbler::ScrobbleResult::Success => {
+                    println!("RESULT=OK (scrobble accepted)");
+                }
+                crate::app::scrobbler::ScrobbleResult::RateLimited => {
+                    println!("RESULT=RATE_LIMITED (wait and try again)");
+                }
+                crate::app::scrobbler::ScrobbleResult::Failure => {
+                    println!("RESULT=FAILED (check stderr for API response)");
+                }
+            }
             return Ok(());
         }
         _ => {}
