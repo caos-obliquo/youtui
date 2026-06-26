@@ -81,5 +81,5 @@ spawn_task(task, backend)
 
 ```bash
 cargo test --release -p async-callback-manager
-# 15 tests pass
+# 14 tests pass (3 lib + 11 integration)
 ```

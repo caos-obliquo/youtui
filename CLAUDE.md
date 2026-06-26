@@ -64,15 +64,15 @@ cargo test --release -p rym-genre-data             # 10 pass
 Total: **~388/388 pass, 0 fail, 4 ignored, 0 warnings** (136 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 388)
 
 ## Warnings
-`cargo build --release` — **1 warning across workspace** (pre-existing ytmapi-cli deprecation, all other 12 crates clean).
+`cargo build --release` — **0 warnings across workspace** (all 11 crates clean).
 
 ## Arch (3-layer async callback)
 ```
 Frontend (UI) -> TaskManager -> Backend (Server)
 ```
-See `docs/` for full reference (5.4k lines, 20 files).
+See `docs/` for full reference (4.1k lines, 31 files).
 
-## 12 Workspace Crates (50k+ LOC)
+## 11 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
 | `youtui` | Main binary | 136 |
@@ -85,7 +85,6 @@ See `docs/` for full reference (5.4k lines, 20 files).
 | `ytmapi-cli` | CLI debug tool | 7 |
 | `lrclib-rs` | LRCLIB lyrics provider | 4 |
 | `rym-genre-data` | RYM genre/descriptor hierarchy | 10 |
-| `metal-proxy` | Metal Archives direct proxy | 0 |
 | `audio-player` | Async rodio-based audio player | 0 |
 
 ## 5 Browser Tabs Fully Wired
@@ -100,23 +99,22 @@ See `docs/` for full reference (5.4k lines, 20 files).
 ## Key Files
 | File | Lines | Purpose |
 |---|---|---|
-| `app/server/messages.rs` | ~1427 | All backend tasks |
-| `app/ui/playlist.rs` | ~3098 | Queue, playback, album splitting, visual mode |
-| `app/ui/browser.rs` | ~939 | Browser routing, 5-tab dispatch |
-| `app/ui/browser/draw.rs` | ~657 | All browser draw functions |
-| `app/ui/browser/library.rs` | ~1574 | Library (4th tab) with inline tracks view |
-| `app/ui/browser/albumsearch.rs` | ~720 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
-| `config/keymap.rs` | ~2130 | All keybindings by context |
-| `app/ui.rs` | ~1699 | Main window, event routing |
-| `libs/metadata-provider/` | 46 tests | Metadata trait + 6 provider impls + genre_map |
-| `app/ui/playlist/notes_popup.rs` | ~254 | Vim-driven notes text editor |
-| `app/ui/playlist/playlist_editor_popup.rs` | ~748 | Playlist editor (nvim-driven, overwrite save) |
-| `app/ui/playlist/album_art_popup.rs` | ~54 | Album art sixel popup w/ pagination |
-| `app/ui/playlist/config_editor_popup.rs` | ~146 | Config file editor |
-| `app/ui/playlist/lyrics_popup.rs` | ~1195 | Lyrics + annotations display |
-| `app/ui/footer.rs` | ~257 | Footer: progress, metadata, heart icon, album art |
-| `app/ui/playlist/effect_handlers_playlist.rs` | ~1154 | ValidateMetadata, overwrite save chain handlers |
-| `libs/metal-proxy/src/main.rs` | ~275 | Metal Archives cookie-based proxy |
+| `youtui/src/app/server/messages.rs` | ~1598 | All backend tasks |
+| `youtui/src/app/ui/playlist.rs` | ~3104 | Queue, playback, album splitting, visual mode |
+| `youtui/src/app/ui/browser.rs` | ~1012 | Browser routing, 5-tab dispatch |
+| `youtui/src/app/ui/browser/draw.rs` | ~517 | All browser draw functions |
+| `youtui/src/app/ui/browser/library.rs` | ~2005 | Library (4th tab) with inline tracks view |
+| `youtui/src/app/ui/browser/albumsearch.rs` | ~731 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
+| `youtui/src/config/keymap.rs` | ~2142 | All keybindings by context |
+| `youtui/src/app/ui.rs` | ~1741 | Main window, event routing |
+| `libs/metadata-provider/` | 47 tests | Metadata trait + 6 provider impls + genre_map |
+| `youtui/src/app/ui/playlist/notes_popup.rs` | ~254 | Vim-driven notes text editor |
+| `youtui/src/app/ui/playlist/playlist_editor_popup.rs` | ~748 | Playlist editor (nvim-driven, overwrite save) |
+| `youtui/src/app/ui/playlist/album_art_popup.rs` | ~54 | Album art sixel popup w/ pagination |
+| `youtui/src/app/ui/playlist/config_editor_popup.rs` | ~153 | Config file editor |
+| `youtui/src/app/ui/playlist/lyrics_popup.rs` | ~1210 | Lyrics + annotations display |
+| `youtui/src/app/ui/footer.rs` | ~257 | Footer: progress, metadata, heart icon, album art |
+| `youtui/src/app/ui/playlist/effect_handlers_playlist.rs` | ~1302 | ValidateMetadata, overwrite save chain handlers |
 
 ## Playlist Features Status
 All CRUD wired: Create, Delete, Rename, Edit details, Edit privacy, Add/Remove items, Reorder (swap), Rate, Get details, Get tracks, Library playlists, Batch-merge.
@@ -224,7 +222,7 @@ See `docs/09-roadmap.md` for detailed session history.
 - **Auth tests**: 52 ytmapi-rs integration tests need cookie file.
 - **Metal-API (metal-api.dev)**: Approved REST API for Metal Archives. Currently returns 500 errors (backend crash). Provider code is written but API must be back online.
 - **Year metadata**: Some tracks still show `None` for year when no metadata provider returns a year and album name has no year string. Fallback extracts from album name `(YYYY)`.
-- **MA_COOKIE**: `cf_clearance` cookie from Metal Archives expires ~30 min. Must be refreshed periodically via `cargo run --release -p metal-proxy -- --get-cookie` or manual browser extraction.
+- **MA_COOKIE**: `cf_clearance` cookie from Metal Archives expires ~30 min. Must be refreshed manually via browser DevTools > Application > Cookies. The `metal-proxy` crate has been removed from workspace (backend API returns 500).
 - **Album `audio_playlist_id`**: May be `None` for some album types (singles/EPs). `o.t` shows feedback message now.
 - **Playlist editor modified check**: `Esc`/`:q` warns on unsaved changes. `:q!` force-quits.
 - **Sixel album art**: Belt-and-suspenders clear on close fixed in af0acb8. Sixel cleared via `\x1bP0p\x1b\\` DCS clear at start of every draw, plus offset tracking via `sixel_rect` for proper area management.
@@ -234,7 +232,7 @@ See `docs/09-roadmap.md` for detailed session history.
 **Problem**: Clipboard yank uses Wayland-only `wl-copy`. No X11/macOS fallback.
 
 ### P3: ytmapi-rs ~68 remaining TODOs
-**Problem**: ~68 legitimate TODOs remaining (artist categories, i18n, continuations, unfulfilled feature fields). All LOW value for youtui.
+**Problem**: ~37 legitimate TODOs remaining (artist categories, i18n, continuations, unfulfilled feature fields). All LOW value for youtui.
 
 ### Ann: Annotation wrapping — fixed
 **Problem**: Last annotation entry partially cut off with very long explanation text. **Fixed**: Wrapping-aware line counting added, accounts for Paragraph widget line-wrapping of long explanation lines.

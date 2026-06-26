@@ -140,6 +140,6 @@ Opens `PlaylistUpdatePopup` with track IDs. User selects target playlist.
 ## Integration
 
 - Wired in `app/ui/browser/library.rs` — `OpenPlaylistEditor` handler
-- Routed in `app/ui.rs` — `playlist_editor_popup` field + event interception
+- Routed in `youtui/src/app/ui.rs` — `playlist_editor_popup` field + event interception
 - Drawn in `app/ui/draw.rs` — popup render
 - Callback in `app.rs` — `OpenPlaylistEditor` creates the popup, `OverwritePlaylistTracks` triggers save chain

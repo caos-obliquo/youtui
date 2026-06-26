@@ -1,6 +1,6 @@
 # metadata-provider
 
-**46 tests, 0 warnings.**
+**47 tests, 0 warnings.**
 
 Metadata resolution crate: queries 6 external APIs to resolve artist/album/year/
 tracklist/genre for YouTube Music songs. Used by the album splitting pipeline.
@@ -58,7 +58,7 @@ File: `src/genre_map.rs`
 ## Build & Test
 
 ```bash
-cargo test --release -p metadata-provider    # 46 pass
+cargo test --release -p metadata-provider    # 47 pass
 ```
 
-Located at `libs/metadata-provider/` in workspace root.
+Located at `libs/metadata-provider/` in workspace root. Part of the 11-crate workspace.

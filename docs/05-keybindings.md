@@ -12,10 +12,10 @@ All default keybindings by context. Customizable in `config.toml`.
 | Key | Action | Description |
 |-----|--------|-------------|
 | `Space` | PlayPause | Toggle playback |
-| `s` | NextSong | Next track |
-| `a` | PrevSong | Previous track |
-| `>` | SeekForward | Seek forward 5s |
-| `<` | SeekBack | Seek back 5s |
+| `>` | NextSong | Next track |
+| `<` | PrevSong | Previous track |
+| `]` | SeekForward | Seek forward 5s |
+| `[` | SeekBack | Seek back 5s |
 | `+` | VolUp | Volume up 5% |
 | `-` | VolDown | Volume down 5% |
 | `?` | ToggleHelp | Show keybinding help |
@@ -48,11 +48,13 @@ All default keybindings by context. Customizable in `config.toml`.
 
 | Key | Action | Description |
 |-----|--------|-------------|
-| `Tab` | Browser(BrowserAction::NextTab) | Next search tab |
-| `BackTab` | Browser(BrowserAction::PrevTab) | Previous search tab |
 | `h`/`Left` | Browser(BrowserAction::PrevTab) | Previous search tab |
 | `l`/`Right` | Browser(BrowserAction::NextTab) | Next search tab |
+| `F1` | Browser(BrowserAction::Search) | Toggle YTM search |
+| `F7` | Browser(BrowserAction::ChangeSearchType) | Cycle search tab |
+| `/` | Browser(BrowserAction::LocalFilter) | Local fuzzy filter |
 | `Backspace` | Browser(BrowserAction::Back) | Navigate back |
+| `r` | Browser(BrowserAction::Reload) | Reload current category |
 
 ## Browser Context Menu (o mode)
 
@@ -61,13 +63,25 @@ All default keybindings by context. Customizable in `config.toml`.
 | `Enter` | BrowserSongs(PlaySong) | Play selected |
 | `p` | BrowserSongs(PlaySongs) | Play all |
 | `P` | BrowserSongs(AddSongsToPlaylist) | Queue all |
+| `s` | BrowserSongs(AddSongToPlaylist) | Save to playlist |
+| `N` | BrowserSongs(InsertNext) | Insert next in queue |
 | `a` | BrowserSongs(GoToArtist) | Go to artist page |
 | `b` | BrowserSongs(GoToAlbum) | Go to album page |
 | `l` | BrowserSongs(ViewLyrics) | View lyrics |
 | `y` | BrowserSongs(CopySongUrl) | Copy URL |
-| `i` | BrowserSongs(SongInfo) | Song info popup |
-| `v` | Playlist(ViewAlbumCover) | Album art popup |
-| `s` | BrowserSongs(SaveToPlaylist) | Save to playlist |
+| `r` | BrowserSongs(GetRelatedTracks) | Get related tracks |
+| `t` | BrowserSongs(RatePlaylist) | Rate playlist |
+| `S` | BrowserSongs(ToggleSubscribeArtist) | Subscribe artist |
+| `D` | BrowserSongs(DeletePlaylist) | Delete playlist |
+| `R` | BrowserSongs(RenamePlaylist) | Rename playlist |
+| `E` | BrowserSongs(EditPlaylistDetails) | Edit playlist details |
+| `e` | BrowserSongs(OpenPlaylistEditor) | Open playlist editor |
+| `i` | BrowserSongs(GetPlaylistDetails) | Playlist details popup |
+| `x` | BrowserSongs(RemoveTrackFromPlaylist) | Remove track |
+| `M` | BrowserSongs(MergePlaylist) | Merge playlists |
+| `O` | BrowserLibrary(CycleSortOrder) | Cycle sort order |
+| `c` | Filter(Close) | Close filter |
+| `z` | Sort(Close) | Close sort popup |
 
 ## Browser Library Context
 
