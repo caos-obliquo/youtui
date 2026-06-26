@@ -66,6 +66,7 @@ fn save_failed_scrobble(state: &ScrobbleState) {
 }
 
 /// Remove a successfully-retried scrobble from the cache by index.
+#[allow(dead_code)]
 fn remove_cached_scrobble(index: usize) {
     let Some(path) = scrobble_cache_path() else { return };
     let mut cache: Vec<serde_json::Value> = std::fs::read_to_string(&path)

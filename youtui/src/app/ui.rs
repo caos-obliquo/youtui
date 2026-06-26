@@ -98,6 +98,7 @@ pub struct YoutuiWindow {
     pub sixel_data: Option<String>,
     pub sixel_rect: Option<ratatui::layout::Rect>,
     pub cached_album_protocol: Option<ratatui_image::protocol::Protocol>,
+    pub cached_album_chunk: Option<ratatui::layout::Rect>,
 }
 impl_youtui_component!(YoutuiWindow);
 
@@ -625,6 +626,7 @@ impl YoutuiWindow {
             sixel_data: None,
             sixel_rect: None,
             cached_album_protocol: None,
+            cached_album_chunk: None,
         };
         let initial_effect = url.map(|u| this.play_yt_url(u));
         let mut combined = task.map_frontend(|this: &mut Self| &mut this.playlist);
@@ -1267,6 +1269,7 @@ impl YoutuiWindow {
     #[allow(dead_code)]
     pub fn invalidate_protocol_cache(&mut self) {
         self.cached_album_protocol = None;
+        self.cached_album_chunk = None;
     }
     pub fn toggle_help(&mut self) {
         if self.help.shown {
