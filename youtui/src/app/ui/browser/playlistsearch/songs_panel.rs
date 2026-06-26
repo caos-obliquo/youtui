@@ -207,7 +207,6 @@ impl PlaylistSongsPanel {
         self.clear_sort_commands();
     }
     pub fn handle_sort_cur_asc(&mut self) {
-        // TODO: Better error handling
         let Some(column) = self.get_sortable_columns().get(self.sort.cur) else {
             warn!("Tried to index sortable columns but was out of range");
             return;
@@ -221,7 +220,6 @@ impl PlaylistSongsPanel {
         self.close_sort();
     }
     pub fn handle_sort_cur_desc(&mut self) {
-        // TODO: Better error handling
         let Some(column) = self.get_sortable_columns().get(self.sort.cur) else {
             warn!("Tried to index sortable columns but was out of range");
             return;
