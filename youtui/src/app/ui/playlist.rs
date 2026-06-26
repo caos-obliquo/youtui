@@ -140,7 +140,12 @@ pub struct Playlist {
     pub sort_direction: SortDirection,
     /// Set true by playlist mutation handlers to signal library needs refresh
     pub library_playlist_mutated: bool,
+    /// Cache of downloaded audio by video_id. Survives reset() so replaying
+    /// same song from browser doesn't re-download.
+    audio_cache: HashMap<String, Arc<crate::app::server::song_downloader::InMemSong>>,
 }
+
+const MAX_AUDIO_CACHE_SIZE: usize = 50;
 
 impl_youtui_component!(Playlist);
 
@@ -943,6 +948,7 @@ impl Playlist {
             sort_column: 0,
             sort_direction: SortDirection::Asc,
             library_playlist_mutated: false,
+            audio_cache: HashMap::new(),
         };
 
         (playlist, task)
@@ -1772,6 +1778,14 @@ impl Playlist {
         &mut self,
         mut song_list: Vec<ListSong>,
     ) -> (ListSongID, ComponentEffect<Self>) {
+        // Restore cached audio for songs previously downloaded
+        for song in &mut song_list {
+            let video_raw = song.video_id.get_raw().to_string();
+            if let Some(cached) = self.audio_cache.get(&video_raw) {
+                song.download_status = DownloadStatus::Downloaded(cached.clone());
+                debug!("audio_cache: restored {} from cache", video_raw);
+            }
+        }
         let effect = Self::collect_thumbnail_tasks(&mut song_list);
 
         let was_playing = self.get_cur_playing_id();
@@ -2800,7 +2814,13 @@ impl Playlist {
                             error!("download_done: song {} has 0 bytes, marking as Failed", video_id);
                             s.download_status = DownloadStatus::Failed;
                         } else {
-                            s.download_status = DownloadStatus::Downloaded(Arc::new(song_buf));
+                            let arc = Arc::new(song_buf);
+                            s.download_status = DownloadStatus::Downloaded(arc.clone());
+                            // Cache audio by video_id for reuse across resets
+                            if self.audio_cache.len() >= MAX_AUDIO_CACHE_SIZE {
+                                self.audio_cache.clear();
+                            }
+                            self.audio_cache.insert(video_id.clone(), arc);
                             info!("download_status_updated: song_id={} -> Downloaded", video_id);
                         }
                     }
