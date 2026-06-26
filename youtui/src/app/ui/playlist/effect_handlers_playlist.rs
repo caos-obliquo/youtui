@@ -4,7 +4,7 @@ use crate::app::server::ValidatedMetadata;
 use crate::app::server::{
     ArcServer, TaskMetadata, AddSongsToPlaylist, EnrichRelatedTracks, RemovePlaylistItems, ValidateMetadata,
 };
-use crate::app::structures::{AlbumOrUploadAlbumID, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
+use crate::app::structures::{AlbumOrUploadAlbumID, ListSong, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
 use crate::app::ui::playlist::Playlist;
 use crate::app::ui::playlist::lyrics_popup::LyricsPopup;
@@ -17,6 +17,33 @@ use ytmapi_rs::common::{AlbumID, PlaylistID, VideoID, SetVideoID, YoutubeID};
 use ytmapi_rs::parse::LibraryPlaylist;
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::WatchPlaylistTrack;
+
+/// Generate a CRUD OK handler: logs, sets `library_playlist_mutated = true`.
+macro_rules! playlist_ok_handler {
+    ($name:ident, $log:literal) => {
+        impl_youtui_task_handler!($name, (), Playlist, |_, _: ()| {
+            |this: &mut Playlist| {
+                info!($log);
+                this.library_playlist_mutated = true;
+                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            }
+        });
+    };
+}
+
+/// Generate a CRUD error handler: logs error, sets `last_error`.
+macro_rules! playlist_err_handler {
+    ($name:ident, $op:literal, $label:literal) => {
+        impl_youtui_task_handler!($name, anyhow::Error, Playlist, |_, err: anyhow::Error| {
+            let msg = err.to_string();
+            move |this: &mut Playlist| {
+                error!("Failed to {}: {}", $op, msg);
+                this.last_error = Some(format!("{}: {}", $label, msg));
+                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            }
+        });
+    };
+}
 
 #[derive(Debug, PartialEq)]
 pub struct HandleRateSongOk;
@@ -131,7 +158,6 @@ impl_youtui_task_handler!(
         PlaylistEffect::CreatePlaylistError
     }
 );
-
 impl_youtui_task_handler!(
     HandleAddSongsOk,
     (),
@@ -177,116 +203,14 @@ impl_youtui_task_handler!(
     }
 );
 
-impl_youtui_task_handler!(
-    HandleDeletePlaylistOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |this: &mut Playlist| {
-            info!("Playlist deleted successfully");
-            this.library_playlist_mutated = true;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleDeletePlaylistError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to delete playlist: {}", msg);
-            this.last_error = Some(format!("Delete failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleEditPlaylistDetailsOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |this: &mut Playlist| {
-            info!("Playlist details updated");
-            this.library_playlist_mutated = true;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleEditPlaylistDetailsError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to update playlist details: {}", msg);
-            this.last_error = Some(format!("Edit failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleRatePlaylistOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |this: &mut Playlist| {
-            info!("Playlist rated successfully");
-            this.library_playlist_mutated = true;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleRatePlaylistError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to rate playlist: {}", msg);
-            this.last_error = Some(format!("Rate failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-
-
-
-impl_youtui_task_handler!(
-    HandleRenamePlaylistOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |this: &mut Playlist| {
-            info!("Playlist renamed successfully");
-            this.library_playlist_mutated = true;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
-
-impl_youtui_task_handler!(
-    HandleRenamePlaylistError,
-    anyhow::Error,
-    Playlist,
-    |_, err: anyhow::Error| {
-        let msg = err.to_string();
-        move |this: &mut Playlist| {
-            error!("Failed to rename playlist: {}", msg);
-            this.last_error = Some(format!("Rename failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
+playlist_ok_handler!(HandleDeletePlaylistOk, "Playlist deleted successfully");
+playlist_err_handler!(HandleDeletePlaylistError, "delete playlist", "Delete failed");
+playlist_ok_handler!(HandleEditPlaylistDetailsOk, "Playlist details updated");
+playlist_err_handler!(HandleEditPlaylistDetailsError, "update playlist details", "Edit failed");
+playlist_ok_handler!(HandleRatePlaylistOk, "Playlist rated successfully");
+playlist_err_handler!(HandleRatePlaylistError, "rate playlist", "Rate failed");
+playlist_ok_handler!(HandleRenamePlaylistOk, "Playlist renamed successfully");
+playlist_err_handler!(HandleRenamePlaylistError, "rename playlist", "Rename failed");
 
 
 
@@ -844,50 +768,53 @@ pub enum LoadPlaylistEffect {
     FetchError,
 }
 
+fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
+    let mut list_songs = Vec::with_capacity(songs.len());
+    for s in songs {
+        let list_artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist {
+            name: a.name,
+            id: None,
+        }).collect());
+        let album_name = s.album.name.clone();
+        let list_album = Some(MaybeRc::Owned(ListSongAlbum {
+            name: album_name.clone(),
+            id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+        }));
+        let year = s.year.clone().or_else(|| {
+            album_name.split('(').last().and_then(|s| s.get(..4))
+                .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                .map(|y| y.to_string())
+        });
+        list_songs.push(ListSong {
+            video_id: s.video_id,
+            track_no: None,
+            plays: String::new(),
+            title: s.title,
+            explicit: Some(s.explicit),
+            download_status: DownloadStatus::None,
+            id: ListSongID(0),
+            duration_string: s.duration,
+            actual_duration: None,
+            start_offset: None,
+            year: year.map(Rc::new),
+            album_art: AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
+            artists: list_artists,
+            thumbnails: MaybeRc::Owned(s.thumbnails),
+            album: list_album,
+            like_status: s.like_status,
+        });
+    }
+    list_songs
+}
+
 impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
     fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
         match self {
             LoadPlaylistEffect::TracksFetched(songs) => {
                 let count = songs.len();
-                let mut list_songs: Vec<crate::app::structures::ListSong> = Vec::new();
-                for s in songs {
-                    use ytmapi_rs::common::YoutubeID;
-                    let list_artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist {
-                        name: a.name,
-                        id: None,
-                    }).collect());
-                    let list_album = Some(MaybeRc::Owned(ListSongAlbum {
-                        name: s.album.name.clone(),
-                        id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
-                    }));
-                    // Extract year from album name as fallback
-                    let year = s.year.clone().or_else(|| {
-                        let name = &s.album.name;
-                        name.split('(').last().and_then(|s| s.get(..4))
-                            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-                            .map(|y| y.to_string())
-                    });
-                    list_songs.push(crate::app::structures::ListSong {
-                        video_id: s.video_id,
-                        track_no: None,
-                        plays: String::new(),
-                        title: s.title,
-                        explicit: Some(s.explicit),
-                        download_status: DownloadStatus::None,
-                        id: crate::app::structures::ListSongID(0),
-                        duration_string: s.duration,
-                        actual_duration: None,
-                        start_offset: None,
-                        year: year.map(Rc::new),
-                        album_art: AlbumArtState::None,
-                        genres: Vec::new(),
-                        styles: Vec::new(),
-                        artists: list_artists,
-                        thumbnails: MaybeRc::Owned(s.thumbnails),
-                        album: list_album,
-                        like_status: s.like_status,
-                    });
-                }
+                let list_songs = convert_playlist_songs(songs);
                 // Replace playlist
                 target.list.clear();
                 target.list.next_id = ListSongID(0);
@@ -919,46 +846,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
             }
             LoadPlaylistEffect::TracksAppended(songs) => {
                 let count = songs.len();
-                let mut list_songs: Vec<crate::app::structures::ListSong> = Vec::new();
-                for s in songs {
-                    use ytmapi_rs::common::YoutubeID;
-                    let list_artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist {
-                        name: a.name,
-                        id: None,
-                    }).collect());
-                    let album_name = s.album.name.clone();
-                    let list_album = Some(MaybeRc::Owned(ListSongAlbum {
-                        name: album_name.clone(),
-                        id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
-                    }));
-                    // Extract year from album name as fallback
-                    let year = s.year.clone().or_else(|| {
-                        let name = &album_name;
-                        name.split('(').last().and_then(|s| s.get(..4))
-                            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-                            .map(|y| y.to_string())
-                    });
-                    list_songs.push(crate::app::structures::ListSong {
-                        video_id: s.video_id,
-                        track_no: None,
-                        plays: String::new(),
-                        title: s.title,
-                        explicit: Some(s.explicit),
-                        download_status: DownloadStatus::None,
-                        id: crate::app::structures::ListSongID(0),
-                        duration_string: s.duration,
-                        actual_duration: None,
-                        start_offset: None,
-                        year: year.map(Rc::new),
-                        album_art: AlbumArtState::None,
-                        genres: Vec::new(),
-                        styles: Vec::new(),
-                        artists: list_artists,
-                        thumbnails: MaybeRc::Owned(s.thumbnails),
-                        album: list_album,
-                        like_status: s.like_status,
-                    });
-                }
+                let list_songs = convert_playlist_songs(songs);
                 // Append to existing queue
                 let first_id = target.list.push_song_list(list_songs);
                 info!("Appended {} songs to queue from YouTube Music playlist", count);
@@ -1167,14 +1055,7 @@ impl_youtui_task_handler!(HandleSubscribeToArtistOk, (), Playlist, |_, _: ()| {
     }
 });
 
-impl_youtui_task_handler!(HandleSubscribeToArtistError, anyhow::Error, Playlist, |_, err: anyhow::Error| {
-    let msg = err.to_string();
-    move |this: &mut Playlist| {
-        error!("Failed to subscribe to artist: {}", msg);
-        this.last_error = Some(format!("Subscribe failed: {}", msg));
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-    }
-});
+playlist_err_handler!(HandleSubscribeToArtistError, "subscribe to artist", "Subscribe failed");
 
 #[derive(Debug, PartialEq)]
 pub struct HandleUnsubscribeFromArtistsOk;
@@ -1188,38 +1069,15 @@ impl_youtui_task_handler!(HandleUnsubscribeFromArtistsOk, (), Playlist, |_, _: (
     }
 });
 
-impl_youtui_task_handler!(HandleUnsubscribeFromArtistsError, anyhow::Error, Playlist, |_, err: anyhow::Error| {
-    let msg = err.to_string();
-    move |this: &mut Playlist| {
-        error!("Failed to unsubscribe from artist: {}", msg);
-        this.last_error = Some(format!("Unsubscribe failed: {}", msg));
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-    }
-});
-
-
+playlist_err_handler!(HandleUnsubscribeFromArtistsError, "unsubscribe from artist", "Unsubscribe failed");
 
 #[derive(Debug, PartialEq)]
 pub struct HandleAddPlaylistToPlaylistOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleAddPlaylistToPlaylistError;
 
-impl_youtui_task_handler!(HandleAddPlaylistToPlaylistOk, (), Playlist, |_, _: ()| {
-    |this: &mut Playlist| {
-        info!("Playlist merged successfully");
-        this.library_playlist_mutated = true;
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-    }
-});
-
-impl_youtui_task_handler!(HandleAddPlaylistToPlaylistError, anyhow::Error, Playlist, |_, err: anyhow::Error| {
-    let msg = err.to_string();
-    move |this: &mut Playlist| {
-        error!("Failed to merge playlist: {}", msg);
-        this.last_error = Some(format!("Merge failed: {}", msg));
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-    }
-});
+playlist_ok_handler!(HandleAddPlaylistToPlaylistOk, "Playlist merged successfully");
+playlist_err_handler!(HandleAddPlaylistToPlaylistError, "merge playlist", "Merge failed");
 
 /// Definite album indicator tags: if the original YouTube title contains any of these
 /// (word-boundary matched), the upload is intended as a full album/EP/split.
