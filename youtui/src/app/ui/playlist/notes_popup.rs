@@ -7,6 +7,7 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use ratatui::Frame;
+use std::borrow::Cow;
 
 pub struct NotesPopup {
     pub editor: ViTextEditor,
@@ -32,8 +33,8 @@ impl NotesPopup {
         }
     }
 
-    pub fn mode_char(&self) -> &'static str {
-        if self.command_mode { ": " } else { self.editor.mode_char() }
+    pub fn mode_char(&self) -> Cow<'static, str> {
+        if self.command_mode { Cow::Borrowed(": ") } else { self.editor.mode_char() }
     }
 
     fn save(&self) {
@@ -171,9 +172,11 @@ impl NotesPopup {
             let max_scroll = total_lines.saturating_sub(visible_lines.saturating_sub(1));
             self.scroll_offset = self.scroll_offset.min(max_scroll);
 
+            let line_num_width = (total_lines.max(1) as f64).log10().floor() as usize + 1;
             let mut lines: Vec<ratatui::text::Line> = Vec::new();
             for (i, line_text) in self.editor.get_text().split('\n').enumerate() {
                 let is_cursor = i == cur_line;
+                let line_num = format!("{:>width$} ", i + 1, width = line_num_width);
                 if let Some((top, left, bot, right)) = block_range {
                     // Visual block mode: highlight column range on lines in range
                     if i >= top && i <= bot {
@@ -186,37 +189,52 @@ impl NotesPopup {
                         let after = &line_text[mid_end..];
                         if is_cursor && i == cur_line {
                             let (c_before, c_after) = line_text.split_at(cur_col.min(line_text.len()));
+                            let c_after_skip = if mark == "\u{2588}" {
+                                c_after.chars().next().map(|c| &c_after[c.len_utf8()..]).unwrap_or(c_after)
+                            } else {
+                                c_after
+                            };
                             lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
                                 ratatui::text::Span::styled(c_before.to_string(), Style::default().fg(Color::White)),
                                 ratatui::text::Span::styled(mark.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
-                                ratatui::text::Span::styled(c_after.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
+                                ratatui::text::Span::styled(c_after_skip.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
                             ]));
                         } else {
                             lines.push(ratatui::text::Line::from(vec![
+                                ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
                                 ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White)),
                                 ratatui::text::Span::styled(mid.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
                                 ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White)),
                             ]));
                         }
                     } else {
-                        lines.push(ratatui::text::Line::from(
+                        lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
                             ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White)),
-                        ));
+                        ]));
                     }
                 } else {
                     let selected = visual_range.map_or(false, |(s, e)| i >= s && i <= e);
                     let bg = if selected { Color::Rgb(0x00, 0x5f, 0x5f) } else { ratatui::style::Color::default() };
                     if is_cursor {
                         let (before, after) = line_text.split_at(cur_col.min(line_text.len()));
+                        let after_rest = after.chars().next().map(|c| &after[c.len_utf8()..]).unwrap_or(after);
+                        // Show character under cursor with inverted colors (Black on White)
                         lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
                             ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White).bg(bg)),
-                            ratatui::text::Span::styled(mark.to_string(), Style::default().fg(Color::White).bg(bg)),
-                            ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White).bg(bg)),
+                            ratatui::text::Span::styled(
+                                after.chars().next().map(|c| c.to_string()).unwrap_or_else(|| " ".to_string()),
+                                Style::default().fg(Color::Black).bg(Color::White),
+                            ),
+                            ratatui::text::Span::styled(after_rest.to_string(), Style::default().fg(Color::White).bg(bg)),
                         ]));
                     } else {
-                        lines.push(ratatui::text::Line::from(
+                        lines.push(ratatui::text::Line::from(vec![
+                            ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
                             ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White).bg(bg)),
-                        ));
+                        ]));
                     }
                 }
             }

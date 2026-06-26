@@ -1,5 +1,5 @@
 use crate::util;
-use crate::{MetadataProvider, ValidatedMetadata};
+use crate::{AlbumTrack, MetadataProvider, ValidatedMetadata};
 use futures::future::BoxFuture;
 
 pub struct MusicBrainzProvider;
@@ -43,16 +43,21 @@ impl MetadataProvider for MusicBrainzProvider {
                 .filter_map(|r| r.get("date")?.as_str())
                 .filter_map(|d| d.get(..4)).filter(|s| s.len() >= 4)
                 .map(|s| s.to_string()).next();
-            let album = rec.get("releases")?.as_array()?.iter()
+            let album_title = rec.get("releases")?.as_array()?.iter()
                 .filter_map(|r| r.get("title")?.as_str())
                 .map(|s| s.to_string()).next();
 
+            // Fetch release tracklist for album_tracks
+            let release_id = rec.get("releases")?.as_array()?.first()
+                .and_then(|r| r.get("id"))?.as_str()?.to_string();
+            let album_tracks = fetch_release_tracks(&client, &release_id).await;
+
             Some(ValidatedMetadata {
                 artist: Some(artist_name),
-                album,
+                album: album_title,
                 year,
                 track_no: None,
-                album_tracks: Vec::new(),
+                album_tracks,
                 genres: Vec::new(),
                 styles: Vec::new(),
             })
@@ -60,8 +65,53 @@ impl MetadataProvider for MusicBrainzProvider {
     }
 }
 
+async fn fetch_release_tracks(client: &reqwest::Client, release_id: &str) -> Vec<AlbumTrack> {
+    let _mb_permit = match util::musicbrainz_limiter().acquire().await {
+        Ok(p) => p,
+        Err(_) => return Vec::new(),
+    };
+    let url = format!(
+        "https://musicbrainz.org/ws/2/release/{}?inc=recordings+artist-credits&fmt=json",
+        util::urlencoding(release_id)
+    );
+    let resp = match client.get(&url).header("Accept", "application/json").send().await {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let data: serde_json::Value = match resp.json().await {
+        Ok(d) => d,
+        Err(_) => return Vec::new(),
+    };
+    let mut tracks = Vec::new();
+    if let Some(media) = data.get("media").and_then(|m| m.as_array()) {
+        for medium in media {
+            if let Some(entries) = medium.get("tracks").and_then(|t| t.as_array()) {
+                for entry in entries {
+                    let t_title = match entry.get("title").and_then(|t| t.as_str()) {
+                        Some(s) => s.to_string(),
+                        None => continue,
+                    };
+                    let duration_secs = entry.get("length").and_then(|l| l.as_i64())
+                        .map(|ms| ms as f64 / 1000.0)
+                        .unwrap_or(0.0);
+                    // Check for per-track artist (split releases)
+                    let track_artist = entry.get("artist-credit").and_then(|ac| ac.as_array())
+                        .and_then(|ac| ac.first())
+                        .and_then(|c| c.get("name"))
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string());
+                    tracks.push(AlbumTrack { title: t_title, duration_secs, artist: track_artist });
+                }
+            }
+        }
+    }
+    tracks
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn parse_musicbrainz_recording() {
         let json = serde_json::json!({
@@ -103,5 +153,47 @@ mod tests {
             .and_then(|r| r.get("date")).and_then(|d| d.as_str())
             .and_then(|d| d.get(..4)).filter(|s| s.len() >= 4).map(|s| s.to_string());
         assert_eq!(year, None, "Short date '07' should be rejected");
+    }
+
+    #[test]
+    fn parse_release_tracks() {
+        let json = serde_json::json!({
+            "media": [{
+                "tracks": [
+                    {
+                        "position": 1,
+                        "title": "Battery",
+                        "length": 315000,
+                        "artist-credit": [{"name": "Metallica"}]
+                    },
+                    {
+                        "position": 2,
+                        "title": "Master of Puppets",
+                        "length": 515000
+                    }
+                ]
+            }]
+        });
+        let tracks: Vec<AlbumTrack> = json.get("media").and_then(|m| m.as_array()).unwrap()
+            .iter().filter_map(|medium| {
+                medium.get("tracks").and_then(|t| t.as_array()).map(|entries| {
+                    entries.iter().filter_map(|entry| {
+                        let title = entry.get("title")?.as_str()?.to_string();
+                        let duration_secs = entry.get("length").and_then(|l| l.as_i64())
+                            .map(|ms| ms as f64 / 1000.0).unwrap_or(0.0);
+                        let track_artist = entry.get("artist-credit").and_then(|ac| ac.as_array())
+                            .and_then(|ac| ac.first())
+                            .and_then(|c| c.get("name"))
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.to_string());
+                        Some(AlbumTrack { title, duration_secs, artist: track_artist })
+                    }).collect::<Vec<_>>()
+                })
+            }).flatten().collect();
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0].title, "Battery");
+        assert_eq!(tracks[0].artist, Some("Metallica".to_string()));
+        assert_eq!(tracks[1].title, "Master of Puppets");
+        assert_eq!(tracks[1].artist, None);
     }
 }

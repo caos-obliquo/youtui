@@ -15,4 +15,5 @@ pub struct ValidatedMetadata {
 pub struct AlbumTrack {
     pub title: String,
     pub duration_secs: f64,
+    pub artist: Option<String>,
 }

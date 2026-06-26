@@ -309,9 +309,9 @@ fn make_track_entry(video: &'static str, track_no: usize, title: &'static str, d
 
 fn dummy_tracks() -> Vec<AlbumTrack> {
     vec![
-        AlbumTrack { title: "Track 1".into(), duration_secs: 203.0 },
-        AlbumTrack { title: "Track 2".into(), duration_secs: 148.0 },
-        AlbumTrack { title: "Track 3".into(), duration_secs: 194.0 },
+        AlbumTrack { title: "Track 1".into(), duration_secs: 203.0, artist: None },
+        AlbumTrack { title: "Track 2".into(), duration_secs: 148.0, artist: None },
+        AlbumTrack { title: "Track 3".into(), duration_secs: 194.0, artist: None },
     ]
 }
 
@@ -406,8 +406,8 @@ fn album_download_shares_arc_with_tracks() {
 
     // Real flow: MetadataEffect::Validated sets album_tracks BEFORE insert_album_tracks
     let tracks = vec![
-        AlbumTrack { title: "T1".into(), duration_secs: 100.0 },
-        AlbumTrack { title: "T2".into(), duration_secs: 100.0 },
+        AlbumTrack { title: "T1".into(), duration_secs: 100.0, artist: None },
+        AlbumTrack { title: "T2".into(), duration_secs: 100.0, artist: None },
     ];
     p.album_tracks = Some(tracks.clone());
     p.insert_album_tracks(orig_id, &tracks, &Some("Artist".into()), &Some("Album".into()), &None, &None);

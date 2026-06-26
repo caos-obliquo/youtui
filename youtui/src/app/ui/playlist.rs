@@ -1032,8 +1032,11 @@ impl Playlist {
         for (i, track) in tracks.iter().enumerate() {
             let dur_secs = track.duration_secs as u64;
             let dur_str = format!("{}:{:02}", dur_secs / 60, dur_secs % 60);
+            let track_artist = track.artist.as_ref().map(|a| {
+                crate::app::structures::normalize_artist_name(a)
+            }).unwrap_or_else(|| album_artist.clone());
             let list_artists = vec![crate::app::structures::ListSongArtist {
-                name: album_artist.clone(),
+                name: track_artist,
                 id: None,
             }];
             let list_album = album_name.as_ref().map(|n| {

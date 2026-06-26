@@ -109,7 +109,7 @@ async fn try_metal_api(artist: &str, title: &str, client: &reqwest::Client) -> O
                 p[0].parse::<f64>().ok()
             }
         });
-        Some(AlbumTrack { title: t.clone(), duration_secs: dur.unwrap_or(0.0) })
+        Some(AlbumTrack { title: t.clone(), duration_secs: dur.unwrap_or(0.0), artist: None })
     }).collect()).unwrap_or_default();
 
     tracing::info!("metal-api.dev resolved: album={:?}, year={:?}, tracks={}", album.name, year, album_tracks.len());
@@ -156,7 +156,7 @@ async fn try_local_proxy(artist: &str, title: &str, client: &reqwest::Client) ->
             let p: Vec<&str> = l.split(':').collect();
             if p.len() == 2 { Some(p[0].parse::<f64>().ok()? * 60.0 + p[1].parse::<f64>().ok()?) } else { None }
         }).unwrap_or(0.0);
-        Some(AlbumTrack { title: name.to_string(), duration_secs: dur })
+        Some(AlbumTrack { title: name.to_string(), duration_secs: dur, artist: None })
     }).collect();
 
     if album_tracks.is_empty() { return None; }
@@ -289,7 +289,7 @@ async fn try_direct_ma(artist: &str, title: &str) -> Option<ValidatedMetadata> {
                             Some(p[0].parse::<f64>().ok()? * 60.0 + p[1].parse::<f64>().ok()?)
                         } else { None }
                     } else { None };
-                    tracks.push(AlbumTrack { title, duration_secs: dur.unwrap_or(0.0) });
+                    tracks.push(AlbumTrack { title, duration_secs: dur.unwrap_or(0.0), artist: None });
                 }
             }
         }
