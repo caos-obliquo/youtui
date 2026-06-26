@@ -122,7 +122,16 @@ impl NotesPopup {
                 (AsyncTask::new_no_op(), None)
             }
             _ => {
+                let before_line = self.editor.cursor_line();
+                let before_mode = self.editor.mode.clone();
                 self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), event.modifiers.contains(KeyModifiers::CONTROL));
+                let after_line = self.editor.cursor_line();
+                if matches!(event.code, crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Char('k')) {
+                    tracing::info!(
+                        "notes j/k: before_line={}, after_line={}, mode={:?}, multiline={}",
+                        before_line, after_line, before_mode, self.editor.multiline
+                    );
+                }
                 (AsyncTask::new_no_op(), None)
             }
         }
