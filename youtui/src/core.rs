@@ -215,7 +215,7 @@ where
         where
             E: de::Error,
         {
-            Ok(FromStr::from_str(value).unwrap())
+            FromStr::from_str(value).map_err(|_| E::custom(format!("invalid value: {value}")))
         }
         fn visit_map<M>(self, map: M) -> std::result::Result<T, M::Error>
         where
