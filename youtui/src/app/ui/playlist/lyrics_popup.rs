@@ -1049,6 +1049,30 @@ impl LyricsPopup {
                         rendered_lines += frag_wrapped;
                         for expl_line in a.explanation.split('\n') {
                             if rendered_lines >= ann_visible { break; }
+                            let text_len = expl_line.len();
+                            let wrapped = if ann_width > 0 { (text_len + ann_width - 1) / ann_width } else { 1 };
+                            if rendered_lines + wrapped > ann_visible {
+                                // Partial last line: truncate to fit remaining space
+                                let remaining_lines = ann_visible.saturating_sub(rendered_lines);
+                                let visible_chars = ann_width.saturating_mul(remaining_lines);
+                                let truncated: String = expl_line.chars().take(visible_chars).collect();
+                                if !truncated.is_empty() {
+                                    let expl_style = if self.visual_mode
+                                        && self.focus == Focus::Annotations
+                                        && i >= self.ann_visual_start.min(self.ann_visual_end)
+                                        && i <= self.ann_visual_start.max(self.ann_visual_end)
+                                    {
+                                        Style::default().fg(Color::Black).bg(VISUAL_MODE_COLOUR)
+                                    } else {
+                                        Style::default().fg(Color::DarkGray)
+                                    };
+                                    ann_lines.push(ratatui::text::Line::from(
+                                        ratatui::text::Span::styled(truncated, expl_style),
+                                    ));
+                                }
+                                rendered_lines = ann_visible;
+                                break;
+                            }
                             let expl_style = if self.visual_mode
                                 && self.focus == Focus::Annotations
                                 && i >= self.ann_visual_start.min(self.ann_visual_end)
@@ -1065,8 +1089,6 @@ impl LyricsPopup {
                                 ),
                             ));
                             // Account for text wrapping: each ~ann_width chars adds a visual row
-                            let text_len = expl_line.len();
-                            let wrapped = if ann_width > 0 { (text_len + ann_width - 1) / ann_width } else { 1 };
                             rendered_lines += wrapped;
                         }
                         if rendered_lines < ann_visible {
