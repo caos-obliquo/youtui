@@ -9,6 +9,22 @@ mod querybuilder;
 
 pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
     let config = rt.config;
+    // Handle TestScrobble — not a YTM API command
+    match &cli.command {
+        Some(crate::Command::TestScrobble { artist, track, album, duration }) => {
+            use crate::app::scrobbler::{submit_scrobble, ScrobbleState};
+            use std::time::Duration;
+            let state = ScrobbleState::new(
+                artist.clone(),
+                track.clone(),
+                album.clone(),
+                Duration::from_secs(*duration),
+            );
+            submit_scrobble(&config.scrobbling, &state).await;
+            return Ok(());
+        }
+        _ => {}
+    }
     match cli {
         // TODO: Block this action using type system.
         Cli {

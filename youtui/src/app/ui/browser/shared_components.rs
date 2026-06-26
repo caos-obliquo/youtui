@@ -264,10 +264,9 @@ impl SearchBlock {
                     })
                     .unwrap_or_default(),
             );
-            self.replace_text(
-                self.search_suggestions[self.suggestions_cur.expect("Set to non-None value above")]
-                    .get_text(),
-            );
+            if let Some(cur) = self.suggestions_cur {
+                self.replace_text(self.search_suggestions[cur].get_text());
+            }
         }
     }
 }

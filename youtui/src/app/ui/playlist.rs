@@ -107,6 +107,8 @@ pub struct Playlist {
     category_filter: Option<&'static str>,
     romaji_mode: bool,
     pub scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
+    /// Guard: prevents duplicate scrobble submissions from overlapping progress updates
+    scrobble_pending: bool,
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
@@ -433,79 +435,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ForceSplitAlbum => {
-                let selected_idx = self.cur_selected;
-                let Some(song) = self.get_song_from_idx(selected_idx) else {
-                    self.last_error = Some("No song selected for force-split".into());
-                    return (AsyncTask::new_no_op(), None);
-                };
-                let video_raw = song.video_id.get_raw().to_string();
-                let parent = self.list.get_list_iter().enumerate()
-                    .find(|(_, s)| s.video_id.get_raw() == video_raw && s.track_no.is_none())
-                    .map(|(i, s)| (i, s.id));
-                let parent_id: ListSongID;
-                let parent_idx: usize;
-                if let Some((idx, pid)) = parent {
-                    parent_id = pid;
-                    parent_idx = idx;
-                    // Case 1: parent exists, remove all split tracks for this video_id
-                    let to_remove: Vec<usize> = self.list.get_list_iter().enumerate()
-                        .filter(|(_, t)| t.video_id.get_raw() == video_raw && t.track_no.is_some())
-                        .map(|(i, _)| i)
-                        .collect();
-                    for i in to_remove.into_iter().rev() {
-                        self.list.remove_at(i);
-                    }
-                } else {
-                    // Case 2: no parent (original was removed), use track 1 as new parent
-                    let t1_idx = self.list.get_list_iter().enumerate()
-                        .find(|(_, t)| t.video_id.get_raw() == video_raw && t.track_no == Some(1))
-                        .map(|(i, t)| (i, t.id));
-                    let Some((t1_idx, t1_id)) = t1_idx else {
-                        self.last_error = Some("No parent or track 1 found for force-split".into());
-                        return (AsyncTask::new_no_op(), None);
-                    };
-                    // Remove all split tracks except track 1
-                    let to_remove: Vec<usize> = self.list.get_list_iter().enumerate()
-                        .filter(|(i, t)| t.video_id.get_raw() == video_raw && t.track_no.is_some() && *i != t1_idx)
-                        .map(|(i, _)| i)
-                        .collect();
-                    for i in to_remove.into_iter().rev() {
-                        self.list.remove_at(i);
-                    }
-                    // Un-split track 1: clear track_no, start_offset
-                    if let Some(t) = self.list.get_list_iter_mut().nth(t1_idx) {
-                        t.track_no = None;
-                        t.start_offset = None;
-                    }
-                    parent_id = t1_id;
-                    parent_idx = t1_idx;
-                }
-                // Clear album state
-                self.album_tracks = None;
-                self.album_current_track = 0;
-                self.cur_selected = parent_idx;
-                // Extract artist+title from parent
-                let Some(p_song) = self.get_song_from_id(parent_id) else {
-                    self.last_error = Some("Parent song not found after re-indexing".into());
-                    return (AsyncTask::new_no_op(), None);
-                };
-                let artist = p_song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                let clean_title = p_song.title.clone();
-                if artist.is_empty() || clean_title.is_empty() {
-                    self.last_error = Some("Could not determine artist/title for re-validation".into());
-                    return (AsyncTask::new_no_op(), None);
-                }
-                let p_album = p_song.album.as_ref().map(|a| a.name.clone());
-                info!("Force-split: re-validating song {:?} (artist={:?}, title={:?}, album={:?})", parent_id, artist, clean_title, p_album);
-                let validation_task = AsyncTask::new_future_try(
-                    ValidateMetadata(artist, clean_title, parent_id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), p_album),
-                    HandleMetadataValidated(parent_id),
-                    HandleMetadataValidationError,
-                    None,
-                );
-                // Also trigger download for the parent song
-                let effect = self.download_upcoming_from_id(parent_id);
-                (effect.push(validation_task), None)
+                (self.handle_force_split(self.cur_selected), None)
             },
             PlaylistAction::PasteYanked => {
                 if !self.yank_buffer.is_empty() {
@@ -835,13 +765,14 @@ impl TableView for Playlist {
             .get_cur_playing_index()
             .and_then(|idx| self.actual_to_visual_index(idx));
 
-        (0..list_len).map(move |visual_i| {
+        let mut items = Vec::with_capacity(list_len);
+        for visual_i in 0..list_len {
             let actual_i = self.visual_to_actual_index(visual_i);
 
-            let ls = self
-                .list
-                .get_song_from_idx(actual_i)
-                .expect("BUG: Visual index mapping failed");
+            let Some(ls) = self.list.get_song_from_idx(actual_i) else {
+                error!("BUG: Visual index mapping failed for index {actual_i}");
+                continue;
+            };
 
             let first_field: Cow<'_, str> = if Some(visual_i) == cur_playing_visual {
                 match self.play_status {
@@ -856,7 +787,7 @@ impl TableView for Playlist {
                 Cow::Owned((visual_i + 1).to_string())
             };
 
-            iter::once(first_field).chain(ls.get_fields([
+            items.push(iter::once(first_field).chain(ls.get_fields([
                 ListSongDisplayableField::DownloadStatus,
                 ListSongDisplayableField::TrackNo,
                 ListSongDisplayableField::Artists,
@@ -864,8 +795,9 @@ impl TableView for Playlist {
                 ListSongDisplayableField::Song,
                 ListSongDisplayableField::Duration,
                 ListSongDisplayableField::Year,
-            ]))
-        })
+            ])));
+        }
+        items.into_iter()
     }
 
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
@@ -984,6 +916,7 @@ impl Playlist {
             romaji_mode: false,
             search_cur: 0,
             scrobble_state: None,
+            scrobble_pending: false,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
             romaji_originals: HashMap::new(),
             album_tracks: None,
@@ -1164,6 +1097,75 @@ impl Playlist {
         None
     }
 
+    /// Handle ForceSplitAlbum: find/reconstruct parent, clear split tracks, re-validate metadata.
+    fn handle_force_split(&mut self, selected_idx: usize) -> ComponentEffect<Self> {
+        let Some(song) = self.get_song_from_idx(selected_idx) else {
+            self.last_error = Some("No song selected for force-split".into());
+            return AsyncTask::new_no_op();
+        };
+        let video_raw = song.video_id.get_raw().to_string();
+        let parent = self.list.get_list_iter().enumerate()
+            .find(|(_, s)| s.video_id.get_raw() == video_raw && s.track_no.is_none())
+            .map(|(i, s)| (i, s.id));
+        let parent_id: ListSongID;
+        let parent_idx: usize;
+        if let Some((idx, pid)) = parent {
+            parent_id = pid;
+            parent_idx = idx;
+            let to_remove: Vec<usize> = self.list.get_list_iter().enumerate()
+                .filter(|(_, t)| t.video_id.get_raw() == video_raw && t.track_no.is_some())
+                .map(|(i, _)| i)
+                .collect();
+            for i in to_remove.into_iter().rev() {
+                self.list.remove_at(i);
+            }
+        } else {
+            let t1_idx = self.list.get_list_iter().enumerate()
+                .find(|(_, t)| t.video_id.get_raw() == video_raw && t.track_no == Some(1))
+                .map(|(i, t)| (i, t.id));
+            let Some((t1_idx, t1_id)) = t1_idx else {
+                self.last_error = Some("No parent or track 1 found for force-split".into());
+                return AsyncTask::new_no_op();
+            };
+            let to_remove: Vec<usize> = self.list.get_list_iter().enumerate()
+                .filter(|(i, t)| t.video_id.get_raw() == video_raw && t.track_no.is_some() && *i != t1_idx)
+                .map(|(i, _)| i)
+                .collect();
+            for i in to_remove.into_iter().rev() {
+                self.list.remove_at(i);
+            }
+            if let Some(t) = self.list.get_list_iter_mut().nth(t1_idx) {
+                t.track_no = None;
+                t.start_offset = None;
+            }
+            parent_id = t1_id;
+            parent_idx = t1_idx;
+        }
+        self.album_tracks = None;
+        self.album_current_track = 0;
+        self.cur_selected = parent_idx;
+        let Some(p_song) = self.get_song_from_id(parent_id) else {
+            self.last_error = Some("Parent song not found after re-indexing".into());
+            return AsyncTask::new_no_op();
+        };
+        let artist = p_song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+        let clean_title = p_song.title.clone();
+        if artist.is_empty() || clean_title.is_empty() {
+            self.last_error = Some("Could not determine artist/title for re-validation".into());
+            return AsyncTask::new_no_op();
+        }
+        let p_album = p_song.album.as_ref().map(|a| a.name.clone());
+        info!("Force-split: re-validating song {:?} (artist={:?}, title={:?}, album={:?})", parent_id, artist, clean_title, p_album);
+        let validation_task = AsyncTask::new_future_try(
+            ValidateMetadata(artist, clean_title, parent_id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), p_album),
+            HandleMetadataValidated(parent_id),
+            HandleMetadataValidationError,
+            None,
+        );
+        let effect = self.download_upcoming_from_id(parent_id);
+        effect.push(validation_task)
+    }
+
     pub fn update_song_info(&mut self, id: ListSongID, song: ListSong) {
         if let Some(idx) = self.get_index_from_id(id) {
             if let Some(existing) = self.list.get_list_iter_mut().nth(idx) {
@@ -1181,137 +1183,142 @@ impl Playlist {
         self.scrobbling_config = config;
     }
 
-    /// Clean song title for metadata lookup: strip artist prefix, noise tags, album metadata tags, year
-    fn clean_title_for_metadata(artist: &str, title: &str) -> String {
-        // Strip "{artist} - " prefix from title (case-insensitive) for clean metadata
-        let s = {
-            let lower = title.to_lowercase();
-            let art_lower = artist.to_lowercase();
-            if lower.starts_with(&format!("{} - ", art_lower)) {
-                title[artist.len() + 3..].trim().to_string()
-            } else if artist.len() >= 2 && lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
-                title[artist.len()..].trim().to_string()
-            } else {
-                title.to_string()
-            }
-        };
-        // Strip YouTube noise patterns from title end
-        let s = {
-            let noise_tags = [
-                "official audio", "official video", "lyric video", "lyrics",
-                "legendado", "c legendado", "c legenda", "com legenda",
-                "com legendado", "legendado pt", "legendado pt-br",
-                "subtitle", "subtitles",
-            ];
-            let mut s = s;
-            loop {
-                let lower = s.to_lowercase().trim().to_string();
-                let mut found = false;
-                for tag in &noise_tags {
-                    if let Some(pos) = lower.rfind(tag) {
-                        let before = &s[..pos].trim();
-                        let cut = if let Some(paren_start) = before.rfind('(') {
-                            let between = &before[paren_start..];
-                            if between.to_lowercase().contains(tag) {
-                                &before[..paren_start.max(1).saturating_sub(1)]
-                            } else {
-                                &s[..pos]
-                            }
+    /// Strip "{artist} - " prefix from title (case-insensitive) for clean metadata lookup
+    fn strip_artist_prefix(artist: &str, title: &str) -> String {
+        let lower = title.to_lowercase();
+        let art_lower = artist.to_lowercase();
+        if lower.starts_with(&format!("{} - ", art_lower)) {
+            title[artist.len() + 3..].trim().to_string()
+        } else if artist.len() >= 2 && lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
+            title[artist.len()..].trim().to_string()
+        } else {
+            title.to_string()
+        }
+    }
+
+    /// Strip YouTube noise patterns (official audio, lyrics, etc.) from title end
+    fn strip_youtube_noise(title: &str) -> String {
+        let noise_tags = [
+            "official audio", "official video", "lyric video", "lyrics",
+            "legendado", "c legendado", "c legenda", "com legenda",
+            "com legendado", "legendado pt", "legendado pt-br",
+            "subtitle", "subtitles",
+        ];
+        let mut s = title.to_string();
+        loop {
+            let lower = s.to_lowercase().trim().to_string();
+            let mut found = false;
+            for tag in &noise_tags {
+                if let Some(pos) = lower.rfind(tag) {
+                    let before = &s[..pos].trim();
+                    let cut = if let Some(paren_start) = before.rfind('(') {
+                        let between = &before[paren_start..];
+                        if between.to_lowercase().contains(tag) {
+                            &before[..paren_start.max(1).saturating_sub(1)]
                         } else {
                             &s[..pos]
-                        };
-                        if cut.len() < s.len() {
-                            s = cut.trim().to_string();
-                            found = true;
+                        }
+                    } else {
+                        &s[..pos]
+                    };
+                    if cut.len() < s.len() {
+                        s = cut.trim().to_string();
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if !found {
+                s = s.trim_end_matches(|c| c == '(').trim().to_string();
+                break;
+            }
+        }
+        s.trim().to_string()
+    }
+
+    /// Strip parenthesized/bracketed groups containing album metadata tags (album, ep, demo, etc.)
+    fn strip_album_metadata_tags(title: &str) -> String {
+        let mut s = title.to_string();
+        let tags = [
+            "studio album", "live album", "full-length album", "full-length",
+            "full album", "full ep", "full lp", "full demo", "full single",
+            "official album", "compilation", "bootleg", "anthology", "collection",
+            "self-titled", "self titled", "s/t",
+            "single", "demo", "ep", "lp", "album", "singles",
+        ];
+        loop {
+            let chars: Vec<char> = s.chars().collect();
+            let mut modified = false;
+            let mut i = 0;
+            while i < chars.len() {
+                if chars[i] == '(' || chars[i] == '[' {
+                    let open = i;
+                    let mut depth = 1;
+                    i += 1;
+                    while i < chars.len() && depth > 0 {
+                        if chars[i] == '(' || chars[i] == '[' { depth += 1; }
+                        else if chars[i] == ')' || chars[i] == ']' { depth -= 1; }
+                        i += 1;
+                    }
+                    if depth == 0 {
+                        let group: String = chars[open..i].iter().collect();
+                        let group_lower = group.to_lowercase();
+                        let group_tokens: Vec<&str> = group_lower
+                            .split(|c: char| !c.is_alphanumeric())
+                            .filter(|t| !t.is_empty())
+                            .collect();
+                        let has_tag = tags.iter().any(|tag| {
+                            let tag_tokens: Vec<&str> = tag.split_whitespace().collect();
+                            if tag_tokens.is_empty() { return false; }
+                            group_tokens.windows(tag_tokens.len())
+                                .any(|w| w == tag_tokens.as_slice())
+                        });
+                        if has_tag {
+                            let before: String = chars[..open].iter().collect();
+                            let after: String = chars[i..].iter().collect();
+                            s = format!("{}{}", before.trim(), after.trim()).trim().to_string();
+                            modified = true;
                             break;
                         }
                     }
-                }
-                if !found {
-                    s = s.trim_end_matches(|c| c == '(').trim().to_string();
-                    break;
-                }
-            }
-            s.trim().to_string()
-        };
-        // Strip parenthesized/bracketed groups containing album metadata tags
-        let s = {
-            let mut s = s;
-            let tags = [
-                "studio album", "live album", "full-length album", "full-length",
-                "full album", "full ep", "full lp", "full demo", "full single",
-                "official album", "compilation", "bootleg", "anthology", "collection",
-                "self-titled", "self titled", "s/t",
-                "single", "demo", "ep", "lp", "album", "singles",
-            ];
-            loop {
-                let chars: Vec<char> = s.chars().collect();
-                let mut modified = false;
-                let mut i = 0;
-                while i < chars.len() {
-                    if chars[i] == '(' || chars[i] == '[' {
-                        let open = i;
-                        let mut depth = 1;
-                        i += 1;
-                        while i < chars.len() && depth > 0 {
-                            if chars[i] == '(' || chars[i] == '[' { depth += 1; }
-                            else if chars[i] == ')' || chars[i] == ']' { depth -= 1; }
-                            i += 1;
-                        }
-                        if depth == 0 {
-                            let group: String = chars[open..i].iter().collect();
-                            let group_lower = group.to_lowercase();
-                            // Word-boundary tag match: split group into alphanumeric tokens,
-                            // check if any tag's tokens appear as consecutive word sequence
-                            let group_tokens: Vec<&str> = group_lower
-                                .split(|c: char| !c.is_alphanumeric())
-                                .filter(|t| !t.is_empty())
-                                .collect();
-                            let has_tag = tags.iter().any(|tag| {
-                                let tag_tokens: Vec<&str> = tag.split_whitespace().collect();
-                                if tag_tokens.is_empty() { return false; }
-                                group_tokens.windows(tag_tokens.len())
-                                    .any(|w| w == tag_tokens.as_slice())
-                            });
-                            if has_tag {
-                                let before: String = chars[..open].iter().collect();
-                                let after: String = chars[i..].iter().collect();
-                                s = format!("{}{}", before.trim(), after.trim()).trim().to_string();
-                                modified = true;
-                                break;
-                            }
-                        }
-                    } else {
-                        i += 1;
-                    }
-                }
-                if !modified { break; }
-            }
-            s.trim_end_matches(|c: char| c == '(' || c == '[' || c == '-' || c == ',' || c == '.')
-                .trim().to_string()
-        };
-        // Strip extracted year from title
-        let s = {
-            let lower = s.to_lowercase();
-            if let Some(paren) = lower.rfind("(") {
-                let inner = lower[paren..].trim_matches(|c| c == '(' || c == ')' || c == ' ');
-                if inner.split(|c: char| !c.is_ascii_digit())
-                    .find(|p| p.len() == 4)
-                    .and_then(|p| {
-                        let y = p.parse::<u16>().ok()?;
-                        if (1900..2100).contains(&y) { Some(y) } else { None }
-                    })
-                    .is_some()
-                {
-                    s[..paren].trim().to_string()
                 } else {
-                    s
+                    i += 1;
                 }
-            } else {
-                s
             }
-        };
-        s
+            if !modified { break; }
+        }
+        s.trim_end_matches(|c: char| c == '(' || c == '[' || c == '-' || c == ',' || c == '.')
+            .trim().to_string()
+    }
+
+    /// Strip extracted year from last parenthesized group in title
+    fn strip_year_from_title(title: &str) -> String {
+        let lower = title.to_lowercase();
+        if let Some(paren) = lower.rfind("(") {
+            let inner = lower[paren..].trim_matches(|c| c == '(' || c == ')' || c == ' ');
+            if inner.split(|c: char| !c.is_ascii_digit())
+                .find(|p| p.len() == 4)
+                .and_then(|p| {
+                    let y = p.parse::<u16>().ok()?;
+                    if (1900..2100).contains(&y) { Some(y) } else { None }
+                })
+                .is_some()
+            {
+                title[..paren].trim().to_string()
+            } else {
+                title.to_string()
+            }
+        } else {
+            title.to_string()
+        }
+    }
+
+    /// Clean song title for metadata lookup: strip artist prefix, noise tags, album metadata tags, year
+    fn clean_title_for_metadata(artist: &str, title: &str) -> String {
+        let s = Self::strip_artist_prefix(artist, title);
+        let s = Self::strip_youtube_noise(&s);
+        let s = Self::strip_album_metadata_tags(&s);
+        Self::strip_year_from_title(&s)
     }
 
     pub fn add_yt_video(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, url: &str) -> ComponentEffect<Self> {
@@ -1468,6 +1475,7 @@ impl Playlist {
             self.play_status = PlayState::Playing(id);
             self.queue_status = QueueState::NotQueued;
             if self.scrobbling_config.enabled {
+                self.scrobble_pending = false;
                 if let Some(old) = self.scrobble_state.take() {
                     if old.should_scrobble() {
                         let cfg = self.scrobbling_config.clone();
@@ -1712,44 +1720,36 @@ impl Playlist {
         self.volume.0 = new_vol.clamp(0, 100);
     }
 
+    /// Extract thumbnails from a song list and spawn download tasks.
+    /// Sets `song.album_art = AlbumArtState::None` for songs without thumbnails.
+    fn collect_thumbnail_tasks(song_list: &mut [ListSong]) -> ComponentEffect<Self> {
+        let albums = song_list.iter_mut().filter_map(|song| {
+            let thumb_url = song.thumbnails.as_ref().iter()
+                .max_by_key(|t| t.height * t.width)
+                .map(|t| t.url.clone());
+            let Some(thumb_url) = thumb_url else {
+                song.album_art = AlbumArtState::None;
+                return None;
+            };
+            let thumb_url = upgrade_thumbnail_url(&thumb_url);
+            let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
+            Some((thumbnail_id, thumb_url))
+        }).collect::<HashMap<SongThumbnailID, String>>();
+        albums.into_iter().map(|(thumbnail_id, thumbnail_url)| {
+            AsyncTask::new_future_try(
+                GetSongThumbnail { thumbnail_url, thumbnail_id: thumbnail_id.clone() },
+                HandleGetSongThumbnailOk,
+                HandleGetSongThumbnailError(thumbnail_id),
+                None,
+            )
+        }).collect()
+    }
+
     pub fn push_song_list(
         &mut self,
         mut song_list: Vec<ListSong>,
     ) -> (ListSongID, ComponentEffect<Self>) {
-        let get_largest_thumbnails_url = |thumbs: &Vec<Thumbnail>| {
-            thumbs
-                .iter()
-                .max_by_key(|thumbs| thumbs.height * thumbs.width)
-                .map(|thumb| thumb.url.clone())
-        };
-
-        let albums = song_list
-            .iter_mut()
-            .filter_map(|song| {
-                let Some(thumb_url) = get_largest_thumbnails_url(song.thumbnails.as_ref()) else {
-                    song.album_art = AlbumArtState::None;
-                    return None;
-                };
-                let thumb_url = upgrade_thumbnail_url(&thumb_url);
-                let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
-                Some((thumbnail_id, thumb_url))
-            })
-            .collect::<HashMap<SongThumbnailID, String>>();
-
-        let effect: ComponentEffect<Self> = albums
-            .into_iter()
-            .map(|(thumbnail_id, thumbnail_url)| {
-                AsyncTask::new_future_try(
-                    GetSongThumbnail {
-                        thumbnail_url,
-                        thumbnail_id: thumbnail_id.clone(),
-                    },
-                    HandleGetSongThumbnailOk,
-                    HandleGetSongThumbnailError(thumbnail_id),
-                    None,
-                )
-            })
-            .collect();
+        let effect = Self::collect_thumbnail_tasks(&mut song_list);
 
         let was_playing = self.get_cur_playing_id();
         let first_id = self.list.push_song_list(song_list);
@@ -1798,26 +1798,8 @@ impl Playlist {
         &mut self,
         mut song_list: Vec<ListSong>,
     ) -> (ListSongID, ComponentEffect<Self>) {
-        let get_largest_thumbnails_url = |thumbs: &Vec<Thumbnail>| {
-            thumbs.iter().max_by_key(|thumbs| thumbs.height * thumbs.width).map(|thumb| thumb.url.clone())
-        };
-        let albums = song_list.iter_mut().filter_map(|song| {
-            let Some(thumb_url) = get_largest_thumbnails_url(song.thumbnails.as_ref()) else {
-                song.album_art = AlbumArtState::None;
-                return None;
-            };
-            let thumb_url = upgrade_thumbnail_url(&thumb_url);
-            let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
-            Some((thumbnail_id, thumb_url))
-        }).collect::<HashMap<SongThumbnailID, String>>();
-        let effect: ComponentEffect<Self> = albums.into_iter().map(|(thumbnail_id, thumbnail_url)| {
-            AsyncTask::new_future_try(
-                GetSongThumbnail { thumbnail_url, thumbnail_id: thumbnail_id.clone() },
-                HandleGetSongThumbnailOk,
-                HandleGetSongThumbnailError(thumbnail_id),
-                None,
-            )
-        }).collect();
+        let effect = Self::collect_thumbnail_tasks(&mut song_list);
+
         let insert_pos = self.get_cur_playing_index().map(|i| i + 1).unwrap_or(0);
         let first_id = self.list.insert_song_list_at(song_list, insert_pos);
         if self.shuffle_enabled {
@@ -2299,6 +2281,7 @@ impl Playlist {
 
     pub fn stop(&mut self) -> ComponentEffect<Self> {
         if self.scrobbling_config.enabled {
+            self.scrobble_pending = false;
             if let Some(old) = self.scrobble_state.take() {
                 if old.should_scrobble() {
                     let cfg = self.scrobbling_config.clone();
@@ -2918,9 +2901,10 @@ impl Playlist {
         self.cur_played_dur = Some(capped);
 
         // Persistent scrobble: check on every progress update regardless of context
-        if self.scrobbling_config.enabled {
+        if self.scrobbling_config.enabled && !self.scrobble_pending {
             if let Some(ref state) = self.scrobble_state.clone() {
                 if state.should_scrobble() {
+                    self.scrobble_pending = true;
                     let cfg = self.scrobbling_config.clone();
                     let s = state.clone();
                     tokio::spawn(async move {
@@ -2928,6 +2912,7 @@ impl Playlist {
                     });
                     if let Some(s) = self.scrobble_state.as_mut() {
                         s.scrobbled = true;
+                        self.scrobble_pending = false;
                     }
                 }
             }
@@ -2972,12 +2957,10 @@ impl Playlist {
                                         None,
                                         Duration::from_secs_f64(track.duration_secs),
                                     );
-                                    if state.should_scrobble() {
-                                        let cfg2 = cfg.clone();
-                                        tokio::spawn(async move {
-                                            crate::app::scrobbler::submit_scrobble(&cfg2, &state).await;
-                                        });
-                                    }
+                                    let cfg2 = cfg.clone();
+                                    tokio::spawn(async move {
+                                        crate::app::scrobbler::submit_scrobble(&cfg2, &state).await;
+                                    });
                                     info!("Album track scrobbled: #{} {} ({})", scrobbled_idx + 1, track.title, track.duration_secs);
                                 }
                             }

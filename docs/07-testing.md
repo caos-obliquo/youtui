@@ -4,7 +4,7 @@
 
 | Suite | Command | Count | Notes |
 |-------|---------|-------|-------|
-| Main app | `cargo test --release -p youtui --bin youtui` | 136 pass + 4 ignore | Unit + integration |
+| Main app | `cargo test --release -p youtui --bin youtui` | 141 pass + 4 ignore | Unit + integration |
 | ViTextEditor | `cargo test --release -p vi-text-editor` | 65 | Unit + proptests |
 | ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 85 | All pass offline |
 | ytmapi-rs (full) | `cargo test --release -p ytmapi-rs` | 28 pass / 52 fail | Needs browser auth |
@@ -142,6 +142,36 @@ Every playlist mutation (delete, rename, edit, rate) must trigger library playli
 4. Test `j/k` navigation, `dd` delete (with `d` confirm), `J`/`K` reorder
 5. Test `:w` save, `:wq` save+quit, `:q` quit
 6. Test `:rename`, `:privacy`, `:rate` commands
+
+## Scrobbler Tests (5 tests, 2026-06-26)
+
+In `youtui/src/app/scrobbler.rs`:
+
+| Test | What it covers |
+|------|---------------|
+| `scrobble_state_timing` | Duration threshold (>=30s for scrobble) |
+| `session_key_used_for_signing` | Session_key from config passed to signer |
+| `signature_sorted_alphabetically` | params.sort_by() before HMAC signing |
+| `rate_limiting` | Debounce consecutive scrobbles (rate_limit_duration) |
+| `error_handling_bad_auth` | Invalid session_key returns ApiError |
+
+## CLI Test Tool
+
+```bash
+# Direct scrobble submission (bypasses UI)
+youtui test-scrobble --artist "Artist" --title "Song" --album "Album" --duration 180
+```
+
+Tests the full pipeline: session_key retrieval → HMAC signing → Last.fm API submission. Returns API response status + timing info.
+
+## Persistent Scrobble Cache
+
+- File: `~/.config/youtui/scrobble_cache.json`
+- Failed scrobbles saved with retry_count field
+- Retried on next youtui startup via `retry_failed_scrobbles()`
+- Max 3 retries per entry (dropped after 3 failures)
+
+## Ignored Tests (existing 4)
 
 ### Annotations/Lyrics Panel Focus Test
 

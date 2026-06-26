@@ -674,6 +674,9 @@ pub async fn command_to_query(
             )
             .await
         }
+        Command::TestScrobble { .. } => {
+            anyhow::bail!("TestScrobble is a standalone CLI command, not an API query")
+        }
     }
 }
 
