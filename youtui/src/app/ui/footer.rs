@@ -1,4 +1,5 @@
 use crate::app::structures::{AlbumArtState, PlayState};
+use tracing::warn;
 use crate::drawutils::{
     BUTTON_BG_COLOUR, BUTTON_FG_COLOUR, PROGRESS_BG_COLOUR, PROGRESS_FG_COLOUR, middle_of_rect,
 };
@@ -177,7 +178,10 @@ pub fn draw_footer(
     ) -> Option<ratatui_image::protocol::Protocol> {
         match terminal_image_capabilities.new_protocol(img, album_art_chunk, ratatui_image::Resize::Fit(None)) {
             Ok(p) => Some(p),
-            Err(_) => None,
+            Err(e) => {
+                warn!("new_protocol failed: {e}, album_art_chunk={album_art_chunk:?}");
+                None
+            }
         }
     }
     // Invalidate protocol cache when chunk dimensions change (terminal resize)
