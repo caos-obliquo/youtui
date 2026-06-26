@@ -1242,6 +1242,13 @@ impl YoutuiWindow {
         let (_, effect) = self.playlist.insert_next_song_list(song_list);
         effect.map_frontend(|this: &mut Self| &mut this.playlist)
     }
+    pub fn handle_queue_song(
+        &mut self,
+        song_list: Vec<ListSong>,
+    ) -> ComponentEffect<Self> {
+        let (_, effect) = self.playlist.push_song_list(song_list);
+        effect.map_frontend(|this: &mut Self| &mut this.playlist)
+    }
     fn global_handle_key_stack(&mut self) -> YoutuiEffect<Self> {
         match handle_key_stack(self.get_active_keybinds(&self.config), &self.key_stack) {
             KeyHandleAction::Action(a) => {

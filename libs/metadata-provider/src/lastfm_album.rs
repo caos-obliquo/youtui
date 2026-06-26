@@ -77,7 +77,7 @@ impl MetadataProvider for AlbumSearchProvider {
                     let duration_secs = util::extract_duration(
                         entry.get("duration").unwrap_or(&serde_json::Value::Null)
                     );
-                    album_tracks.push(AlbumTrack { title: t_title, duration_secs });
+                    album_tracks.push(AlbumTrack { title: t_title, duration_secs, artist: None });
                 }
                 let genres: Vec<String> = album_data
                     .get("toptags").and_then(|t| t.get("tag")).and_then(|t| t.as_array())

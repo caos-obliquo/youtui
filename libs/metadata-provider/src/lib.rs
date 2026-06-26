@@ -265,6 +265,7 @@ mod tests {
             album_tracks: (0..tracks).map(|i| AlbumTrack {
                 title: format!("Track {}", i + 1),
                 duration_secs: 100.0,
+                artist: None,
             }).collect(),
             ..Default::default()
         }
@@ -382,8 +383,8 @@ mod tests {
                 album: Some("Master of Puppets".into()),
                 year: Some("1986".into()),
                 album_tracks: vec![
-                    AlbumTrack { title: "Battery".into(), duration_secs: 500.0 },
-                    AlbumTrack { title: "Master of Puppets".into(), duration_secs: 515.0 },
+                    AlbumTrack { title: "Battery".into(), duration_secs: 500.0, artist: None },
+                    AlbumTrack { title: "Master of Puppets".into(), duration_secs: 515.0, artist: None },
                 ],
                 ..Default::default()
             }),
@@ -453,6 +454,7 @@ mod tests {
                 album_tracks: vec![AlbumTrack {
                     title: "Song".into(),
                     duration_secs: 200.0,
+                    artist: None,
                 }],
                 ..Default::default()
             }),

@@ -562,24 +562,20 @@ fn handle_album_split(
     data: &ValidatedMetadata,
     original_album: &Option<String>,
     original_title: &str,
-    video_dur: Option<f64>,
 ) -> Option<AsyncTask<Playlist, ArcServer, TaskMetadata>> {
-    let meta_total: f64 = data.album_tracks.iter()
-        .map(|t| t.duration_secs).sum();
-    let ratio_ok = match (video_dur, meta_total > 0.0) {
-        (Some(v), true) => v / meta_total >= 0.3,
-        _ => false,
-    };
-    let fallback_ok = has_album_indicator_tags(original_title);
-    if !ratio_ok && !fallback_ok {
-        info!("Album tracklist rejected: title={:?}, meta_total={:.0}s, video_dur={:.0}s, ratio={:.2}",
-            original_title, meta_total, video_dur.unwrap_or(0.0),
-            video_dur.map(|v| v / meta_total.max(1.0)).unwrap_or(0.0));
-        target.last_error = Some("Album split failed: duration mismatch, no album tags".to_string());
+    // Only split when the YouTube title contains album indicator tags
+    // (e.g. "Full Album", "Full EP"). Never split regular YTM tracks.
+    if !has_album_indicator_tags(original_title) {
+        info!("Album split rejected: title={:?} has no album indicator tags", original_title);
         return None;
     }
-    // Track title must appear in album tracklist (skip when ratio_ok)
-    if !ratio_ok && !data.album_tracks.is_empty() {
+    if data.album_tracks.len() < 2 {
+        info!("Album split rejected: only {} track(s) from provider", data.album_tracks.len());
+        target.last_error = Some("Album split failed: only 1 track in provider data".to_string());
+        return None;
+    }
+    // Track title must appear in album tracklist
+    if !data.album_tracks.is_empty() {
         let title_norm: String = original_title.to_lowercase().chars()
             .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
         let title_norm = title_norm.trim();
@@ -596,9 +592,6 @@ fn handle_album_split(
             target.last_error = Some("Album split failed: track not in provider tracklist".to_string());
             return None;
         }
-    }
-    if ratio_ok {
-        info!("Album tracklist accepted by duration ratio ({:.2} >= 0.3)", video_dur.unwrap_or(0.0) / meta_total.max(1.0));
     }
     // Filter out zero-duration tracks
     let valid_tracks: Vec<_> = data.album_tracks.iter()
@@ -657,24 +650,23 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
         match self {
             MetadataEffect::Validated(data, song_id) => {
                 // Step 1: Apply metadata fields to song (borrows song, not target)
-                let (original_album, original_title, video_dur) = if let Some(idx) = target.get_index_from_id(song_id) {
+                let (original_album, original_title) = if let Some(idx) = target.get_index_from_id(song_id) {
                     if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
                         let orig_album = apply_metadata_fields(song, &data);
                         let title = song.title.clone();
-                        let dur = song.actual_duration.map(|d| d.as_secs_f64());
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
-                        (orig_album, title, dur)
+                        (orig_album, title)
                     } else {
-                        (None, String::new(), None)
+                        (None, String::new())
                     }
                 } else {
-                    (None, String::new(), None)
+                    (None, String::new())
                 };
                 // Step 2: Album split decision (borrows target, song reference is dropped)
                 if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
                     if let Some(effect) = handle_album_split(
-                        target, song_id, &data, &original_album, &original_title, video_dur,
+                        target, song_id, &data, &original_album, &original_title,
                     ) {
                         return effect;
                     }

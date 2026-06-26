@@ -182,6 +182,7 @@ pub enum AppCallback {
     PlayPrev,
     ReloadConfig,
     InsertNext(Vec<ListSong>),
+    QueueSong(Vec<ListSong>),
     GetRelatedTracks(ytmapi_rs::common::VideoID<'static>),
     OpenPlaylistEditor {
         playlist_id: ytmapi_rs::common::PlaylistID<'static>,
@@ -464,6 +465,10 @@ impl Youtui {
             AppCallback::InsertNext(song_list) => self.task_manager.spawn_task(
                 &self.server,
                 self.window_state.handle_insert_next(song_list),
+            ),
+            AppCallback::QueueSong(song_list) => self.task_manager.spawn_task(
+                &self.server,
+                self.window_state.handle_queue_song(song_list),
             ),
             AppCallback::GetRelatedTracks(video_id) => {
                 use crate::app::server::GetRelatedTracks;

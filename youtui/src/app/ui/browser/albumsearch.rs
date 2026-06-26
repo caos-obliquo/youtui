@@ -424,6 +424,11 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
                     return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
                 }
             }
+            BrowserSongsAction::QueueSong => {
+                if let Some(song) = self.track_list.get_list_iter().nth(cur) {
+                    return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song.clone()])));
+                }
+            }
             BrowserSongsAction::ViewLyrics => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
                     let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");

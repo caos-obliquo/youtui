@@ -53,7 +53,7 @@ impl ConfigEditorPopup {
         Self { editor, config_path }
     }
 
-    pub fn mode_char(&self) -> &'static str {
+    pub fn mode_char(&self) -> Cow<'static, str> {
         self.editor.mode_char()
     }
 

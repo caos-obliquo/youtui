@@ -1,9 +1,11 @@
 /// Vi-mode text editor. Single-line or multiline.
-/// Modes: Normal, Insert, VisualLine, OperatorPending.
+/// Modes: Normal, Insert, VisualLine, VisualChar, VisualBlock, Search.
 /// Single-line: j/k = history nav, Enter = submit.
 /// Multiline: j/k = line up/down, Enter = newline, gg/G = first/last line.
+use std::borrow::Cow;
+
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum FindDir { Forward, Backward }
+pub enum FindDir { Forward, Backward }
 
 #[derive(Clone)]
 enum LastChange {
@@ -36,15 +38,17 @@ pub struct ViTextEditor {
     want_col: Option<usize>,
     surround_range: Option<(usize, usize)>,
     surround_pending: bool,
+    last_search: Option<(String, FindDir)>,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum ViMode {
     Normal,
     Insert,
     VisualLine,
     VisualChar,
     VisualBlock,
+    Search(FindDir, String), // (direction, query)
     OperatorPending(char),
     TextObjectPending(char, char), // (i/a, operator)
     SurroundAddPending(char), // (operator) — awaiting motion/text-object + char
@@ -84,6 +88,7 @@ impl ViTextEditor {
             want_col: None,
             surround_range: None,
             surround_pending: false,
+            last_search: None,
         }
     }
 
@@ -132,6 +137,14 @@ impl ViTextEditor {
         self.buffer[self.cursor..].find('\n')
             .map(|i| self.cursor + i)
             .unwrap_or(self.buffer.len())
+    }
+
+    fn line_first_non_whitespace(&self) -> usize {
+        let start = self.line_start();
+        let end = self.line_end();
+        let rest = &self.buffer[start..end];
+        let ws_count = rest.bytes().position(|b| b != b' ' && b != b'\t').unwrap_or(0);
+        start + ws_count
     }
 
     pub fn set_text(&mut self, text: &str) {
@@ -200,7 +213,13 @@ impl ViTextEditor {
                 if cur_col < line_text.len() {
                     result.push_str(&line_text[..cur_col]);
                     result.push_str(mark);
-                    result.push_str(&line_text[cur_col..]);
+                    // For block cursor, skip character under it (block replaces it)
+                    if mark == "\u{2588}" {
+                        let c = line_text[cur_col..].chars().next().unwrap();
+                        result.push_str(&line_text[cur_col + c.len_utf8()..]);
+                    } else {
+                        result.push_str(&line_text[cur_col..]);
+                    }
                 } else {
                     result.push_str(line_text);
                     result.push_str(mark);
@@ -213,17 +232,21 @@ impl ViTextEditor {
     }
 
     /// Get mode display string for header/footer
-    pub fn mode_char(&self) -> &'static str {
-        match self.mode {
-            ViMode::Normal => "[N]",
-            ViMode::Insert => "[I]",
-            ViMode::VisualLine => "[V]",
-            ViMode::VisualChar => "[v]",
-            ViMode::VisualBlock => "[VB]",
-            ViMode::OperatorPending(_) => "[OP]",
-            ViMode::TextObjectPending(_, _) => "[TO]",
-            ViMode::SurroundAddPending(_) => "[SA]",
-            ViMode::SurroundTargetChar(_) => "[ST]",
+    pub fn mode_char(&self) -> Cow<'static, str> {
+        match &self.mode {
+            ViMode::Normal => "[N]".into(),
+            ViMode::Insert => "[I]".into(),
+            ViMode::VisualLine => "[V]".into(),
+            ViMode::VisualChar => "[v]".into(),
+            ViMode::VisualBlock => "[VB]".into(),
+            ViMode::Search(dir, query) => {
+                let prefix = match dir { FindDir::Forward => '/', FindDir::Backward => '?' };
+                format!("[{}{}]", prefix, query).into()
+            }
+            ViMode::OperatorPending(_) => "[OP]".into(),
+            ViMode::TextObjectPending(_, _) => "[TO]".into(),
+            ViMode::SurroundAddPending(_) => "[SA]".into(),
+            ViMode::SurroundTargetChar(_) => "[ST]".into(),
         }
     }
 
@@ -247,6 +270,7 @@ impl ViTextEditor {
             ViMode::TextObjectPending(kind, op) => self.handle_text_object(key, kind, op),
             ViMode::SurroundAddPending(op) => self.handle_surround_add(key, op),
             ViMode::SurroundTargetChar(op) => self.handle_surround_target(key, op),
+            ViMode::Search(_, _) => self.handle_search(key),
         }
     }
 
@@ -329,10 +353,13 @@ impl ViTextEditor {
                 }
             }
             crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
-                self.cursor = 0;
+                self.cursor = self.line_start();
             }
             crossterm::event::KeyCode::Char('$') | crossterm::event::KeyCode::End => {
-                self.cursor = self.buffer.len();
+                self.cursor = self.line_end();
+            }
+            crossterm::event::KeyCode::Char('^') => {
+                self.cursor = self.line_first_non_whitespace();
             }
             crossterm::event::KeyCode::Char('w') => {
                 self.cursor = next_word_boundary(&self.buffer, self.cursor);
@@ -362,7 +389,7 @@ impl ViTextEditor {
         }
         false
     }
-
+    
     fn handle_visual_block(&mut self, key: crossterm::event::KeyCode) -> bool {
         match key {
             crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('v') => {
@@ -509,10 +536,13 @@ impl ViTextEditor {
                 }
             }
             crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
-                self.cursor = 0;
+                self.cursor = self.line_start();
             }
             crossterm::event::KeyCode::Char('$') | crossterm::event::KeyCode::End => {
-                self.cursor = self.buffer.len();
+                self.cursor = self.line_end();
+            }
+            crossterm::event::KeyCode::Char('^') => {
+                self.cursor = self.line_first_non_whitespace();
             }
             crossterm::event::KeyCode::Char('w') => {
                 self.cursor = next_word_boundary(&self.buffer, self.cursor);
@@ -593,6 +623,57 @@ impl ViTextEditor {
         false
     }
 
+    fn handle_search(&mut self, key: crossterm::event::KeyCode) -> bool {
+        match key {
+            crossterm::event::KeyCode::Esc => {
+                self.mode = ViMode::Normal;
+            }
+            crossterm::event::KeyCode::Enter => {
+                let (dir, query) = match &self.mode {
+                    ViMode::Search(d, q) => (*d, q.clone()),
+                    _ => return false,
+                };
+                if !query.is_empty() {
+                    let from = self.cursor;
+                    let pos = self.find_next(&query, from, dir == FindDir::Forward);
+                    if let Some(pos) = pos {
+                        self.cursor = pos;
+                    }
+                    self.last_search = Some((query, dir));
+                }
+                self.mode = ViMode::Normal;
+            }
+            crossterm::event::KeyCode::Backspace => {
+                if let ViMode::Search(_, ref mut query) = self.mode {
+                    query.pop();
+                }
+            }
+            crossterm::event::KeyCode::Char(c) => {
+                if let ViMode::Search(_, ref mut query) = self.mode {
+                    query.push(c);
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    fn find_next(&self, query: &str, from: usize, forward: bool) -> Option<usize> {
+        if query.is_empty() { return None; }
+        let buf = &self.buffer;
+        if forward {
+            if let Some(pos) = buf[from..].find(query) {
+                return Some(from + pos);
+            }
+            buf[..from].find(query)
+        } else {
+            if let Some(pos) = buf[..from].rfind(query) {
+                return Some(pos);
+            }
+            buf[from..].rfind(query).map(|pos| from + pos)
+        }
+    }
+
     fn handle_normal(&mut self, key: crossterm::event::KeyCode, _shift: bool, ctrl: bool) -> bool {
         match key {
             crossterm::event::KeyCode::Char('i') => {
@@ -619,7 +700,7 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Char('A') => {
                 self.insert_buffer.clear();
-                self.cursor = self.buffer.len();
+                self.cursor = self.line_end();
                 self.mode = ViMode::Insert;
             }
             crossterm::event::KeyCode::Char('o') if self.multiline => {
@@ -717,11 +798,15 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Char('0') | crossterm::event::KeyCode::Home => {
                 self.want_col = None;
-                self.cursor = 0;
+                self.cursor = self.line_start();
             }
             crossterm::event::KeyCode::Char('$') | crossterm::event::KeyCode::End => {
                 self.want_col = None;
                 self.cursor = self.buffer.len();
+            }
+            crossterm::event::KeyCode::Char('^') => {
+                self.want_col = None;
+                self.cursor = self.line_first_non_whitespace();
             }
             crossterm::event::KeyCode::Char('x') if ctrl => {
                 if let Some((start, end, new_str)) = switch_number(&self.buffer, self.cursor, -1) {
@@ -750,6 +835,27 @@ impl ViTextEditor {
                     let rev = match dir { FindDir::Forward => FindDir::Backward, FindDir::Backward => FindDir::Forward };
                     let pos = find_char(&self.buffer, self.cursor, ch, rev, till);
                     if pos < self.buffer.len() { self.cursor = pos; }
+                }
+            }
+            crossterm::event::KeyCode::Char('/') => {
+                self.mode = ViMode::Search(FindDir::Forward, String::new());
+            }
+            crossterm::event::KeyCode::Char('?') => {
+                self.mode = ViMode::Search(FindDir::Backward, String::new());
+            }
+            crossterm::event::KeyCode::Char('n') => {
+                if let Some((ref query, dir)) = self.last_search.clone() {
+                    if let Some(pos) = self.find_next(query, self.cursor, dir == FindDir::Forward) {
+                        self.cursor = pos;
+                    }
+                }
+            }
+            crossterm::event::KeyCode::Char('N') => {
+                if let Some((ref query, dir)) = self.last_search.clone() {
+                    let rev = match dir { FindDir::Forward => FindDir::Backward, FindDir::Backward => FindDir::Forward };
+                    if let Some(pos) = self.find_next(query, self.cursor, rev == FindDir::Forward) {
+                        self.cursor = pos;
+                    }
                 }
             }
             crossterm::event::KeyCode::Char('.') => {
@@ -1418,35 +1524,38 @@ impl ViTextEditor {
     }
 }
 
+fn is_word_char(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_'
+}
+
 fn end_of_word(text: &str, cursor: usize) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
     if cursor >= len { return len; }
     let mut pos = cursor;
-    // If at word start, move into the word first
-    if pos < len && bytes[pos] == b' ' {
-        while pos < len && bytes[pos] == b' ' { pos += 1; }
-    }
-    // Move to end of word
-    while pos < len && bytes[pos] != b' ' { pos += 1; }
-    if pos > cursor { pos - 1 } else { cursor }
+    // Skip spaces to next word
+    while pos < len && bytes[pos] == b' ' { pos += 1; }
+    if pos >= len { return len; }
+    // Determine type at this position
+    let is_word = is_word_char(bytes[pos]);
+    // Move to end of this group
+    while pos < len && is_word_char(bytes[pos]) == is_word { pos += 1; }
+    (pos - 1).max(cursor)
 }
 
 fn prev_word_boundary(text: &str, cursor: usize) -> usize {
     if cursor == 0 { return 0; }
     let bytes = text.as_bytes();
     let mut pos = cursor.saturating_sub(1);
-    // Skip current word
-    while pos > 0 && bytes[pos] != b' ' {
-        pos -= 1;
-    }
     // Skip spaces
-    while pos > 0 && bytes[pos] == b' ' {
-        pos -= 1;
-    }
-    // Go to start of word
-    while pos > 0 && bytes[pos - 1] != b' ' {
-        pos -= 1;
+    while pos > 0 && bytes[pos] == b' ' { pos -= 1; }
+    // Determine type at this position
+    let is_word = is_word_char(bytes[pos]);
+    // Skip backward through this group
+    while pos > 0 {
+        let next = pos - 1;
+        if bytes[next] == b' ' || is_word_char(bytes[next]) != is_word { break; }
+        pos = next;
     }
     pos
 }
@@ -1456,14 +1565,17 @@ fn next_word_boundary(text: &str, cursor: usize) -> usize {
     let len = bytes.len();
     if cursor >= len { return len; }
     let mut pos = cursor;
-    // Skip current word
-    while pos < len && bytes[pos] != b' ' {
-        pos += 1;
+    // If at space, skip to next non-space
+    if bytes[pos] == b' ' {
+        while pos < len && bytes[pos] == b' ' { pos += 1; }
+        return pos;
     }
+    // Determine current type
+    let is_word = is_word_char(bytes[pos]);
+    // Skip through this group
+    while pos < len && is_word_char(bytes[pos]) == is_word { pos += 1; }
     // Skip spaces
-    while pos < len && bytes[pos] == b' ' {
-        pos += 1;
-    }
+    while pos < len && bytes[pos] == b' ' { pos += 1; }
     pos
 }
 
@@ -1473,23 +1585,26 @@ fn current_word_range(text: &str, cursor: usize) -> (usize, usize) {
     }
     let bytes = text.as_bytes();
     let len = bytes.len();
-    // If at space, find surrounding spaces
+    // If at space, find surrounding space range
     if bytes[cursor] == b' ' {
-        // find word to the right
-        let start = cursor;
-        let end = next_word_boundary(text, cursor);
+        let mut start = cursor;
+        while start > 0 && bytes[start - 1] == b' ' { start -= 1; }
+        let mut end = cursor + 1;
+        while end < len && bytes[end] == b' ' { end += 1; }
         return (start, end);
     }
-    // Find start of current word
+    // Determine type at cursor
+    let is_word = is_word_char(bytes[cursor]);
+    // Find start of current group
     let mut start = cursor;
-    while start > 0 && bytes[start - 1] != b' ' {
-        start -= 1;
+    while start > 0 {
+        let prev = start - 1;
+        if bytes[prev] == b' ' || is_word_char(bytes[prev]) != is_word { break; }
+        start = prev;
     }
-    // Find end of current word
+    // Find end of current group
     let mut end = cursor + 1;
-    while end < len && bytes[end] != b' ' {
-        end += 1;
-    }
+    while end < len && is_word_char(bytes[end]) == is_word { end += 1; }
     (start, end)
 }
 
@@ -2209,6 +2324,47 @@ mod tests {
         e.handle_key(crossterm::event::KeyCode::Char('o'), false, false);
         assert_eq!(e.cursor, 0);
         assert_eq!(e.visual_start, 1);
+    }
+
+    #[test]
+    fn test_jk_multiline_navigation() {
+        let mut e = ViTextEditor::new_multiline();
+        e.set_text("line0\nline1\nline2\nline3\nline4");
+        e.mode = ViMode::Normal;
+        e.cursor = 0;
+        assert_eq!(e.cursor_line(), 0, "start at line 0");
+
+        // j moves down
+        e.handle_key(crossterm::event::KeyCode::Char('j'), false, false);
+        assert_eq!(e.cursor_line(), 1, "j to line 1");
+        e.handle_key(crossterm::event::KeyCode::Char('j'), false, false);
+        assert_eq!(e.cursor_line(), 2, "j to line 2");
+        e.handle_key(crossterm::event::KeyCode::Char('j'), false, false);
+        assert_eq!(e.cursor_line(), 3, "j to line 3");
+
+        // k moves up
+        e.handle_key(crossterm::event::KeyCode::Char('k'), false, false);
+        assert_eq!(e.cursor_line(), 2, "k to line 2");
+        e.handle_key(crossterm::event::KeyCode::Char('k'), false, false);
+        assert_eq!(e.cursor_line(), 1, "k to line 1");
+    }
+
+    #[test]
+    fn test_0_goes_to_line_start_multiline() {
+        let mut e = ViTextEditor::new_multiline();
+        e.set_text("line zero\nline one\nline two\nline three");
+        e.mode = ViMode::Normal;
+        // cursor at end of buffer
+        e.cursor = e.buffer.len();
+        assert_eq!(e.cursor_line(), 3, "starts on last line");
+
+        // 0 should go to start of last line, not buffer start
+        e.handle_key(crossterm::event::KeyCode::Char('0'), false, false);
+        assert_eq!(e.cursor_line(), 3, "still on last line");
+        assert!(e.cursor > 0, "cursor should NOT be at buffer start (0)");
+        assert!(e.cursor > e.buffer.rfind('\n').unwrap(), "cursor should be past last newline");
+        // cursor should be on 'line three'
+        assert_eq!(&e.buffer[e.cursor..], "line three", "cursor at start of 'line three'");
     }
 
     #[test]

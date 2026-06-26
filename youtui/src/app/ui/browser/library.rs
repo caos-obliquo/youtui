@@ -1452,6 +1452,11 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
                     }
                 }
+                BrowserSongsAction::QueueSong => {
+                    if let Some(song) = self.song_list.get_list_iter().nth(self.cur_selected) {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song.clone()])));
+                    }
+                }
                 BrowserSongsAction::GetRelatedTracks => {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
@@ -1551,6 +1556,13 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         let songs: Vec<_> = self.playlist_tracks.clone();
                         if !songs.is_empty() {
                             return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
+                        }
+                    }
+                }
+                BrowserSongsAction::QueueSong => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song.clone()])));
                         }
                     }
                 }

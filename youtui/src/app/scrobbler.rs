@@ -204,11 +204,30 @@ pub(crate) async fn submit_scrobble_inner(
     }
 }
 
-/// Submit a scrobble to Last.fm. On failure, saves to persistent cache for retry.
+/// Submit a scrobble to Last.fm. Always saves to persistent cache first, removes on success.
 pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) {
+    // Always queue to cache first (all pending scrobbles visible in cache)
+    save_failed_scrobble(state);
     match submit_scrobble_inner(config, state).await {
-        ScrobbleResult::Success => {},
-        _ => { save_failed_scrobble(state); },
+        ScrobbleResult::Success => {
+            // Remove from cache on success
+            if let Some(path) = scrobble_cache_path() {
+                let mut cache: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|s| serde_json::from_str(&s).ok())
+                    .unwrap_or_default();
+                cache.retain(|e| {
+                    e["artist"].as_str() != Some(&state.artist)
+                        || e["track"].as_str() != Some(&state.track)
+                        || e["timestamp"].as_u64()
+                            != Some(state.start_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs())
+                });
+                let _ = std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap_or_default());
+            }
+        }
+        _ => {
+            // save_failed_scrobble already saved it; retry_count stays 0 for next retry
+        }
     }
 }
 
