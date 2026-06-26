@@ -3,7 +3,7 @@
 Branch: `refactor/suckless`
 Goal: Clean, minimal, robust codebase aligned with suckless philosophy
 Baseline: 34.5k LOC, 69 files, 62 deps (youtui crate), 11 workspace members
-Results: **-630 lines**, 0 warnings, 141/141 tests pass (cherry-picked onto fix/scrobbler-signature)
+Results: **-630 lines**, 0 warnings, 161/161 tests pass (merged to main)
 
 ## Done
 
@@ -63,5 +63,5 @@ Replace `.expect()` and `.unwrap()` that can panic at runtime:
 
 ## Verification
 - `cargo build --release` — 0 warnings across workspace (all 11 crates)
-- `cargo test --release -p youtui --bin youtui` — 141 pass, 4 ignored
+- `cargo test --release -p youtui --bin youtui` — 161 pass, 4 ignored
 - Suckless refactoring adds 0 tests (refactors existing code only)

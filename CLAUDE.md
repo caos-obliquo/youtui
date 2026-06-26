@@ -32,7 +32,7 @@ If things break, rollback and re-apply one-by-one.
 - **Tmux integration**: Youtui status shown via `~/.local/bin/tmux-music` script (tmpfile-based IPC), tmux window icon via `tmux-nerd-font-window-name` plugin at `~/.config/tmux/tmux-nerd-font-window-name.yml`.
 - **Plain Unicode over Nerd Font**: Prefers combining Unicode characters (e.g., `♫⃠`) over Nerd Font glyphs for icons. Suckless-compatible. Exception: Nerd Font MDI icons for footer status (repeat/shuffle/heart) for visual clarity.
 - **Incremental testing**: Test one thing at a time. User validates each change before proceeding. No batch testing.
-- **Compact UI**: Minimal visual noise, information-dense layouts. Footer shows `Artist - Song - Album` in single line.
+- **Compact UI**: Minimal visual noise, information-dense layouts. Footer shows 2 lines: line 1 = playing indicator + `Artist - Song`, line 2 = album + status icons.
 - **Terminal**: foot (Wayland native). Sixel graphics support but DCS clear is unreliable. Design fallbacks.
 - **Docs are code**: CLAUDE.md, TODO.md, docs/ must stay current with every commit. Stale docs = bug.
 - **Dead code is liability**: Remove unused structs, methods, annotations on sight. Keep only what compiles and is wired.
@@ -49,11 +49,11 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 151 pass, 4 ignore
+cargo test --release -p youtui --bin youtui       # 161 pass, 4 ignore
 cargo test --release -p metadata-provider          # 47 pass
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
-cargo test --release -p ytmapi-rs                  # 28/52 auth (needs cookie)
+cargo test --release -p ytmapi-rs                  # 29/51 auth (needs cookie)
 cargo test --release -p genius-rs                  # 18 pass
 cargo test --release -p async-callback-manager     # 14 pass (3 lib + 11 integ)
 cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
@@ -61,7 +61,7 @@ cargo test --release -p ytmapi-cli                 # 7 pass
 cargo test --release -p lrclib-rs                  # 4 pass
 cargo test --release -p rym-genre-data             # 10 pass
 ```
-Total: **~403/403 pass, 0 fail, 4 ignored, 0 warnings** (151 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 403)
+Total: **~413/413 pass, 0 fail, 4 ignored, 0 warnings** (161 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 413)
 
 ## Warnings
 `cargo build --release` — **0 warnings across workspace** (all 11 crates clean).
@@ -86,8 +86,8 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## 11 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 151 |
-| `ytmapi-rs` | YT Music API client | 85 lib + 28/52 auth |
+| `youtui` | Main binary | 161 |
+| `ytmapi-rs` | YT Music API client | 85 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 65 |
 | `metadata-provider` | Metadata trait + impls | 47 |
 | `genius-rs` | Genius lyrics/annotations | 18 |
@@ -114,18 +114,18 @@ See `docs/` for full reference (4.1k lines, 31 files).
 | `youtui/src/app/ui/playlist.rs` | ~3104 | Queue, playback, album splitting, visual mode |
 | `youtui/src/app/ui/browser.rs` | ~1012 | Browser routing, 5-tab dispatch |
 | `youtui/src/app/ui/browser/draw.rs` | ~517 | All browser draw functions |
-| `youtui/src/app/ui/browser/library.rs` | ~2005 | Library (4th tab) with inline tracks view |
+| `youtui/src/app/ui/browser/library.rs` | ~2123 | Library (4th tab) with inline tracks view |
 | `youtui/src/app/ui/browser/albumsearch.rs` | ~731 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
 | `youtui/src/config/keymap.rs` | ~2142 | All keybindings by context |
-| `youtui/src/app/ui.rs` | ~1741 | Main window, event routing |
+| `youtui/src/app/ui.rs` | ~1779 | Main window, event routing |
 | `libs/metadata-provider/` | 47 tests | Metadata trait + 6 provider impls + genre_map |
 | `youtui/src/app/ui/playlist/notes_popup.rs` | ~254 | Vim-driven notes text editor |
 | `youtui/src/app/ui/playlist/playlist_editor_popup.rs` | ~748 | Playlist editor (nvim-driven, overwrite save) |
 | `youtui/src/app/ui/playlist/album_art_popup.rs` | ~54 | Album art sixel popup w/ pagination |
 | `youtui/src/app/ui/playlist/config_editor_popup.rs` | ~153 | Config file editor |
 | `youtui/src/app/ui/playlist/lyrics_popup.rs` | ~1210 | Lyrics + annotations display |
-| `youtui/src/app/ui/footer.rs` | ~257 | Footer: progress, metadata, heart icon, album art |
-| `youtui/src/app/ui/playlist/effect_handlers_playlist.rs` | ~1302 | ValidateMetadata, overwrite save chain handlers |
+| `youtui/src/app/ui/footer.rs` | ~275 | Footer: progress, metadata, heart icon, album art |
+| `youtui/src/app/ui/playlist/effect_handlers_playlist.rs` | ~1174 | ValidateMetadata, overwrite save chain handlers |
 
 ## Playlist Features Status
 All CRUD wired: Create, Delete, Rename, Edit details, Edit privacy, Add/Remove items, Reorder (swap), Rate, Get details, Get tracks, Library playlists, Batch-merge.
@@ -230,7 +230,7 @@ See `docs/09-roadmap.md` for detailed session history.
 
 ## Known Issues
 - **Genius lyrics**: `find_and_fetch` slug URL fails for songs with parenthetical/bracketed title extras (e.g., "(Japanese Bonus Track)"). Simplified slug fallback added but may not match all cases.
-- **Auth tests**: 52 ytmapi-rs integration tests need cookie file.
+- **Auth tests**: 51 ytmapi-rs integration tests need cookie file.
 - **Metal-API (metal-api.dev)**: Approved REST API for Metal Archives. Currently returns 500 errors (backend crash). Provider code is written but API must be back online.
 - **Year metadata**: Some tracks still show `None` for year when no metadata provider returns a year and album name has no year string. Fallback extracts from album name `(YYYY)`.
 - **MA_COOKIE**: `cf_clearance` cookie from Metal Archives expires ~30 min. Must be refreshed manually via browser DevTools > Application > Cookies. The `metal-proxy` crate has been removed from workspace (backend API returns 500).
@@ -238,7 +238,9 @@ See `docs/09-roadmap.md` for detailed session history.
 - **Playlist editor modified check**: `Esc`/`:q` warns on unsaved changes. `:q!` force-quits.
 - **Sixel album art**: Belt-and-suspenders clear on close fixed in af0acb8. Sixel cleared via `\x1bP0p\x1b\\` DCS clear at start of every draw, plus offset tracking via `sixel_rect` for proper area management.
 - **Scrobbler rate limit**: Rescrobbled systemd service double-submits scrobbles. Must stop/disable rescrobbled before using native scrobbler. `sudo systemctl stop --user rescrobbled && sudo systemctl disable --user rescrobbled`.
-- **Scrobble cache**: Persistent retry file at `~/.config/youtui/scrobble_cache.json`. Failed scrobbles saved to disk with retry count; retried on next youtui startup.
+- **Scrobble cache**: Persistent retry file at `~/.config/youtui/scrobble_cache.json`. Failed scrobbles saved to disk with retry count (max 3). Retried on startup + background 5-min loop. Rate limit stops retries to avoid hammering.
+- **Protocol cache (chunk dimensions)**: `cached_album_chunk` tracks image chunk dimensions in footer. `chunk_changed` comparison prevents 8-bit fallback on terminal resize (PR #8).
+- **o.v zero-pixel guard**: Zero-width/height `in_mem_image` shows 'No image data' instead of attempting to render empty sixel (PR #9).
 
 ## Scrobbler Integration
 
@@ -253,14 +255,19 @@ See `docs/09-roadmap.md` for detailed session history.
 - File: `~/.config/youtui/scrobble_cache.json` — JSON array of failed scrobble payloads
 - `save_failed_scrobble()` — writes failed submission to disk with retry_count field
 - `retry_failed_scrobbles()` — called on YoutuiWindow::new() startup; retries cached failures
-- `remove_cached_scrobble()` — removes entry after successful retry
+- `remove_cached_scrobble()` — removes entry after successful retry (`#[allow(dead_code)]`, used only in tests)
 - Max retries: 3 per entry (incremented each attempt, entries dropped after 3 failures)
+- Max cache size: 200 entries (oldest evicted when exceeded)
+- `ScrobbleResult` enum: `Success`, `Failure(String)`, `RateLimited` — rate limit stops retry loop
+- Background retry: 5-minute interval loop in main event loop, retries cached failures continuously until cleared or rate limited
 
 ### CLI Scrobble Test Tool
 - `youtui test-scrobble` — direct scrobble submission command
 - Usage: `youtui test-scrobble --artist "Artist" --title "Song" --album "Album" --duration 180`
+- Prints full params + API response + timing info
 - Tests the full scrobble pipeline: session_key retrieval, HMAC signing, Last.fm API submission
-- Returns API response status + timing info
+
+
 
 ## Remaining Items (Detailed)
 ### Blocked: Cross-platform clipboard
@@ -358,5 +365,5 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 141/141 pass, 4 ignored, 0 warnings across workspace
+- 161/161 pass, 4 ignored, 0 warnings across workspace
 - Suckless refactoring adds 0 tests (refactors existing code only)

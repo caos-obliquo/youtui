@@ -2950,10 +2950,12 @@ impl Playlist {
                                     let artist = self.get_cur_playing_song()
                                         .map(|s| s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "))
                                         .unwrap_or_default();
+                                    let album = self.get_cur_playing_song()
+                                        .and_then(|s| s.album.as_ref().map(|a| a.name.clone()));
                                     let state = crate::app::scrobbler::ScrobbleState::new(
                                         artist,
                                         track.title.clone(),
-                                        None,
+                                        album,
                                         Duration::from_secs_f64(track.duration_secs),
                                     );
                                     let cfg2 = cfg.clone();
