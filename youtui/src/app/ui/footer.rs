@@ -102,7 +102,6 @@ pub fn draw_footer(
         if w.playlist.scrobble_state.is_some() { " [Scrobble]" } else { " [s]" }
     } else { "" };
     let album_art = cur_active_song.map(|s| &s.album_art);
-    let last_art = w.last_album_art.clone();
     let heart = cur_active_song.map(|s| like_icon(s.like_status.clone())).unwrap_or("");
     let bar = Gauge::default()
         .label(bar_str)
@@ -142,62 +141,73 @@ pub fn draw_footer(
         Constraint::Length(1),
         Constraint::Min(0),
     ]).areas(block_inner);
+    fn render_album_protocol(
+        f: &mut Frame,
+        w: &mut super::YoutuiWindow,
+        album_art_chunk: Rect,
+        protocol: &ratatui_image::protocol::Protocol,
+    ) {
+        f.render_widget(Image::new(protocol), album_art_chunk);
+        w.sixel_rect = Some(album_art_chunk);
+        if let ratatui_image::protocol::Protocol::Sixel(sixel) = protocol {
+            w.sixel_data = Some(sixel.data.clone());
+        } else {
+            w.sixel_data = None;
+        }
+    }
+    fn encode_album_protocol(
+        album_art_chunk: Rect,
+        img: image::DynamicImage,
+        terminal_image_capabilities: &Picker,
+    ) -> Option<ratatui_image::protocol::Protocol> {
+        match terminal_image_capabilities.new_protocol(img, album_art_chunk, ratatui_image::Resize::Fit(None)) {
+            Ok(p) => Some(p),
+            Err(_) => None,
+        }
+    }
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
+            let art_changed = w.last_album_art.as_ref()
+                .map_or(true, |last| !std::rc::Rc::ptr_eq(last, album_art));
             w.last_album_art = Some(album_art.clone());
-            let image = terminal_image_capabilities.new_protocol(
-                album_art.in_mem_image.clone(),
-                album_art_chunk,
-                ratatui_image::Resize::Fit(None),
-            );
-            match image {
-                Ok(protocol) => {
-                    f.render_widget(Image::new(&protocol), album_art_chunk);
-                    w.sixel_rect = Some(album_art_chunk);
-                    if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
-                        w.sixel_data = Some(sixel.data.clone());
-                    } else {
-                        w.sixel_data = None;
-                    }
-                }
-                Err(_) => {
+            if art_changed || w.cached_album_protocol.is_none() {
+                if let Some(protocol) = encode_album_protocol(
+                    album_art_chunk, album_art.in_mem_image.clone(), terminal_image_capabilities,
+                ) {
+                    w.cached_album_protocol = Some(protocol.clone());
+                    render_album_protocol(f, w, album_art_chunk, &protocol);
+                } else {
                     w.sixel_data = None;
-                    let fallback_album_widget = Paragraph::new("").centered();
-                    f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
+                    f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
                 }
+            } else if let Some(protocol) = w.cached_album_protocol.take() {
+                render_album_protocol(f, w, album_art_chunk, &protocol);
+                w.cached_album_protocol = Some(protocol);
+            } else {
+                w.sixel_data = None;
             }
         }
         Some(AlbumArtState::Error) => {
             w.sixel_data = None;
-            let fallback_album_widget = Paragraph::new("").centered();
-            f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
+            w.cached_album_protocol = None;
+            f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
         }
         _ => {
             w.sixel_data = None;
-            if let Some(last) = &last_art {
-                let image = terminal_image_capabilities.new_protocol(
-                    last.in_mem_image.clone(),
-                    album_art_chunk,
-                    ratatui_image::Resize::Fit(None),
-                );
-                match image {
-                    Ok(protocol) => {
-                        f.render_widget(Image::new(&protocol), album_art_chunk);
-                        w.sixel_rect = Some(album_art_chunk);
-                        if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
-                            w.sixel_data = Some(sixel.data.clone());
-                        } else {
-                            w.sixel_data = None;
-                        }
-                    }
-                    Err(_) => {
-                        let fallback_album_widget = Paragraph::new("").centered();
-                        f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
-                    }
+            if let Some(cached) = w.cached_album_protocol.take() {
+                render_album_protocol(f, w, album_art_chunk, &cached);
+                w.cached_album_protocol = Some(cached);
+            } else if let Some(ref last) = w.last_album_art {
+                if let Some(protocol) = encode_album_protocol(
+                    album_art_chunk, last.in_mem_image.clone(), terminal_image_capabilities,
+                ) {
+                    w.cached_album_protocol = Some(protocol.clone());
+                    render_album_protocol(f, w, album_art_chunk, &protocol);
+                } else {
+                    f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
                 }
             } else {
-                let fallback_album_widget = Paragraph::new(" ").centered();
-                f.render_widget(fallback_album_widget, middle_of_rect(album_art_chunk));
+                f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
             }
         }
     };

@@ -29,6 +29,7 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
 use std::borrow::Cow;
 use std::rc::Rc;
 use std::time::Duration;
+use std::time::Instant;
 use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID, AlbumID};
 
 #[derive(Debug)]
@@ -89,6 +90,11 @@ pub struct Youtui {
     /// font size / kitty protocal etc. This
     terminal_image_capabilities: Picker,
     rescrobbled_process: Option<tokio::process::Child>,
+    /// Render throttle: only redraw when needed, max ~30fps
+    needs_redraw: bool,
+    render_interval: tokio::time::Interval,
+    /// Debounce rapid Enter-spam on play actions
+    last_play_time: Option<Instant>,
 }
 
 #[derive(PartialEq)]
@@ -270,6 +276,9 @@ impl Youtui {
             media_controls,
             terminal_image_capabilities,
             rescrobbled_process,
+            needs_redraw: false,
+            render_interval: tokio::time::interval(Duration::from_millis(33)),
+            last_play_time: None,
         })
     }
     fn spawn_rescrobbled(config: &crate::config::Config) -> Option<tokio::process::Child> {
@@ -312,23 +321,29 @@ impl Youtui {
                     tokio::select! {
                         Some(event) = self.event_handler.next() => {
                             self.handle_event(event).await;
+                            self.needs_redraw = true;
                         }
                         Some(outcome) = self.task_manager.get_next_response() => {
                             self.handle_effect(outcome);
+                            self.needs_redraw = true;
                         }
-                    }
-                    self.terminal.draw(|f| {
-                        ui::draw::draw_app(
-                            f,
-                            &mut self.window_state,
-                            &self.terminal_image_capabilities,
-                        );
-                    })?;
-                    if is_tmux { self.flush_sixel()?; }
-                    if let Some(media_controls) = &mut self.media_controls {
-                        media_controls.update_controls(
-                            ui::draw_media_controls::draw_app_media_controls(&self.window_state),
-                        )?;
+                        _ = self.render_interval.tick() => {
+                            if std::mem::take(&mut self.needs_redraw) {
+                                self.terminal.draw(|f| {
+                                    ui::draw::draw_app(
+                                        f,
+                                        &mut self.window_state,
+                                        &self.terminal_image_capabilities,
+                                    );
+                                })?;
+                                if is_tmux { self.flush_sixel()?; }
+                                if let Some(media_controls) = &mut self.media_controls {
+                                    media_controls.update_controls(
+                                        ui::draw_media_controls::draw_app_media_controls(&self.window_state),
+                                    )?;
+                                }
+                            }
+                        }
                     }
                 }
                 AppStatus::Exiting(s) => {
@@ -421,11 +436,21 @@ impl Youtui {
                 &self.server,
                 self.window_state.handle_add_songs_to_playlist(song_list),
             ),
-            AppCallback::AddSongsToPlaylistAndPlay(song_list) => self.task_manager.spawn_task(
-                &self.server,
-                self.window_state
-                    .handle_add_songs_to_playlist_and_play(song_list),
-            ),
+            AppCallback::AddSongsToPlaylistAndPlay(song_list) => {
+                // Debounce: ignore if last play was < 300ms ago
+                if let Some(t) = self.last_play_time
+                    && t.elapsed() < Duration::from_millis(300)
+                {
+                    info!("Debouncing rapid play event");
+                    return;
+                }
+                self.last_play_time = Some(Instant::now());
+                self.task_manager.spawn_task(
+                    &self.server,
+                    self.window_state
+                        .handle_add_songs_to_playlist_and_play(song_list),
+                );
+            }
             AppCallback::InsertNext(song_list) => self.task_manager.spawn_task(
                 &self.server,
                 self.window_state.handle_insert_next(song_list),

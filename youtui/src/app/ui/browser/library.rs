@@ -1145,43 +1145,62 @@ impl AdvancedTableView for LibraryBrowser {
         &self.active_sort().sort_commands
     }
     fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
-        let cols: Vec<Vec<Cow<'_, str>>> = if self.show_playlist_tracks {
-            let fields = Self::tracks_subcolumns_of_vec();
-            self.get_tracks_filtered_list_iter()
-                .map(|ls| ls.get_fields(fields).to_vec())
-                .collect()
+        let fields = Self::tracks_subcolumns_of_vec();
+        let iter: Box<dyn Iterator<Item = Box<dyn Iterator<Item = Cow<'_, str>> + '_>> + '_> = if self.show_playlist_tracks {
+            Box::new(self.get_tracks_filtered_list_iter().map(move |ls| {
+                let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
+                    Box::new(ls.get_fields(fields).into_iter());
+                v
+            }))
         } else {
             match self.category {
                 LibraryCategory::LikedSongs => {
                     let fields = Self::liked_songs_subcolumns_of_vec();
-                    self.get_liked_songs_filtered_iter()
-                        .map(|ls| ls.get_fields(fields).to_vec())
-                        .collect()
+                    Box::new(self.get_liked_songs_filtered_iter().map(move |ls| {
+                        let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
+                            Box::new(ls.get_fields(fields).into_iter());
+                        v
+                    }))
                 }
-                LibraryCategory::Playlists => self.get_playlists_filtered_iter()
-                    .map(|(i, pl)| vec![
-                        Cow::<'_, str>::Owned((i + 1).to_string()),
-                        Cow::Borrowed(pl.title.as_str()),
-                        Cow::Borrowed(pl.tracks.as_str()),
-                        Cow::Borrowed(pl.author.as_str()),
-                    ]).collect(),
-                LibraryCategory::Artists => self.get_artists_filtered_iter()
-                    .map(|(i, a)| vec![
-                        Cow::<'_, str>::Owned((i + 1).to_string()),
-                        Cow::Borrowed(a.artist.as_str()),
-                        Cow::Borrowed(a.byline.as_str()),
-                    ]).collect(),
-                LibraryCategory::Albums => self.get_albums_filtered_iter()
-                    .map(|(i, a)| vec![
-                        Cow::<'_, str>::Owned((i + 1).to_string()),
-                        Cow::Borrowed(a.artist.as_str()),
-                        Cow::Borrowed(a.title.as_str()),
-                        Cow::Borrowed(a.year.as_str()),
-                        Cow::<'_, str>::Owned(format!("{:?}", a.album_type)),
-                    ]).collect(),
+                LibraryCategory::Playlists => Box::new(self.get_playlists_filtered_iter().map(|(i, pl)| {
+                    let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(
+                        [
+                            Cow::Owned((i + 1).to_string()),
+                            Cow::Borrowed(pl.title.as_str()),
+                            Cow::Borrowed(pl.tracks.as_str()),
+                            Cow::Borrowed(pl.author.as_str()),
+                        ]
+                        .into_iter(),
+                    );
+                    v
+                })),
+                LibraryCategory::Artists => Box::new(self.get_artists_filtered_iter().map(|(i, a)| {
+                    let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(
+                        [
+                            Cow::Owned((i + 1).to_string()),
+                            Cow::Borrowed(a.artist.as_str()),
+                            Cow::Borrowed(a.byline.as_str()),
+                        ]
+                        .into_iter(),
+                    );
+                    v
+                })),
+                LibraryCategory::Albums => Box::new(self.get_albums_filtered_iter().map(|(i, a)| {
+                    let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(
+                        [
+                            Cow::Owned((i + 1).to_string()),
+                            Cow::Borrowed(a.artist.as_str()),
+                            Cow::Borrowed(a.title.as_str()),
+                            Cow::Borrowed(a.year.as_str()),
+                            Cow::Owned(format!("{:?}", a.album_type)),
+                        ]
+                        .into_iter(),
+                    );
+                    v
+                })),
             }
         };
-        cols.into_iter().map(|v| v.into_iter())
+        iter
     }
     fn get_filterable_columns(&self) -> &[usize] {
         if self.show_playlist_tracks {

@@ -5,6 +5,7 @@ use crate::app::view::draw::{draw_panel_mut_impl, draw_table_impl};
 use crate::app::view::{BasicConstraint, Drawable, DrawableMut};
 use crate::drawutils::{SELECTED_BORDER_COLOUR, TEXT_COLOUR, left_bottom_corner_rect};
 use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
+use std::borrow::Cow;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::Rect;
@@ -339,23 +340,15 @@ fn draw_popup(f: &mut Frame, w: &YoutuiWindow, chunk: Rect) {
 /// Draw the help page. The help page should show all visible commands for the
 /// current page.
 fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
-    // XXX: Probably don't need to map then fold,
-    // just fold.
-    //
-    // XXX: Fold closure could be written as a function, then becomes
-    // testable.
-    let (mut s_len, mut c_len, mut d_len, items) = w
-        .get_help_list_items()
-        .into_iter()
-        .map(
-            |DisplayableKeyAction {
-                 keybinds,
-                 context,
-                 description,
-             }| (keybinds.len(), context.len(), description.len()),
-        )
-        .fold((0, 0, 0, 0), |(smax, cmax, dmax, n), (s, c, d)| {
-            (smax.max(s), cmax.max(c), dmax.max(d), n + 1)
+    let items: Vec<[String; 3]> = w.get_help_list_items().into_iter()
+        .map(|a| [a.keybinds.into_owned(), a.context.into_owned(), a.description.into_owned()])
+        .collect();
+    let items_count = items.len();
+    let (mut s_len, mut c_len, mut d_len) = items
+        .iter()
+        .map(|[k, c, d]| (k.len(), c.len(), d.len()))
+        .fold((0, 0, 0), |(smax, cmax, dmax), (s, c, d)| {
+            (smax.max(s), cmax.max(c), dmax.max(d))
         });
     // Ensure the width of each column is at least as wide as header.
     (s_len, c_len, d_len) = (s_len.max(3), c_len.max(7), d_len.max(7));
@@ -363,10 +356,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
     let width = s_len + c_len + d_len + 4;
     // Total block height required, including header, borders, and reference footer.
     const REF_LINES: u16 = 3;
-    let height = items + 3 + REF_LINES as usize;
-    // Naive implementation
-    // XXX: We're running get_help_list_items a second time here.
-    // Better to move to the fold above.
+    let height = items_count + 3 + REF_LINES as usize;
     let table_constraints = [
         BasicConstraint::Length(s_len.try_into().unwrap_or(u16::MAX)),
         BasicConstraint::Length(c_len.try_into().unwrap_or(u16::MAX)),
@@ -380,6 +370,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
     );
     f.render_widget(Clear, area);
     let cur_tick = w.tick;
+    let items_ref = &items;
     draw_panel_mut_impl(
         f,
         w,
@@ -392,12 +383,8 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
                 Constraint::Length(REF_LINES),
             ])
             .areas(chunk);
-            let commands_table = t.get_help_list_items().into_iter().map(
-                |DisplayableKeyAction {
-                     keybinds,
-                     context,
-                     description,
-                 }| { [keybinds, context, description].into_iter() },
+            let commands_table = items_ref.iter().map(
+                |[k, c, d]| { [Cow::Borrowed(k.as_str()), Cow::Borrowed(c.as_str()), Cow::Borrowed(d.as_str())].into_iter() },
             );
             let (new_state, effect) = draw_table_impl(
                 f,
@@ -407,7 +394,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
                 None,
                 &t.help.widget_state,
                 commands_table,
-                items,
+                items_count,
                 &table_constraints,
                 headings,
                 None,

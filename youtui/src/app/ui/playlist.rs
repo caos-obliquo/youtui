@@ -2723,6 +2723,9 @@ impl Playlist {
 
     fn cancel_all_downloads(&self) {
         let mut downloads = self.active_downloads.lock().unwrap();
+        for (_, task) in downloads.iter() {
+            task.cancel_token.cancel();
+        }
         downloads.clear();
     }
 
