@@ -165,7 +165,8 @@ where
                         // cancelled.
                         tokio::spawn(async {
                             info!("Refreshing oauth token");
-                            let tok = api_locked.refresh_token().await?.expect("Expected to be able to refresh token if I got an OAuthTokenExpired error");
+                            let tok = api_locked.refresh_token().await?
+                                .ok_or_else(|| anyhow::anyhow!("refresh_token returned None after OAuthTokenExpired"))?;
                             info!("Oauth token refreshed");
                             if let Err(e) = update_oauth_token_file(tok).await {
                                 error!("Error updating locally saved oauth token: <{e}>")
@@ -223,7 +224,7 @@ where
                         tokio::spawn(async {
                             info!("Refreshing oauth token");
                             let tok = api_locked.refresh_token().await?
-                                .expect("Expected to be able to refresh token");
+                                .ok_or_else(|| anyhow::anyhow!("refresh_token returned None after OAuthTokenExpired"))?;
                             info!("Oauth token refreshed");
                             if let Err(e) = update_oauth_token_file(tok).await {
                                 error!("Error updating locally saved oauth token: <{e}>")

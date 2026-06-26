@@ -835,13 +835,14 @@ impl TableView for Playlist {
             .get_cur_playing_index()
             .and_then(|idx| self.actual_to_visual_index(idx));
 
-        (0..list_len).map(move |visual_i| {
+        let mut items = Vec::with_capacity(list_len);
+        for visual_i in 0..list_len {
             let actual_i = self.visual_to_actual_index(visual_i);
 
-            let ls = self
-                .list
-                .get_song_from_idx(actual_i)
-                .expect("BUG: Visual index mapping failed");
+            let Some(ls) = self.list.get_song_from_idx(actual_i) else {
+                error!("BUG: Visual index mapping failed for index {actual_i}");
+                continue;
+            };
 
             let first_field: Cow<'_, str> = if Some(visual_i) == cur_playing_visual {
                 match self.play_status {
@@ -856,7 +857,7 @@ impl TableView for Playlist {
                 Cow::Owned((visual_i + 1).to_string())
             };
 
-            iter::once(first_field).chain(ls.get_fields([
+            items.push(iter::once(first_field).chain(ls.get_fields([
                 ListSongDisplayableField::DownloadStatus,
                 ListSongDisplayableField::TrackNo,
                 ListSongDisplayableField::Artists,
@@ -864,8 +865,9 @@ impl TableView for Playlist {
                 ListSongDisplayableField::Song,
                 ListSongDisplayableField::Duration,
                 ListSongDisplayableField::Year,
-            ]))
-        })
+            ])));
+        }
+        items.into_iter()
     }
 
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
