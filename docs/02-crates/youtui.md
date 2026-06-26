@@ -1,6 +1,6 @@
 # Crate: youtui
 
-**29,356 LOC, 73 files** — main application crate.
+**~35k LOC, 71 files** — main application crate.
 
 ## Module Tree
 
@@ -9,7 +9,6 @@ youtui/src/
 ├── main.rs                 — Entry point, CLI parsing, Youtui::run()
 ├── app.rs                  — Youtui struct, AppCallback enum, event loop
 ├── appevent.rs             — EventHandler, Crossterm event stream
-├── async_rodio_sink.rs     — Audio playback via rodio + symphonia
 ├── core.rs                 — Temp file management, file cleanup
 ├── drawutils.rs            — Rect math, alignment helpers
 ├── keyaction.rs            — KeyActionTree, DisplayableKeyAction
@@ -56,21 +55,12 @@ youtui/src/
     │
     ├── server/
     │   ├── mod.rs          — Server struct
-    │   ├── messages.rs     — ALL BackendTask impls (~1280 lines)
-    │   ├── api.rs          — HTTP client setup
+    │   ├── messages.rs     — ALL BackendTask impls (~1598 lines)
+    │   ├── api.rs          — HTTP client + token refresh
     │   ├── api_error_handler.rs
-    │   ├── player.rs       — Audio decode + playback pipeline
+    │   ├── player.rs       — Audio decode + ffmpeg extraction
     │   ├── song_downloader.rs — Download semaphore + validation
-    │   ├── song_thumbnail_downloader.rs — Album art fetch
-    │   └── providers/
-    │       ├── mod.rs      — MetadataProvider trait
-    │       ├── discogs.rs  — Discogs API (no auth)
-    │       ├── genius.rs   — Genius API (metadata only)
-    │       ├── lastfm_album.rs
-    │       ├── lastfm_track.rs
-    │       ├── musicbrainz.rs
-    │       ├── overrides.rs— Manual metadata overrides file
-    │       └── util.rs     — norm_for_lfm, helpers
+    │   └── song_thumbnail_downloader.rs — Album art fetch
     │
     └── ui/
         ├── mod.rs          — YoutuiWindow, HelpMenu, context routing
@@ -100,7 +90,7 @@ youtui/src/
         │   └── mod.rs      — Component macros
         │
         └── playlist/
-            ├── mod.rs      — Playlist struct (~2440 lines)
+            ├── mod.rs      — Playlist struct (~3104 lines)
             ├── effect_handlers.rs — Effect handler re-exports
             ├── effect_handlers_playlist.rs — Playlist-specific effects
             ├── lyrics_popup.rs

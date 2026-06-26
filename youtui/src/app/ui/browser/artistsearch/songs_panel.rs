@@ -128,7 +128,7 @@ impl AlbumSongsPanel {
         Ok(())
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
-        let filter_text = self.local_filter_text.clone();
+        let filter_text = &self.local_filter_text;
         self.list.get_list_iter().filter(move |ls| {
             if let Some(cat) = self.category_filter {
                 let album_name = ls.album.as_ref().map(|a| a.name.as_str()).unwrap_or("");

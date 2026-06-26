@@ -207,6 +207,7 @@ pub fn draw_table_impl<'a>(
         .secondary_highlight_row(if visual_range.is_some() { None } else { secondary_highlighted_row })
         .min_ticker_gap(6)
         .max_times_to_scroll(Some(MAX_TIMES_TO_SCROLL_LIST))
+        .total_items(len)
         .column_spacing(1);
     let scrollable_lines = len.saturating_sub(table_height);
     let pos = state.offset().min(scrollable_lines);

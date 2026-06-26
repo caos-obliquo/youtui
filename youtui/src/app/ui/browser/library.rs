@@ -8,7 +8,7 @@ use crate::app::structures::{AlbumOrUploadAlbumID, ListSongAlbum};
 
 use crate::app::server::{
     GetAllLibrarySongs, GetAllLibraryPlaylists, GetAllLibraryArtists, GetAllLibraryAlbums,
-    GetPlaylistTracks,
+    GetPlaylistTracks, EnrichFromMetadataCache,
 };
 use crate::app::structures::{
     BrowserSongsList, ListSong, ListSongArtist, ListSongDisplayableField, ListStatus, MaybeRc,
@@ -27,9 +27,11 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus};
+use std::rc::Rc;
+use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus, ArtistChannelID};
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
+use ytmapi_rs::query::GetLibrarySortOrder;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum LibraryCategory {
@@ -96,6 +98,7 @@ pub enum BrowserLibraryAction {
     ActivateSelected,
     DismissTracks,
     ReloadCategory,
+    CycleSortOrder,
 }
 
 impl Action for BrowserLibraryAction {
@@ -106,11 +109,12 @@ impl Action for BrowserLibraryAction {
         match self {
             BrowserLibraryAction::SwitchToNextCategory => "Next category",
             BrowserLibraryAction::SwitchToPrevCategory => "Previous category",
-            BrowserLibraryAction::FocusContent => "Focus content panel",
-            BrowserLibraryAction::FocusCategory => "Focus category list",
-            BrowserLibraryAction::ActivateSelected => "Activate selected",
-            BrowserLibraryAction::DismissTracks => "Go back from tracks",
-            BrowserLibraryAction::ReloadCategory => "Reload category",
+            BrowserLibraryAction::FocusContent => "Focus tracks panel",
+            BrowserLibraryAction::FocusCategory => "Focus categories",
+            BrowserLibraryAction::ActivateSelected => "Open selected",
+            BrowserLibraryAction::DismissTracks => "Back from tracks",
+            BrowserLibraryAction::ReloadCategory => "Refresh category",
+            BrowserLibraryAction::CycleSortOrder => "Sort: A-Z / Z-A / Recent",
         }
         .into()
     }
@@ -119,9 +123,9 @@ impl Action for BrowserLibraryAction {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LibraryEffect {
     SongsLoaded(Vec<ListSong>),
+    SongsEnriched(Vec<(usize, Option<String>, Vec<String>, Vec<String>)>),
     PlaylistsLoaded(Vec<LibraryPlaylist>),
-    #[allow(dead_code)]
-    PlaylistTracksLoaded(Vec<ListSong>),
+
     ArtistsLoaded(Vec<LibraryArtist>),
     AlbumsLoaded(Vec<SearchResultAlbum>),
     RemoveItemsSuccess,
@@ -141,6 +145,19 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
         match self {
             LibraryEffect::SongsLoaded(songs) => {
                 info!(count = %songs.len(), "Liked songs loaded");
+                // Build enrichment data BEFORE consuming songs
+                let enrich_data: Vec<(usize, String, String, Option<String>)> = songs.iter().enumerate()
+                    .filter_map(|(i, s)| {
+                        let artist: String = s.artists.iter()
+                            .map(|a| a.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        let album = s.album.as_ref().map(|a| a.as_ref().name.clone());
+                        if artist.is_empty() { None } else { Some((i, artist, s.title.clone(), album)) }
+                    })
+                    .collect();
+                let has_enrich = !enrich_data.is_empty();
+
                 target.loading = false;
                 target.error = None;
                 target.songs_fetched = true;
@@ -150,6 +167,23 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 target.cur_selected = 0;
                 target.widget_state = Default::default();
                 target.input_routing = InputRouting::Content;
+
+                if has_enrich {
+                    return AsyncTask::new_future_try(
+                        EnrichFromMetadataCache(enrich_data),
+                        HandleEnrichFromCacheOk,
+                        HandleEnrichFromCacheErr,
+                        None,
+                    );
+                }
+            }
+            LibraryEffect::SongsEnriched(results) => {
+                let count = results.len();
+                for (idx, year, genres, styles) in results {
+                    let year_rc = year.map(Rc::new);
+                    target.song_list.update_song_at(idx, year_rc, genres, styles);
+                }
+                info!(count = %count, "Library songs enriched from cache");
             }
             LibraryEffect::PlaylistsLoaded(playlists) => {
                 info!(count = %playlists.len(), "Library playlists loaded");
@@ -161,15 +195,6 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 target.input_routing = InputRouting::Content;
                 // show_playlist_tracks preserved across refreshes
                 // Only DismissTracks action closes it
-            }
-            LibraryEffect::PlaylistTracksLoaded(songs) => {
-                info!(count = %songs.len(), "Playlist tracks loaded");
-                target.loading = false;
-                target.error = None;
-                target.playlist_tracks = songs;
-                target.playlist_tracks_selected = 0;
-                target.show_playlist_tracks = true;
-                target.input_routing = InputRouting::Content;
             }
             LibraryEffect::ArtistsLoaded(artists) => {
                 info!(count = %artists.len(), "Library artists loaded");
@@ -243,10 +268,22 @@ pub struct HandleLibraryRemoveItemsErr;
 pub struct HandleLibraryReorderItemsOk;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandleLibraryReorderItemsErr;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandleEnrichFromCacheOk;
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HandleEnrichFromCacheErr;
 
 impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrowser, |_, raw: Vec<TableListSong>| {
     let songs: Vec<ListSong> = raw.into_iter().map(|ts| {
         use crate::app::structures::ListSongID;
+        use crate::app::structures::ListSongArtist;
+        use crate::app::structures::ArtistOrUploadArtistID;
+        use ytmapi_rs::common::AlbumID;
+        // YTM library song has no year field — extract from album name parenthetical
+        let year = ts.album.name.split('(').last()
+            .and_then(|s| s.get(..4))
+            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+            .map(|y| std::rc::Rc::new(y.to_string()));
         ListSong {
             video_id: ts.video_id,
             track_no: None,
@@ -258,16 +295,19 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
             duration_string: ts.duration,
             actual_duration: None,
             start_offset: None,
-            year: None,
+            year,
             genres: Vec::new(),
             styles: Vec::new(),
             album_art: AlbumArtState::None,
             artists: MaybeRc::Owned(ts.artists.into_iter().map(|a| ListSongArtist {
                 name: a.name,
-                id: None,
+                id: a.id.map(ArtistOrUploadArtistID::Artist),
             }).collect()),
             thumbnails: MaybeRc::Owned(ts.thumbnails),
-            album: None,
+            album: Some(MaybeRc::Owned(ListSongAlbum {
+                name: ts.album.name,
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw(ts.album.id.get_raw().to_string())),
+            })),
             like_status: ts.like_status,
         }
     }).collect();
@@ -369,6 +409,13 @@ impl_youtui_task_handler!(HandleLibraryReorderItemsOk, (), LibraryBrowser, |_, _
 impl_youtui_task_handler!(HandleLibraryReorderItemsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     LibraryEffect::ReorderItemsError(err.to_string())
 });
+impl_youtui_task_handler!(HandleEnrichFromCacheOk, Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, LibraryBrowser, |_, results: Vec<(usize, Option<String>, Vec<String>, Vec<String>)>| {
+    LibraryEffect::SongsEnriched(results)
+});
+impl_youtui_task_handler!(HandleEnrichFromCacheErr, anyhow::Error, LibraryBrowser, |_, _: anyhow::Error| {
+    info!("Cache enrichment failed (non-critical): no metadata will be shown in library");
+    LibraryEffect::LoadError(String::new()) // silent, no UI error
+});
 
 pub struct LibraryBrowser {
     pub input_routing: InputRouting,
@@ -392,12 +439,22 @@ pub struct LibraryBrowser {
     pub tracks_filter: FilterManager,
     pub tracks_visual_mode: bool,
     pub tracks_visual_start: usize,
+    // Playlists table state (category list, not tracks subview)
+    pub playlists_widget_state: ScrollingTableState,
+    pub playlists_sort: SortManager,
+    pub playlists_filter: FilterManager,
     // Artists state
     pub artist_data: Vec<LibraryArtist>,
     pub artist_selected: usize,
+    pub artists_widget_state: ScrollingTableState,
+    pub artists_sort: SortManager,
+    pub artists_filter: FilterManager,
     // Albums state
     pub album_data: Vec<SearchResultAlbum>,
     pub album_selected: usize,
+    pub albums_widget_state: ScrollingTableState,
+    pub albums_sort: SortManager,
+    pub albums_filter: FilterManager,
     // Loading
     pub loading: bool,
     pub error: Option<String>,
@@ -411,6 +468,8 @@ pub struct LibraryBrowser {
     pub search: SearchBlock,
     pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
     pub local_filter_text: String,
+    pub sort_order: GetLibrarySortOrder,
+    pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
 }
 
 impl LibraryBrowser {
@@ -435,10 +494,19 @@ impl LibraryBrowser {
             tracks_filter: Default::default(),
             tracks_visual_mode: false,
             tracks_visual_start: 0,
+            playlists_widget_state: Default::default(),
+            playlists_sort: SortManager::new(),
+            playlists_filter: Default::default(),
             artist_data: Default::default(),
             artist_selected: 0,
+            artists_widget_state: Default::default(),
+            artists_sort: SortManager::new(),
+            artists_filter: Default::default(),
             album_data: Default::default(),
             album_selected: 0,
+            albums_widget_state: Default::default(),
+            albums_sort: SortManager::new(),
+            albums_filter: Default::default(),
             loading: false,
             error: None,
             songs_fetched: false,
@@ -449,6 +517,8 @@ impl LibraryBrowser {
             search: SearchBlock::default(),
             cur_playing_video_id: None,
             local_filter_text: String::new(),
+            sort_order: GetLibrarySortOrder::Default,
+            subscribed_artists: HashSet::new(),
         }
     }
 
@@ -462,13 +532,14 @@ impl LibraryBrowser {
                     return AsyncTask::new_no_op();
                 }
                 self.loading = true;
-                AsyncTask::new_future_try(
-                    GetAllLibrarySongs,
+                let task = AsyncTask::new_future_try(
+                    GetAllLibrarySongs { sort_order: self.sort_order.clone() },
                     HandleLibrarySongsOk,
                     HandleLibrarySongsErr,
                     None,
                 )
-                .map_frontend(|this: &mut Self| this)
+                .map_frontend(|this: &mut Self| this);
+                task
             }
             LibraryCategory::Playlists => {
                 if self.playlists_fetched {
@@ -489,7 +560,7 @@ impl LibraryBrowser {
                 }
                 self.loading = true;
                 AsyncTask::new_future_try(
-                    GetAllLibraryArtists,
+                    GetAllLibraryArtists { sort_order: self.sort_order.clone() },
                     HandleLibraryArtistsOk,
                     HandleLibraryArtistsErr,
                     None,
@@ -502,7 +573,7 @@ impl LibraryBrowser {
                 }
                 self.loading = true;
                 AsyncTask::new_future_try(
-                    GetAllLibraryAlbums,
+                    GetAllLibraryAlbums { sort_order: self.sort_order.clone() },
                     HandleLibraryAlbumsOk,
                     HandleLibraryAlbumsErr,
                     None,
@@ -571,18 +642,6 @@ impl LibraryBrowser {
         (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(songs)))
     }
 
-    #[allow(dead_code)]
-    pub fn load_selected_playlist(&self) -> (AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>, Option<AppCallback>) {
-        if self.category != LibraryCategory::Playlists {
-            return (AsyncTask::new_no_op(), None);
-        }
-        let Some(pl) = self.playlist_data.get(self.playlist_selected) else {
-            return (AsyncTask::new_no_op(), None);
-        };
-        debug!(playlist = %pl.title, "Library: loading playlist");
-        (AsyncTask::new_no_op(), Some(AppCallback::LoadPlaylistFromPopup(pl.playlist_id.clone())))
-    }
-
     pub fn fetch_playlist_tracks(&mut self) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
         let Some(pl) = self.playlist_data.get(self.playlist_selected).cloned() else {
             return AsyncTask::new_no_op();
@@ -631,8 +690,10 @@ impl LibraryBrowser {
                 self.input_routing = InputRouting::Content;
                 // Apply filter using the search text
                 let lower = text.to_lowercase();
-                if !lower.is_empty() && self.category == LibraryCategory::Playlists {
-                    self.playlist_data.retain(|p| p.title.to_lowercase().contains(&lower));
+                if !lower.is_empty() {
+                    self.local_filter_text = text.clone();
+                } else {
+                    self.local_filter_text.clear();
                 }
             }
         }
@@ -647,19 +708,11 @@ impl LibraryBrowser {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn search_text(&self) -> &str {
-        self.search.search_contents.get_text()
-    }
-    #[allow(dead_code)]
-    pub fn is_search_active(&self) -> bool {
-        self.search_active
-    }
 }
 
-// -- Tracks table view --
+// -- Table view helpers for all categories --
 impl LibraryBrowser {
-    pub fn tracks_subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
+    pub fn liked_songs_subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
         [
             ListSongDisplayableField::TrackNo,
             ListSongDisplayableField::Artists,
@@ -670,8 +723,62 @@ impl LibraryBrowser {
         ]
     }
 
+    pub fn tracks_subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
+        Self::liked_songs_subcolumns_of_vec()
+    }
+
+    /// Returns the currently active sort/filter manager for the active category.
+    fn active_sort(&self) -> &SortManager {
+        if self.show_playlist_tracks {
+            &self.tracks_sort
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &self.sort,
+                LibraryCategory::Playlists => &self.playlists_sort,
+                LibraryCategory::Artists => &self.artists_sort,
+                LibraryCategory::Albums => &self.albums_sort,
+            }
+        }
+    }
+    fn active_sort_mut(&mut self) -> &mut SortManager {
+        if self.show_playlist_tracks {
+            &mut self.tracks_sort
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &mut self.sort,
+                LibraryCategory::Playlists => &mut self.playlists_sort,
+                LibraryCategory::Artists => &mut self.artists_sort,
+                LibraryCategory::Albums => &mut self.albums_sort,
+            }
+        }
+    }
+    fn active_filter(&self) -> &FilterManager {
+        if self.show_playlist_tracks {
+            &self.tracks_filter
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &self.filter,
+                LibraryCategory::Playlists => &self.playlists_filter,
+                LibraryCategory::Artists => &self.artists_filter,
+                LibraryCategory::Albums => &self.albums_filter,
+            }
+        }
+    }
+    fn active_filter_mut(&mut self) -> &mut FilterManager {
+        if self.show_playlist_tracks {
+            &mut self.tracks_filter
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &mut self.filter,
+                LibraryCategory::Playlists => &mut self.playlists_filter,
+                LibraryCategory::Artists => &mut self.artists_filter,
+                LibraryCategory::Albums => &mut self.albums_filter,
+            }
+        }
+    }
+
     pub fn get_tracks_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
-        let filter_text = self.local_filter_text.clone();
+        let filter_text = &self.local_filter_text;
         self.playlist_tracks.iter().filter(move |ls| {
             if filter_text.is_empty() {
                 return true;
@@ -684,40 +791,205 @@ impl LibraryBrowser {
                 || fuzzy_match(&filter_text, &artist).is_some()
         })
     }
+
+    fn get_liked_songs_filtered_iter(&self) -> impl Iterator<Item = &ListSong> {
+        let ft = &self.local_filter_text;
+        self.song_list.get_list_iter().filter(move |ls| {
+            if ft.is_empty() { return true; }
+            let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
+            let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
+            let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
+            fuzzy_match(&ft, &title).is_some()
+                || fuzzy_match(&ft, &album).is_some()
+                || fuzzy_match(&ft, &artist).is_some()
+        })
+    }
+
+    fn get_playlists_filtered_iter(&self) -> impl Iterator<Item = (usize, &LibraryPlaylist)> {
+        let ft = self.local_filter_text.to_lowercase();
+        self.playlist_data.iter().enumerate().filter(move |(_, pl)| {
+            ft.is_empty() || pl.title.to_lowercase().contains(&ft)
+        })
+    }
+
+    fn get_artists_filtered_iter(&self) -> impl Iterator<Item = (usize, &LibraryArtist)> {
+        let ft = self.local_filter_text.to_lowercase();
+        self.artist_data.iter().enumerate().filter(move |(_, a)| {
+            ft.is_empty() || a.artist.to_lowercase().contains(&ft)
+        })
+    }
+
+    fn get_albums_filtered_iter(&self) -> impl Iterator<Item = (usize, &SearchResultAlbum)> {
+        let ft = self.local_filter_text.to_lowercase();
+        self.album_data.iter().enumerate().filter(move |(_, a)| {
+            ft.is_empty()
+                || a.artist.to_lowercase().contains(&ft)
+                || a.title.to_lowercase().contains(&ft)
+        })
+    }
+
+    // -- Column builders (allocates per frame; acceptable for library dataset sizes) --
+
+    fn build_liked_songs_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
+        let fields = Self::liked_songs_subcolumns_of_vec();
+        self.song_list.get_list_iter()
+            .map(|ls| ls.get_fields(fields).to_vec())
+            .collect()
+    }
+
+    fn build_playlist_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
+        self.playlist_data.iter().enumerate().map(|(i, pl)| {
+            vec![
+                Cow::<'_, str>::Owned((i + 1).to_string()),
+                Cow::Borrowed(pl.title.as_str()),
+                Cow::Borrowed(pl.tracks.as_str()),
+                Cow::Borrowed(pl.author.as_str()),
+            ]
+        }).collect()
+    }
+
+    fn build_artist_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
+        self.artist_data.iter().enumerate().map(|(i, a)| {
+            vec![
+                Cow::<'_, str>::Owned((i + 1).to_string()),
+                Cow::Borrowed(a.artist.as_str()),
+                Cow::Borrowed(a.byline.as_str()),
+            ]
+        }).collect()
+    }
+
+    fn build_album_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
+        self.album_data.iter().enumerate().map(|(i, a)| {
+            vec![
+                Cow::<'_, str>::Owned((i + 1).to_string()),
+                Cow::Borrowed(a.artist.as_str()),
+                Cow::Borrowed(a.title.as_str()),
+                Cow::Borrowed(a.year.as_str()),
+                Cow::<'_, str>::Owned(format!("{:?}", a.album_type)),
+            ]
+        }).collect()
+    }
 }
 
-// -- Tracks table traits --
+// -- Unified TableView (dispatches on show_playlist_tracks + category) --
 impl TableView for LibraryBrowser {
     fn get_selected_item(&self) -> usize {
-        // When filter/sort active, map raw selection to filtered index
-        if !self.local_filter_text.is_empty() || !self.tracks_filter.filter_commands.is_empty() || !self.tracks_sort.sort_commands.is_empty() {
-            let selected_video_id = self.playlist_tracks.get(self.playlist_tracks_selected).map(|s| s.video_id.clone());
-            if let Some(ref vid) = selected_video_id {
+        let (raw_idx, has_filter) = if self.show_playlist_tracks {
+            let filtered = !self.local_filter_text.is_empty()
+                || !self.tracks_filter.filter_commands.is_empty()
+                || !self.tracks_sort.sort_commands.is_empty();
+            (self.playlist_tracks_selected, filtered)
+        } else {
+            let filtered = !self.local_filter_text.is_empty()
+                || !self.active_filter().filter_commands.is_empty()
+                || !self.active_sort().sort_commands.is_empty();
+            let raw = match self.category {
+                LibraryCategory::LikedSongs => self.cur_selected,
+                LibraryCategory::Playlists => self.playlist_selected,
+                LibraryCategory::Artists => self.artist_selected,
+                LibraryCategory::Albums => self.album_selected,
+            };
+            (raw, filtered)
+        };
+        if !has_filter { return raw_idx; }
+
+        if self.show_playlist_tracks {
+            let selected_vid = self.playlist_tracks.get(raw_idx).map(|s| s.video_id.clone());
+            if let Some(ref vid) = selected_vid {
                 self.get_tracks_filtered_list_iter()
                     .position(|s| s.video_id == *vid)
                     .unwrap_or(0)
-            } else {
-                0
-            }
+            } else { 0 }
         } else {
-            self.playlist_tracks_selected
+            match self.category {
+                LibraryCategory::LikedSongs => {
+                    let selected_vid = self.song_list.get_list_iter().nth(raw_idx).map(|s| s.video_id.clone());
+                    if let Some(ref vid) = selected_vid {
+                        self.get_liked_songs_filtered_iter()
+                            .position(|s| s.video_id == *vid)
+                            .unwrap_or(0)
+                    } else { 0 }
+                }
+                LibraryCategory::Playlists => {
+                    self.get_playlists_filtered_iter()
+                        .position(|(i, _)| i == raw_idx)
+                        .unwrap_or(0)
+                }
+                LibraryCategory::Artists => {
+                    self.get_artists_filtered_iter()
+                        .position(|(i, _)| i == raw_idx)
+                        .unwrap_or(0)
+                }
+                LibraryCategory::Albums => {
+                    self.get_albums_filtered_iter()
+                        .position(|(i, _)| i == raw_idx)
+                        .unwrap_or(0)
+                }
+            }
         }
     }
     fn get_state(&self) -> &ScrollingTableState {
-        &self.tracks_widget_state
+        if self.show_playlist_tracks {
+            &self.tracks_widget_state
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &self.widget_state,
+                LibraryCategory::Playlists => &self.playlists_widget_state,
+                LibraryCategory::Artists => &self.artists_widget_state,
+                LibraryCategory::Albums => &self.albums_widget_state,
+            }
+        }
     }
     fn get_mut_state(&mut self) -> &mut ScrollingTableState {
-        &mut self.tracks_widget_state
+        if self.show_playlist_tracks {
+            &mut self.tracks_widget_state
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &mut self.widget_state,
+                LibraryCategory::Playlists => &mut self.playlists_widget_state,
+                LibraryCategory::Artists => &mut self.artists_widget_state,
+                LibraryCategory::Albums => &mut self.albums_widget_state,
+            }
+        }
     }
     fn get_layout(&self) -> &[BasicConstraint] {
-        &[
+        static TRACKS_LAYOUT: [BasicConstraint; 6] = [
             BasicConstraint::Length(6),
             BasicConstraint::Percentage(Percentage(25)),
             BasicConstraint::Percentage(Percentage(30)),
             BasicConstraint::Percentage(Percentage(30)),
             BasicConstraint::Length(8),
             BasicConstraint::Length(5),
-        ]
+        ];
+        static PLAYLISTS_LAYOUT: [BasicConstraint; 4] = [
+            BasicConstraint::Length(4),
+            BasicConstraint::Percentage(Percentage(40)),
+            BasicConstraint::Percentage(Percentage(20)),
+            BasicConstraint::Percentage(Percentage(30)),
+        ];
+        static ARTISTS_LAYOUT: [BasicConstraint; 3] = [
+            BasicConstraint::Length(5),
+            BasicConstraint::Percentage(Percentage(50)),
+            BasicConstraint::Percentage(Percentage(40)),
+        ];
+        static ALBUMS_LAYOUT: [BasicConstraint; 5] = [
+            BasicConstraint::Length(4),
+            BasicConstraint::Percentage(Percentage(30)),
+            BasicConstraint::Percentage(Percentage(30)),
+            BasicConstraint::Length(6),
+            BasicConstraint::Length(10),
+        ];
+
+        if self.show_playlist_tracks {
+            &TRACKS_LAYOUT
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &TRACKS_LAYOUT,
+                LibraryCategory::Playlists => &PLAYLISTS_LAYOUT,
+                LibraryCategory::Artists => &ARTISTS_LAYOUT,
+                LibraryCategory::Albums => &ALBUMS_LAYOUT,
+            }
+        }
     }
     fn get_highlighted_row(&self) -> Option<usize> {
         if self.tracks_visual_mode {
@@ -725,6 +997,11 @@ impl TableView for LibraryBrowser {
         } else if self.show_playlist_tracks {
             self.cur_playing_video_id.as_ref().and_then(|vid| {
                 self.get_tracks_filtered_list_iter()
+                    .position(|s| s.video_id == *vid)
+            })
+        } else if self.category == LibraryCategory::LikedSongs {
+            self.cur_playing_video_id.as_ref().and_then(|vid| {
+                self.get_liked_songs_filtered_iter()
                     .position(|s| s.video_id == *vid)
             })
         } else {
@@ -741,93 +1018,245 @@ impl TableView for LibraryBrowser {
         }
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
-        self.playlist_tracks
-            .iter()
-            .map(|ls| ls.get_fields(Self::tracks_subcolumns_of_vec()).into_iter())
+        let cols: Vec<Vec<Cow<'_, str>>> = if self.show_playlist_tracks {
+            self.playlist_tracks
+                .iter()
+                .map(|ls| ls.get_fields(Self::tracks_subcolumns_of_vec()).to_vec())
+                .collect()
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => self.build_liked_songs_columns(),
+                LibraryCategory::Playlists => self.build_playlist_columns(),
+                LibraryCategory::Artists => self.build_artist_columns(),
+                LibraryCategory::Albums => self.build_album_columns(),
+            }
+        };
+        cols.into_iter().map(|v| v.into_iter())
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        ["#", "Artist", "Album", "Song", "Duration", "Year"].into_iter()
+        let headings: &[&'static str] = if self.show_playlist_tracks {
+            &["#", "Artist", "Album", "Song", "Duration", "Year"]
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &["#", "Artist", "Album", "Song", "Duration", "Year"],
+                LibraryCategory::Playlists => &["#", "Title", "Tracks", "Author"],
+                LibraryCategory::Artists => &["#", "Artist", "Byline"],
+                LibraryCategory::Albums => &["#", "Artist", "Album", "Year", "Type"],
+            }
+        };
+        headings.iter().copied()
     }
 }
 
+// -- Unified AdvancedTableView (dispatches on show_playlist_tracks + category) --
 impl AdvancedTableView for LibraryBrowser {
     fn get_filtered_count(&self) -> usize {
-        self.get_tracks_filtered_list_iter().count()
+        if self.show_playlist_tracks {
+            self.get_tracks_filtered_list_iter().count()
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => self.get_liked_songs_filtered_iter().count(),
+                LibraryCategory::Playlists => self.get_playlists_filtered_iter().count(),
+                LibraryCategory::Artists => self.get_artists_filtered_iter().count(),
+                LibraryCategory::Albums => self.get_albums_filtered_iter().count(),
+            }
+        }
     }
     fn get_sortable_columns(&self) -> &[usize] {
-        &[0, 1, 2, 3]
+        if self.show_playlist_tracks {
+            &[0, 1, 2, 3]
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &[0, 1, 2, 3],
+                LibraryCategory::Playlists => &[1, 3],
+                LibraryCategory::Artists => &[1],
+                LibraryCategory::Albums => &[1, 2, 3],
+            }
+        }
     }
     fn push_sort_command(&mut self, sort_command: TableSortCommand) -> anyhow::Result<()> {
         if !self.get_sortable_columns().contains(&sort_command.column) {
             anyhow::bail!("Unable to sort column {}", sort_command.column);
         }
-        let field = get_adjusted_list_column(sort_command.column, Self::tracks_subcolumns_of_vec())?;
-        self.playlist_tracks.sort_by(|a, b| match sort_command.direction {
-            crate::app::view::SortDirection::Asc => a
-                .get_field(field)
-                .partial_cmp(&b.get_field(field))
-                .unwrap_or(std::cmp::Ordering::Equal),
-            crate::app::view::SortDirection::Desc => b
-                .get_field(field)
-                .partial_cmp(&a.get_field(field))
-                .unwrap_or(std::cmp::Ordering::Equal),
-        });
-        self.tracks_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
-        self.tracks_sort.sort_commands.push(sort_command);
+        let cmp = |asc: bool, a: &str, b: &str| -> std::cmp::Ordering {
+            if asc { a.to_lowercase().cmp(&b.to_lowercase()) }
+            else { b.to_lowercase().cmp(&a.to_lowercase()) }
+        };
+
+        if self.show_playlist_tracks {
+            let field = get_adjusted_list_column(sort_command.column, Self::tracks_subcolumns_of_vec())?;
+            let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
+            self.playlist_tracks.sort_by(|a, b| a.get_field(field).partial_cmp(&b.get_field(field)).unwrap_or(std::cmp::Ordering::Equal));
+            _ = asc;
+            self.tracks_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+            self.tracks_sort.sort_commands.push(sort_command);
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => {
+                    let field = get_adjusted_list_column(sort_command.column, Self::liked_songs_subcolumns_of_vec())?;
+                    let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
+                    self.song_list.sort_list_by(|a, b| {
+                        if asc { a.get_field(field).partial_cmp(&b.get_field(field)) }
+                        else { b.get_field(field).partial_cmp(&a.get_field(field)) }
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    self.sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+                    self.sort.sort_commands.push(sort_command);
+                }
+                LibraryCategory::Playlists => {
+                    let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
+                    match sort_command.column {
+                        1 => self.playlist_data.sort_by(|a, b| cmp(asc, &a.title, &b.title)),
+                        3 => self.playlist_data.sort_by(|a, b| cmp(asc, &a.author, &b.author)),
+                        _ => {},
+                    }
+                    self.playlists_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+                    self.playlists_sort.sort_commands.push(sort_command);
+                }
+                LibraryCategory::Artists => {
+                    let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
+                    self.artist_data.sort_by(|a, b| cmp(asc, &a.artist, &b.artist));
+                    self.artists_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+                    self.artists_sort.sort_commands.push(sort_command);
+                }
+                LibraryCategory::Albums => {
+                    let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
+                    match sort_command.column {
+                        1 => self.album_data.sort_by(|a, b| cmp(asc, &a.artist, &b.artist)),
+                        2 => self.album_data.sort_by(|a, b| cmp(asc, &a.title, &b.title)),
+                        3 => self.album_data.sort_by(|a, b| {
+                            let ya = a.year.parse::<u16>().unwrap_or(0);
+                            let yb = b.year.parse::<u16>().unwrap_or(0);
+                            if asc { ya.cmp(&yb) } else { yb.cmp(&ya) }
+                        }),
+                        _ => {},
+                    }
+                    self.albums_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+                    self.albums_sort.sort_commands.push(sort_command);
+                }
+            }
+        }
         Ok(())
     }
     fn clear_sort_commands(&mut self) {
-        self.tracks_sort.sort_commands.clear();
+        self.active_sort_mut().sort_commands.clear();
     }
     fn get_sort_commands(&self) -> &[TableSortCommand] {
-        &self.tracks_sort.sort_commands
+        &self.active_sort().sort_commands
     }
     fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
-        self.get_tracks_filtered_list_iter()
-            .map(|ls| ls.get_fields(Self::tracks_subcolumns_of_vec()).into_iter())
+        let cols: Vec<Vec<Cow<'_, str>>> = if self.show_playlist_tracks {
+            let fields = Self::tracks_subcolumns_of_vec();
+            self.get_tracks_filtered_list_iter()
+                .map(|ls| ls.get_fields(fields).to_vec())
+                .collect()
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => {
+                    let fields = Self::liked_songs_subcolumns_of_vec();
+                    self.get_liked_songs_filtered_iter()
+                        .map(|ls| ls.get_fields(fields).to_vec())
+                        .collect()
+                }
+                LibraryCategory::Playlists => self.get_playlists_filtered_iter()
+                    .map(|(i, pl)| vec![
+                        Cow::<'_, str>::Owned((i + 1).to_string()),
+                        Cow::Borrowed(pl.title.as_str()),
+                        Cow::Borrowed(pl.tracks.as_str()),
+                        Cow::Borrowed(pl.author.as_str()),
+                    ]).collect(),
+                LibraryCategory::Artists => self.get_artists_filtered_iter()
+                    .map(|(i, a)| vec![
+                        Cow::<'_, str>::Owned((i + 1).to_string()),
+                        Cow::Borrowed(a.artist.as_str()),
+                        Cow::Borrowed(a.byline.as_str()),
+                    ]).collect(),
+                LibraryCategory::Albums => self.get_albums_filtered_iter()
+                    .map(|(i, a)| vec![
+                        Cow::<'_, str>::Owned((i + 1).to_string()),
+                        Cow::Borrowed(a.artist.as_str()),
+                        Cow::Borrowed(a.title.as_str()),
+                        Cow::Borrowed(a.year.as_str()),
+                        Cow::<'_, str>::Owned(format!("{:?}", a.album_type)),
+                    ]).collect(),
+            }
+        };
+        cols.into_iter().map(|v| v.into_iter())
     }
     fn get_filterable_columns(&self) -> &[usize] {
-        &[1, 2, 3]
+        if self.show_playlist_tracks {
+            &[1, 2, 3]
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => &[1, 2, 3],
+                LibraryCategory::Playlists => &[1, 3],
+                LibraryCategory::Artists => &[1],
+                LibraryCategory::Albums => &[1, 2],
+            }
+        }
     }
     fn get_filter_commands(&self) -> &[TableFilterCommand] {
-        &self.tracks_filter.filter_commands
+        &self.active_filter().filter_commands
     }
     fn clear_filter_commands(&mut self) {
-        self.tracks_filter.filter_commands.clear();
+        self.active_filter_mut().filter_commands.clear();
     }
     fn get_sort_popup_cur(&self) -> usize {
-        self.tracks_sort.cur
+        self.active_sort().cur
     }
     fn sort_popup_shown(&self) -> bool {
-        self.tracks_sort.shown
+        self.active_sort().shown
     }
     fn filter_popup_shown(&self) -> bool {
-        self.tracks_filter.shown
+        self.active_filter().shown
     }
     fn get_sort_state(&self) -> &ratatui::widgets::ListState {
-        &self.tracks_sort.state
+        &self.active_sort().state
     }
     fn get_mut_sort_state(&mut self) -> &mut ratatui::widgets::ListState {
-        &mut self.tracks_sort.state
+        &mut self.active_sort_mut().state
     }
     fn get_mut_filter_state(&mut self) -> &mut vi_text_editor::ViTextEditor {
-        &mut self.tracks_filter.filter_text
+        &mut self.active_filter_mut().filter_text
     }
 }
 
 impl HasTitle for LibraryBrowser {
     fn get_title(&self) -> Cow<'_, str> {
         if self.show_playlist_tracks {
+            let total = self.playlist_tracks.len();
             let search_tag = if !self.local_filter_text.is_empty() {
-                let total = self.playlist_tracks.len();
                 let count = self.get_tracks_filtered_list_iter().count();
                 format!(" [SEARCH: {} ({}/{})]", self.local_filter_text, count, total)
             } else {
                 String::new()
             };
-            format!("Playlist Tracks{}", search_tag).into()
+            format!("Playlist Tracks - {} tracks{}", total, search_tag).into()
         } else {
-            "Library".into()
+            let sort_label = match self.sort_order {
+                GetLibrarySortOrder::Default => "",
+                GetLibrarySortOrder::NameAsc => " [A-Z]",
+                GetLibrarySortOrder::NameDesc => " [Z-A]",
+                GetLibrarySortOrder::RecentlySaved => " [Recent]",
+            };
+            let total = match self.category {
+                LibraryCategory::LikedSongs => self.song_list.get_list_iter().count(),
+                LibraryCategory::Playlists => self.playlist_data.len(),
+                LibraryCategory::Artists => self.artist_data.len(),
+                LibraryCategory::Albums => self.album_data.len(),
+            };
+            let filtered_count: usize = match self.category {
+                LibraryCategory::LikedSongs => self.get_liked_songs_filtered_iter().count(),
+                LibraryCategory::Playlists => self.get_playlists_filtered_iter().count(),
+                LibraryCategory::Artists => self.get_artists_filtered_iter().count(),
+                LibraryCategory::Albums => self.get_albums_filtered_iter().count(),
+            };
+            let search_tag = if !self.local_filter_text.is_empty() {
+                format!(" [SEARCH: {} ({}/{})]", self.local_filter_text, filtered_count, total)
+            } else {
+                String::new()
+            };
+            format!("Library - {}{}{}", self.category.label(), sort_label, search_tag).into()
         }
     }
 }
@@ -894,71 +1323,32 @@ impl Scrollable for LibraryBrowser {
 }
 
 impl ActionHandler<FilterAction> for LibraryBrowser {
-    fn apply_action(&mut self, action: FilterAction) -> impl Into<YoutuiEffect<Self>> {
-        if self.show_playlist_tracks && self.category == LibraryCategory::Playlists {
-            // Toggle column filter popup for tracks view
+    fn apply_action(&mut self, _action: FilterAction) -> impl Into<YoutuiEffect<Self>> {
+        if self.show_playlist_tracks {
             self.tracks_filter.shown = !self.tracks_filter.shown;
-            return ComponentEffect::new_no_op();
-        }
-        match self.category {
-            LibraryCategory::LikedSongs => match action {
-                FilterAction::Close => self.filter.shown = false,
-                FilterAction::ClearFilter => {
-                    self.filter.shown = false;
-                }
-                FilterAction::Apply => {
-                    self.filter.shown = false;
-                }
-            },
-            LibraryCategory::Playlists => match action {
-                FilterAction::Close | FilterAction::ClearFilter => {
-                    self.filter.shown = false;
-                }
-                FilterAction::Apply => {
-                    self.filter.shown = false;
-                }
-            },
-            _ => warn!("Filter not supported for {:?} category", self.category),
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => self.filter.shown = !self.filter.shown,
+                LibraryCategory::Playlists => self.playlists_filter.shown = !self.playlists_filter.shown,
+                LibraryCategory::Artists => self.artists_filter.shown = !self.artists_filter.shown,
+                LibraryCategory::Albums => self.albums_filter.shown = !self.albums_filter.shown,
+            }
         }
         ComponentEffect::new_no_op()
     }
 }
 
 impl ActionHandler<SortAction> for LibraryBrowser {
-    fn apply_action(&mut self, action: SortAction) -> impl Into<YoutuiEffect<Self>> {
-        if self.show_playlist_tracks && self.category == LibraryCategory::Playlists {
-            // Toggle column sort popup for tracks view
+    fn apply_action(&mut self, _action: SortAction) -> impl Into<YoutuiEffect<Self>> {
+        if self.show_playlist_tracks {
             self.tracks_sort.shown = !self.tracks_sort.shown;
-            return ComponentEffect::new_no_op();
-        }
-        match self.category {
-            LibraryCategory::LikedSongs => match action {
-                SortAction::Close => self.sort.shown = false,
-                SortAction::ClearSort => {
-                    self.sort.shown = false;
-                }
-                SortAction::SortSelectedAsc => {
-                    self.sort.shown = false;
-                }
-                SortAction::SortSelectedDesc => {
-                    self.sort.shown = false;
-                }
-            },
-            LibraryCategory::Playlists => match action {
-                SortAction::Close => self.sort.shown = false,
-                SortAction::ClearSort => {
-                    self.sort.shown = false;
-                }
-                SortAction::SortSelectedAsc => {
-                    self.playlist_data.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
-                    self.sort.shown = false;
-                }
-                SortAction::SortSelectedDesc => {
-                    self.playlist_data.sort_by(|a, b| b.title.to_lowercase().cmp(&a.title.to_lowercase()));
-                    self.sort.shown = false;
-                }
-            },
-            _ => warn!("Sort not supported for {:?} category", self.category),
+        } else {
+            match self.category {
+                LibraryCategory::LikedSongs => self.sort.shown = !self.sort.shown,
+                LibraryCategory::Playlists => self.playlists_sort.shown = !self.playlists_sort.shown,
+                LibraryCategory::Artists => self.artists_sort.shown = !self.artists_sort.shown,
+                LibraryCategory::Albums => self.albums_sort.shown = !self.albums_sort.shown,
+            }
         }
         ComponentEffect::new_no_op()
     }
@@ -985,7 +1375,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
                         let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
-                        let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                        crate::app::structures::copy_to_clipboard(&raw_url);
                         info!("Copied URL: {raw_url}");
                     }
                     return (AsyncTask::new_no_op(), None);
@@ -1076,12 +1466,12 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     if self.show_playlist_tracks {
                         if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
                             let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
-                            let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                            crate::app::structures::copy_to_clipboard(&raw_url);
                             info!("Copied URL: {raw_url}");
                         }
                     } else if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
                         let raw_url = format!("https://music.youtube.com/playlist?list={}", pl.playlist_id.get_raw().strip_prefix("VL").unwrap_or(pl.playlist_id.get_raw()));
-                        let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                        crate::app::structures::copy_to_clipboard(&raw_url);
                         info!("Copied URL: {raw_url}");
                     }
                     return (AsyncTask::new_no_op(), None);
@@ -1200,12 +1590,21 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::RatePlaylist => {
                     if !self.show_playlist_tracks {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            let was_liked = !self.liked_playlists.insert(pl.playlist_id.clone());
-                            let rating = if was_liked { LikeStatus::Indifferent } else { LikeStatus::Liked };
-                            return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(
-                                pl.playlist_id.clone(),
-                                rating,
-                            )));
+                            if self.liked_playlists.contains(&pl.playlist_id) {
+                                self.liked_playlists.remove(&pl.playlist_id);
+                                debug!("Library: toggle unlike playlist");
+                                return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(
+                                    pl.playlist_id.clone(),
+                                    LikeStatus::Indifferent,
+                                )));
+                            } else {
+                                self.liked_playlists.insert(pl.playlist_id.clone());
+                                debug!("Library: toggle like playlist");
+                                return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(
+                                    pl.playlist_id.clone(),
+                                    LikeStatus::Liked,
+                                )));
+                            }
                         }
                     }
                 }
@@ -1384,6 +1783,12 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::ArtistChannel(artist.channel_id.clone()))));
                     }
                 }
+                BrowserSongsAction::GoToArtist => {
+                    if let Some(artist) = self.artist_data.get(self.artist_selected) {
+                        debug!(name = %artist.artist, "Library: go to artist via menu");
+                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::ArtistChannel(artist.channel_id.clone()))));
+                    }
+                }
                 BrowserSongsAction::SubscribeToArtist => {
                     if let Some(artist) = self.artist_data.get(self.artist_selected) {
                         return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(artist.channel_id.clone())));
@@ -1394,6 +1799,20 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![artist.channel_id.clone()])));
                     }
                 }
+                BrowserSongsAction::ToggleSubscribeArtist => {
+                    if let Some(artist) = self.artist_data.get(self.artist_selected) {
+                        let cid = artist.channel_id.clone();
+                        if self.subscribed_artists.contains(&cid) {
+                            debug!(name = %artist.artist, "Library: toggle unsubscribe artist");
+                            self.subscribed_artists.remove(&cid);
+                            return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![cid])));
+                        } else {
+                            debug!(name = %artist.artist, "Library: toggle subscribe artist");
+                            self.subscribed_artists.insert(cid.clone());
+                            return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(cid)));
+                        }
+                    }
+                }
                 _ => warn!("Unsupported song action for artists: {:?}", action),
             },
             LibraryCategory::Albums => match action {
@@ -1401,6 +1820,33 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     if let Some(album) = self.album_data.get(self.album_selected) {
                         let query = format!("{} {}", album.artist, album.title);
                         return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::SongSearch(query))));
+                    }
+                }
+                BrowserSongsAction::GoToArtist => {
+                    if let Some(album) = self.album_data.get(self.album_selected) {
+                        let artist = album.artist.clone();
+                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist))));
+                    }
+                }
+                BrowserSongsAction::GoToAlbum => {
+                    if let Some(album) = self.album_data.get(self.album_selected) {
+                        debug!(album = %album.title, artist = %album.artist, "Library albums: open album direct");
+                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::AlbumOpen {
+                            artist: album.artist.clone(),
+                            album: album.title.clone(),
+                            album_id: album.album_id.clone(),
+                        })));
+                    }
+                }
+                BrowserSongsAction::RatePlaylist => {
+                    // Navigate to album search where RatePlaylist works (audio_playlist_id available)
+                    if let Some(album) = self.album_data.get(self.album_selected) {
+                        debug!(album = %album.title, "Library: rate album — navigating to album search");
+                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::AlbumOpen {
+                            artist: album.artist.clone(),
+                            album: album.title.clone(),
+                            album_id: album.album_id.clone(),
+                        })));
                     }
                 }
                 _ => warn!("Unsupported song action for albums: {:?}", action),
@@ -1476,7 +1922,22 @@ impl ActionHandler<BrowserLibraryAction> for LibraryBrowser {
                             return (self.fetch_playlist_tracks(), None);
                         }
                     }
-                    _ => {}
+                    LibraryCategory::Artists => {
+                        if let Some(artist) = self.artist_data.get(self.artist_selected) {
+                            debug!(name = %artist.artist, "Library: activate artist via Enter");
+                            return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::ArtistChannel(artist.channel_id.clone()))));
+                        }
+                    }
+                    LibraryCategory::Albums => {
+                        if let Some(album) = self.album_data.get(self.album_selected) {
+                            debug!(album = %album.title, artist = %album.artist, "Library: activate album via Enter (direct open)");
+                            return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::AlbumOpen {
+                                artist: album.artist.clone(),
+                                album: album.title.clone(),
+                                album_id: album.album_id.clone(),
+                            })));
+                        }
+                    }
                 }
             }
             BrowserLibraryAction::DismissTracks => {
@@ -1486,6 +1947,16 @@ impl ActionHandler<BrowserLibraryAction> for LibraryBrowser {
                 return (AsyncTask::new_no_op(), None);
             }
             BrowserLibraryAction::ReloadCategory => {
+                return (self.reload_category(), None);
+            }
+            BrowserLibraryAction::CycleSortOrder => {
+                self.sort_order = match self.sort_order {
+                    GetLibrarySortOrder::Default => GetLibrarySortOrder::NameAsc,
+                    GetLibrarySortOrder::NameAsc => GetLibrarySortOrder::NameDesc,
+                    GetLibrarySortOrder::NameDesc => GetLibrarySortOrder::RecentlySaved,
+                    GetLibrarySortOrder::RecentlySaved => GetLibrarySortOrder::Default,
+                };
+                info!(sort = ?self.sort_order, "Library sort order changed");
                 return (self.reload_category(), None);
             }
         }
@@ -1507,5 +1978,28 @@ impl KeyRouter<AppAction> for LibraryBrowser {
         config: &'a Config,
     ) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
         self.get_all_keybinds(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sort_order_cycle() {
+        let mut lib = LibraryBrowser::new();
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::Default);
+
+        lib.apply_action(BrowserLibraryAction::CycleSortOrder);
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::NameAsc);
+
+        lib.apply_action(BrowserLibraryAction::CycleSortOrder);
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::NameDesc);
+
+        lib.apply_action(BrowserLibraryAction::CycleSortOrder);
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::RecentlySaved);
+
+        lib.apply_action(BrowserLibraryAction::CycleSortOrder);
+        assert_eq!(lib.sort_order, GetLibrarySortOrder::Default);
     }
 }

@@ -83,7 +83,6 @@ pub struct PlaylistSong {
     pub library_management: Option<LibraryManager>,
     pub title: String,
     pub artists: Vec<super::ParsedSongArtist>,
-    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub explicit: Explicit,
@@ -112,7 +111,6 @@ pub struct PlaylistVideo {
     // Could be 'ParsedVideoChannel'
     pub channel_name: String,
     pub channel_id: ArtistChannelID<'static>,
-    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub is_available: bool,
@@ -130,7 +128,6 @@ pub struct PlaylistEpisode {
     pub title: String,
     pub podcast_name: String,
     pub podcast_id: PlaylistID<'static>,
-    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub is_available: bool,
@@ -148,7 +145,6 @@ pub struct PlaylistUploadSong {
     pub title: String,
     // An UploadSong may not have an album, in that case empty vec returned.
     pub artists: Vec<ParsedUploadArtist>,
-    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
 }
@@ -322,10 +318,8 @@ pub(crate) fn parse_playlist_song(
                 .ok().unwrap_or_default();
             full_text.iter().find_map(|t| super::song::find_year_in_runs(t))
         });
-    // Some playlist types (Potentially just Featured Playlists) have a 'Plays'
-    // field between Artist and Album.
-    // TODO: Find a more efficient way, and potentially parse Featured Playlists
-    // differently.
+    // Featured Playlists have a 'Plays' field between Artist and Album
+    // (4th flex column). Detect by presence of flexColumns/3.
     let album_col_idx = if data.path_exists("/flexColumns/3") {
         3
     } else {

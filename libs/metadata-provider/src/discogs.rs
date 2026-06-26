@@ -19,6 +19,7 @@ impl MetadataProvider for DiscogsProvider {
         &'a self,
         artist: &'a str,
         title: &'a str,
+        _album: Option<&'a str>,
         client: &'a reqwest::Client,
     ) -> BoxFuture<'a, Option<ValidatedMetadata>> {
         let token = self.token.clone();
@@ -98,34 +99,44 @@ impl MetadataProvider for DiscogsProvider {
                 Some(AlbumTrack { title, duration_secs })
             }).collect();
 
-            if tracks.len() >= 2 {
-                let album_name = mdata.get("title").and_then(|t| t.as_str()).map(|s| s.to_string());
-                let genres: Vec<String> = mdata.get("genres")
-                    .and_then(|g| g.as_array())
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                    .unwrap_or_default();
-                let styles: Vec<String> = mdata.get("styles")
-                    .and_then(|s| s.as_array())
-                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                    .unwrap_or_default();
-                tracing::info!("DiscogsProvider: {} tracks, {} genres, {} styles for {} - {}", tracks.len(), genres.len(), styles.len(), artist, title);
-                Some(ValidatedMetadata {
-                    artist: mdata.get("artists")
-                        .and_then(|a| a.as_array())
-                        .and_then(|a| a.first())
-                        .and_then(|a| a.get("name"))
-                        .and_then(|n| n.as_str())
-                        .map(|s| s.to_string()),
-                    album: album_name,
-                    year,
-                    track_no: None,
-                    album_tracks: tracks,
-                    genres,
-                    styles,
-                })
-            } else {
-                None
+            if !tracks.is_empty() {
+                // Validate searched track appears in this album tracklist
+                let title_norm = title.to_lowercase();
+                let title_norm: String = title_norm.chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+                let track_found = tracks.iter().any(|t| {
+                    let t_norm: String = t.title.to_lowercase().chars().filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+                    t_norm.contains(&title_norm) || title_norm.contains(&t_norm)
+                });
+                if track_found {
+                    let album_name = mdata.get("title").and_then(|t| t.as_str()).map(|s| s.to_string());
+                    let genres: Vec<String> = mdata.get("genres")
+                        .and_then(|g| g.as_array())
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default();
+                    let styles: Vec<String> = mdata.get("styles")
+                        .and_then(|s| s.as_array())
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default();
+                    tracing::info!("DiscogsProvider: {} tracks, {} genres, {} styles for {} - {}", tracks.len(), genres.len(), styles.len(), artist, title);
+                    return Some(ValidatedMetadata {
+                        artist: mdata.get("artists")
+                            .and_then(|a| a.as_array())
+                            .and_then(|a| a.first())
+                            .and_then(|a| a.get("name"))
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.to_string()),
+                        album: album_name,
+                        year,
+                        track_no: None,
+                        album_tracks: tracks,
+                        genres,
+                        styles,
+                    });
+                } else {
+                    tracing::debug!("Discogs: album has {} tracks but '{}' not found — skipping", tracks.len(), title);
+                }
             }
+            None
         })
     }
 }

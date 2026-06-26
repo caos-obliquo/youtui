@@ -1,4 +1,6 @@
-#[derive(Debug, Default, Clone, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ValidatedMetadata {
     pub artist: Option<String>,
     pub album: Option<String>,
@@ -9,7 +11,7 @@ pub struct ValidatedMetadata {
     pub styles: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AlbumTrack {
     pub title: String,
     pub duration_secs: f64,

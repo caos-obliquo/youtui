@@ -27,14 +27,16 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleOverwriteGetTracks, HandleOverwriteGetTracksErr,
 };
 use std::borrow::Cow;
+use std::rc::Rc;
 use std::time::Duration;
-use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID};
+use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID, AlbumID};
 
 #[derive(Debug)]
 pub enum NavTarget {
     Artist(String),
     ArtistChannel(ArtistChannelID<'static>),
     Album { artist: String, album: String },
+    AlbumOpen { artist: String, album: String, album_id: AlbumID<'static> },
     SongSearch(String),
 }
 use std::fmt::Display;
@@ -235,7 +237,7 @@ impl Youtui {
                     task.type_debug, task.type_id, task.constraint
                 )
             });
-        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config, crate::get_config_dir().ok().map(|d| d.join("metadata_overrides.json"))));
+        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config, crate::get_config_dir().ok().map(|d| d.join("metadata_overrides.json")), crate::get_data_dir().ok().map(|d| d.to_path_buf())));
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
         // The docs for this function state that it must be run after entering alternate
@@ -551,23 +553,39 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ViewAlbumCover => {
-                use crate::app::structures::PlayState;
-                // Selected song first, then playing song, then last album art
-                let thumb = self.window_state.playlist.get_selected_album_art()
-                    .or_else(|| match &self.window_state.playlist.play_status {
+                use crate::app::structures::{PlayState, AlbumArtState};
+                // Collect all downloaded album arts from the queue
+                let thumbs: Vec<_> = self.window_state.playlist.list.get_list_iter()
+                    .filter_map(|s| match &s.album_art {
+                        AlbumArtState::Downloaded(t) => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                if !thumbs.is_empty() {
+                    // Find index of selected/playing song's album art
+                    let sel_song = self.window_state.playlist.get_selected_album_art();
+                    let start_idx = sel_song.and_then(|sel| {
+                        thumbs.iter().position(|t| Rc::ptr_eq(t, &sel))
+                    }).unwrap_or(0);
+                    self.window_state.album_art_popup =
+                        Some(ui::playlist::album_art_popup::AlbumArtPopup::new(thumbs, start_idx));
+                } else {
+                    // Fallback: single thumbnail from playing song or last art
+                    let thumb = match &self.window_state.playlist.play_status {
                         PlayState::Playing(id) | PlayState::Paused(id) |
                         PlayState::Buffering(id) => {
                             self.window_state.playlist.get_song_from_id(*id)
                                 .and_then(|s| match &s.album_art {
-                                    crate::app::structures::AlbumArtState::Downloaded(t) => Some(t.clone()),
+                                    AlbumArtState::Downloaded(t) => Some(t.clone()),
                                     _ => None,
                                 })
                         }
                         _ => None,
-                    })
-                    .or_else(|| self.window_state.last_album_art.clone());
-                if let Some(thumb) = thumb {
-                    self.window_state.album_art_popup = Some(ui::playlist::album_art_popup::AlbumArtPopup::new(thumb));
+                    }.or_else(|| self.window_state.last_album_art.clone());
+                    if let Some(t) = thumb {
+                        self.window_state.album_art_popup =
+                            Some(ui::playlist::album_art_popup::AlbumArtPopup::new(vec![t], 0));
+                    }
                 }
             }
             AppCallback::UpdateSongInfo { id, song } => {
@@ -670,7 +688,33 @@ impl Youtui {
             AppCallback::ClosePopup => {
                 if self.window_state.album_art_popup.is_some() {
                     self.window_state.album_art_popup = None;
-                    // Force clear stale sixel pixels (DCS clear unreliable in foot)
+                    // Physically overwrite stale sixel pixels by rendering a blank black sixel
+                    // over the popup area. DCS clear (\x1bP0p\x1b\\) is unreliable in foot, so
+                    // physically overwriting is the only reliable method.
+                    let sixel_rect = self.window_state.sixel_rect;
+                    if let Some(rect) = sixel_rect {
+                        let blank = image::DynamicImage::from(image::RgbaImage::from_pixel(
+                            1, 1,
+                            image::Rgba([0, 0, 0, 255]),
+                        ));
+                        if let Ok(protocol) = self.terminal_image_capabilities.new_protocol(
+                            blank,
+                            rect,
+                            ratatui_image::Resize::Scale(None),
+                        ) {
+                            if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
+                                use std::io::Write;
+                                let mut stdout = std::io::stdout();
+                                let _ = crossterm::execute!(
+                                    &mut stdout,
+                                    crossterm::cursor::MoveTo(rect.x, rect.y),
+                                );
+                                let _ = stdout.write_all(sixel.data.as_bytes());
+                                let _ = stdout.flush();
+                            }
+                        }
+                    }
+                    // Belt-and-suspenders: also send DCS clear + ANSI clear
                     use std::io::Write;
                     let mut stdout = std::io::stdout();
                     let _ = stdout.write_all(b"\x1bP0p\x1b\\");
@@ -709,7 +753,7 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::SeekBack => {
-                use crate::async_rodio_sink::SeekDirection;
+                use audio_player::SeekDirection;
                 let effect = self.window_state.playlist.handle_seek(
                     Duration::from_secs(5),
                     SeekDirection::Back,
@@ -717,7 +761,7 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::SeekForward => {
-                use crate::async_rodio_sink::SeekDirection;
+                use audio_player::SeekDirection;
                 let effect = self.window_state.playlist.handle_seek(
                     Duration::from_secs(5),
                     SeekDirection::Forward,

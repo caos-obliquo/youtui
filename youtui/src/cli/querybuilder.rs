@@ -2,6 +2,7 @@ use crate::Command;
 use crate::api::DynamicYtMusic;
 use anyhow::bail;
 use std::borrow::Borrow;
+use std::fmt::Write;
 use std::fmt::Debug;
 use ytmapi_rs::auth::noauth::NoAuthToken;
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
@@ -14,6 +15,7 @@ use ytmapi_rs::common::{
 };
 use ytmapi_rs::continuations::ParseFromContinuable;
 use ytmapi_rs::parse::ParseFrom;
+use ytmapi_rs::parse::SearchResultAlbum;
 use ytmapi_rs::process_json;
 use ytmapi_rs::query::library::{GetLibraryChannelsQuery, GetLibraryPodcastsQuery};
 use ytmapi_rs::query::playlist::GetPlaylistDetailsQuery;
@@ -137,6 +139,46 @@ pub async fn command_to_query(
                 max_pages,
             )
             .await
+        }
+        Command::DebugSearchAlbums { query } => {
+            let mut out = String::new();
+            writeln!(out, "--- YTM API Albums ---")?;
+            let q: SearchQuery<'_, ytmapi_rs::query::search::FilteredSearch<AlbumsFilter>> = SearchQuery::new_filtered(query.clone(), AlbumsFilter);
+            match yt.query::<_, Vec<SearchResultAlbum>>(q).await {
+                Ok(albums) => {
+                    for (i, a) in albums.iter().enumerate() {
+                        writeln!(out, "{}. {} - {} ({:?}, year={})", i+1, a.artist, a.title, a.album_type, a.year)?;
+                    }
+                }
+                Err(e) => writeln!(out, "Error: {}", e)?,
+            }
+            writeln!(out, "--- yt-dlp YouTube Full-Album Candidates (>20min or 'full album' title) ---")?;
+            match tokio::process::Command::new("yt-dlp")
+                .args(["--flat-playlist", "--dump-json", "--no-warnings",
+                       &format!("ytsearch10:{}", query)])
+                .output().await
+            {
+                Ok(output) => {
+                    if let Ok(stdout) = String::from_utf8(output.stdout) {
+                        for (i, line) in stdout.lines().enumerate() {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                                let dur = v.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0);
+                                let title = v.get("title").and_then(|t| t.as_str()).unwrap_or("");
+                                let uploader = v.get("uploader").and_then(|u| u.as_str()).unwrap_or("");
+                                if dur > 1200.0 || title.to_lowercase().contains("full album") {
+                                    let mins = (dur / 60.0) as u64;
+                                    let secs = (dur % 60.0) as u64;
+                                    writeln!(out, "{}. {} - {} ({}:{:02})", i+1, uploader, title, mins, secs)?;
+                                } else {
+                                    writeln!(out, "  [SKIP {}s] {} - {}", dur as u64, uploader, title)?;
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => writeln!(out, "Error: {}", e)?,
+            }
+            Ok(out)
         }
         Command::SearchSongs { query, max_pages } => {
             get_string_output_of_streaming_query(

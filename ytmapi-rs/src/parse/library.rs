@@ -362,7 +362,6 @@ fn parse_library_podcasts(
 }
 
 // Consider returning ProcessedLibraryContents
-// TODO: Move to process
 fn process_library_contents_grid(mut json_crawler: JsonCrawlerOwned) -> Option<JsonCrawlerOwned> {
     let section = json_crawler.borrow_pointer(concatcp!(SINGLE_COLUMN_TAB, SECTION_LIST));
     if let Ok(section) = section {
@@ -384,7 +383,6 @@ fn process_library_contents_grid(mut json_crawler: JsonCrawlerOwned) -> Option<J
     }
 }
 // Consider returning ProcessedLibraryContents
-// TODO: Move to process
 fn process_library_contents_music_shelf(
     mut json_crawler: JsonCrawlerOwned,
 ) -> Option<JsonCrawlerOwned> {

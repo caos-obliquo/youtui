@@ -17,7 +17,6 @@ impl<'a> ParseFrom<RatePlaylistQuery<'a>> for () {
         // which is caught by AuthToken. Youtube does no checking on
         // Indifferent, even an invalid PlaylistID will return success.
         let json_crawler = JsonCrawlerOwned::from(p);
-        // TODO: Error type
         json_crawler
             .navigate_pointer("/actions")?
             .try_into_iter()?

@@ -31,7 +31,10 @@ serde_json = "1.0.149"
 ytmapi-rs = { path = "../ytmapi-rs", version = "0.3.2", features = [ "reqwest" ] }
 vi-text-editor = { path = "../libs/vi-text-editor" }
 genius-rs = { path = "../libs/genius-rs" }
+lrclib-rs = { path = "../libs/lrclib-rs" }
 metadata-provider = { path = "../libs/metadata-provider" }
+rym-genre-data = { path = "../libs/rym-genre-data" }
+audio-player = { path = "../libs/audio-player" }
 reqwest = { version = "0.11", default-features = false, features = ["json", "gzip", "blocking"] }
 lru = "0.12"
 md5 = "0.7"
@@ -39,7 +42,6 @@ ib-romaji = "0.2"
 lindera = { version = "3", default-features = false, features = ["embed-ipadic"] }
 lindera-ipadic = "3"
 tokio = { version = "1.52.1", features = ["full"] }
-gag = "1.0.0"
 async-callback-manager = { path = "../async-callback-manager", version = "0.1.1" }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
@@ -60,7 +62,6 @@ souvlaki = { version = "0.8.3", default-features = false, features = [
 rand = "0.9"
 fs-err = { version = "3.3.0", features=["tokio"] }
 tokio-util = { version = "0.7.18", features = ["io"] }
-musixmatch-inofficial = "0.5.0"
 # These platforms require an open window to use media controls.
 # https://github.com/Sinono3/souvlaki/blob/master/examples/window.rs
 [target.'cfg(any(target_os="windows",target_os="macos"))'.dependencies]
@@ -73,14 +74,9 @@ winit = "0.30.13"
 version = "0.7.4-youtui-vendored.4"
 package = "youtui-vendored-rusty_ytdl"
 default-features = false
-features = ["live"]
+features = ["live", "rustls"]
 
-# Accommodate for vendoring if required - a change to YouTube API may break downloading or playback.
-[dependencies.rodio]
-version = "0.22.2"
-# version = "0.19.0-youtui-vendored.1"
-# package = "youtui-vendored-rodio"
-features = ["symphonia-all"]
+
 
 [dependencies.tempfile]
 version = "3.27.0"

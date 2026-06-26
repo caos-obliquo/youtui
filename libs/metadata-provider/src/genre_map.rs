@@ -100,9 +100,16 @@ pub fn normalize_genre(name: &str) -> String {
         }
     }
     // Match after stripping trailing spaces/slashes
-    let cleaned = lowered.trim_end_matches(|c: char| c == ' ' || c == '/').to_string();
+    let cleaned = lowered.trim_end_matches(&[' ', '/'] as &[_]).to_string();
     if let Some(canonical) = map.get(&cleaned) {
         return canonical.clone();
+    }
+    // RYM genre data fallback — covers 5,977+ genres from RateYourMusic hierarchy.
+    // Skip for strings containing '/' — normalize_genres handles split separately.
+    if !name.contains('/') {
+        if let Some(rym_name) = rym_genre_data::normalize_style(name) {
+            return rym_name.to_string();
+        }
     }
     name.to_string()
 }
@@ -121,7 +128,7 @@ pub fn is_known_genre(name: &str) -> bool {
     let lowered = name.to_lowercase().trim().to_string();
     let map = genre_map();
     map.contains_key(&lowered)
-        || map.contains_key(&lowered.trim_end_matches(|c: char| c == ' ' || c == '/').to_string())
+        || map.contains_key(&lowered.trim_end_matches(&[' ', '/'] as &[_]).to_string())
 }
 
 /// Normalize all genres in a list, deduplicating and sorting.

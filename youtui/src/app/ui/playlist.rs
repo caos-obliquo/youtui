@@ -31,7 +31,7 @@ use crate::app::ui::draw_media_controls::upgrade_thumbnail_url;
 use crate::app::ui::{AppCallback, WindowContext};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
 use crate::app::view::{BasicConstraint, DrawableMut, HasTitle, Loadable, SortDirection, TableView};
-use crate::async_rodio_sink::{
+use audio_player::{
     AllStopped, AutoplayUpdate, PlayUpdate, QueueUpdate, SeekDirection, Stopped, VolumeUpdate,
 };
 use crate::config::Config;
@@ -117,6 +117,8 @@ pub struct Playlist {
     pub radio_mode: bool,
     /// Transient error message shown in playlist header (clears on next action)
     pub last_error: Option<String>,
+    /// Transient status notification (clears on next action)
+    pub last_status: Option<String>,
     /// Pending chunks for multi-playlist split (video_ids, title, description, next_index)
     pub pending_playlist_chunks: Option<(Vec<Vec<ytmapi_rs::common::VideoID<'static>>>, String, Option<String>, Option<ytmapi_rs::query::playlist::PrivacyStatus>)>,
     /// Stack of deleted songs for undo (song, original_index)
@@ -217,7 +219,7 @@ impl Action for PlaylistAction {
             PlaylistAction::ToggleRepeat => "Toggle Repeat Mode",
             PlaylistAction::ToggleRadio => "Toggle Radio Mode",
             PlaylistAction::ViewSongInfo => "View Song Info",
-            PlaylistAction::SaveToExistingPlaylist => "Save Queue to Existing Playlist",
+            PlaylistAction::SaveToExistingPlaylist => "Add Queue to Playlist",
             PlaylistAction::UndoDelete => "Undo Delete",
             PlaylistAction::DeleteToTop => "Delete to Top",
             PlaylistAction::DeleteToBottom => "Delete to Bottom",
@@ -242,6 +244,7 @@ impl Action for PlaylistAction {
 impl ActionHandler<PlaylistAction> for Playlist {
     fn apply_action(&mut self, action: PlaylistAction) -> impl Into<YoutuiEffect<Playlist>> {
         self.last_error.take(); // Clear transient error on any action
+        self.last_status.take(); // Clear transient status on any action
         match action {
             PlaylistAction::ViewBrowser => (AsyncTask::new_no_op(), Some(self.view_browser())),
             PlaylistAction::PlaySelected => (self.play_selected(), None),
@@ -343,7 +346,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                         .skip(start).take(end - start + 1)
                         .cloned()
                         .collect();
-                    let _ = std::process::Command::new("wl-copy").arg(lines.join("\n")).spawn();
+                    crate::app::structures::copy_to_clipboard(&lines.join("\n"));
                     info!("Yanked {} lines from visual selection to clipboard and buffer", self.yank_buffer.len());
                     self.visual_mode = false;
                     return (AsyncTask::new_no_op(), None);
@@ -351,7 +354,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 if let Some(song) = self.get_song_from_idx(actual_index) {
                     let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
-                    let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                    crate::app::structures::copy_to_clipboard(&raw_url);
                     info!("Copied URL: {}", raw_url);
                 }
                 (AsyncTask::new_no_op(), None)
@@ -365,7 +368,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                             AlbumOrUploadAlbumID::UploadAlbum(id) => id.get_raw(),
                         };
                         let raw_url = format!("https://music.youtube.com/browse/{}", raw);
-                        let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                        crate::app::structures::copy_to_clipboard(&raw_url);
                         info!("Copied album URL: {}", raw_url);
                     }
                 }
@@ -492,9 +495,10 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     self.last_error = Some("Could not determine artist/title for re-validation".into());
                     return (AsyncTask::new_no_op(), None);
                 }
-                info!("Force-split: re-validating song {:?} (artist={:?}, title={:?})", parent_id, artist, clean_title);
+                let p_album = p_song.album.as_ref().map(|a| a.name.clone());
+                info!("Force-split: re-validating song {:?} (artist={:?}, title={:?}, album={:?})", parent_id, artist, clean_title, p_album);
                 let validation_task = AsyncTask::new_future_try(
-                    ValidateMetadata(artist, clean_title, parent_id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty())),
+                    ValidateMetadata(artist, clean_title, parent_id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), p_album),
                     HandleMetadataValidated(parent_id),
                     HandleMetadataValidationError,
                     None,
@@ -842,11 +846,11 @@ impl TableView for Playlist {
             let first_field: Cow<'_, str> = if Some(visual_i) == cur_playing_visual {
                 match self.play_status {
                     PlayState::NotPlaying => Cow::Borrowed(">>>"),
-                    PlayState::Playing(_) => Cow::Borrowed(""),
-                    PlayState::Paused(_) => Cow::Borrowed(""),
+                    PlayState::Playing(_) | PlayState::Paused(_) | PlayState::Buffering(_) => {
+                        Cow::Owned((visual_i + 1).to_string())
+                    }
                     PlayState::Stopped => Cow::Borrowed(">>>"),
                     PlayState::Error(_) => Cow::Borrowed(">>>"),
-                    PlayState::Buffering(_) => Cow::Borrowed(""),
                 }
             } else {
                 Cow::Owned((visual_i + 1).to_string())
@@ -928,8 +932,9 @@ impl HasTitle for Playlist {
             _ => "",
         };
         let err_indicator = self.last_error.as_ref().map(|e| format!(" [ERR: {}]", e)).unwrap_or_default();
+        let status_indicator = self.last_status.as_ref().map(|s| format!(" [! {}]", s)).unwrap_or_default();
         format!(
-            "Local playlist - {} songs{}{}{}{}{}{}",
+            "Local playlist - {} songs{}{}{}{}{}{}{}",
             self.list.get_list_iter().len(),
             quality_indicator,
             shuffle_indicator,
@@ -937,6 +942,7 @@ impl HasTitle for Playlist {
             cat_indicator,
             romaji_indicator,
             err_indicator,
+            status_indicator,
         )
         .into()
     }
@@ -986,6 +992,7 @@ impl Playlist {
             repeat_mode: crate::app::structures::RepeatMode::Off,
             radio_mode: false,
             last_error: None,
+            last_status: None,
             pending_playlist_chunks: None,
             undo_stack: Vec::new(),
             visual_mode: false,
@@ -1033,7 +1040,7 @@ impl Playlist {
         let Some(src_idx) = self.get_index_from_id(song_id) else { return None; };
 
         // Extract all data from src_song before any mutable borrows
-        let (video_raw, album_artist, album_year, src_arc) = {
+        let (video_raw, album_artist, album_year, src_arc, parent_duration, src_genres, src_styles, src_thumbnails, src_album_art, src_like_status) = {
             let Some(src_song) = self.get_song_from_idx(src_idx) else { return None; };
             let video_raw = src_song.video_id.get_raw().to_string();
             let album_artist = crate::app::structures::normalize_artist_name(&artist.clone().unwrap_or_else(|| {
@@ -1047,7 +1054,13 @@ impl Playlist {
                 DownloadStatus::Downloaded(arc) => Some(arc.clone()),
                 _ => None,
             };
-            (video_raw, album_artist, album_year, src_arc)
+            let parent_duration = src_song.actual_duration;
+            let src_genres = src_song.genres.clone();
+            let src_styles = src_song.styles.clone();
+            let src_thumbnails = src_song.thumbnails.clone();
+            let src_album_art = src_song.album_art.clone();
+            let src_like_status = src_song.like_status.clone();
+            (video_raw, album_artist, album_year, src_arc, parent_duration, src_genres, src_styles, src_thumbnails, src_album_art, src_like_status)
         };
         // Use metadata-provided album name, fall back to original YouTube title
         let album_name = album.clone().or_else(|| original_album.clone());
@@ -1098,16 +1111,28 @@ impl Playlist {
                 download_status: DownloadStatus::None,
                 id: self.list.create_next_id(),
                 duration_string: dur_str,
-                actual_duration: if is_last { None } else { Some(std::time::Duration::from_secs_f64(track.duration_secs)) },
+                actual_duration: if is_last {
+                    // Fill remaining time up to parent duration for last track
+                    parent_duration.map(|total| {
+                        let remaining = total.as_secs_f64() - accum;
+                        if remaining > 0.0 {
+                            std::time::Duration::from_secs_f64(remaining)
+                        } else {
+                            std::time::Duration::from_secs_f64(track.duration_secs)
+                        }
+                    })
+                } else {
+                    Some(std::time::Duration::from_secs_f64(track.duration_secs))
+                },
                 start_offset: Some(std::time::Duration::from_secs_f64(accum)),
                 year: album_year.clone(),
-                album_art: crate::app::structures::AlbumArtState::None,
-                genres: Vec::new(),
-                styles: Vec::new(),
+                album_art: src_album_art.clone(),
+                genres: src_genres.clone(),
+                styles: src_styles.clone(),
                 artists: crate::app::structures::MaybeRc::Owned(list_artists),
-                thumbnails: crate::app::structures::MaybeRc::Owned(Vec::new()),
+                thumbnails: src_thumbnails.clone(),
                 album: list_album,
-                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+                like_status: src_like_status.clone(),
             };
             self.list.insert_after(src_idx + i, list_song);
             accum += track.duration_secs;
@@ -1164,7 +1189,7 @@ impl Playlist {
             let art_lower = artist.to_lowercase();
             if lower.starts_with(&format!("{} - ", art_lower)) {
                 title[artist.len() + 3..].trim().to_string()
-            } else if lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
+            } else if artist.len() >= 2 && lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
                 title[artist.len()..].trim().to_string()
             } else {
                 title.to_string()
@@ -1236,7 +1261,19 @@ impl Playlist {
                         if depth == 0 {
                             let group: String = chars[open..i].iter().collect();
                             let group_lower = group.to_lowercase();
-                            if tags.iter().any(|tag| group_lower.contains(tag)) {
+                            // Word-boundary tag match: split group into alphanumeric tokens,
+                            // check if any tag's tokens appear as consecutive word sequence
+                            let group_tokens: Vec<&str> = group_lower
+                                .split(|c: char| !c.is_alphanumeric())
+                                .filter(|t| !t.is_empty())
+                                .collect();
+                            let has_tag = tags.iter().any(|tag| {
+                                let tag_tokens: Vec<&str> = tag.split_whitespace().collect();
+                                if tag_tokens.is_empty() { return false; }
+                                group_tokens.windows(tag_tokens.len())
+                                    .any(|w| w == tag_tokens.as_slice())
+                            });
+                            if has_tag {
                                 let before: String = chars[..open].iter().collect();
                                 let after: String = chars[i..].iter().collect();
                                 s = format!("{}{}", before.trim(), after.trim()).trim().to_string();
@@ -1373,9 +1410,12 @@ impl Playlist {
                     }
                 }
             }
+            let album_name = if let Some(idx) = self.get_index_from_id(id) {
+                self.get_song_from_idx(idx).and_then(|s| s.album.as_ref().map(|a| a.name.clone()))
+            } else { None };
             // Spawn metadata validation (Last.fm -> MusicBrainz) in parallel with download
             let validation_task = AsyncTask::new_future_try(
-                ValidateMetadata(artist, clean_title, id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty())),
+                ValidateMetadata(artist, clean_title, id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), album_name),
                 HandleMetadataValidated(id),
                 HandleMetadataValidationError,
                 None,
@@ -1740,9 +1780,10 @@ impl Playlist {
             let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
             if !artist.is_empty() {
                 let clean_title = Self::clean_title_for_metadata(&artist, &song.title);
+                let album = song.album.as_ref().map(|a| a.name.clone());
                 let validation_task = AsyncTask::new_future_try(
                     ValidateMetadata(artist, clean_title, first_id, self.scrobbling_config.api_key.clone(),
-                        Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty())),
+                        Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), album),
                     HandleMetadataValidated(first_id),
                     HandleMetadataValidationError,
                     None,

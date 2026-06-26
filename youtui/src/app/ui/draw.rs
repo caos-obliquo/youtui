@@ -8,58 +8,80 @@ use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::Rect;
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use ratatui_image::picker::Picker;
 
 // Add tests to try and draw app with oddly sized windows.
 pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities: &Picker) {
-    // Clear sixel from terminal before any draw (prevents stale data from corrupting display)
-    use std::io::Write;
-    let _ = std::io::stdout().write_all(b"\x1bP0p\x1b\\");
-    let _ = std::io::stdout().flush();
-    // Clear sixel state; draw_footer will re-set if visible
-    w.sixel_data = None;
-    w.sixel_rect = None;
-
-    // Album art popup: draw full-screen, store sixel data for cleanup on close
+    // Album art popup: centered in terminal with proportional margins
     if w.album_art_popup.is_some() {
         if let Some(popup) = &mut w.album_art_popup {
-            use ratatui::layout::{Constraint, Direction, Layout};
+            // Clear stale sixel before drawing popup
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(b"\x1bP0p\x1b\\");
+            let _ = std::io::stdout().flush();
+            use ratatui::layout::Margin;
+            use ratatui::layout::Alignment;
             use ratatui_image::{Image, Resize};
             use ratatui::widgets::{Clear, Paragraph};
+            use ratatui::style::{Style, Color};
             let area = f.area();
             f.render_widget(Clear, area);
-            // 95% centered rect
-            let vert = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(2), Constraint::Percentage(95), Constraint::Percentage(3)])
-                .areas::<3>(area);
-            let centered = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(2), Constraint::Percentage(95), Constraint::Percentage(3)])
-                .areas::<3>(vert[1])[1];
+            // Center image with 1/6 vertical and 1/8 horizontal margins
+            let margin_v = (area.height / 6).max(1);
+            let margin_h = (area.width / 8).max(1);
+            let centered = area.inner(Margin { vertical: margin_v, horizontal: margin_h });
             if centered.width < 4 || centered.height < 4 {
                 f.render_widget(Paragraph::new("Terminal too small").centered(), area);
                 return;
             }
-            match terminal_image_capabilities.new_protocol(
-                popup.thumbnail.in_mem_image.clone(),
-                centered,
-                Resize::Fit(None),
-            ) {
-                Ok(protocol) => {
-                    // Store sixel data for proper cleanup on close
-                    if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
-                        w.sixel_data = Some(sixel.data.clone());
-                        w.sixel_rect = Some(centered);
+            if let Some(thumb) = popup.current_thumbnail() {
+                match terminal_image_capabilities.new_protocol(
+                    thumb.in_mem_image.clone(),
+                    centered,
+                    Resize::Fit(None),
+                ) {
+                    Ok(protocol) => {
+                        // Get the actual fitted area (may be smaller than centered due to aspect ratio)
+                        let fitted = protocol.area();
+                        // Center the fitted image within the centered rect
+                        let img_rect = Rect {
+                            x: centered.x + (centered.width.saturating_sub(fitted.width)) / 2,
+                            y: centered.y + (centered.height.saturating_sub(fitted.height)) / 2,
+                            width: fitted.width.max(1),
+                            height: fitted.height.max(1),
+                        };
+                        // Store sixel data for proper cleanup on close
+                        if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
+                            w.sixel_data = Some(sixel.data.clone());
+                        }
+                        w.sixel_rect = Some(img_rect);
+                        f.render_widget(Image::new(&protocol), img_rect);
+                        // Page indicator when multiple album arts available
+                        if popup.total() > 1 {
+                            let indicator = format!(" {} / {} ", popup.index + 1, popup.total());
+                            let indicator_area = Rect {
+                                x: img_rect.x,
+                                y: img_rect.y + img_rect.height - 1,
+                                width: img_rect.width,
+                                height: 1,
+                            };
+                            f.render_widget(Clear, indicator_area);
+                            f.render_widget(
+                                Paragraph::new(indicator)
+                                    .style(Style::default().fg(Color::White))
+                                    .alignment(Alignment::Center),
+                                indicator_area,
+                            );
+                        }
                     }
-                    f.render_widget(Image::new(&protocol), centered);
-                }
-                Err(_) => {
-                    w.sixel_data = None;
-                    w.sixel_rect = None;
-                    f.render_widget(Paragraph::new("Failed to load album art").centered(), area);
+                    Err(_) => {
+                        w.sixel_data = None;
+                        w.sixel_rect = None;
+                        f.render_widget(Paragraph::new("Failed to load album art").centered(), area);
+                    }
                 }
             }
         }
@@ -339,8 +361,9 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
     (s_len, c_len, d_len) = (s_len.max(3), c_len.max(7), d_len.max(7));
     // Total block width required, including padding and borders.
     let width = s_len + c_len + d_len + 4;
-    // Total block height required, including header and borders.
-    let height = items + 3;
+    // Total block height required, including header, borders, and reference footer.
+    const REF_LINES: u16 = 3;
+    let height = items + 3 + REF_LINES as usize;
     // Naive implementation
     // XXX: We're running get_help_list_items a second time here.
     // Better to move to the fold above.
@@ -364,6 +387,11 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
         true,
         |_| "Help".into(),
         |t, f, chunk| {
+            let [table_chunk, ref_chunk] = Layout::vertical([
+                Constraint::Min(1),
+                Constraint::Length(REF_LINES),
+            ])
+            .areas(chunk);
             let commands_table = t.get_help_list_items().into_iter().map(
                 |DisplayableKeyAction {
                      keybinds,
@@ -373,7 +401,7 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
             );
             let (new_state, effect) = draw_table_impl(
                 f,
-                chunk,
+                table_chunk,
                 t.help.cur,
                 None,
                 None,
@@ -386,6 +414,20 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
                 cur_tick,
             );
             t.help.widget_state = new_state;
+            // Reference footer: API setup links
+            let ref_lines = vec![
+                Line::from(Span::raw(
+                    "Last.fm / Discogs / Genius: set tokens in ~/.config/youtui/config.toml",
+                )),
+                Line::from(Span::raw(
+                    "Metal Archives: export MA_COOKIE=cf_clearance=... (see docs/api-services.md)",
+                )),
+                Line::from(Span::styled(
+                    "Full docs: youtui/docs/",
+                    Style::default().fg(Color::DarkGray),
+                )),
+            ];
+            f.render_widget(Paragraph::new(ref_lines), ref_chunk);
             Some(effect)
         },
     );
