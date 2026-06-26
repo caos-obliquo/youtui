@@ -39,6 +39,13 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                 return;
             }
             if let Some(thumb) = popup.current_thumbnail() {
+                // Guard: skip render if image has no pixel data
+                if thumb.in_mem_image.width() == 0 || thumb.in_mem_image.height() == 0 {
+                    w.sixel_data = None;
+                    w.sixel_rect = None;
+                    f.render_widget(Paragraph::new("No image data").centered(), area);
+                    return;
+                }
                 match terminal_image_capabilities.new_protocol(
                     thumb.in_mem_image.clone(),
                     centered,
