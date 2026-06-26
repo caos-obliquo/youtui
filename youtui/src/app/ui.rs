@@ -97,6 +97,7 @@ pub struct YoutuiWindow {
     pub last_album_art: Option<std::rc::Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>>,
     pub sixel_data: Option<String>,
     pub sixel_rect: Option<ratatui::layout::Rect>,
+    pub cached_album_protocol: Option<ratatui_image::protocol::Protocol>,
 }
 impl_youtui_component!(YoutuiWindow);
 
@@ -618,6 +619,7 @@ impl YoutuiWindow {
             last_album_art: None,
             sixel_data: None,
             sixel_rect: None,
+            cached_album_protocol: None,
         };
         let initial_effect = url.map(|u| this.play_yt_url(u));
         let mut combined = task.map_frontend(|this: &mut Self| &mut this.playlist);
