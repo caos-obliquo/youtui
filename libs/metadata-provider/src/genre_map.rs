@@ -104,6 +104,13 @@ pub fn normalize_genre(name: &str) -> String {
     if let Some(canonical) = map.get(&cleaned) {
         return canonical.clone();
     }
+    // RYM genre data fallback — covers 5,977+ genres from RateYourMusic hierarchy.
+    // Skip for strings containing '/' — normalize_genres handles split separately.
+    if !name.contains('/') {
+        if let Some(rym_name) = rym_genre_data::normalize_style(name) {
+            return rym_name.to_string();
+        }
+    }
     name.to_string()
 }
 

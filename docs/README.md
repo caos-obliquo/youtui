@@ -7,7 +7,7 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | Section | Description |
 |---------|-------------|
 | [01-architecture](01-architecture.md) | 3-layer callback system, crate dependency graph |
-| [02-crates/youtui](02-crates/youtui.md) | Main app crate (29k LOC, 73 files) |
+| [02-crates/youtui](02-crates/youtui.md) | Main app crate (28k LOC, 72 files) |
 | [02-crates/ytmapi-rs](02-crates/ytmapi-rs.md) | YTM API client (12.8k LOC, 48 files) |
 | [api-services](api-services.md) | External API setup (Last.fm, Discogs, Genius, Metal Archives) |
 | [02-crates/async-callback-manager](02-crates/async-callback-manager.md) | Task/effect system (1.8k LOC) |
@@ -56,18 +56,22 @@ target/release/youtui
 # Tests
 cargo test --release -p youtui --bin youtui    # 136 tests
 cargo test --release -p vi-text-editor          # 65 tests
-cargo test --release -p ytmapi-rs              # 80 tests
+cargo test --release -p ytmapi-rs --lib         # 85 tests (no auth)
+cargo test --release -p ytmapi-rs              # 28/52 auth (needs cookie)
 ```
 
 ## Key Files
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `app/server/messages.rs` | ~1280 | All backend tasks |
-| `app/ui/playlist.rs` | ~2440 | Queue, playback, scrobbling, visual mode |
-| `app/ui/playlist/playlist_editor_popup.rs` | ~320 | Vim-driven playlist editor popup |
-| `app/ui/playlist/effect_handlers_playlist.rs` | ~555 | Frontend effect handlers |
-| `app/ui/browser/library.rs` | ~914 | Library browser (4th tab) |
-| `app/ui/browser.rs` | ~690 | Browser routing, tab dispatch |
-| `config/keymap.rs` | ~1982 | All keybindings by context |
+| `app/server/messages.rs` | ~1427 | All backend tasks |
+| `app/ui/playlist.rs` | ~3098 | Queue, playback, album splitting, visual mode |
+| `app/ui/playlist/playlist_editor_popup.rs` | ~748 | Vim-driven playlist editor popup |
+| `app/ui/playlist/effect_handlers_playlist.rs` | ~1154 | Frontend effect handlers |
+| `app/ui/playlist/lyrics_popup.rs` | ~1195 | Lyrics + annotations display |
+| `app/ui/playlist/album_art_popup.rs` | ~54 | Album art sixel popup w/ pagination |
+| `app/ui/browser/library.rs` | ~1574 | Library browser (4th tab) |
+| `app/ui/browser.rs` | ~939 | Browser routing, tab dispatch |
+| `app/ui/browser/albumsearch.rs` | ~720 | Albums tab |
+| `config/keymap.rs` | ~2130 | All keybindings by context |
 | `libs/vi-text-editor/src/lib.rs` | ~2260 | Vi-mode text editor |

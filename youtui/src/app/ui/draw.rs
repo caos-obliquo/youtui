@@ -15,17 +15,13 @@ use ratatui_image::picker::Picker;
 
 // Add tests to try and draw app with oddly sized windows.
 pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities: &Picker) {
-    // Clear sixel from terminal before any draw (prevents stale data from corrupting display)
-    use std::io::Write;
-    let _ = std::io::stdout().write_all(b"\x1bP0p\x1b\\");
-    let _ = std::io::stdout().flush();
-    // Clear sixel state; draw_footer will re-set if visible
-    w.sixel_data = None;
-    w.sixel_rect = None;
-
     // Album art popup: centered in terminal with proportional margins
     if w.album_art_popup.is_some() {
         if let Some(popup) = &mut w.album_art_popup {
+            // Clear stale sixel before drawing popup
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(b"\x1bP0p\x1b\\");
+            let _ = std::io::stdout().flush();
             use ratatui::layout::Margin;
             use ratatui::layout::Alignment;
             use ratatui_image::{Image, Resize};

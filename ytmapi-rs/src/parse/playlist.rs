@@ -318,10 +318,8 @@ pub(crate) fn parse_playlist_song(
                 .ok().unwrap_or_default();
             full_text.iter().find_map(|t| super::song::find_year_in_runs(t))
         });
-    // Some playlist types (Potentially just Featured Playlists) have a 'Plays'
-    // field between Artist and Album.
-    // TODO: Find a more efficient way, and potentially parse Featured Playlists
-    // differently.
+    // Featured Playlists have a 'Plays' field between Artist and Album
+    // (4th flex column). Detect by presence of flexColumns/3.
     let album_col_idx = if data.path_exists("/flexColumns/3") {
         3
     } else {

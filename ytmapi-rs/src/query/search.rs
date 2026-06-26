@@ -29,8 +29,7 @@ pub struct SearchQuery<'a, S: SearchType> {
 }
 
 /// Whether or not to allow Google to attempt to auto correct spelling as part
-/// of the results. Has no affect on Uploads or Library.
-// XXX: May actually affect Library. To confirm.
+/// of the results. Has no affect on Uploads or Library (ExactMatch default is fine).
 #[derive(PartialEq, Debug, Clone, Default)]
 pub enum SpellingMode {
     // My personal preference is to use ExactMatch by default, so that's what I've set.

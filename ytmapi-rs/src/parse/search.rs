@@ -173,6 +173,20 @@ pub struct SearchResultAlbum {
     pub album_type: AlbumType,
     pub thumbnails: Vec<Thumbnail>,
 }
+
+impl SearchResultAlbum {
+    pub fn new(title: String, artist: String, album_id: AlbumID<'static>) -> Self {
+        SearchResultAlbum {
+            title,
+            artist,
+            year: String::new(),
+            explicit: Explicit::NotExplicit,
+            album_id,
+            album_type: AlbumType::Album,
+            thumbnails: vec![],
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct SearchResultSong {
@@ -358,7 +372,7 @@ fn parse_top_results_from_music_card_shelf_contents(
 ) -> Result<Vec<TopResult>> {
     let mut results = Vec::new();
     // Begin - first result parsing
-    let result_name = music_shelf_contents.take_value_pointer(TITLE_TEXT)?;
+    let result_name: String = music_shelf_contents.take_value_pointer(TITLE_TEXT)?;
     // NOTE: Parse this before value at SUBTITLE is taken (below).
     let result_type = music_shelf_contents
         .borrow_value_pointer::<TopResultType>(SUBTITLE)
@@ -367,14 +381,20 @@ fn parse_top_results_from_music_card_shelf_contents(
     let subtitle_2: Option<String> = music_shelf_contents.take_value_pointer(SUBTITLE2).ok();
     // Possibly artists only.
     let subscribers = subtitle_2;
-    let byline = match result_type {
+    let byline = match &result_type {
         Some(_) => None,
         None => Some(subtitle),
     };
     // Imperative solution, may be able to make more functional.
     let publisher = None;
-    let artist = None;
-    let album = None;
+    let artist = match &result_type {
+        Some(TopResultType::Artist) => Some(result_name.clone()),
+        _ => None,
+    };
+    let album = match &result_type {
+        Some(TopResultType::Album(_)) => Some(result_name.clone()),
+        _ => None,
+    };
     let duration = None;
     let year = None;
     let plays = None;
@@ -415,7 +435,7 @@ fn parse_top_result_from_music_shelf_contents(
         return Ok(None);
     };
     let mut mrlir = music_shelf_contents.navigate_pointer("/musicResponsiveListItemRenderer")?;
-    let result_name = parse_flex_column_item(&mut mrlir, 0, 0)?;
+    let result_name: String = parse_flex_column_item(&mut mrlir, 0, 0)?;
     // It's possible to have artist name in the first position instead of a
     // TopResultType. There may be a way to differentiate this even further.
     let flex_1_0: String = parse_flex_column_item(&mut mrlir, 1, 0)?;
@@ -433,13 +453,13 @@ fn parse_top_result_from_music_shelf_contents(
     let mut year = None;
     let mut plays = None;
     match result_type {
-        // XXX: Perhaps also populate Artist field.
         Some(TopResultType::Artist) => {
+            artist = Some(result_name.clone());
             subscribers = Some(parse_flex_column_item(&mut mrlir, 1, 2)?)
         }
         Some(TopResultType::Album(_)) => {
-            // XXX: Perhaps also populate Album field.
             artist = Some(parse_flex_column_item(&mut mrlir, 1, 2)?);
+            album = Some(result_name.clone());
             year = Some(parse_flex_column_item(&mut mrlir, 1, 4)?);
         }
         Some(TopResultType::Playlist) => {

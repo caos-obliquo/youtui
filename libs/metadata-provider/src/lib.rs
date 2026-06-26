@@ -85,8 +85,12 @@ impl MetadataRegistry {
             if a_low == art_low { score += 50; artist_ok = true; }
             else if a_low.contains(&art_low) || art_low.contains(&a_low) { score += 10; }
         }
-        // album_tracks present: +100 (most important — enables splitting)
-        if !meta.album_tracks.is_empty() { score += 100; }
+        // album_tracks present: +100 if artist matches (enables splitting),
+        // +30 otherwise (tracklist without correct artist is low-confidence)
+        if !meta.album_tracks.is_empty() {
+            if artist_ok { score += 100; }
+            else { score += 30; }
+        }
         // album name present: +10
         if meta.album.is_some() { score += 10; }
         // year present: +5
@@ -275,8 +279,8 @@ mod tests {
     #[test]
     fn score_album_tracks_only() {
         let meta = make_meta(None, None, None, 3);
-        // 100 (tracks) + 3*2 = 106
-        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 106);
+        // artist missing → tracklist +30, 3 tracks = 6 → 36
+        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 36);
     }
 
     #[test]
@@ -312,8 +316,8 @@ mod tests {
     #[test]
     fn score_track_count_capped() {
         let meta = make_meta(None, None, None, 20);
-        // 100 (tracks) + min(15,20)*2 = 130
-        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 130);
+        // artist missing → tracklist +30, min(15,20)*2 = 30 → 60
+        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 60);
     }
 
     #[test]

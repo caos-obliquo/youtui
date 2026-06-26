@@ -24,7 +24,7 @@ use super::component::actionhandler::{
 };
 use super::server::{IncreaseVolume, SetVolume};
 use super::structures::ListSong;
-use crate::async_rodio_sink::{SeekDirection, VolumeUpdate};
+use audio_player::{SeekDirection, VolumeUpdate};
 use crate::config::Config;
 use crate::config::keymap::Keymap;
 use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
@@ -262,6 +262,11 @@ impl KeyRouter<AppAction> for YoutuiWindow {
         &self,
         config: &'a Config,
     ) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
+        // Guard rail: filter active → no commands can fire
+        if self.browser.filter_active() {
+            let empty: Vec<&Keymap<AppAction>> = vec![];
+            return empty.into_iter();
+        }
         if self.playlist_save_popup.is_some() {
             let kbs = vec![&config.keybinds.playlist_save_popup];
             return kbs.into_iter();
@@ -947,6 +952,12 @@ impl YoutuiWindow {
     pub fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
         use crossterm::event::KeyCode;
 
+        // Intercept keys when browser filter is active — prevent command bleeding
+        if self.context == WindowContext::Browser && self.browser.filter_active() {
+            self.browser.handle_filter_key(key_event);
+            return YoutuiEffect::new_no_op();
+        }
+
         // Double-Esc: exit all search/filter/popups
         if key_event.code == KeyCode::Esc {
             let now = std::time::Instant::now();
@@ -1575,12 +1586,26 @@ impl YoutuiWindow {
         else {
             return None;
         };
-        let displayable_commands = keys
-            .iter()
-            .map(|(kb, kt)| DisplayableKeyAction::from_keybind_and_action_tree(kb, kt));
+        let is_library = self.browser.is_library();
+        let displayable_commands: Vec<DisplayableKeyAction<'_>> = keys.iter()
+            .filter(|(_, kt)| {
+                if let crate::config::keymap::KeyActionTree::Key(k) = kt {
+                    if let AppAction::BrowserSongs(action) = &k.action {
+                        return self.browser.is_song_action_visible(action);
+                    }
+                }
+                true
+            })
+            .map(|(kb, kt)| DisplayableKeyAction::from_keybind_and_action_tree(kb, kt))
+            .collect();
+        let description: std::borrow::Cow<'_, str> = if is_library {
+            format!("{} [{}]", name, self.browser.library_browser.category.label()).into()
+        } else {
+            name.into()
+        };
         Some(DisplayableMode {
-            displayable_commands,
-            description: name.into(),
+            displayable_commands: displayable_commands.into_iter(),
+            description,
         })
     }
 }

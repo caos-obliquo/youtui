@@ -5,7 +5,7 @@
 ```
 ┌────────────────────────────────────────────────────────────┐
 │                        youtui                              │
-│  (29k LOC, 73 files — main TUI application)                │
+│  (28k LOC, 72 files — main TUI application)                │
 │                                                            │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │ app/ — core application logic                        │  │
@@ -17,16 +17,16 @@
 │  ├── config/ — config.toml parsing + keymap IR          │  │
 │  ├── widgets/ — scrolling_list, scrolling_table, tab    │  │
 │  ├── youtube_downloader/ — yt-dlp + native downloaders  │  │
-│  └── async_rodio_sink.rs — audio playback backend       │  │
+│  └── audio-player/                              │  │
 └────────┬────────────────────────────────────────────────┘  │
          │ depends on:                                       │
-    ┌────┴────┬──────────┬──────────────┬────────────────┐   │
-    ▼         ▼          ▼              ▼                │   │
-┌────────┐ ┌────────┐ ┌──────────┐ ┌──────────┐         │   │
-│ ytmapi │ │ async  │ │ json     │ │ vi-text  │         │   │
-│ -rs    │ │-callbkd│ │ -crawler │ │ -editor  │         │   │
-│ 12.8k  │ │ 1.8k   │ │ 1.0k     │ │ 2.3k     │         │   │
-└────────┘ └────────┘ └──────────┘ └──────────┘         │   │
+    ┌────┴────┬──────────┬──────────────┬───────────────┐    │
+    ▼         ▼          ▼              ▼               │    │
+┌────────┐ ┌────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐ │
+│ ytmapi │ │ async  │ │ json     │ │ vi-text  │ │ audio   │ │
+│ -rs    │ │-callbkd│ │ -crawler │ │ -editor  │ │-player  │ │
+│ 12.8k  │ │ 1.8k   │ │ 1.0k     │ │ 2.3k     │ │ 0.8k    │ │
+└────────┘ └────────┘ └──────────┘ └──────────┘ └─────────┘ │
 └────────────────────────────────────────────────────────────┘
 ```
 

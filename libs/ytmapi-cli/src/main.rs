@@ -14,7 +14,7 @@ use ytmapi_rs::{
         SearchQuery, search::SongsFilter,
         playlist::PrivacyStatus,
         CreatePlaylistQuery,
-        GetArtistAlbumsQuery,
+        GetArtistQuery, GetArtistAlbumsQuery,
         GetTasteProfileQuery, SetTasteProfileQuery,
         GetMoodCategoriesQuery, GetMoodPlaylistsQuery,
         GetUserQuery, GetUserPlaylistsQuery, GetUserVideosQuery,
@@ -22,6 +22,9 @@ use ytmapi_rs::{
         GetEpisodeQuery, GetNewEpisodesQuery,
         DeleteUploadEntityQuery,
         GetLibrarySortOrder, GetLibraryUploadAlbumQuery, GetLibraryUploadArtistQuery,
+        GetLibrarySongsQuery,
+        GetWatchPlaylistQuery,
+        GetLyricsQuery,
     },
 };
 
@@ -173,7 +176,7 @@ fn print_usage() {
     eprintln!("  user-playlists <channel_id>   Get user playlists");
     eprintln!();
     eprintln!("COMMANDS (offline, no auth):");
-    eprintln!("  fixture <file> [--type search|playlist|album]");
+    eprintln!("  fixture <file> [--type search|search-basic|playlist|album|artist|library-songs|watch-playlist|lyrics|mood-categories]");
     eprintln!("  debug meta <title> [artist]    Test title cleaning + artist normalization");
     eprintln!("  debug clean <title>            Test title cleaning only");
     eprintln!("  debug artist <name>            Test artist normalization only");
@@ -1558,6 +1561,48 @@ async fn cmd_fixture(args: &[String], json: bool) {
         "album" => {
             let query = GetAlbumQuery::new(AlbumID::from_raw(""));
             match process_json::<GetAlbumQuery<'_>, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "artist" => {
+            let query = GetArtistQuery::new(ArtistChannelID::from_raw(""));
+            match process_json::<GetArtistQuery<'_>, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "library-songs" => {
+            let query = GetLibrarySongsQuery::default();
+            match process_json::<GetLibrarySongsQuery, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "watch-playlist" => {
+            let query = GetWatchPlaylistQuery::new_from_video_id(VideoID::from_raw(""));
+            match process_json::<GetWatchPlaylistQuery<ytmapi_rs::common::VideoID<'_>>, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "lyrics" => {
+            let query = GetLyricsQuery::new(ytmapi_rs::common::LyricsID::from_raw(""));
+            match process_json::<GetLyricsQuery<'_>, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "mood-categories" => {
+            let query = GetMoodCategoriesQuery;
+            match process_json::<GetMoodCategoriesQuery, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "search-basic" => {
+            let query: SearchQuery<'_, ytmapi_rs::query::search::BasicSearch> = SearchQuery::new("");
+            match process_json::<SearchQuery<'_, ytmapi_rs::query::search::BasicSearch>, ytmapi_rs::auth::BrowserToken>(source, &query) {
                 Ok(o) => format!("{:#?}", o),
                 Err(e) => { eprintln!("Parse error: {}", e); return; }
             }

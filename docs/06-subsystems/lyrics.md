@@ -57,15 +57,11 @@ struct GetLyrics(String, String, String);
 
 `[Verse 1]`, `[Chorus]`, `[Bridge]` are plain text in Genius HTML — preserved automatically.
 
-## Musixmatch (Priority 1)
+## Musixmatch (Priority 1 — Planned, Not Integrated)
 
-```rust
-Musixmatch::builder().build()?
-    .matcher_lyrics(&title, &artist).await?
-    .lyrics_body
-```
+Not yet wired. Would use `Musixmatch` Rust crate (matcher_lyrics endpoint). Free tier returns partial lyrics (~16 lines, chorus+bridge only). Full lyrics require API key.
 
-Free tier returns partial lyrics (~16 lines, chorus+bridge only). Full lyrics require API key.
+See TODO.md Step 2.
 
 ## Bandcamp (Priority 2)
 

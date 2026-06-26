@@ -1,6 +1,6 @@
 # Crate: youtui
 
-**29,356 LOC, 73 files** — main application crate.
+**28k LOC, 72 files** — main application crate.
 
 ## Module Tree
 
@@ -9,7 +9,6 @@ youtui/src/
 ├── main.rs                 — Entry point, CLI parsing, Youtui::run()
 ├── app.rs                  — Youtui struct, AppCallback enum, event loop
 ├── appevent.rs             — EventHandler, Crossterm event stream
-├── async_rodio_sink.rs     — Audio playback via rodio + symphonia
 ├── core.rs                 — Temp file management, file cleanup
 ├── drawutils.rs            — Rect math, alignment helpers
 ├── keyaction.rs            — KeyActionTree, DisplayableKeyAction

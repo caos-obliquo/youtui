@@ -26,7 +26,7 @@ use playlistsearch::songs_panel::BrowserPlaylistSongsAction;
 use std::borrow::Cow;
 use std::convert::Into;
 use std::iter::{IntoIterator, Iterator};
-use tracing::warn;
+use tracing::{debug, warn};
 
 pub mod artistsearch;
 mod draw;
@@ -405,7 +405,10 @@ impl TextHandler for Browser {
                             self.sync_local_filter();
                         }
                         crossterm::event::KeyCode::Enter => {
+                            self.filter_text = self.filter_editor.get_text().to_string();
                             self.filter_active = false;
+                            self.filter_editor.clear();
+                            self.sync_local_filter();
                         }
                         _ => {
                             self.filter_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
@@ -414,7 +417,7 @@ impl TextHandler for Browser {
                     }
                 }
             }
-            return None;
+            return Some(AsyncTask::new_no_op());
         }
         match self.variant {
             BrowserVariant::Artist => self
@@ -592,6 +595,69 @@ impl Browser {
             filter_text: String::new(),
         }
     }
+    pub fn is_library(&self) -> bool {
+        matches!(self.variant, BrowserVariant::LibraryPlaylist)
+    }
+    /// Check if a BrowserSongsAction should be visible in the context menu
+    /// for the current browser variant and sub-state.
+    pub fn is_song_action_visible(&self, action: &BrowserSongsAction) -> bool {
+        if self.is_library() {
+            return action.is_valid_for_category(self.library_browser.category);
+        }
+        match self.variant {
+            BrowserVariant::Album => {
+                if self.album_search_browser.show_tracks {
+                    true // all actions valid when tracks shown
+                } else {
+                    // Album list: hide track-level actions
+                    !matches!(action,
+                        BrowserSongsAction::PlaySongs
+                        | BrowserSongsAction::AddSongToPlaylist
+                        | BrowserSongsAction::InsertNext
+                        | BrowserSongsAction::ViewLyrics
+                        | BrowserSongsAction::GoToAlbum
+                        | BrowserSongsAction::CopySongUrl
+                        | BrowserSongsAction::GetRelatedTracks
+                        | BrowserSongsAction::SaveToExistingPlaylist
+                    )
+                }
+            }
+            BrowserVariant::Song
+            | BrowserVariant::Artist
+            | BrowserVariant::PlaylistSearch => true,
+            BrowserVariant::LibraryPlaylist => true, // handled by is_library() above
+        }
+    }
+    pub fn filter_active(&self) -> bool {
+        self.filter_active
+    }
+    pub fn handle_filter_key(&mut self, k: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+        if k.kind != crossterm::event::KeyEventKind::Press {
+            return;
+        }
+        match k.code {
+            KeyCode::Esc => {
+                self.filter_text.clear();
+                self.filter_active = false;
+                self.filter_editor.clear();
+                self.sync_local_filter();
+            }
+            KeyCode::Enter => {
+                self.filter_text = self.filter_editor.get_text().to_string();
+                self.filter_active = false;
+                self.filter_editor.clear();
+                self.sync_local_filter();
+            }
+            _ => {
+                self.filter_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
+                let text = self.filter_editor.get_text().to_string();
+                eprintln!("FILTER KEY: text='{}'", text);
+                self.library_browser.local_filter_text = text;
+                self.sync_local_filter();
+            }
+        }
+    }
     pub fn sync_local_filter(&mut self) {
         let text = if self.filter_active {
             let t = self.filter_editor.get_text().to_string();
@@ -607,7 +673,10 @@ impl Browser {
             }
             BrowserVariant::Song => self.song_search_browser.local_filter_text = text,
             BrowserVariant::Album => self.album_search_browser.local_filter_text = text,
-            BrowserVariant::LibraryPlaylist => self.library_browser.local_filter_text = text,
+            BrowserVariant::LibraryPlaylist => {
+                self.library_browser.local_filter_text = text;
+                debug!(text = %self.library_browser.local_filter_text, "sync_local_filter: library set");
+            }
             BrowserVariant::PlaylistSearch => {
                 self.playlist_search_browser.playlist_search_panel.local_filter_text = text.clone();
                 self.playlist_search_browser.playlist_songs_panel.local_filter_text = text;
@@ -635,6 +704,11 @@ impl Browser {
                 let query = format!("{artist} {album}");
                 let (search_task, _) = self.album_search_browser.search_albums_query(query);
                 Some(search_task.map_frontend(|this: &mut Self| &mut this.album_search_browser))
+            }
+            NavTarget::AlbumOpen { artist, album, album_id } => {
+                self.variant = BrowserVariant::Album;
+                let (task, _) = self.album_search_browser.open_album_direct(artist, album, album_id);
+                Some(task.map_frontend(|this: &mut Self| &mut this.album_search_browser))
             }
             NavTarget::ArtistChannel(channel_id) => {
                 self.variant = BrowserVariant::Artist;
@@ -803,8 +877,7 @@ impl Browser {
         match self.variant {
             BrowserVariant::Artist => {
                 self.variant = BrowserVariant::Album;
-                let (task, _) = self.album_search_browser.fetch_albums();
-                Some(task.map_frontend(|this: &mut Self| &mut this.album_search_browser))
+                None
             }
             BrowserVariant::Album => {
                 self.variant = BrowserVariant::Song;

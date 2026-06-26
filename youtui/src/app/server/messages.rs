@@ -10,8 +10,8 @@ use crate::app::server::api::GetPlaylistSongsProgressUpdate;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::AudioQuality;
 use crate::app::structures::ListSongID;
-use crate::async_rodio_sink::rodio::decoder::DecoderError;
-use crate::async_rodio_sink::{
+use audio_player::rodio::decoder::DecoderError;
+use audio_player::{
     AllStopped, AutoplayUpdate, PausePlayResponse, Paused, PlayUpdate, ProgressUpdate, QueueUpdate,
     Resumed, SeekDirection, Stopped, VolumeUpdate,
 };
@@ -55,6 +55,13 @@ pub struct SearchSongs(pub String);
 pub struct SearchPlaylists(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchAlbums(pub String);
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlbumSearchItem {
+    pub album: SearchResultAlbum,
+    pub is_youtube: bool,
+    pub youtube_video_id: Option<VideoID<'static>>,
+    pub youtube_duration: Option<String>,
+}
 #[derive(Debug, PartialEq)]
 pub struct GetArtistSongs(pub ArtistChannelID<'static>);
 #[derive(Debug, PartialEq)]
@@ -354,7 +361,7 @@ use ytmapi_rs::parse::WatchPlaylistTrack;
 /// Input: (index_in_browser, artist, title)
 /// Output: (index, year, genres, styles) for cache hits only.
 #[derive(Debug, PartialEq)]
-pub struct EnrichFromMetadataCache(pub Vec<(usize, String, String)>);
+pub struct EnrichFromMetadataCache(pub Vec<(usize, String, String, Option<String>)>);
 
 impl BackendTask<ArcServer> for EnrichFromMetadataCache {
     type Output = Result<Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, anyhow::Error>;
@@ -367,16 +374,119 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
         let total = self.0.len();
         async move {
             let mut results = Vec::new();
-            for (idx, artist, title) in &self.0 {
+            let mut misses: Vec<(usize, String, String, String)> = Vec::new();
+
+            // First pass: cache lookups
+            for (idx, artist, title, album) in &self.0 {
                 let key = format!("{}::{}",
                     metadata_provider::util::norm_for_lfm(&artist.to_lowercase()),
                     metadata_provider::util::norm_for_lfm(&title.to_lowercase()),
                 );
                 if let Some(cached) = registry.lookup_cache(&key) {
                     results.push((*idx, cached.year, cached.genres, cached.styles));
+                } else {
+                    misses.push((*idx, artist.clone(), title.clone(), album.clone().unwrap_or_default()));
                 }
             }
-            tracing::info!(hits = %results.len(), total = %total, "Cache enrichment done");
+
+            // Second pass: bounded resolve for cache misses (first 30, max 5 concurrent)
+            let hit_count = results.len();
+            let resolve_count = misses.len().min(30);
+            let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
+            let mut handles = Vec::with_capacity(resolve_count);
+            for (idx, artist, title, album) in misses.into_iter().take(30) {
+                let reg = registry.clone();
+                let sem = semaphore.clone();
+                let handle = tokio::spawn(async move {
+                    let _permit = sem.acquire().await.unwrap();
+                    match reg.resolve(&artist, &title, if album.is_empty() { None } else { Some(&album) }).await {
+                        Ok(meta) => Some((idx, meta.year, meta.genres, meta.styles)),
+                        Err(_) => None,
+                    }
+                });
+                handles.push(handle);
+            }
+
+            for handle in handles {
+                if let Ok(Some((idx, year, genres, styles))) = handle.await {
+                    results.push((idx, year, genres, styles));
+                }
+            }
+
+            tracing::info!(hits = %hit_count, resolves = %resolve_count, total = %total, "Cache enrichment done");
+            Ok(results)
+        }
+    }
+}
+
+/// Enrich related tracks with yt-dlp metadata (year, album).
+/// Input: (list_index, video_id, artist, title)
+/// Output: Vec<(list_index, Option<year>, Option<album>)>
+#[derive(Debug, PartialEq)]
+pub struct EnrichRelatedTracks(pub Vec<(usize, String, String, String)>);
+
+impl BackendTask<ArcServer> for EnrichRelatedTracks {
+    type Output = Result<Vec<(usize, Option<String>, Option<String>)>, anyhow::Error>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        _backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let total = self.0.len();
+        let count = total.min(30);
+        async move {
+            let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
+            let mut handles = Vec::with_capacity(count);
+            for (idx, video_id, _artist, _title) in self.0.into_iter().take(30) {
+                let sem = semaphore.clone();
+                let handle = tokio::spawn(async move {
+                    let _permit = sem.acquire().await.unwrap();
+                    let output = tokio::process::Command::new("yt-dlp")
+                        .args(["--dump-json", "--no-warnings", "--flat-playlist",
+                               &format!("https://youtu.be/{}", video_id)])
+                        .output().await;
+                    match output {
+                        Ok(out) if out.status.success() => {
+                            let stdout = String::from_utf8_lossy(&out.stdout);
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                                let year = v.get("release_year")
+                                    .and_then(|s| s.as_i64())
+                                    .or_else(|| {
+                                        v.get("upload_date")
+                                            .and_then(|s| s.as_str())
+                                            .and_then(|d| d.get(..4))
+                                            .and_then(|y| y.parse::<i64>().ok())
+                                    })
+                                    .map(|y| y.to_string());
+                                let album = v.get("album")
+                                    .and_then(|s| s.as_str())
+                                    .map(|s| s.to_string());
+                                Some((idx, year, album))
+                            } else {
+                                tracing::warn!("yt-dlp JSON parse failed for video {}", video_id);
+                                None
+                            }
+                        }
+                        Ok(out) => {
+                            let stderr = String::from_utf8_lossy(&out.stderr);
+                            tracing::warn!("yt-dlp failed for {}: {}", video_id, stderr);
+                            None
+                        }
+                        Err(e) => {
+                            tracing::warn!("yt-dlp cmd error for {}: {}", video_id, e);
+                            None
+                        }
+                    }
+                });
+                handles.push(handle);
+            }
+            let mut results = Vec::new();
+            for handle in handles {
+                if let Ok(Some((idx, year, album))) = handle.await {
+                    results.push((idx, year, album));
+                }
+            }
+            tracing::info!(enriched = %results.len(), total = %total, "Related tracks yt-dlp enrichment done");
             Ok(results)
         }
     }
@@ -798,8 +908,21 @@ impl BackendTask<ArcServer> for GetLyrics {
                 Err(e) => tracing::warn!("Genius fetch failed: {}", e),
             }
 
-            tracing::info!("Genius failed, trying fallback CLI providers");
-            // Fallback 1: bandcamp-lyrics CLI (great for niche/underground music)
+            // Fallback 1: LRCLIB (free, no API key, open-source)
+            tracing::info!("Genius failed, trying LRCLIB");
+            let lrclib = lrclib_rs::LrcLibClient::new(http_client.clone());
+            match lrclib.fetch_lyrics(&artist, &title, None).await {
+                Ok(lyrics) => {
+                    if lyrics.len() > 20 {
+                        tracing::info!("LRCLIB lyrics: {} chars", lyrics.len());
+                        return Ok(lyrics);
+                    }
+                }
+                Err(e) => tracing::warn!("LRCLIB fetch failed: {}", e),
+            }
+
+            tracing::info!("Genius + LRCLIB failed, trying fallback CLI providers");
+            // Fallback 2: bandcamp-lyrics CLI (great for niche/underground music)
             fn bc_slug(s: &str) -> String {
                 s.to_lowercase().chars()
                     .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
@@ -1124,7 +1247,7 @@ impl BackendTask<ArcServer> for SearchPlaylists {
     }
 }
 impl BackendTask<ArcServer> for SearchAlbums {
-    type Output = Result<Vec<SearchResultAlbum>>;
+    type Output = Result<Vec<AlbumSearchItem>>;
     type MetadataType = TaskMetadata;
     fn into_future(
         self,
@@ -1133,13 +1256,61 @@ impl BackendTask<ArcServer> for SearchAlbums {
         let backend = backend.clone();
         let query = self.0;
         async move {
+            let mut items: Vec<AlbumSearchItem> = Vec::new();
+            // YTM API search
             match backend.api.search_albums(query.clone()).await {
-                Ok(albums) => Ok(albums),
+                Ok(albums) => {
+                    for a in albums {
+                        items.push(AlbumSearchItem {
+                            album: a,
+                            is_youtube: false,
+                            youtube_video_id: None,
+                            youtube_duration: None,
+                        });
+                    }
+                }
                 Err(e) => {
-                    tracing::warn!("Album search failed (YTM API): {}. Returning empty.", e);
-                    Ok(Vec::new())
+                    tracing::warn!("Album search (YTM API) failed: {}.", e);
                 }
             }
+            // yt-dlp fallback for YouTube full-album videos
+            match tokio::process::Command::new("yt-dlp")
+                .args(["--flat-playlist", "--dump-json", "--no-warnings",
+                       &format!("ytsearch10:{}", query)])
+                .output().await
+            {
+                Ok(output) => {
+                    if let Ok(stdout) = String::from_utf8(output.stdout) {
+                        for line in stdout.lines() {
+                            if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
+                                let duration = v.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0);
+                                let title = v.get("title").and_then(|t| t.as_str()).unwrap_or("");
+                                if duration > 1200.0 || title.to_lowercase().contains("full album") {
+                                    let video_id_str = v.get("id").and_then(|i| i.as_str()).unwrap_or("");
+                                    let uploader = v.get("uploader").and_then(|u| u.as_str()).unwrap_or("");
+                                    let mins = (duration / 60.0) as u64;
+                                    let secs = (duration % 60.0) as u64;
+                                    let duration_str = format!("{}:{:02}", mins, secs);
+                                    items.push(AlbumSearchItem {
+                                        album: SearchResultAlbum::new(
+                                            title.to_string(),
+                                            uploader.to_string(),
+                                            AlbumID::from_raw(video_id_str.to_string()),
+                                        ),
+                                        is_youtube: true,
+                                        youtube_video_id: Some(VideoID::from_raw(video_id_str.to_string())),
+                                        youtube_duration: Some(duration_str),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Album search (yt-dlp) failed: {}.", e);
+                }
+            }
+            Ok(items)
         }
     }
 }

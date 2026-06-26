@@ -9,6 +9,7 @@ description = "Metadata provider trait and implementations for youtui"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+rym-genre-data = { path = "../rym-genre-data" }
 reqwest = { version = "0.11", default-features = false, features = ["json"] }
 lru = "0.12"
 futures = "0.3"

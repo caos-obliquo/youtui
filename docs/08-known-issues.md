@@ -5,7 +5,6 @@
 | Issue | File | Workaround | Status |
 |-------|------|------------|--------|
 | Native downloader 403 Forbidden | `youtube_downloader/native.rs` | Use yt-dlp downloader (`:` command) | Known, no fix planned |
-| Annotation panel: last entry cut off | `lyrics_popup.rs` | Resize terminal/tmux pane | Needs height calc fix |
 
 ## Browser/Keybinding
 
@@ -21,7 +20,6 @@
 | Issue | File | Description |
 |-------|------|-------------|
 | **VL prefix behavior critical**: read ops need VL, mutation ops strip VL | `ytmapi-rs/src/query/playlist/*`, `rate.rs` | Python ytmusicapi `validate_playlist_id()` strips VL from delete, edit, add/remove, rate. Browse/get endpoints need VL prefixed. All 4 mutation PostQuery impls now strip VL. |
-| Genius annotations w/o token | `genius-rs/` | `__INITIAL_STATE__` scraping fails on most pages. Need `GENIUS_TOKEN` env |
 | ytmapi-rs: 52/108 integration tests fail | `ytmapi-rs/` | Integration tests require browser auth. 85 lib tests pass offline |
 | ytmapi-cli: fixture mode | `libs/ytmapi-cli/` | Parses saved JSON fixtures. Live queries need auth |
 | Crossterm 0.29 destructure mismatch | `Cargo.toml` | `Event::Key` destructure changed -- pre-existing |
@@ -33,17 +31,13 @@
 |-------|------|-------------|
 | **Annotations component isolation**: `Tab`/`l`/`h` switches scroll/nav focus between panels. Seek commands `( ) < > [ ]` are global playback controls, always work. | `lyrics_popup.rs` | Verified working. |
 | `>` key crash guard | `draw_media_controls.rs` | `duration == 0` check prevents division by zero |
-| Last annotation cut off | `lyrics_popup.rs` | Height calculation doesn't account for bottom border |
 
 ## Metadata Pipeline
 
 | Issue | File | Description |
 |-------|------|-------------|
-| Album audio_playlist_id may be None | `albumsearch.rs` | `o.t` silently no-ops for singles/EPs without audio_playlist_id |
-| Related tracks have no album/year | YTM API limitation | Watch-playlist endpoint returns no album/year. Artist from channel name only. |
-| Album URL tracks bypass metadata pipeline | `ui.rs` | `GetPlaylistTracks` loads songs without `ValidateMetadata`. No album splitting. |
-| Force-split has no visual feedback | `playlist.rs` | No toast/notification on success/failure. Check logs. |
-| Year metadata gaps | metadata providers | Some tracks show `None` for year. Fallback extracts from album name `(YYYY)` |
+| Year metadata: rare None edge cases | metadata providers | Some tracks show `None` for year when no provider returns data and album has no `(YYYY)`. Fallbacks exist: provider → album name → song title parenthetical. |
+| **Wrong album in footer** | `footer.rs` | Song displays incorrect album name. Root cause: YTM song metadata may have stale/wrong album association (e.g. song from split/EP shows parent album). Track which `AlbumRef` YTM returns vs expected. Manual override via playlist editor may fix. |
 
 ## External
 

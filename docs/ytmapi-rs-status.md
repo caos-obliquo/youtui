@@ -132,7 +132,7 @@
 | Sort in query structs | ✅ | All 6 library Query structs accept sort |
 | Sort in simplified API | ✅ | 6 methods now accept `Option<GetLibrarySortOrder>` |
 | Sort in CLI | ✅ | `--sort` flag for library commands |
-| Sort in youtui UI | [ ] | Not wired — always default |
+| Sort in youtui UI | ✅ | Wired via o.O in Library context menu, cycles Default→NameAsc→NameDesc→RecentlySaved |
 
 ## Internal Code Quality
 

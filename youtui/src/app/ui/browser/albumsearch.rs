@@ -2,7 +2,7 @@ use crate::app::AppCallback;
 use crate::app::component::actionhandler::{
     ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
-use crate::app::server::SearchAlbums;
+use crate::app::server::{SearchAlbums, AlbumSearchItem};
 use crate::app::component::actionhandler::Suggestable;
 use crate::app::structures::{
     BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, fuzzy_match,
@@ -25,10 +25,10 @@ use lru::LruCache;
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
 use std::collections::HashSet;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use vi_text_editor::ViTextEditor;
-use ytmapi_rs::parse::{SearchResultAlbum, AlbumSong, ParsedSongAlbum, ParsedSongArtist};
-use ytmapi_rs::common::{AlbumID, PlaylistID, SearchSuggestion, Thumbnail, YoutubeID, LikeStatus, LibraryStatus};
+use ytmapi_rs::parse::{SearchResultAlbum, SearchResultSong, AlbumSong, ParsedSongAlbum, ParsedSongArtist};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, YoutubeID, LikeStatus, LibraryStatus};
 
 #[derive(Default)]
 pub enum InputRouting {
@@ -40,12 +40,11 @@ pub enum InputRouting {
 }
 
 pub struct AlbumSearchBrowser {
-    pub albums: Vec<SearchResultAlbum>,
+    pub albums: Vec<AlbumSearchItem>,
     pub album_selected: usize,
     pub track_list: BrowserSongsList,
     pub track_selected: usize,
     pub show_tracks: bool,
-    pub fetched: bool,
     pub album_year: String,
     pub album_artist: String,
     pub album_playlist_id: Option<PlaylistID<'static>>,
@@ -57,11 +56,13 @@ pub struct AlbumSearchBrowser {
     pub search: SearchBlock,
     pub search_popped: bool,
     pub album_list_state: ScrollingListState,
-    search_cache: LruCache<String, Vec<SearchResultAlbum>>,
+    search_cache: LruCache<String, Vec<AlbumSearchItem>>,
     last_search_query: Option<String>,
     pub local_filter_text: String,
     pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
     pub liked_playlists: HashSet<PlaylistID<'static>>,
+    pub last_message: Option<String>,
+    pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
 }
 
 impl_youtui_component!(AlbumSearchBrowser);
@@ -74,7 +75,6 @@ impl AlbumSearchBrowser {
             track_list: BrowserSongsList::default(),
             track_selected: 0,
             show_tracks: false,
-            fetched: false,
             album_year: String::new(),
             album_artist: String::new(),
             album_playlist_id: None,
@@ -91,36 +91,55 @@ impl AlbumSearchBrowser {
             local_filter_text: String::new(),
             cur_playing_video_id: None,
             liked_playlists: HashSet::new(),
+            last_message: None,
+            subscribed_artists: HashSet::new(),
         }
     }
 
-    pub fn fetch_albums(&mut self) -> (ComponentEffect<Self>, Option<AppCallback>) {
-        if self.fetched {
-            return (AsyncTask::new_no_op(), None);
-        }
-        self.fetched = true;
-        use ytmapi_rs::query::GetLibrarySortOrder;
-        let task = AsyncTask::new_future_try(
-            crate::app::server::GetAllLibraryAlbums { sort_order: GetLibrarySortOrder::Default },
-            HandleLibraryAlbumsOk,
-            HandleLibraryAlbumsError,
-            None,
-        ).map_frontend(|this: &mut Self| {
-            this.track_list.clear();
-            this
-        });
-        (task, None)
-    }
-
-    pub fn get_selected_album(&self) -> Option<&SearchResultAlbum> {
+    pub fn get_selected_album(&self) -> Option<&AlbumSearchItem> {
         self.albums.get(self.album_selected)
     }
 
     pub fn play_selected_album(&mut self) -> (ComponentEffect<Self>, Option<AppCallback>) {
         
         
-        let Some(album) = self.get_selected_album().cloned() else { return (AsyncTask::new_no_op(), None); };
-        let album_id = album.album_id.clone();
+        let Some(album_item) = self.get_selected_album().cloned() else { return (AsyncTask::new_no_op(), None); };
+        if album_item.is_youtube {
+            // YouTube full-album video: play directly
+            let song = SearchResultSong::from_yt_dlp(
+                album_item.album.title.clone(),
+                album_item.album.artist.clone(),
+                album_item.youtube_video_id.unwrap(),
+                None,
+                album_item.youtube_duration.unwrap_or_else(|| "0:00".to_string()),
+            );
+            let mut temp_list = BrowserSongsList::default();
+            temp_list.add_raw_search_result_song(song);
+            if let Some(list_song) = temp_list.get_song_from_idx(0) {
+                return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![list_song.clone()])));
+            }
+            return (AsyncTask::new_no_op(), None);
+        }
+        let album_id = album_item.album.album_id.clone();
+        let task = AsyncTask::new_future_try(
+            FetchAlbumTracks { album_id },
+            HandleFetchAlbumTracksOk,
+            HandleFetchAlbumTracksError,
+            None,
+        ).map_frontend(|this: &mut Self| &mut *this);
+        (task, None)
+    }
+
+    pub fn open_album_direct(&mut self, artist: String, album: String, album_id: AlbumID<'static>) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        self.albums = vec![AlbumSearchItem {
+            album: SearchResultAlbum::new(album, artist, album_id.clone()),
+            is_youtube: false,
+            youtube_video_id: None,
+            youtube_duration: None,
+        }];
+        self.album_selected = 0;
+        self.show_tracks = false;
+        self.track_list.clear();
         let task = AsyncTask::new_future_try(
             FetchAlbumTracks { album_id },
             HandleFetchAlbumTracksOk,
@@ -260,13 +279,14 @@ impl Loadable for AlbumSearchBrowser {
 }
 impl HasTitle for AlbumSearchBrowser {
     fn get_title(&self) -> Cow<'_, str> {
+        let msg = self.last_message.as_ref().map(|m| format!(" [{}]", m)).unwrap_or_default();
         if self.show_tracks {
             let album = self.albums.get(self.album_selected);
-            let name = album.map_or("", |a| a.title.as_str());
+            let name = album.map_or("", |a| a.album.title.as_str());
             let count = self.track_list.get_list_iter().count();
-            format!(" {} - {} ({} tracks) ", self.album_artist, name, count).into()
+            format!(" {} - {} ({} tracks){} ", self.album_artist, name, count, msg).into()
         } else {
-            " Album Tracks ".into()
+            format!(" Album Tracks{} ", msg).into()
         }
     }
 }
@@ -362,6 +382,7 @@ impl AdvancedTableView for AlbumSearchBrowser {
 
 impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
     fn apply_action(&mut self, action: BrowserSongsAction) -> impl Into<YoutuiEffect<Self>> {
+        self.last_message = None;
         let cur = self.track_selected;
         match action {
             BrowserSongsAction::PlaySong => {
@@ -438,10 +459,18 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
             BrowserSongsAction::RatePlaylist => {
                 if self.show_tracks {
                     if let Some(pl_id) = &self.album_playlist_id {
-                        let was_liked = !self.liked_playlists.insert(pl_id.clone());
-                        let rating = if was_liked { LikeStatus::Indifferent } else { LikeStatus::Liked };
-                        return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(pl_id.clone(), rating)));
+                        if self.liked_playlists.contains(pl_id) {
+                            self.liked_playlists.remove(pl_id);
+                            debug!("Album: toggle unlike");
+                            return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(pl_id.clone(), LikeStatus::Indifferent)));
+                        } else {
+                            self.liked_playlists.insert(pl_id.clone());
+                            debug!("Album: toggle like");
+                            return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(pl_id.clone(), LikeStatus::Liked)));
+                        }
                     }
+                    warn!("RatePlaylist skipped: album has no audio_playlist_id (singles/EPs not supported)");
+                    self.last_message = Some("Album not liked: singles/EPs not supported".to_string());
                 }
             }
             BrowserSongsAction::SubscribeToArtist => {
@@ -457,7 +486,25 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
                 if self.show_tracks {
                     if let Some(artist) = self.album_artists.first() {
                         if let Some(channel_id) = &artist.id {
+                            self.subscribed_artists.remove(channel_id);
                             return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![channel_id.clone()])));
+                        }
+                    }
+                }
+            }
+            BrowserSongsAction::ToggleSubscribeArtist => {
+                if self.show_tracks {
+                    if let Some(artist) = self.album_artists.first() {
+                        if let Some(channel_id) = &artist.id {
+                            if self.subscribed_artists.contains(channel_id) {
+                                self.subscribed_artists.remove(channel_id);
+                                debug!("Album: toggle unsubscribe artist");
+                                return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![channel_id.clone()])));
+                            } else {
+                                self.subscribed_artists.insert(channel_id.clone());
+                                debug!("Album: toggle subscribe artist");
+                                return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(channel_id.clone())));
+                            }
                         }
                     }
                 }
@@ -468,7 +515,7 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
             BrowserSongsAction::Sort => {
                 self.handle_pop_sort();
             }
-            _ => {}
+            other => warn!("Unhandled BrowserSongsAction in albumsearch: {:?}", other),
         }
         (AsyncTask::new_no_op(), None)
     }
@@ -632,29 +679,9 @@ pub struct AlbumFetchResult {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct HandleLibraryAlbumsOk;
-#[derive(Debug, PartialEq)]
-pub struct HandleLibraryAlbumsError;
-#[derive(Debug, PartialEq)]
 pub struct HandleFetchAlbumTracksOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleFetchAlbumTracksError;
-
-impl_youtui_task_handler!(HandleLibraryAlbumsOk, Vec<SearchResultAlbum>, AlbumSearchBrowser, |_, a: Vec<SearchResultAlbum>| {
-    move |target: &mut AlbumSearchBrowser| {
-        target.albums = a;
-        target.album_selected = 0;
-        if target.albums.is_empty() && !target.search_popped {
-            target.search_popped = true;
-            target.search = SearchBlock::default();
-        }
-        AsyncTask::new_no_op()
-    }
-});
-
-impl_youtui_task_handler!(HandleLibraryAlbumsError, anyhow::Error, AlbumSearchBrowser, |_, _err: anyhow::Error| {
-    |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op()
-});
 
 impl_youtui_task_handler!(HandleFetchAlbumTracksOk, AlbumFetchResult, AlbumSearchBrowser, |_, result: AlbumFetchResult| {
     move |target: &mut AlbumSearchBrowser| {
@@ -688,7 +715,7 @@ pub struct HandleSearchAlbumsOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleSearchAlbumsError;
 
-impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<SearchResultAlbum>, AlbumSearchBrowser, |_, a: Vec<SearchResultAlbum>| {
+impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<AlbumSearchItem>, AlbumSearchBrowser, |_, a: Vec<AlbumSearchItem>| {
     move |target: &mut AlbumSearchBrowser| {
         target.albums = a.clone();
         target.album_selected = 0;

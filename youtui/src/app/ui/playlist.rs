@@ -31,7 +31,7 @@ use crate::app::ui::draw_media_controls::upgrade_thumbnail_url;
 use crate::app::ui::{AppCallback, WindowContext};
 use crate::app::view::draw::{draw_loadable, draw_panel_mut, draw_table};
 use crate::app::view::{BasicConstraint, DrawableMut, HasTitle, Loadable, SortDirection, TableView};
-use crate::async_rodio_sink::{
+use audio_player::{
     AllStopped, AutoplayUpdate, PlayUpdate, QueueUpdate, SeekDirection, Stopped, VolumeUpdate,
 };
 use crate::config::Config;
@@ -117,6 +117,8 @@ pub struct Playlist {
     pub radio_mode: bool,
     /// Transient error message shown in playlist header (clears on next action)
     pub last_error: Option<String>,
+    /// Transient status notification (clears on next action)
+    pub last_status: Option<String>,
     /// Pending chunks for multi-playlist split (video_ids, title, description, next_index)
     pub pending_playlist_chunks: Option<(Vec<Vec<ytmapi_rs::common::VideoID<'static>>>, String, Option<String>, Option<ytmapi_rs::query::playlist::PrivacyStatus>)>,
     /// Stack of deleted songs for undo (song, original_index)
@@ -242,6 +244,7 @@ impl Action for PlaylistAction {
 impl ActionHandler<PlaylistAction> for Playlist {
     fn apply_action(&mut self, action: PlaylistAction) -> impl Into<YoutuiEffect<Playlist>> {
         self.last_error.take(); // Clear transient error on any action
+        self.last_status.take(); // Clear transient status on any action
         match action {
             PlaylistAction::ViewBrowser => (AsyncTask::new_no_op(), Some(self.view_browser())),
             PlaylistAction::PlaySelected => (self.play_selected(), None),
@@ -929,8 +932,9 @@ impl HasTitle for Playlist {
             _ => "",
         };
         let err_indicator = self.last_error.as_ref().map(|e| format!(" [ERR: {}]", e)).unwrap_or_default();
+        let status_indicator = self.last_status.as_ref().map(|s| format!(" [! {}]", s)).unwrap_or_default();
         format!(
-            "Local playlist - {} songs{}{}{}{}{}{}",
+            "Local playlist - {} songs{}{}{}{}{}{}{}",
             self.list.get_list_iter().len(),
             quality_indicator,
             shuffle_indicator,
@@ -938,6 +942,7 @@ impl HasTitle for Playlist {
             cat_indicator,
             romaji_indicator,
             err_indicator,
+            status_indicator,
         )
         .into()
     }
@@ -987,6 +992,7 @@ impl Playlist {
             repeat_mode: crate::app::structures::RepeatMode::Off,
             radio_mode: false,
             last_error: None,
+            last_status: None,
             pending_playlist_chunks: None,
             undo_stack: Vec::new(),
             visual_mode: false,

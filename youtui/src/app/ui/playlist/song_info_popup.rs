@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::rc::Rc;
 use metadata_provider::genre_map;
+use std::collections::HashSet;
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -226,6 +227,20 @@ impl SongInfoPopup {
         };
         let genre_display = if genre_str.is_empty() { "-" } else { genre_str.as_str() };
 
+        // Look up RYM genre descriptions
+        let genre_descriptions: Vec<String> = if !genre_str.is_empty() {
+            let mut seen = HashSet::new();
+            genre_str.split(',')
+                .map(|g| g.trim())
+                .filter_map(|g| rym_genre_data::find_genre(g))
+                .filter_map(|g| g.description.clone())
+                .filter(|d| seen.insert(d.clone()))
+                .map(|d| if d.len() > 120 { format!("{}...", &d[..117]) } else { d })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         let raw_lines = vec![
             ("Title", self.song.title.as_str()),
             ("Artist", &artist),
@@ -251,6 +266,12 @@ impl SongInfoPopup {
             };
             display.push_str(&marker);
             display.push('\n');
+            // Show RYM descriptions when Genre field is selected
+            if i == 4 && !genre_descriptions.is_empty() && self.selected_field == 4 {
+                for desc in &genre_descriptions {
+                    display.push_str(&format!("         {}\n", desc));
+                }
+            }
         }
 
         let info_widget = Paragraph::new(display)

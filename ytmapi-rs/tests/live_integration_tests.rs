@@ -13,8 +13,9 @@ use ytmapi_rs::common::{
 use ytmapi_rs::error::ErrorKind;
 use ytmapi_rs::query::playlist::{GetPlaylistDetailsQuery, PrivacyStatus};
 use ytmapi_rs::query::search::{
-    AlbumsFilter, ArtistsFilter, CommunityPlaylistsFilter, EpisodesFilter, FeaturedPlaylistsFilter,
-    PlaylistsFilter, PodcastsFilter, ProfilesFilter, SongsFilter, VideosFilter,
+    AlbumsFilter, ArtistsFilter, BasicSearch, CommunityPlaylistsFilter, EpisodesFilter,
+    FeaturedPlaylistsFilter, PlaylistsFilter, PodcastsFilter, ProfilesFilter, SongsFilter,
+    VideosFilter,
 };
 use ytmapi_rs::query::*;
 use ytmapi_rs::*;
@@ -128,43 +129,43 @@ generate_stream_test_logged_in!(
 );
 generate_stream_test!(
     test_stream_search_artists,
-    SearchQuery::new("Beatles").with_filter(ArtistsFilter)
+    SearchQuery::new_filtered("Beatles", ArtistsFilter)
 );
 generate_stream_test!(
     test_stream_search_songs,
-    SearchQuery::new("Beatles").with_filter(SongsFilter)
+    SearchQuery::new_filtered("Beatles", SongsFilter)
 );
 generate_stream_test!(
     test_stream_search_albums,
-    SearchQuery::new("Beatles").with_filter(AlbumsFilter)
+    SearchQuery::new_filtered("Beatles", AlbumsFilter)
 );
 generate_stream_test!(
     test_stream_search_videos,
-    SearchQuery::new("Beatles").with_filter(VideosFilter)
+    SearchQuery::new_filtered("Beatles", VideosFilter)
 );
 generate_stream_test!(
     test_stream_search_episodes,
-    SearchQuery::new("Beatles").with_filter(EpisodesFilter)
+    SearchQuery::new_filtered("Beatles", EpisodesFilter)
 );
 generate_stream_test!(
     test_stream_search_podcasts,
-    SearchQuery::new("Beatles").with_filter(PodcastsFilter)
+    SearchQuery::new_filtered("Beatles", PodcastsFilter)
 );
 generate_stream_test!(
     test_stream_search_profiles,
-    SearchQuery::new("Beatles").with_filter(ProfilesFilter)
+    SearchQuery::new_filtered("Beatles", ProfilesFilter)
 );
 generate_stream_test!(
     test_stream_search_featured_playlists,
-    SearchQuery::new("Beatles").with_filter(FeaturedPlaylistsFilter)
+    SearchQuery::new_filtered("Beatles", FeaturedPlaylistsFilter)
 );
 generate_stream_test!(
     test_stream_search_community_playlists,
-    SearchQuery::new("Beatles").with_filter(CommunityPlaylistsFilter)
+    SearchQuery::new_filtered("Beatles", CommunityPlaylistsFilter)
 );
 generate_stream_test!(
     test_stream_search_playlists,
-    SearchQuery::new("Beatles").with_filter(PlaylistsFilter)
+    SearchQuery::new_filtered("Beatles", PlaylistsFilter)
 );
 generate_stream_test!(
     test_stream_get_playlist,
@@ -229,22 +230,22 @@ generate_query_test_logged_in!(
     test_get_library_artist_subscriptions,
     GetLibraryArtistSubscriptionsQuery::default()
 );
-generate_query_test!(test_basic_search, SearchQuery::new("Beatles"));
+generate_query_test!(test_basic_search, <SearchQuery<'_, BasicSearch>>::from("Beatles"));
 generate_query_test!(
     test_basic_search_alternate_query_1,
-    SearchQuery::new("Beaten")
+    <SearchQuery<'_, BasicSearch>>::from("Beaten")
 );
 generate_query_test!(
     test_basic_search_alternate_query_2,
-    SearchQuery::new("Chasing scratch")
+    <SearchQuery<'_, BasicSearch>>::from("Chasing scratch")
 );
 generate_query_test!(
     test_basic_search_alternate_query_3_genre,
-    SearchQuery::new("Metal")
+    <SearchQuery<'_, BasicSearch>>::from("Metal")
 );
 generate_query_test!(
     test_basic_search_alternate_query_no_results,
-    SearchQuery::new("aaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbcccccccccccccccccc")
+    <SearchQuery<'_, BasicSearch>>::from("aaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbcccccccccccccccccc")
 );
 generate_query_test!(
     test_get_lyrics_id,
@@ -749,13 +750,13 @@ async fn test_get_library_artists_oauth() {
     // Don't stuff around trying the keep the local OAuth secret up to date, just
     // refresh it each time.
     api.refresh_token().await.unwrap();
-    let res = api.get_library_artists().await.unwrap();
+    let res = api.get_library_artists(None).await.unwrap();
     assert!(!res.is_empty());
 }
 #[tokio::test]
 async fn test_get_library_artists() {
     let api = new_standard_api().await.unwrap();
-    let res = api.get_library_artists().await.unwrap();
+    let res = api.get_library_artists(None).await.unwrap();
     assert!(!res.is_empty());
 }
 #[tokio::test]

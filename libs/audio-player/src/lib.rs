@@ -1,6 +1,5 @@
 //! Provides an asynchronous handle to a rodio sink, specifically designed to
 //! handle gapless playback.
-//! This module has been designed to be implemented as a library in future.
 use async_callback_manager::PanickingReceiverStream;
 use futures::Stream;
 use rodio::Source;
@@ -769,7 +768,6 @@ where
     song.track_position().periodic_access(interval, callback)
 }
 
-/* #### BELOW CODE COPIED FROM youtui::core #### */
 /// Send a message to the specified Tokio mpsc::Sender, and if sending fails,
 /// log an error with Tracing.
 pub async fn send_or_error<T, S: Borrow<mpsc::Sender<T>>>(tx: S, msg: T) {
@@ -797,4 +795,3 @@ pub fn oneshot_send_or_error<T: Debug, S: Into<oneshot::Sender<T>>>(tx: S, msg: 
         .send(msg)
         .unwrap_or_else(|e| error!("Error received when sending message {:?}", e));
 }
-/* #### ABOVE CODE COPIED FROM youtui::core #### */

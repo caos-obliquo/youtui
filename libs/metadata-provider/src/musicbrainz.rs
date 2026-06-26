@@ -39,15 +39,17 @@ impl MetadataProvider for MusicBrainzProvider {
 
             let artist_name = rec.get("artist-credit")?.as_array()?.first()
                 .and_then(|c| c.get("name"))?.as_str()?.to_string();
-            let year = rec.get("releases")?.as_array()?.first()
-                .and_then(|r| r.get("date"))?.as_str()
-                .and_then(|d| d.get(..4)).filter(|s| s.len() >= 4).map(|s| s.to_string());
-            let album = rec.get("releases")?.as_array()?.first()
-                .and_then(|r| r.get("title"))?.as_str()?.to_string();
+            let year = rec.get("releases")?.as_array()?.iter()
+                .filter_map(|r| r.get("date")?.as_str())
+                .filter_map(|d| d.get(..4)).filter(|s| s.len() >= 4)
+                .map(|s| s.to_string()).next();
+            let album = rec.get("releases")?.as_array()?.iter()
+                .filter_map(|r| r.get("title")?.as_str())
+                .map(|s| s.to_string()).next();
 
             Some(ValidatedMetadata {
                 artist: Some(artist_name),
-                album: Some(album),
+                album,
                 year,
                 track_no: None,
                 album_tracks: Vec::new(),

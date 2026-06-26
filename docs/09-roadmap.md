@@ -110,6 +110,19 @@
 | 73 | Context menu descriptions clarified across all browser tabs | `library.rs`, `songsearch.rs`, `search_panel.rs` (all) |
 | 74 | docs/api-services.md created, known-issues.md + album-splitting.md + roadmap.md refreshed | `docs/` |
 
+## Completed (2026-06-25 -- Toggle fixes, annotations, audit, docs)
+
+| # | Feature | Files |
+|---|---------|-------|
+| 75 | ToggleSubscribeArtist global (single o.S toggle, subscribed_artists HashSet) | `keymap.rs`, `albumsearch.rs` |
+| 76 | RatePlaylist toggle bug fixed (insert→contains+remove/insert) | `albumsearch.rs`, `library.rs` |
+| 77 | Annotation wrapping fix (Paragraph line-wrap counting in rendered_lines) | `lyrics_popup.rs` |
+| 78 | ytmapi-rs test fix (get_library_artists sig, 25→1 deprecation warnings) | `ytmapi-rs/tests/` |
+| 79 | Dead file/dead duplicate removed (async_rodio_sink.rs, rym-hierarchy.txt) | `youtui/src/`, `libs/` |
+| 80 | Context menu awareness (is_song_action_visible per variant/sub-state) | `ui.rs`, `albumsearch.rs` |
+| 81 | Phase 5: Related tracks yt-dlp enrichment (bounded 30/5 semaphore) | `messages.rs`, `effect_handlers_playlist.rs` |
+| 82 | Docs hygiene: CLAUDE.md + TODO.md + docs/ synced (test counts, phases, 9→12 crates) | All docs |
+
 ## What Was Tried and Abandoned
 
 | Attempt | Why Abandoned |
@@ -130,26 +143,28 @@
 | Crate | Passed | Ignored |
 |-------|--------|---------|
 | youtui | 136 | 4 |
-| metadata-provider | 46 | 0 |
+| metadata-provider | 47 | 0 |
 | vi-text-editor | 65 | 0 |
 | ytmapi-rs (lib) | 85 | 0 |
-| genius-rs | 14 | 0 |
+| genius-rs | 18 | 0 |
 | async-callback-manager | 14 | 0 |
 | json-crawler | 2 | 0 |
 | ytmapi-cli | 7 | 0 |
-| **Total** | **369** | **4** |
+| lrclib-rs | 4 | 0 |
+| rym-genre-data | 10 | 0 |
+| **Total** | **388** | **4** |
 
-0 warnings, 0 failures across workspace.
+1 warning (pre-existing ytmapi-cli deprecation), 0 failures across workspace.
 
 ## Medium Term
 
 | # | Feature | Est | Notes |
 |---|---------|-----|-------|
-| 1 | audio-player crate extraction | large | Deep async_rodio_sink coupling |
-| 2 | ytmapi-rs artist categories (5 TODOs) | med | Incomplete parse fields in GetArtist |
-| 3 | Rate toggle from details popup (parse like_status) | med | `messages.rs` |
+| 1 | Cross-platform clipboard | med | Wayland-only wl-copy. Add X11/macOS fallback. |
+| 2 | Liked songs in browser tables | med | Parse like_status from YTM search, add column to AdvancedTableView in all tabs. |
+| 3 | ytmapi-rs artist categories (5 TODOs) | med | Incomplete parse fields in GetArtist |
 | 4 | Batch reorder (not just swap) in ytmapi-rs | large | `ytmapi-rs/` |
-| 5 | **Footer FFT bars**: ringbuffer from async_rodio_sink -> `rustfft` -> 1-line frequency bars | med | `async_rodio_sink.rs`, `footer.rs`. Rust-only, no Cava dep. |
+| 5 | **Footer FFT bars**: ringbuffer → `rustfft` → 1-line freq bars | med | `footer.rs`. Rust-only, no Cava dep. Cosmetic. |
 
 ## Crate Extraction Status
 
@@ -159,10 +174,14 @@
 | 2 | json-crawler | Extracted | 2 |
 | 3 | async-callback-manager | Extracted | 14 |
 | 4 | vi-text-editor | Extracted | 65 |
-| 5 | genius-rs | Extracted | 14 |
+| 5 | genius-rs | Extracted | 18 |
 | 6 | ytmapi-cli | Extracted | 7 |
-| 7 | metadata-provider | Extracted | 46 |
-| 8 | audio-player | Blocked | Deep async_rodio_sink coupling |
+| 7 | metadata-provider | Extracted | 47 |
+| 8 | lrclib-rs | Extracted | 4 |
+| 9 | rym-genre-data | Extracted | 10 |
+| 10 | metal-proxy | Extracted | 0 |
+| 11 | audio-player | Extracted ✅ | 0 |
+| 12 | rym-definitions | Extracted (scraper) | 0 |
 
 ## Browser Tabs Feature Parity
 

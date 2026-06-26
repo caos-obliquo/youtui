@@ -13,6 +13,7 @@ pub struct NotesPopup {
     pub notes_path: std::path::PathBuf,
     command_mode: bool,
     command_editor: ViTextEditor,
+    scroll_offset: usize,
 }
 
 impl_youtui_component!(NotesPopup);
@@ -21,11 +22,13 @@ impl NotesPopup {
     pub fn new(notes_path: std::path::PathBuf, content: String) -> Self {
         let mut editor = ViTextEditor::new_multiline();
         editor.set_text(&content);
+        editor.mode = ViMode::Normal;
         Self {
             editor,
             notes_path,
             command_mode: false,
             command_editor: ViTextEditor::new(),
+            scroll_offset: 0,
         }
     }
 
@@ -86,9 +89,6 @@ impl NotesPopup {
 
         match event.code {
             KeyCode::Esc => {
-                if self.editor.mode != ViMode::Insert {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
-                }
                 self.editor.handle_key(KeyCode::Esc, false, false);
                 (AsyncTask::new_no_op(), None)
             }
@@ -161,6 +161,16 @@ impl NotesPopup {
             let cur_col = self.editor.cursor_col();
             let visual_range = self.editor.visual_line_range();
             let block_range = self.editor.visual_block_range();
+            let total_lines = self.editor.get_text().split('\n').count();
+            let visible_lines = text_area.height as usize;
+            if cur_line < self.scroll_offset {
+                self.scroll_offset = cur_line;
+            } else if visible_lines > 0 && cur_line >= self.scroll_offset + visible_lines {
+                self.scroll_offset = cur_line + 1 - visible_lines;
+            }
+            let max_scroll = total_lines.saturating_sub(visible_lines.saturating_sub(1));
+            self.scroll_offset = self.scroll_offset.min(max_scroll);
+
             let mut lines: Vec<ratatui::text::Line> = Vec::new();
             for (i, line_text) in self.editor.get_text().split('\n').enumerate() {
                 let is_cursor = i == cur_line;
@@ -211,11 +221,11 @@ impl NotesPopup {
                 }
             }
             frame.render_widget(
-                Paragraph::new(lines).wrap(Wrap { trim: false }),
+                Paragraph::new(lines).scroll((self.scroll_offset as u16, 0)).wrap(Wrap { trim: false }),
                 text_area,
             );
             frame.render_widget(
-                Paragraph::new(":w Save | :wq Save+Quit | :q Quit | Esc Close | Enter URL | i Insert | j/k Navigate")
+                Paragraph::new(":w Save | :wq Save+Quit | :q Quit | Enter URL | i Insert | j/k Navigate")
                     .style(Style::default().fg(Color::DarkGray))
                     .alignment(Alignment::Center),
                 footer_area,

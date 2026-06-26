@@ -70,6 +70,7 @@ pub enum BrowserSongsAction {
     MoveTrackDown,
     SubscribeToArtist,
     UnsubscribeFromArtist,
+    ToggleSubscribeArtist,
     MergePlaylist,
     GetRelatedTracks,
     ToggleVisualMode,
@@ -107,6 +108,7 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::MoveTrackDown => "Move Track Down",
             BrowserSongsAction::SubscribeToArtist => "Subscribe to Artist",
             BrowserSongsAction::UnsubscribeFromArtist => "Unsubscribe from Artist",
+            BrowserSongsAction::ToggleSubscribeArtist => "Toggle Subscribe / Unsubscribe",
             BrowserSongsAction::MergePlaylist => "Merge Playlist Into",
             BrowserSongsAction::GetRelatedTracks => "Get Related Tracks",
             BrowserSongsAction::ToggleVisualMode => "Toggle Visual Mode",
@@ -116,6 +118,59 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::OpenPlaylistEditor => "Edit Tracks (Vim)",
         }
         .into()
+    }
+}
+
+impl BrowserSongsAction {
+    /// Filter context menu actions based on library category.
+    /// Playlists: all playlist mgmt valid.
+    /// LikedSongs/Artists: playlist mgmt hidden.
+    /// Albums: playlist mgmt hidden except RatePlaylist (like/unlike album).
+    /// Subscribe/Unsubscribe: Artists only.
+    pub fn is_valid_for_category(&self, category: crate::app::ui::browser::library::LibraryCategory) -> bool {
+        use crate::app::ui::browser::library::LibraryCategory;
+        match category {
+            LibraryCategory::Playlists => true,
+            LibraryCategory::LikedSongs => !matches!(self,
+                BrowserSongsAction::DeletePlaylist
+                | BrowserSongsAction::RenamePlaylist
+                | BrowserSongsAction::EditPlaylistDetails
+                | BrowserSongsAction::OpenPlaylistEditor
+                | BrowserSongsAction::SaveToExistingPlaylist
+                | BrowserSongsAction::RatePlaylist
+                | BrowserSongsAction::GetPlaylistDetails
+                | BrowserSongsAction::RemoveTrackFromPlaylist
+                | BrowserSongsAction::SubscribeToArtist
+                | BrowserSongsAction::UnsubscribeFromArtist
+                | BrowserSongsAction::ToggleSubscribeArtist
+                | BrowserSongsAction::MergePlaylist
+            ),
+            LibraryCategory::Artists => !matches!(self,
+                BrowserSongsAction::DeletePlaylist
+                | BrowserSongsAction::RenamePlaylist
+                | BrowserSongsAction::EditPlaylistDetails
+                | BrowserSongsAction::OpenPlaylistEditor
+                | BrowserSongsAction::SaveToExistingPlaylist
+                | BrowserSongsAction::RatePlaylist
+                | BrowserSongsAction::GetPlaylistDetails
+                | BrowserSongsAction::RemoveTrackFromPlaylist
+                | BrowserSongsAction::GoToAlbum
+                | BrowserSongsAction::MergePlaylist
+            ),
+            LibraryCategory::Albums => !matches!(self,
+                BrowserSongsAction::DeletePlaylist
+                | BrowserSongsAction::RenamePlaylist
+                | BrowserSongsAction::EditPlaylistDetails
+                | BrowserSongsAction::OpenPlaylistEditor
+                | BrowserSongsAction::SaveToExistingPlaylist
+                | BrowserSongsAction::GetPlaylistDetails
+                | BrowserSongsAction::RemoveTrackFromPlaylist
+                | BrowserSongsAction::SubscribeToArtist
+                | BrowserSongsAction::UnsubscribeFromArtist
+                | BrowserSongsAction::ToggleSubscribeArtist
+                | BrowserSongsAction::MergePlaylist
+            ),
+        }
     }
 }
 

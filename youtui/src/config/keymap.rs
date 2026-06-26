@@ -1037,7 +1037,7 @@ fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             Keybind::new_unmodified(crossterm::event::KeyCode::F(7)),
             KeyActionTree::new_key_with_visibility(
                 AppAction::Browser(BrowserAction::ChangeSearchType),
-                KeyActionVisibility::Global,
+                KeyActionVisibility::Hidden,
             ),
         ),
         (
@@ -1224,11 +1224,7 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('S')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::SubscribeToArtist)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('U')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::UnsubscribeFromArtist)),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::ToggleSubscribeArtist)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
@@ -1585,13 +1581,7 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('S')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(
-                            BrowserSongsAction::SubscribeToArtist,
-                        )),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('U')),
-                        KeyActionTree::new_key(AppAction::BrowserSongs(
-                            BrowserSongsAction::UnsubscribeFromArtist,
+                            BrowserSongsAction::ToggleSubscribeArtist,
                         )),
                     ),
                 ],

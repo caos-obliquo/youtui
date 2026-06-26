@@ -17,7 +17,9 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/z8KZsHNKS-O1qYVyKlSErT_RLMSMwVht89USvSdFAd0EoRlBOppi9DOdRkv609Ye_tfq_Wp8WwhVJbw=w120-h120-p-l90-rj",
                 },
             ],
-            artist: None,
+            artist: Some(
+                "The Beatles",
+            ),
             album: None,
             duration: None,
             year: None,
@@ -124,7 +126,9 @@ SearchResults {
             artist: Some(
                 "The Beatles",
             ),
-            album: None,
+            album: Some(
+                "Get Back (Rooftop Performance)",
+            ),
             duration: None,
             year: Some(
                 "2022",
