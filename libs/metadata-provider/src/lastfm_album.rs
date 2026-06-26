@@ -94,6 +94,25 @@ impl MetadataProvider for AlbumSearchProvider {
                         all.into_iter().take(5).map(|(n, _)| n).collect()
                     })
                     .unwrap_or_default();
+                // Verify searched track appears in album tracklist
+                if !album_tracks.is_empty() {
+                    let title_norm: String = crate::util::norm_for_lfm(title).to_lowercase().chars()
+                        .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+                    let title_norm = title_norm.trim();
+                    let track_found = album_tracks.iter().any(|t| {
+                        let t_norm: String = crate::util::norm_for_lfm(&t.title).to_lowercase().chars()
+                            .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+                        let t_norm = t_norm.trim();
+                        t_norm == title_norm || t_norm.contains(title_norm) || title_norm.contains(t_norm)
+                    });
+                    if !track_found {
+                        tracing::debug!(
+                            "AlbumSearchProvider: track '{}' not found in album '{}' tracklist, skipping",
+                            title, match_name
+                        );
+                        continue;
+                    }
+                }
                 if !album_tracks.is_empty() {
                     return Some(ValidatedMetadata {
                         artist: Some(match_artist.to_string()),

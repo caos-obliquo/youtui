@@ -8,11 +8,13 @@
 | ViTextEditor | `cargo test --release -p vi-text-editor` | 65 | Unit + proptests |
 | ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 85 | All pass offline |
 | ytmapi-rs (full) | `cargo test --release -p ytmapi-rs` | 28 pass / 52 fail | Needs browser auth |
-| genius-rs | `cargo test --release -p genius-rs` | 14 | Unit tests for scraping + search + annotations |
-| metadata-provider | `cargo test --release -p metadata-provider` | 46 | Unit: providers, genre_map, scoring, cache |
+| genius-rs | `cargo test --release -p genius-rs` | 18 | Unit tests for scraping + search + annotations |
+| metadata-provider | `cargo test --release -p metadata-provider` | 47 | Unit: providers, genre_map, scoring, cache |
 | ytmapi-cli | `cargo test --release -p ytmapi-cli` | 7 | Fixture parsing, CLI usage |
 | async-callback-manager | `cargo test --release -p async-callback-manager` | 14 | 3 unit + 11 integration |
-| json-crawler | `cargo test --release -p json-crawler` | 8 | Unit + 2 doctests |
+| json-crawler | `cargo test --release -p json-crawler` | 2 | Unit + 2 doctests |
+| lrclib-rs | `cargo test --release -p lrclib-rs` | 4 | LRCLIB API lyrics provider |
+| rym-genre-data | `cargo test --release -p rym-genre-data` | 10 | RYM hierarchy parser |
 
 ## Running Tests
 

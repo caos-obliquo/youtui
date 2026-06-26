@@ -29,13 +29,14 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
 use std::borrow::Cow;
 use std::rc::Rc;
 use std::time::Duration;
-use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID};
+use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID, AlbumID};
 
 #[derive(Debug)]
 pub enum NavTarget {
     Artist(String),
     ArtistChannel(ArtistChannelID<'static>),
     Album { artist: String, album: String },
+    AlbumOpen { artist: String, album: String, album_id: AlbumID<'static> },
     SongSearch(String),
 }
 use std::fmt::Display;
@@ -752,7 +753,7 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::SeekBack => {
-                use crate::async_rodio_sink::SeekDirection;
+                use audio_player::SeekDirection;
                 let effect = self.window_state.playlist.handle_seek(
                     Duration::from_secs(5),
                     SeekDirection::Back,
@@ -760,7 +761,7 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::SeekForward => {
-                use crate::async_rodio_sink::SeekDirection;
+                use audio_player::SeekDirection;
                 let effect = self.window_state.playlist.handle_seek(
                     Duration::from_secs(5),
                     SeekDirection::Forward,

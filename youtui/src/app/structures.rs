@@ -172,13 +172,6 @@ pub fn normalize_artist_name(name: &str) -> String {
             s
         }
     };
-    // If ALL uppercase (e.g. "SUNAMI"), convert to proper case like "Sunami"
-    if !trimmed.is_empty() && trimmed.chars().all(|c| !c.is_alphabetic() || c.is_uppercase()) {
-        let lowered = trimmed.to_lowercase();
-        let mut chars = lowered.chars();
-        let first = chars.next().unwrap().to_uppercase().to_string();
-        return first + chars.as_str();
-    }
     // Respect intentional lowercase names (e.g. "data da morte" should not become "Data da morte")
     let mut chars = trimmed.chars();
     let first = chars.next().unwrap();
@@ -507,7 +500,7 @@ impl BrowserSongsList {
             artist,
             album,
             duration,
-            plays: _,
+            plays,
             explicit,
             video_id,
             thumbnails,
@@ -546,7 +539,7 @@ impl BrowserSongsList {
             actual_duration: None,
             video_id,
             track_no: None,
-            plays: String::new(),
+            plays,
             title,
             explicit: Some(explicit),
             thumbnails: MaybeRc::Owned(thumbnails),
@@ -739,6 +732,13 @@ impl BrowserSongsList {
             }
         }
     }
+    /// Sort the underlying song list in place using the given comparator.
+    pub fn sort_list_by<F>(&mut self, compare: F)
+    where
+        F: FnMut(&ListSong, &ListSong) -> std::cmp::Ordering,
+    {
+        self.list.sort_by(compare);
+    }
 
 }
 
@@ -797,7 +797,7 @@ mod normalize_tests {
 
     #[test]
     fn norm_uppercase() {
-        assert_eq!(normalize_artist_name("METALLICA"), "Metallica");
+        assert_eq!(normalize_artist_name("METALLICA"), "METALLICA");
     }
 
     #[test]

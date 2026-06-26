@@ -1,6 +1,6 @@
 use crate::api::{DynamicApiError, DynamicYtMusic};
 use crate::app::CALLBACK_CHANNEL_SIZE;
-use crate::async_rodio_sink::send_or_error;
+use audio_player::send_or_error;
 use crate::config::ApiKey;
 use crate::{OAUTH_FILENAME, get_config_dir};
 use anyhow::{Error, Result};

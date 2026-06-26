@@ -1,8 +1,8 @@
 use super::song_downloader::InMemSong;
 use crate::app::structures::ListSongID;
-use crate::async_rodio_sink::rodio::Decoder;
-use crate::async_rodio_sink::rodio::decoder::DecoderError;
-use crate::async_rodio_sink::{self, AsyncRodio};
+use audio_player::rodio::Decoder;
+use audio_player::rodio::decoder::DecoderError;
+use audio_player::{self, AsyncRodio};
 use anyhow::Context;
 use futures::Stream;
 use std::io::Cursor;
@@ -40,62 +40,62 @@ impl Player {
         &self,
         song: DecodedInMemSong,
         song_id: ListSongID,
-    ) -> impl Stream<Item = async_rodio_sink::AutoplayUpdate<ListSongID>> + use<> {
+    ) -> impl Stream<Item = audio_player::AutoplayUpdate<ListSongID>> + use<> {
         self.rodio_handle.autoplay_song(song.0, song_id)
     }
     pub fn play_song(
         &self,
         song: DecodedInMemSong,
         song_id: ListSongID,
-    ) -> impl Stream<Item = async_rodio_sink::PlayUpdate<ListSongID>> + use<> {
+    ) -> impl Stream<Item = audio_player::PlayUpdate<ListSongID>> + use<> {
         self.rodio_handle.play_song(song.0, song_id)
     }
     pub fn queue_song(
         &self,
         song: DecodedInMemSong,
         song_id: ListSongID,
-    ) -> impl Stream<Item = async_rodio_sink::QueueUpdate<ListSongID>> + use<> {
+    ) -> impl Stream<Item = audio_player::QueueUpdate<ListSongID>> + use<> {
         self.rodio_handle.queue_song(song.0, song_id)
     }
     pub async fn seek(
         &self,
         duration: Duration,
-        direction: async_rodio_sink::SeekDirection,
-    ) -> Option<async_rodio_sink::ProgressUpdate<ListSongID>> {
+        direction: audio_player::SeekDirection,
+    ) -> Option<audio_player::ProgressUpdate<ListSongID>> {
         self.rodio_handle.seek(duration, direction).await
     }
     pub async fn seek_to(
         &self,
         seek_to_pos: Duration,
         id: ListSongID,
-    ) -> Option<async_rodio_sink::ProgressUpdate<ListSongID>> {
+    ) -> Option<audio_player::ProgressUpdate<ListSongID>> {
         self.rodio_handle.seek_to(seek_to_pos, id).await
     }
-    pub async fn stop(&self, song_id: ListSongID) -> Option<async_rodio_sink::Stopped<ListSongID>> {
+    pub async fn stop(&self, song_id: ListSongID) -> Option<audio_player::Stopped<ListSongID>> {
         self.rodio_handle.stop(song_id).await
     }
-    pub async fn stop_all(&self) -> Option<async_rodio_sink::AllStopped> {
+    pub async fn stop_all(&self) -> Option<audio_player::AllStopped> {
         self.rodio_handle.stop_all().await
     }
     pub async fn pause_play(
         &self,
         song_id: ListSongID,
-    ) -> Option<async_rodio_sink::PausePlayResponse<ListSongID>> {
+    ) -> Option<audio_player::PausePlayResponse<ListSongID>> {
         self.rodio_handle.pause_play(song_id).await
     }
     pub async fn resume(
         &self,
         song_id: ListSongID,
-    ) -> Option<async_rodio_sink::Resumed<ListSongID>> {
+    ) -> Option<audio_player::Resumed<ListSongID>> {
         self.rodio_handle.resume(song_id).await
     }
-    pub async fn pause(&self, song_id: ListSongID) -> Option<async_rodio_sink::Paused<ListSongID>> {
+    pub async fn pause(&self, song_id: ListSongID) -> Option<audio_player::Paused<ListSongID>> {
         self.rodio_handle.pause(song_id).await
     }
-    pub async fn increase_volume(&self, vol_inc: i8) -> Option<async_rodio_sink::VolumeUpdate> {
+    pub async fn increase_volume(&self, vol_inc: i8) -> Option<audio_player::VolumeUpdate> {
         self.rodio_handle.increase_volume(vol_inc).await
     }
-    pub async fn set_volume(&self, new_vol: u8) -> Option<async_rodio_sink::VolumeUpdate> {
+    pub async fn set_volume(&self, new_vol: u8) -> Option<audio_player::VolumeUpdate> {
         self.rodio_handle.set_volume(new_vol).await
     }
     pub async fn try_decode(
@@ -164,7 +164,7 @@ fn try_decode(song: Arc<InMemSong>, start_offset: Option<Duration>, actual_durat
     // Try direct decode first (fast path)
     let wrapper = ArcInMemSong(data.clone());
     let cur = std::io::Cursor::new(wrapper);
-    let direct_result = async_rodio_sink::rodio::Decoder::builder()
+    let direct_result = audio_player::rodio::Decoder::builder()
         .with_data(cur)
         .with_gapless(true)
         .with_byte_len(
@@ -189,7 +189,7 @@ fn try_decode(song: Arc<InMemSong>, start_offset: Option<Duration>, actual_durat
             let wrapper = ArcInMemSong(wav_arc);
             let cur = std::io::Cursor::new(wrapper);
             Ok(DecodedInMemSong(
-                async_rodio_sink::rodio::Decoder::builder()
+                audio_player::rodio::Decoder::builder()
                     .with_data(cur)
                     .with_gapless(true)
                     .with_byte_len(

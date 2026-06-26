@@ -1,0 +1,17 @@
+[package]
+name = "rym-definitions"
+version = "0.1.0"
+edition = "2021"
+description = "RateYourMusic genre/descriptor scraper"
+license = "MIT"
+authors = ["caos-obliquo"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "cookies", "rustls-tls"] }
+scraper = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

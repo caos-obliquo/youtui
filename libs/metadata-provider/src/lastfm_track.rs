@@ -53,6 +53,12 @@ impl MetadataProvider for TrackSearchProvider {
                                 || result_words.iter().any(|w| artist_words.contains(w));
                             if !shares_word && !artist_lower.is_empty() { continue; }
 
+                            let title_norm = util::norm_for_lfm(title);
+                            let result_name_norm = util::norm_for_lfm(result_name);
+                            if !title_norm.contains(&result_name_norm) && !result_name_norm.contains(&title_norm) {
+                                continue;
+                            }
+
                             let info_url = format!(
                                 "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={}&artist={}&track={}&format=json",
                                 util::urlencoding(key), util::urlencoding(result_artist), util::urlencoding(result_name)
@@ -122,6 +128,18 @@ mod tests {
             .and_then(|p| p.as_str())
             .and_then(|d| crate::util::extract_year(d));
         assert_eq!(year, None);
+    }
+
+    #[test]
+    fn parse_lastfm_track_title_matching() {
+        let title = "Master";
+        let results = vec!["Master of Puppets", "Battery", "Welcome Home (Sanitarium)"];
+        let title_norm = crate::util::norm_for_lfm(title);
+        let matching: Vec<&str> = results.into_iter().filter(|result| {
+            let result_name_norm = crate::util::norm_for_lfm(result);
+            title_norm.contains(&result_name_norm) || result_name_norm.contains(&title_norm)
+        }).collect();
+        assert_eq!(matching, vec!["Master of Puppets"]);
     }
 
     #[test]

@@ -15,9 +15,10 @@ use crate::drawutils::{
 };
 use crate::widgets::ScrollingList;
 use vi_text_editor::ViTextEditor;
+
 use ratatui::Frame;
 use ratatui::prelude::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ytmapi_rs::common::{SuggestionType, TextRun};
@@ -193,15 +194,9 @@ pub fn draw_album_search_browser(
     f.render_widget(left_block, left_album_chunk);
 
     if browser.albums.is_empty() {
-        let empty_msg = Paragraph::new(Line::from(Span::styled(
-            "No albums found",
-            Style::default().fg(ratatui::style::Color::DarkGray),
-        )))
-        .alignment(ratatui::layout::Alignment::Center);
-        f.render_widget(empty_msg, left_inner);
     } else {
         let items: Vec<String> = browser.albums.iter().enumerate().map(|(_i, a)| {
-            let label = format!("{} - {}", a.title, a.artist);
+            let label = format!("{} - {}", a.album.artist, a.album.title);
             label
         }).collect();
         browser.album_list_state.select(Some(browser.album_selected), cur_tick);
@@ -338,148 +333,20 @@ pub fn draw_library_browser(
         right_chunk
     };
 
-    match browser.category {
-        LibraryCategory::LikedSongs => {
-            let border_style = if right_selected {
-                Style::default().fg(SELECTED_BORDER_COLOUR)
-            } else {
-                Style::default()
-            };
-            let count = browser.song_list.get_list_iter().count();
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title(format!("{} - {} songs", browser.category.label(), count));
-            let inner = block.inner(content_chunk);
-            f.render_widget(block, content_chunk);
-
-            let songs: Vec<_> = browser.song_list.get_list_iter().collect();
-            let items: Vec<ListItem> = songs
-                .iter()
-                .enumerate()
-                .map(|(i, s)| {
-                    let label = format!("{} - {}", s.title, s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "));
-                    let is_playing = browser.cur_playing_video_id.as_ref().map_or(false, |vid| vid == &s.video_id);
-                    if is_playing {
-                        ListItem::new(Line::from(Span::styled(
-                            label,
-                            Style::default().fg(Color::Rgb(0x00, 0xff, 0x00)).add_modifier(Modifier::BOLD),
-                        )))
-                    } else if i == browser.cur_selected && right_selected {
-                        ListItem::new(Line::from(Span::styled(
-                            label,
-                            Style::default().fg(SELECTED_BORDER_COLOUR),
-                        )))
-                    } else {
-                        ListItem::new(Line::from(Span::raw(label)))
-                    }
-                })
-                .collect();
-            let list = List::new(items)
-                .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
-            let mut state = ListState::default().with_selected(Some(browser.cur_selected));
-            f.render_stateful_widget(list, inner, &mut state);
-        }
-        LibraryCategory::Playlists => {
-            let border_style = if right_selected {
-                Style::default().fg(SELECTED_BORDER_COLOUR)
-            } else {
-                Style::default()
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title(format!("Playlists - {}", browser.playlist_data.len()));
-            let inner = block.inner(content_chunk);
-            f.render_widget(block, content_chunk);
-            let items: Vec<ListItem> = browser
-                .playlist_data
-                .iter()
-                .enumerate()
-                .map(|(i, pl)| {
-                    if i == browser.playlist_selected && right_selected {
-                        ListItem::new(Line::from(Span::styled(
-                            pl.title.clone(),
-                            Style::default().fg(SELECTED_BORDER_COLOUR),
-                        )))
-                    } else {
-                        ListItem::new(Line::from(Span::raw(pl.title.clone())))
-                    }
-                })
-                .collect();
-            let list = List::new(items)
-                .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
-            let mut state = ListState::default().with_selected(Some(browser.playlist_selected));
-            f.render_stateful_widget(list, inner, &mut state);
-        }
-        LibraryCategory::Artists => {
-            let border_style = if right_selected {
-                Style::default().fg(SELECTED_BORDER_COLOUR)
-            } else {
-                Style::default()
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title(format!("Artists - {}", browser.artist_data.len()));
-            let inner = block.inner(content_chunk);
-            f.render_widget(block, content_chunk);
-
-            let items: Vec<ListItem> = browser
-                .artist_data
-                .iter()
-                .enumerate()
-                .map(|(i, a)| {
-                    if i == browser.artist_selected && right_selected {
-                        ListItem::new(Line::from(Span::styled(
-                            a.artist.clone(),
-                            Style::default().fg(SELECTED_BORDER_COLOUR),
-                        )))
-                    } else {
-                        ListItem::new(Line::from(Span::raw(a.artist.clone())))
-                    }
-                })
-                .collect();
-            let list = List::new(items)
-                .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
-            let mut state = ListState::default().with_selected(Some(browser.artist_selected));
-            f.render_stateful_widget(list, inner, &mut state);
-        }
-        LibraryCategory::Albums => {
-            let border_style = if right_selected {
-                Style::default().fg(SELECTED_BORDER_COLOUR)
-            } else {
-                Style::default()
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_style(border_style)
-                .title(format!("Albums - {}", browser.album_data.len()));
-            let inner = block.inner(content_chunk);
-            f.render_widget(block, content_chunk);
-
-            let items: Vec<ListItem> = browser
-                .album_data
-                .iter()
-                .enumerate()
-                .map(|(i, a)| {
-                    let label = format!("{} - {}", a.title, a.artist);
-                    if i == browser.album_selected && right_selected {
-                        ListItem::new(Line::from(Span::styled(
-                            label,
-                            Style::default().fg(SELECTED_BORDER_COLOUR),
-                        )))
-                    } else {
-                        ListItem::new(Line::from(Span::raw(label)))
-                    }
-                })
-                .collect();
-            let list = List::new(items)
-                .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR));
-            let mut state = ListState::default().with_selected(Some(browser.album_selected));
-            f.render_stateful_widget(list, inner, &mut state);
-        }
-    }
+    // All categories use draw_advanced_table
+    let border_style = if right_selected {
+        Style::default().fg(SELECTED_BORDER_COLOUR)
+    } else {
+        Style::default()
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(border_style)
+        .title(browser.get_title());
+    let inner = block.inner(content_chunk);
+    f.render_widget(Clear, content_chunk);
+    f.render_widget(block, content_chunk);
+    let _ = draw_advanced_table(f, browser, inner, _cur_tick);
 }
 pub fn draw_song_search_browser(
     f: &mut Frame,
@@ -577,14 +444,6 @@ pub fn draw_playlist_search_browser(
         left_selected,
         |t, f, chunk| {
             if t.list.is_empty() {
-                f.render_widget(
-                    Paragraph::new(Line::from(Span::styled(
-                        "No playlists found",
-                        Style::default().fg(ratatui::style::Color::DarkGray),
-                    )))
-                    .alignment(ratatui::layout::Alignment::Center),
-                    chunk,
-                );
             } else {
                 draw_list(f, t, chunk, _cur_tick);
             }

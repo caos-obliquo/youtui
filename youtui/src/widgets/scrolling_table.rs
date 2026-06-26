@@ -59,6 +59,8 @@ pub struct ScrollingTable<I, H> {
     visual_range: Option<(usize, usize)>,
     /// Style used to render visual range rows
     visual_range_style: Style,
+    /// Total number of items (for centering calculations)
+    total_items: usize,
 }
 
 impl<I, H> ScrollingTable<I, H> {
@@ -91,6 +93,7 @@ impl<I, H> ScrollingTable<I, H> {
             secondary_row_highlight_style: Default::default(),
             visual_range: None,
             visual_range_style: Default::default(),
+            total_items: 0,
         }
     }
     #[must_use = "method moves the value of self and returns the modified value"]
@@ -125,6 +128,11 @@ impl<I, H> ScrollingTable<I, H> {
         self
     }
     #[must_use = "method moves the value of self and returns the modified value"]
+    /// Set total number of items (required for centered scrolling)
+    pub fn total_items(mut self, total_items: usize) -> Self {
+        self.total_items = total_items;
+        self
+    }
     /// A single additional row to highlight with a different style
     pub fn secondary_highlight_row(mut self, secondary_highlight_row: Option<usize>) -> Self {
         self.secondary_highlight_row = secondary_highlight_row;
@@ -180,6 +188,7 @@ where
             secondary_row_highlight_style,
             visual_range,
             visual_range_style,
+            total_items,
         } = self;
         let cur_selected = state.table_state.selected();
         let adj_tick = cur_tick.saturating_sub(state.last_scrolled_tick);
@@ -187,17 +196,17 @@ where
         // Height available for data rows (subtract 1 for the heading row).
         let visible_rows = (area.height as usize).saturating_sub(1);
 
-        // Replicate ratatui's ensure_selected_in_view_on_offset so we can
-        // manage windowing ourselves.  After this, offset is guaranteed to
-        // satisfy: selected ∈ [offset, offset + visible_rows).
+        // Center the selected item vertically in the viewport (vim zz style).
+        // Clamp so we never show empty rows at top or bottom.
         let offset = {
-            let raw = state.table_state.offset();
+            let half = visible_rows.saturating_sub(1) / 2;
             let new_offset = match cur_selected {
-                Some(sel) if sel < raw => sel,
-                Some(sel) if visible_rows > 0 && sel >= raw + visible_rows => {
-                    sel + 1 - visible_rows
+                Some(sel) if total_items > visible_rows => {
+                    let center = sel.saturating_sub(half);
+                    let max_offset = total_items.saturating_sub(visible_rows);
+                    center.min(max_offset)
                 }
-                _ => raw,
+                _ => 0,
             };
             *state.table_state.offset_mut() = new_offset;
             new_offset

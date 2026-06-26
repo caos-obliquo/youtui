@@ -34,7 +34,7 @@ Uses `rusty_ytdl::stream()` but ignores custom filter for some videos, downloads
 
 ## Decode + Playback
 
-File: `app/server/player.rs` + `app/async_rodio_sink.rs`
+File: `app/server/player.rs` + `libs/audio-player/`
 
 ### DecodeSong
 
@@ -65,7 +65,9 @@ Files cached in temp dir. Cleanup on youtui exit via `create_or_clean_directory`
 
 ### Player backend
 
-`async_rodio_sink.rs` wraps `rodio` + `symphonia` for audio playback:
+### audio-player crate
+
+`libs/audio-player/` wraps `rodio` + `symphonia` for audio playback:
 - `Sink::new()` — create playback sink
 - `Sink::append(source)` — queue audio
 - `Sink::seek(duration, direction)` — seek (Forward/Back)
