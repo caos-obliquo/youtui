@@ -123,6 +123,8 @@ pub struct Youtui {
     render_interval: tokio::time::Interval,
     /// Debounce rapid Enter-spam on play actions
     play_debouncer: PlayDebouncer,
+    /// Background retry interval for cached scrobbles during rate limit
+    scrobble_retry_interval: tokio::time::Interval,
 }
 
 #[derive(PartialEq)]
@@ -305,6 +307,7 @@ impl Youtui {
             needs_redraw: false,
             render_interval: tokio::time::interval(Duration::from_millis(33)),
             play_debouncer: PlayDebouncer::new(Duration::from_millis(300)),
+            scrobble_retry_interval: tokio::time::interval(Duration::from_secs(300)),
         })
     }
     pub async fn run(&mut self) -> Result<()> {
@@ -334,6 +337,14 @@ impl Youtui {
                         Some(outcome) = self.task_manager.get_next_response() => {
                             self.handle_effect(outcome);
                             self.needs_redraw = true;
+                        }
+                        _ = self.scrobble_retry_interval.tick() => {
+                            if self.window_state.playlist.scrobbling_config.enabled {
+                                let config = self.window_state.playlist.scrobbling_config.clone();
+                                tokio::spawn(async move {
+                                    crate::app::scrobbler::retry_failed_scrobbles(&config).await;
+                                });
+                            }
                         }
                         _ = self.render_interval.tick() => {
                             if std::mem::take(&mut self.needs_redraw) {
