@@ -333,7 +333,7 @@ impl ListSong {
             ListSongDisplayableField::Duration => self.duration_string.as_str().into(),
             ListSongDisplayableField::Plays => self.plays.as_str().into(),
             ListSongDisplayableField::LikeStatus => match self.like_status {
-                LikeStatus::Liked => Cow::Borrowed("\u{2665}"),
+                LikeStatus::Liked => Cow::Borrowed("󰋑"),
                 _ => Cow::Borrowed(""),
             },
         }

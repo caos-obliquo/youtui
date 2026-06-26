@@ -745,10 +745,11 @@ impl TableView for Playlist {
             BasicConstraint::Length(6),
             BasicConstraint::Length(6),
             BasicConstraint::Length(3),
-            BasicConstraint::Percentage(Percentage(33)),
-            BasicConstraint::Percentage(Percentage(33)),
-            BasicConstraint::Percentage(Percentage(33)),
+            BasicConstraint::Percentage(Percentage(30)),
+            BasicConstraint::Percentage(Percentage(30)),
+            BasicConstraint::Percentage(Percentage(30)),
             BasicConstraint::Length(9),
+            BasicConstraint::Length(4),
             BasicConstraint::Length(4),
         ]
     }
@@ -795,6 +796,7 @@ impl TableView for Playlist {
                 ListSongDisplayableField::Song,
                 ListSongDisplayableField::Duration,
                 ListSongDisplayableField::Year,
+                ListSongDisplayableField::LikeStatus,
             ])));
         }
         items.into_iter()
@@ -802,7 +804,7 @@ impl TableView for Playlist {
 
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
         [
-            "p#", "", "t#", "Artist", "Album", "Song", "Duration", "Year",
+            "p#", "", "t#", "Artist", "Album", "Song", "Duration", "Year", "",
         ]
         .into_iter()
     }
