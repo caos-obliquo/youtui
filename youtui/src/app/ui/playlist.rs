@@ -1891,8 +1891,15 @@ impl Playlist {
         let cur = &self.play_status;
         match cur {
             PlayState::NotPlaying | PlayState::Stopped => {
-                warn!("Asked to play next, but not currently playing");
-                AsyncTask::new_no_op()
+                // handle_stopped may have been processed first, clearing play_status.
+                // Check repeat mode directly for Repeat One.
+                if self.repeat_mode == crate::app::structures::RepeatMode::One {
+                    info!("Repeat One: replaying prev track (from Stopped)");
+                    self.play_song_id(prev_id)
+                } else {
+                    warn!("Asked to play next, but not currently playing");
+                    AsyncTask::new_no_op()
+                }
             }
             PlayState::Paused(id)
             | PlayState::Playing(id)

@@ -22,6 +22,7 @@ impl NotesPopup {
     pub fn new(notes_path: std::path::PathBuf, content: String) -> Self {
         let mut editor = ViTextEditor::new_multiline();
         editor.set_text(&content);
+        editor.cursor = 0; // start at first line
         editor.mode = ViMode::Normal;
         Self {
             editor,
@@ -232,6 +233,17 @@ impl NotesPopup {
                         ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White).bg(bg)),
                     ]));
                 }
+            }
+
+            // Show empty-state hint when buffer is empty
+            let is_empty = self.editor.get_text().trim().is_empty();
+            if is_empty {
+                lines.push(ratatui::text::Line::from(vec![
+                    ratatui::text::Span::styled(
+                        "  ~ Notes file is empty — press i to start typing",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]));
             }
 
             frame.render_widget(
