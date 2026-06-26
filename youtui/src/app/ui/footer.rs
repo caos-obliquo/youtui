@@ -180,12 +180,15 @@ pub fn draw_footer(
             Err(_) => None,
         }
     }
+    // Invalidate protocol cache when chunk dimensions change (terminal resize)
+    let chunk_changed = w.cached_album_chunk.map_or(true, |c| c != album_art_chunk);
+    w.cached_album_chunk = Some(album_art_chunk);
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
             let art_changed = w.last_album_art.as_ref()
                 .map_or(true, |last| !std::rc::Rc::ptr_eq(last, album_art));
             w.last_album_art = Some(album_art.clone());
-            if art_changed || w.cached_album_protocol.is_none() {
+            if art_changed || chunk_changed || w.cached_album_protocol.is_none() {
                 if let Some(protocol) = encode_album_protocol(
                     album_art_chunk, album_art.in_mem_image.clone(), terminal_image_capabilities,
                 ) {
@@ -205,6 +208,7 @@ pub fn draw_footer(
         Some(AlbumArtState::Error) => {
             w.sixel_data = None;
             w.cached_album_protocol = None;
+            w.cached_album_chunk = None;
             f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
         }
         _ => {
