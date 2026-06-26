@@ -226,6 +226,43 @@ pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &S
     }
 }
 
+/// Send "now playing" notification to Last.fm. Best-effort, no cache on failure.
+pub async fn submit_now_playing(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) {
+    if !config.enabled { return; }
+    if config.api_key.is_empty() || config.session_key.is_empty() { return; }
+    let mut params: Vec<(String, String)> = vec![
+        ("method".into(), "track.updateNowPlaying".into()),
+        ("api_key".into(), config.api_key.clone()),
+        ("sk".into(), config.session_key.clone()),
+        ("artist".into(), state.artist.clone()),
+        ("track".into(), state.track.clone()),
+    ];
+    if let Some(ref album) = state.album {
+        params.push(("album".into(), album.clone()));
+    }
+    params.sort_by(|a, b| a.0.cmp(&b.0));
+    let sig_string: String = params.iter()
+        .map(|(k, v)| format!("{}{}", k, v))
+        .collect::<Vec<_>>()
+        .join("") + &config.api_secret;
+    let api_sig = format!("{:x}", md5::compute(sig_string.as_bytes()));
+    params.push(("api_sig".into(), api_sig));
+    let client = reqwest::Client::new();
+    match client.post("https://ws.audioscrobbler.com/2.0/")
+        .form(&params)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let text = resp.text().await.unwrap_or_default();
+            if text.contains("<lfm status=\"ok\">") {
+                info!("Now playing: {} - {}", state.artist, state.track);
+            }
+        }
+        Err(e) => debug!("Now playing HTTP error: {}", e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
