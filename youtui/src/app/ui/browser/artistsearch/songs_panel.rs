@@ -23,6 +23,8 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::iter::Iterator;
 use tracing::warn;
+use ytmapi_rs::common::Thumbnail;
+use ytmapi_rs::parse::{AlbumSong, ParsedSongAlbum, ParsedSongArtist};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum AlbumSongsInputRouting {
@@ -35,6 +37,7 @@ pub enum AlbumSongsInputRouting {
 #[derive(Clone)]
 pub struct AlbumSongsPanel {
     pub list: BrowserSongsList,
+    view_indices: Vec<usize>,
     pub route: AlbumSongsInputRouting,
     pub sort: SortManager,
     pub filter: FilterManager,
@@ -95,6 +98,7 @@ impl AlbumSongsPanel {
         AlbumSongsPanel {
             cur_selected: Default::default(),
             list: Default::default(),
+            view_indices: Vec::new(),
             route: Default::default(),
             sort: SortManager::new(),
             filter: FilterManager::new(),
@@ -121,20 +125,37 @@ impl AlbumSongsPanel {
             if !self.get_sortable_columns().contains(&c.column) {
                 bail!(format!("Unable to sort column {}", c.column,));
             }
-            self.list.sort(
-                get_adjusted_list_column(c.column, Self::subcolumns_of_vec())?,
-                c.direction,
-            );
+            let field = get_adjusted_list_column(c.column, Self::subcolumns_of_vec())?;
+            self.view_indices.sort_by(|&a, &b| {
+                let a_val = self
+                    .list
+                    .get_song_from_idx(a)
+                    .map(|s| s.get_field(field))
+                    .unwrap_or_default();
+                let b_val = self
+                    .list
+                    .get_song_from_idx(b)
+                    .map(|s| s.get_field(field))
+                    .unwrap_or_default();
+                match c.direction {
+                    SortDirection::Asc => a_val.partial_cmp(&b_val),
+                    SortDirection::Desc => b_val.partial_cmp(&a_val),
+                }
+                .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
         Ok(())
     }
-    pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
+    pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> + '_ {
         let filter_text = &self.local_filter_text;
-        self.list.get_list_iter().filter(move |ls| {
+        self.view_indices.iter().filter_map(move |&idx| {
+            let Some(ls) = self.list.get_song_from_idx(idx) else {
+                return None;
+            };
             if let Some(cat) = self.category_filter {
                 let album_name = ls.album.as_ref().map(|a| a.name.as_str()).unwrap_or("");
                 if !album_name.starts_with(cat) {
-                    return false;
+                    return None;
                 }
             }
             let fuzzy_pass = if filter_text.is_empty() {
@@ -147,8 +168,8 @@ impl AlbumSongsPanel {
                     || fuzzy_match(&filter_text, &album).is_some()
                     || fuzzy_match(&filter_text, &artist).is_some()
             };
-            if !fuzzy_pass { return false; }
-            self.get_filter_commands()
+            if !fuzzy_pass { return None; }
+            let pass = self.get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
                     let match_found = command.matches_row(
@@ -157,7 +178,8 @@ impl AlbumSongsPanel {
                         self.get_filterable_columns(),
                     );
                     acc && match_found
-                })
+                });
+            if pass { Some(ls) } else { None }
         })
     }
     pub fn apply_filter(&mut self) {
@@ -263,14 +285,30 @@ impl AlbumSongsPanel {
     pub fn rebuild_filtered_cache(&mut self) {
         self.filtered_cache = self.get_filtered_list_iter().cloned().collect();
     }
-    pub fn handle_songs_found(&mut self) {
+    pub fn clear_songs(&mut self) {
         self.list.clear();
+        self.view_indices.clear();
+    }
+    pub fn append_album_songs(
+        &mut self,
+        song_list: Vec<AlbumSong>,
+        album: ParsedSongAlbum,
+        year: String,
+        artists: Vec<ParsedSongArtist>,
+        thumbnails: Vec<Thumbnail>,
+    ) {
+        let old_len = self.list.len();
+        self.list
+            .append_raw_album_songs(song_list, album, year, artists, thumbnails);
+        self.view_indices.extend(old_len..self.list.len());
+    }
+    pub fn handle_songs_found(&mut self) {
+        self.clear_songs();
         // XXX: Consider clearing sort params here, so that we don't need to sort all
         // the incoming songs. Performance seems OK for now. XXX: Consider also
         // clearing filter params here.
         self.cur_selected = 0;
         self.list.state = ListStatus::InProgress;
-        self.rebuild_filtered_cache();
     }
     pub fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
         self.get_filtered_list_iter().nth(idx)
@@ -408,9 +446,8 @@ impl TableView for AlbumSongsPanel {
         ["#", "Album", "Song", "Duration", "Year", "Liked"].into_iter()
     }
     fn get_highlighted_row(&self) -> Option<usize> {
-        self.cur_playing_video_id.as_ref().and_then(|vid| {
-            self.list.get_list_iter().position(|s| s.video_id == *vid)
-        })
+        let vid = self.cur_playing_video_id.as_ref()?;
+        self.filtered_cache.iter().position(|s| s.video_id == *vid)
     }
     fn get_mut_state(&mut self) -> &mut ScrollingTableState {
         &mut self.widget_state
@@ -425,15 +462,28 @@ impl AdvancedTableView for AlbumSongsPanel {
         &[1, 4, 5]
     }
     fn push_sort_command(&mut self, sort_command: TableSortCommand) -> Result<()> {
-        // TODO: Maintain a view only struct, for easier rendering of this.
         if !self.get_sortable_columns().contains(&sort_command.column) {
             bail!(format!("Unable to sort column {}", sort_command.column,));
         }
-        // Map the column of ArtistAlbums to a column of List and sort
-        self.list.sort(
-            get_adjusted_list_column(sort_command.column, Self::subcolumns_of_vec())?,
-            sort_command.direction,
-        );
+        let field = get_adjusted_list_column(sort_command.column, Self::subcolumns_of_vec())?;
+        // Sort view indices instead of the underlying list — preserves original order.
+        self.view_indices.sort_by(|&a, &b| {
+            let a_val = self
+                .list
+                .get_song_from_idx(a)
+                .map(|s| s.get_field(field))
+                .unwrap_or_default();
+            let b_val = self
+                .list
+                .get_song_from_idx(b)
+                .map(|s| s.get_field(field))
+                .unwrap_or_default();
+            match sort_command.direction {
+                SortDirection::Asc => a_val.partial_cmp(&b_val),
+                SortDirection::Desc => b_val.partial_cmp(&a_val),
+            }
+            .unwrap_or(std::cmp::Ordering::Equal)
+        });
         // Remove commands that already exist for the same column, as this new command
         // will trump the old ones. Slightly naive - loops the whole vec, could
         // short circuit.
@@ -441,10 +491,13 @@ impl AdvancedTableView for AlbumSongsPanel {
             .sort_commands
             .retain(|cmd| cmd.column != sort_command.column);
         self.sort.sort_commands.push(sort_command);
+        self.rebuild_filtered_cache();
         Ok(())
     }
     fn clear_sort_commands(&mut self) {
         self.sort.sort_commands.clear();
+        self.view_indices = (0..self.list.len()).collect();
+        self.rebuild_filtered_cache();
     }
     fn get_sort_commands(&self) -> &[TableSortCommand] {
         &self.sort.sort_commands
@@ -489,7 +542,7 @@ impl HasTitle for AlbumSongsPanel {
             ListStatus::Loading => "Songs - loading".into(),
             ListStatus::InProgress => format!(
                 "Songs - {} results - loading",
-                self.list.get_list_iter().len()
+                self.list.len()
             )
             .into(),
             ListStatus::Loaded => {
@@ -499,7 +552,7 @@ impl HasTitle for AlbumSongsPanel {
                     Some("Single:") => " [Singles]",
                     _ => "",
                 };
-                format!("Songs - {} results{}", self.list.get_list_iter().len(), cat_indicator).into()
+                format!("Songs - {} results{}", self.list.len(), cat_indicator).into()
             }
             ListStatus::Error => "Songs - Error receieved".into(),
         }

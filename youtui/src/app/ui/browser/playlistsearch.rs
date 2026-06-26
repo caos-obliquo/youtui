@@ -290,7 +290,7 @@ impl PlaylistSearchBrowser {
     pub fn get_songs(&mut self) -> ComponentEffect<Self> {
         let selected = self.playlist_search_panel.get_selected_item();
         self.change_routing(InputRouting::Song);
-        self.playlist_songs_panel.list.clear();
+        self.playlist_songs_panel.clear_songs();
 
         let Some(cur_playlist_id) = self
             .playlist_search_panel
@@ -450,10 +450,8 @@ impl PlaylistSearchBrowser {
         self.increment_cur_list(0);
     }
     pub fn handle_append_song_list(&mut self, song_list: Vec<PlaylistItem>) {
-        self.playlist_songs_panel
-            .list
-            .append_raw_playlist_items(song_list);
-        // If sort commands exist, sort the list.
+        self.playlist_songs_panel.append_songs(song_list);
+        // If sort commands exist, sort the view indices.
         // Naive - can result in multiple calls to sort every time songs are appended.
         if let Err(e) = self.playlist_songs_panel.apply_all_sort_commands() {
             error!("Error <{e}> sorting album songs panel");
