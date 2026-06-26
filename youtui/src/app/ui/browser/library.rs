@@ -954,13 +954,14 @@ impl TableView for LibraryBrowser {
         }
     }
     fn get_layout(&self) -> &[BasicConstraint] {
-        static TRACKS_LAYOUT: [BasicConstraint; 6] = [
+        static TRACKS_LAYOUT: [BasicConstraint; 7] = [
             BasicConstraint::Length(6),
             BasicConstraint::Percentage(Percentage(25)),
             BasicConstraint::Percentage(Percentage(30)),
             BasicConstraint::Percentage(Percentage(30)),
             BasicConstraint::Length(8),
             BasicConstraint::Length(5),
+            BasicConstraint::Length(4),
         ];
         static PLAYLISTS_LAYOUT: [BasicConstraint; 4] = [
             BasicConstraint::Length(4),
