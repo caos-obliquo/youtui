@@ -474,6 +474,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Here Comes The Sun (Remastered 2009)",
@@ -505,6 +506,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Come Together (Remastered 2009)",
@@ -536,6 +538,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
     ],
     videos: [

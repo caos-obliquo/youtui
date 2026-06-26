@@ -22,6 +22,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Sleeping in the Cold Below (From \"Warframe\") (feat. Damhnait Doyle)",
@@ -53,6 +54,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Ticket To Ride (2023 Mix)",
@@ -84,6 +86,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Don't Let Me Down (Rooftop Performance / Take 2)",
@@ -115,6 +118,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "I Want You (She's So Heavy) (Remastered 2009)",
@@ -146,6 +150,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "What's The New Mary Jane (Anthology 3 Version)",
@@ -177,6 +182,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Good Morning Good Morning (Take 8 / Anthology 2 Version)",
@@ -208,6 +214,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Only A Northern Song (Anthology 2 Version)",
@@ -239,6 +246,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "A Day In The Life (Take 1)",
@@ -270,6 +278,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "While My Guitar Gently Weeps (Anthology 3 Version)",
@@ -301,6 +310,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Michelle (Remastered 2009)",
@@ -332,6 +342,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Come Together",
@@ -363,6 +374,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Octopus's Garden (Remastered 2009)",
@@ -394,6 +406,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Something (Take 39 / Instrumental / Strings Only)",
@@ -425,6 +438,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Don’t Let Me Down (First Rooftop Performance)",
@@ -456,6 +470,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Nowhere Man (Remastered 2009)",
@@ -487,6 +502,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Blackbird (Remastered 2009)",
@@ -518,6 +534,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Black Beatles (feat. Gucci Mane)",
@@ -549,6 +566,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Helter Skelter (Remastered 2009)",
@@ -580,6 +598,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Jealous Guy",
@@ -611,6 +630,7 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
     SearchResultSong {
         title: "Lovely Rita (Remastered 2009)",
@@ -642,5 +662,6 @@
             },
         ],
         year: None,
+        like_status: Indifferent,
     },
 ]

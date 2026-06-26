@@ -809,7 +809,7 @@ impl TableView for Playlist {
 
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
         [
-            "p#", "", "t#", "Artist", "Album", "Song", "Duration", "Year", "",
+            "p#", "", "t#", "Artist", "Album", "Song", "Duration", "Year", "Liked",
         ]
         .into_iter()
     }

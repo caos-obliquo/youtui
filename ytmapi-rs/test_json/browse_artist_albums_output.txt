@@ -8,7 +8,7 @@
             "MPREb_E7NpKw54NIT",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -33,7 +33,7 @@
             "MPREb_zwdwliUWiJm",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -58,7 +58,7 @@
             "MPREb_0MasdQ0OscT",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -83,7 +83,7 @@
             "MPREb_YtIbyjkuDJN",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -108,7 +108,7 @@
             "MPREb_R6C9lU4QEg2",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -133,7 +133,7 @@
             "MPREb_HBwHC7oaiOz",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -158,7 +158,7 @@
             "MPREb_TO8AOGMIAio",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -183,7 +183,7 @@
             "MPREb_fJhu6dGJXTo",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -208,7 +208,7 @@
             "MPREb_DyYPOfs7HPD",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -233,7 +233,7 @@
             "MPREb_ob5cslgCNc0",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -258,7 +258,7 @@
             "MPREb_qxaMiL4YnAQ",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -283,7 +283,7 @@
             "MPREb_yXhSI4FCUo6",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -308,7 +308,7 @@
             "MPREb_qcBQFrhPGhz",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -333,7 +333,7 @@
             "MPREb_jzCLHmaJdYp",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -358,7 +358,7 @@
             "MPREb_xsmDKhqhQrG",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -383,7 +383,7 @@
             "MPREb_7sBnPEyrgeY",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -408,7 +408,7 @@
             "MPREb_x4TEG6N2JhR",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -433,7 +433,7 @@
             "MPREb_DciERiuADkS",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -458,7 +458,7 @@
             "MPREb_TgQPwAzodvg",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -483,7 +483,7 @@
             "MPREb_bPBNzHn3Faz",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -508,7 +508,7 @@
             "MPREb_0lUBE22oiip",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -533,7 +533,7 @@
             "MPREb_kyVVLTlOd4U",
         ),
         category: Some(
-            "EP",
+            Singles,
         ),
         thumbnails: [
             Thumbnail {
@@ -558,7 +558,7 @@
             "MPREb_6Or5FbpBteh",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {
@@ -583,7 +583,7 @@
             "MPREb_WHT29n5quUP",
         ),
         category: Some(
-            "Album",
+            Albums,
         ),
         thumbnails: [
             Thumbnail {

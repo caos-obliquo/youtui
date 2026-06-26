@@ -393,6 +393,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Beaten",
@@ -424,6 +425,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Beat It",
@@ -455,6 +457,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
     ],
     videos: [

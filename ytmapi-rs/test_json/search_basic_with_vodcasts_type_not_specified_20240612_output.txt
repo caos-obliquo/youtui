@@ -504,6 +504,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Norwegian Wood (This Bird Has Flown) (Remastered 2009)",
@@ -535,6 +536,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Here Comes The Sun (Remastered 2009)",
@@ -566,6 +568,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
     ],
     videos: [

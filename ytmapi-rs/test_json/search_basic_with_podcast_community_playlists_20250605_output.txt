@@ -410,6 +410,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Sonne",
@@ -441,6 +442,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Numb",
@@ -472,6 +474,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
     ],
     videos: [

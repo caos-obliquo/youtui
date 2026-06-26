@@ -713,7 +713,90 @@ GetArtist {
                 ),
             },
         ),
-        videos: None,
-        related: None,
+        videos: Some(
+            GetArtistVideos {
+                results: [],
+                browse_id: PlaylistID(
+                    "",
+                ),
+            },
+        ),
+        related: Some(
+            GetArtistRelated {
+                results: [
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UC2XdaAVUannpujzv32jcouQ",
+                        ),
+                        title: "The Beatles",
+                        subscribers: "8.36M subscribers",
+                    },
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UCGVnHHo1u7Xfyht_psktcUQ",
+                        ),
+                        title: "George Harrison",
+                        subscribers: "962K subscribers",
+                    },
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UC0guXwTSf4hAOvCSgmViojw",
+                        ),
+                        title: "Paul McCartney",
+                        subscribers: "1.31M subscribers",
+                    },
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UCyyYmEud7d9iGVOYNMG9sAA",
+                        ),
+                        title: "Wings",
+                        subscribers: "70.1K subscribers",
+                    },
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UCNYhhkQqeFLUc-YEDcLpSYQ",
+                        ),
+                        title: "The Rolling Stones",
+                        subscribers: "3.26M subscribers",
+                    },
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UCa9MClu1yI4u_Ci4daHYAIQ",
+                        ),
+                        title: "Procol Harum",
+                        subscribers: "28.4K subscribers",
+                    },
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UCJWrY1uIUlnGvs0sUz5ydwQ",
+                        ),
+                        title: "Ringo Starr",
+                        subscribers: "246K subscribers",
+                    },
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UCMz6c0j-Pp54_GrLKcKjIrw",
+                        ),
+                        title: "Yoko Ono",
+                        subscribers: "73.9K subscribers",
+                    },
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UCbPJj3KraqUFeQ-zdSuCcrg",
+                        ),
+                        title: "George Martin",
+                        subscribers: "4.98K subscribers",
+                    },
+                    RelatedResult {
+                        browse_id: ArtistChannelID(
+                            "UC_oKib7DXJ7JE5erWrFUbEQ",
+                        ),
+                        title: "Cream",
+                        subscribers: "101K subscribers",
+                    },
+                ],
+            },
+        ),
+        playlists: None,
     },
 }
