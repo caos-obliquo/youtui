@@ -1266,7 +1266,7 @@ impl YoutuiWindow {
     }
     /// Invalidate the cached album protocol, forcing re-encode on next draw.
     /// Use when terminal capabilities or album art dimensions may have changed.
-    #[allow(dead_code)]
+    #[allow(dead_code)] // public API for extending apps
     pub fn invalidate_protocol_cache(&mut self) {
         self.cached_album_protocol = None;
         self.cached_album_chunk = None;

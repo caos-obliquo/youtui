@@ -2,14 +2,16 @@ use super::{
     DISPLAY_POLICY, ParseFrom, ProcessedResult, flex_column_item_pointer, parse_flex_column_item,
 };
 use crate::common::{
-    AlbumID, AlbumType, ArtistChannelID, ContinuationParams, EpisodeID, Explicit, PlaylistID,
-    PodcastID, SearchSuggestion, SuggestionType, TextRun, Thumbnail, UserChannelID, VideoID,
+    AlbumID, AlbumType, ArtistChannelID, ContinuationParams, EpisodeID, Explicit, LikeStatus,
+    PlaylistID, PodcastID, SearchSuggestion, SuggestionType, TextRun, Thumbnail, UserChannelID,
+    VideoID,
 };
 use crate::continuations::ParseFromContinuable;
 use crate::nav_consts::{
-    BADGE_LABEL, CONTINUATION_PARAMS, LIVE_BADGE_LABEL, MRLIR, MUSIC_CARD_SHELF, MUSIC_SHELF,
-    MUSIC_SHELF_CONTINUATION, NAVIGATION_BROWSE, NAVIGATION_BROWSE_ID, PAGE_TYPE, PLAY_BUTTON,
-    PLAYLIST_ITEM_VIDEO_ID, SECTION_LIST, SUBTITLE, SUBTITLE2, TAB_CONTENT, THUMBNAILS, TITLE_TEXT,
+    BADGE_LABEL, CONTINUATION_PARAMS, LIVE_BADGE_LABEL, MENU_LIKE_STATUS, MRLIR, MUSIC_CARD_SHELF,
+    MUSIC_SHELF, MUSIC_SHELF_CONTINUATION, NAVIGATION_BROWSE, NAVIGATION_BROWSE_ID, PAGE_TYPE,
+    PLAY_BUTTON, PLAYLIST_ITEM_VIDEO_ID, SECTION_LIST, SUBTITLE, SUBTITLE2, TAB_CONTENT,
+    THUMBNAILS, TITLE_TEXT,
 };
 use crate::parse::{EpisodeDate, ParsedSongAlbum};
 use crate::query::search::UnfilteredSearchType;
@@ -201,10 +203,11 @@ pub struct SearchResultSong {
     pub video_id: VideoID<'static>,
     pub thumbnails: Vec<Thumbnail>,
     pub year: Option<String>,
+    pub like_status: LikeStatus,
 }
 impl SearchResultSong {
     pub fn from_yt_dlp(title: String, artist: String, video_id: VideoID<'static>, album: Option<ParsedSongAlbum>, duration: String) -> Self {
-        Self { title, artist, album, duration, plays: String::new(), explicit: Explicit::NotExplicit, video_id, thumbnails: vec![], year: None }
+        Self { title, artist, album, duration, plays: String::new(), explicit: Explicit::NotExplicit, video_id, thumbnails: vec![], year: None, like_status: LikeStatus::Indifferent }
     }
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -651,6 +654,9 @@ fn parse_song_search_result_from_music_shelf_contents(
         });
     let video_id = mrlir.take_value_pointer(PLAYLIST_ITEM_VIDEO_ID)?;
     let thumbnails: Vec<Thumbnail> = mrlir.take_value_pointer(THUMBNAILS)?;
+    let like_status = mrlir
+        .take_value_pointer(MENU_LIKE_STATUS)
+        .unwrap_or(LikeStatus::Indifferent);
     Ok(SearchResultSong {
         artist,
         thumbnails,
@@ -661,6 +667,7 @@ fn parse_song_search_result_from_music_shelf_contents(
         video_id,
         duration,
         year,
+        like_status,
     })
 }
 fn parse_video_search_result_from_music_shelf_contents(

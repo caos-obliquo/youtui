@@ -220,12 +220,13 @@ impl AlbumSearchBrowser {
         if self.show_tracks { self.track_selected = self.track_list.get_list_iter().count().saturating_sub(1); }
         else { self.album_selected = self.albums.len().saturating_sub(1); }
     }
-    fn subcolumns_of_vec() -> [ListSongDisplayableField; 4] {
+    fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
         [
             ListSongDisplayableField::TrackNo,
             ListSongDisplayableField::Song,
             ListSongDisplayableField::Duration,
             ListSongDisplayableField::Year,
+            ListSongDisplayableField::LikeStatus,
         ]
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> + '_ {
@@ -319,7 +320,7 @@ impl TableView for AlbumSearchBrowser {
             .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        ["#", "Song", "Duration", "Year"].into_iter()
+        ["#", "Song", "Duration", "Year", "Liked"].into_iter()
     }
 }
 impl AdvancedTableView for AlbumSearchBrowser {
@@ -327,7 +328,7 @@ impl AdvancedTableView for AlbumSearchBrowser {
         self.get_filtered_list_iter().count()
     }
     fn get_sortable_columns(&self) -> &[usize] {
-        &[1, 3]
+        &[1, 3, 4]
     }
     fn get_sort_commands(&self) -> &[TableSortCommand] {
         &self.sort.sort_commands

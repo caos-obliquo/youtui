@@ -65,20 +65,6 @@ fn save_failed_scrobble(state: &ScrobbleState) {
     }
 }
 
-/// Remove a successfully-retried scrobble from the cache by index.
-#[allow(dead_code)]
-fn remove_cached_scrobble(index: usize) {
-    let Some(path) = scrobble_cache_path() else { return };
-    let mut cache: Vec<serde_json::Value> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    if index < cache.len() {
-        cache.remove(index);
-        let _ = std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap_or_default());
-    }
-}
-
 /// Retry failed scrobbles from persistent cache.
 /// Drops entries with retry_count >= MAX_RETRY_COUNT.
 pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
@@ -279,7 +265,7 @@ mod tests {
         (path, state)
     }
 
-    /// Test that save_failed_scrobble and remove_cached_scrobble work round-trip.
+    /// Test that save_failed_scrobble round-trips correctly.
     #[test]
     fn test_cache_roundtrip() {
         let (path, state) = temp_cache_path();

@@ -55,8 +55,8 @@ impl PlayDebouncer {
         self.last_play_time = Some(Instant::now());
         true
     }
-    #[allow(dead_code)]
-    pub fn reset(&mut self) {
+    #[cfg(test)]
+    pub(crate) fn reset(&mut self) {
         self.last_play_time = None;
     }
 }
