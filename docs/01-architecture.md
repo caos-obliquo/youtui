@@ -5,7 +5,7 @@
 ```
 ┌────────────────────────────────────────────────────────────┐
 │                        youtui                              │
-│  (28k LOC, 72 files — main TUI application)                │
+│  (35k LOC, 71 files — main TUI application)                │
 │                                                            │
 │  ┌──────────────────────────────────────────────────────┐  │
 │  │ app/ — core application logic                        │  │

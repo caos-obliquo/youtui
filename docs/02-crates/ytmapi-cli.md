@@ -147,6 +147,6 @@ println!("{:#?}", result);
 ## Tests
 
 ```bash
-# No unit tests yet — fixture mode is the test mechanism
+# 7 tests pass
 cargo test --release -p ytmapi-cli
 ```

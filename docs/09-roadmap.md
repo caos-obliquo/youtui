@@ -5,7 +5,7 @@
 | # | Feature | Files |
 |---|---------|-------|
 | 1 | Library browser tab (playlist tracks, context menu, visual mode) | `library.rs`, `playlist.rs`, `keymap.rs` |
-| 2 | ViTextEditor complete (65 tests: f/F/t/T/;/,/%, w/b/e/W/B/E, 0/$/gg/G, r/~/J/./C-r, text objects, surround) | `libs/vi-text-editor/` |
+| 2 | ViTextEditor complete (67 tests: f/F/t/T/;/,/%, w/b/e/W/B/E, 0/$/gg/G/^, r/~/J/./C-r, / ? search, text objects, surround) | `libs/vi-text-editor/` |
 | 3 | Lyrics popup (visual mode, hybrid line numbers, pagination) | `lyrics_popup.rs` |
 | 4 | Album art 1920x1080 HD, decode loop guard, throttle | `album_art_popup.rs` |
 | 5 | Navigation hub (o->a/b, g->a/b, local search, go-to) | `songsearch.rs`, `albumsearch.rs`, `keymap.rs` |
@@ -143,8 +143,8 @@
 | Crate | Passed | Ignored |
 |-------|--------|---------|
 | youtui | 164 | 4 |
-| metadata-provider | 47 | 0 |
-| vi-text-editor | 65 | 0 |
+| metadata-provider | 48 | 0 |
+| vi-text-editor | 67 | 0 |
 | ytmapi-rs (lib) | 85 | 0 |
 | genius-rs | 18 | 0 |
 | async-callback-manager | 14 | 0 |
@@ -152,9 +152,10 @@
 | ytmapi-cli | 7 | 0 |
 | lrclib-rs | 4 | 0 |
 | rym-genre-data | 10 | 0 |
-| **Total** | **416** | **4** |
+| audio-player | 0 | 0 |
+| **Total** | **419** | **4** |
 
-0 failures, 0 build warnings across workspace.
+0 failures, 0 build warnings across 11 workspace crates.
 
 ## Completed 2026-06-26 — Scrobbler + Suckless + PR #3 Perf
 
@@ -191,17 +192,6 @@
 | 90 | **Help menu single-pass**: collect to [String; 3] once, reuse | `draw.rs` |
 | 91 | **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy (4) | 4 files |
 | 92 | **invalidate_protocol_cache()** method on YoutuiWindow | `ui.rs` |
-
-### PR #3 Test Coverage (perf/pr3-test-coverage branch)
-| # | Feature | Files |
-|---|---------|-------|
-| 85 | **Enter-spam guard**: PlayDebouncer struct, 300ms cooldown | `app.rs` |
-| 86 | **Stale download cancel**: cancel_all_downloads() calls .cancel() on tokens | `app/ui/playlist.rs` |
-| 87 | **Library lazy iterator**: Box<dyn Iterator> instead of eager .collect() | `app/ui/browser/library.rs` |
-| 88 | **Footer protocol cache**: cached_album_protocol skips re-encode on same art | `app/ui.rs`, `app/ui/footer.rs` |
-| 89 | **Help menu single-pass**: collect to [String; 3] once, reuse | `app/ui/draw.rs` |
-| 90 | **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy iterator (4) | 4 files |
-| 91 | **invalidate_protocol_cache()** method on YoutuiWindow | `app/ui.rs` |
 
 ### PR #7 — Background scrobble retry + rate limit handling
 | # | Feature | Files |
@@ -314,7 +304,7 @@
 | 4 | vi-text-editor | Extracted | 65 |
 | 5 | genius-rs | Extracted | 18 |
 | 6 | ytmapi-cli | Extracted | 7 |
-| 7 | metadata-provider | Extracted | 47 |
+| 7 | metadata-provider | Extracted | 48 |
 | 8 | lrclib-rs | Extracted | 4 |
 | 9 | rym-genre-data | Extracted | 10 |
 | 10 | metal-proxy | Removed (API down) | 0 |

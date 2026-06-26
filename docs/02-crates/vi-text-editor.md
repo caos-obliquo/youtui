@@ -1,6 +1,6 @@
 # Crate: vi-text-editor
 
-**2,486 LOC, 1 file** — Standalone vim-mode text editor widget for Ratatui TUI.
+**2,648 LOC, 1 file** — Standalone vim-mode text editor widget for Ratatui TUI.
 
 ## Modes
 
@@ -14,6 +14,7 @@
 | `TextObjectPending` | `i`/`a` from OP | text object char | Awaiting `w`/`(`/`"`/`'`/`` ` `` |
 | `SurroundAddPending` | `ys` | motion + char | Awaiting range + surround char |
 | `SurroundTargetChar` | `ds`/`cs` | surround char | Awaiting target char |
+| `Search` | `/`/`?` | `Enter`/`Esc` | Type search query, Enter to find, Esc cancel |
 
 ## Motions
 
@@ -31,9 +32,14 @@
 | `E` | BIG-word end | Normal, visual |
 | `0`/`Home` | Line start | Normal, visual |
 | `$`/`End` | Line end | Normal, visual |
+| `^` | Line first non-whitespace | Normal, visual |
 | `gg` | First line | Normal, visual |
 | `G` | Last line | Normal, visual |
 | `%` | Matching bracket `()[]{}` | Normal |
+| `/`{query} | Search forward | Normal (Search mode) |
+| `?`{query} | Search backward | Normal (Search mode) |
+| `n` | Repeat last search forward | Normal |
+| `N` | Repeat last search backward | Normal |
 | `f`{char} | Find char forward | Normal |
 | `F`{char} | Find char back | Normal |
 | `t`{char} | Till char forward | Normal |
@@ -140,5 +146,5 @@ Cursor is a byte index. Before every `handle_key` call, `clamp_cursor()` ensures
 
 ```bash
 cargo test --release -p vi-text-editor
-# 65 tests pass
+# 67 tests pass
 ```

@@ -2,6 +2,8 @@
 
 File: `~/.config/youtui/config.toml`
 
+> **Cross-platform**: All paths use XDG convention (`~/.config/`, `~/.local/share/`). Works on Linux (XDG-compliant), macOS (`~/.config/` directory works despite no official XDG support), and BSD (XDG-compliant).
+
 ## ConfigIR Fields
 
 All fields parsed from TOML into `ConfigIR` (youtui/src/config.rs:106), then converted to `Config`.
