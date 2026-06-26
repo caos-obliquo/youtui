@@ -20,16 +20,16 @@ impl MetadataRegistry {
 }
 ```
 
-### 6 Providers
+### 6 Providers (sorted by priority)
 
 | Provider | Priority | Coverage | Auth |
 |----------|----------|----------|------|
-| LastfmAlbum | 0 | Mainstream + underground | API key |
-| DiscogsMaster | 1 | Underground metal, rare releases | None |
-| MusicBrainz | 2 | Comprehensive | Rate limit 1/s |
-| MetalArchives (MA_COOKIE) | 3 | Metal bands only | Cookie |
-| MetalAPI (metal-api.dev) | 4 | Metal (API returns 500) | None |
-| YTMEnrichment | 5 | Post-registry YTM API call | Cookie |
+| MetalApi | 5 | Metal (API returns 500) | None |
+| MusicBrainz | 7 | Comprehensive | Rate limit 1/s |
+| Discogs | 8 | Underground metal, rare releases | None |
+| Last.fm Album | 10 | Mainstream + underground | API key |
+| Last.fm Track | 20 | Mainstream + underground | API key |
+| Genius | 40 | Lyrics + annotations | Token |
 
 ### Scoring
 
@@ -55,6 +55,8 @@ impl MetadataRegistry {
 ### Cache
 
 File: `~/.local/share/youtui/metadata_cache.json`
+
+> **Cross-Platform:** Data path resolved via `data_local_dir()` from `directories` crate — `~/.local/share/youtui/` on Linux, `~/Library/Application Support/com.nick42.youtui/` on macOS. Config path (overrides) via `config_local_dir()` — `~/.config/youtui/` on Linux.
 
 - JSON format, atomic write via `.tmp` + rename
 - Loaded on startup, saved after each successful resolve

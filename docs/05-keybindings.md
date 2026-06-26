@@ -64,6 +64,7 @@ All default keybindings by context. Customizable in `config.toml`.
 | `p` | BrowserSongs(PlaySongs) | Play all |
 | `P` | BrowserSongs(AddSongsToPlaylist) | Queue all |
 | `s` | BrowserSongs(AddSongToPlaylist) | Save to playlist |
+| `Q` | BrowserSongs(QueueSong) | Queue song (append to end) |
 | `N` | BrowserSongs(InsertNext) | Insert next in queue |
 | `a` | BrowserSongs(GoToArtist) | Go to artist page |
 | `b` | BrowserSongs(GoToAlbum) | Go to album page |

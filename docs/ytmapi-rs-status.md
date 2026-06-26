@@ -138,7 +138,7 @@
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Clippy warnings | ✅ | **0 across all 9 crates** (fixed 35) |
+| Clippy warnings | ✅ | **0 across all 11 crates** (fixed 35) |
 | `#[allow(dead_code)]` | [~] | 3 proposital, 0 stale (cleaned in f723535, 206 lines deleted) |
 | `unwrap()` in production | ✅ | **0** — all in doc tests/tests |
 | Stale TODOs removed | ✅ | **62 removed**, 37 legitimate remain |

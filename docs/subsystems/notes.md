@@ -16,6 +16,8 @@ Built suckless: plain text file, no database, no JSON, no serialization — just
 ~/.config/youtui/notes.txt — plain UTF-8 text, one line per entry
 ```
 
+> **Cross-Platform:** Config path resolved via `directories` crate (`ProjectDirs::config_local_dir()`) — `~/.config/youtui/` on Linux, `~/Library/Application Support/com.nick42.youtui/` on macOS. Temp files use `std::env::temp_dir()`.
+
 Lines starting with `http://` or `https://` are URLs — pressing Enter on them opens the URL in yt-dlp. Lines without URL prefix are plain text notes (descriptions, metadata, reminders).
 
 Example:

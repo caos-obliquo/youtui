@@ -184,7 +184,7 @@ Enter: `V`. Exit: `Esc` or `V`.
 | `e`/`E` | Next word end |
 | `Ctrl+d` | Page down selection (n × 10) |
 | `Ctrl+u` | Page up selection (n × 10) |
-| `y` | Yank selection to clipboard (`wl-copy`) |
+| `y` | Yank selection to clipboard (auto-detected: `wl-copy` > `xclip` > `xsel` > `pbcopy`) |
 
 ### Enter Seeks Timestamp
 

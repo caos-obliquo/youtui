@@ -271,9 +271,9 @@ cargo build --release
 ./target/release/youtui
 
 # Run tests
-cargo test --release -p youtui --bin youtui        # 136 tests
-cargo test --release -p metadata-provider           # 47 tests
-cargo test --release -p vi-text-editor              # 65 tests
+cargo test --release -p youtui --bin youtui        # 164 tests
+cargo test --release -p metadata-provider           # 48 tests
+cargo test --release -p vi-text-editor              # 67 tests
 cargo test --release -p ytmapi-rs --lib             # 85 tests
 ```
 

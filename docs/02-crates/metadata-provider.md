@@ -1,6 +1,6 @@
 # metadata-provider
 
-**47 tests, 0 warnings.**
+**48 tests, 0 warnings.**
 
 Metadata resolution crate: queries 6 external APIs to resolve artist/album/year/
 tracklist/genre for YouTube Music songs. Used by the album splitting pipeline.
@@ -9,13 +9,12 @@ tracklist/genre for YouTube Music songs. Used by the album splitting pipeline.
 
 | Provider | Priority | Token Needed | Coverage |
 |----------|----------|--------------|----------|
-| MA_COOKIE (Metal Archives) | 5 | `MA_COOKIE` env | Metal/rock bands, full tracklists |
+| MetalApi (metal-api.dev) | 5 | None (API returns 500) | Metal bands |
+| MusicBrainz | 7 | None | Widest coverage, rate limit 1/s |
 | Discogs | 8 | `discogs_token` in config | Broad music catalog, Master API |
 | Last.fm AlbumSearch | 10 | `api_key` in config | album.getInfo, tracklists |
-| YTM Album Enrichment | 15 | (uses YTM client) | Post-registry fallback from YTM |
 | Last.fm TrackSearch | 20 | `api_key` in config | track.getInfo, album/year/track_no |
-| Genius | 40 | `genius_token` in config | Song metadata (tracklist) |
-| MusicBrainz | 50 | None | Widest coverage, last resort |
+| Genius | 40 | `genius_token` in config | Song metadata |
 
 ## Scoring
 
@@ -58,7 +57,7 @@ File: `src/genre_map.rs`
 ## Build & Test
 
 ```bash
-cargo test --release -p metadata-provider    # 47 pass
+cargo test --release -p metadata-provider    # 48 pass
 ```
 
 Located at `libs/metadata-provider/` in workspace root. Part of the 11-crate workspace.
