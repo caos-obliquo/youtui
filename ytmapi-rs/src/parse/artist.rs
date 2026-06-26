@@ -6,13 +6,14 @@ use super::{
 use crate::Result;
 use crate::common::{
     AlbumID, AlbumType, ArtistChannelID, BrowseParams, Explicit, LibraryManager, LibraryStatus,
-    LikeStatus, PlaylistID, VideoID,
+    LikeStatus, PlaylistID, VideoID, YoutubeID,
 };
 use crate::nav_consts::*;
 use crate::query::*;
 use const_format::concatcp;
 use json_crawler::{JsonCrawler, JsonCrawlerIterator, JsonCrawlerOwned};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -35,7 +36,7 @@ pub struct GetArtistAlbumsAlbum {
     pub title: String,
     pub playlist_id: Option<String>,
     pub browse_id: AlbumID<'static>,
-    pub category: Option<String>, // TODO change to enum
+    pub category: Option<ArtistTopReleaseCategory>,
     pub thumbnails: Vec<Thumbnail>,
     pub year: Option<String>,
 }
@@ -126,6 +127,7 @@ pub struct GetArtistTopReleases {
     pub singles: Option<GetArtistAlbums>,
     pub videos: Option<GetArtistVideos>,
     pub related: Option<GetArtistRelated>,
+    pub playlists: Option<GetArtistAlbums>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[non_exhaustive]
@@ -212,15 +214,29 @@ pub struct TableListSong {
     pub playlist_id: PlaylistID<'static>,
 }
 
-// Should be at higher level in mod structure.
-#[derive(PartialEq, Debug, Clone)]
-enum ArtistTopReleaseCategory {
+/// Category of an artist's top releases carousel section.
+#[derive(PartialEq, Debug, Clone, Default, Serialize, Deserialize)]
+pub enum ArtistTopReleaseCategory {
     Albums,
     Singles,
     Videos,
     Playlists,
     Related,
+    #[default]
     None,
+}
+
+impl fmt::Display for ArtistTopReleaseCategory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ArtistTopReleaseCategory::Albums => write!(f, "Album"),
+            ArtistTopReleaseCategory::Singles => write!(f, "Single"),
+            ArtistTopReleaseCategory::Videos => write!(f, "Video"),
+            ArtistTopReleaseCategory::Playlists => write!(f, "Playlist"),
+            ArtistTopReleaseCategory::Related => write!(f, "Related"),
+            ArtistTopReleaseCategory::None => write!(f, "None"),
+        }
+    }
 }
 
 fn categorize_top_release(title: &str) -> ArtistTopReleaseCategory {
@@ -288,8 +304,6 @@ fn parse_artist_top_releases_from_section_list_contents(
         .ok()
         .map(parse_artist_songs)
         .transpose()?;
-    // TODO: Check if Carousel Title is in list of categories.
-    // TODO: Actually pass these variables in the return
     // XXX: Looks to be two loops over results here.
     // XXX: if there are multiple results for each category we only want to look at
     // the first one.
@@ -315,10 +329,21 @@ fn parse_artist_top_releases_from_section_list_contents(
                 "/navigationEndpoint/browseEndpoint/params"
             ))
             .ok();
-        // TODO: finish other categories
         match category {
-            ArtistTopReleaseCategory::Related => (),
-            ArtistTopReleaseCategory::Videos => (),
+            ArtistTopReleaseCategory::Videos => {
+                let mut results = Vec::new();
+                for i in r.navigate_pointer("/contents")?.try_iter_mut()? {
+                    if let Ok(mrlir) = i.navigate_pointer(MRLIR) {
+                        if let Ok(video) = parse_video_from_mrlir(mrlir) {
+                            results.push(video);
+                        }
+                    }
+                }
+                top_releases.videos = Some(GetArtistVideos {
+                    results,
+                    browse_id: PlaylistID::from_raw(""),
+                });
+            }
             ArtistTopReleaseCategory::Singles => {
                 let mut results = Vec::new();
                 for i in r.navigate_pointer("/contents")?.try_iter_mut()? {
@@ -343,11 +368,64 @@ fn parse_artist_top_releases_from_section_list_contents(
                 };
                 top_releases.albums = Some(albums);
             }
-            ArtistTopReleaseCategory::Playlists => (),
+            ArtistTopReleaseCategory::Playlists => {
+                let mut results = Vec::new();
+                for i in r.navigate_pointer("/contents")?.try_iter_mut()? {
+                    if let Ok(item) = i.navigate_pointer(MTRIR) {
+                        if let Ok(album) = parse_album_from_mtrir(item) {
+                            results.push(album);
+                        }
+                    }
+                }
+                top_releases.playlists = Some(GetArtistAlbums {
+                    browse_id,
+                    params,
+                    results,
+                });
+            }
+            ArtistTopReleaseCategory::Related => {
+                let mut results = Vec::new();
+                for i in r.navigate_pointer("/contents")?.try_iter_mut()? {
+                    if let Ok(mtrir) = i.navigate_pointer(MTRIR) {
+                        if let Ok(related) = parse_related_from_mtrir(mtrir) {
+                            results.push(related);
+                        }
+                    }
+                }
+                top_releases.related = Some(GetArtistRelated { results });
+            }
             ArtistTopReleaseCategory::None => (),
         }
     }
     Ok(top_releases)
+}
+
+/// Parse a video from a carousel item's MRLIR node.
+fn parse_video_from_mrlir(mut mrlir: impl JsonCrawler) -> Result<SearchResultVideo> {
+    let title = parse_flex_column_item(&mut mrlir, 0, 0)?;
+    let channel_name = parse_flex_column_item(&mut mrlir, 1, 0)?;
+    let video_id = mrlir.take_value_pointer(PLAYLIST_ITEM_VIDEO_ID)?;
+    let thumbnails: Vec<Thumbnail> = mrlir.take_value_pointer(THUMBNAILS)?;
+    Ok(SearchResultVideo::Video {
+        title,
+        channel_name,
+        video_id,
+        views: String::new(),
+        length: String::new(),
+        thumbnails,
+    })
+}
+
+/// Parse a related artist from a carousel item's MTRIR node.
+fn parse_related_from_mtrir(mut mtrir: impl JsonCrawler) -> Result<RelatedResult> {
+    let title = mtrir.take_value_pointer(TITLE_TEXT)?;
+    let browse_id = mtrir.take_value_pointer(NAVIGATION_BROWSE_ID)?;
+    let subscribers = mtrir.take_value_pointer(SUBTITLE).unwrap_or_default();
+    Ok(RelatedResult {
+        browse_id,
+        title,
+        subscribers,
+    })
 }
 
 /// Google A/B change pending
@@ -456,8 +534,10 @@ impl<'a> ParseFrom<GetArtistAlbumsQuery<'a>> for Vec<GetArtistAlbumsAlbum> {
             let playlist_id = r.take_value_pointer(MENU_PLAYLIST_ID).ok();
             let title = r.take_value_pointer(TITLE_TEXT)?;
             let thumbnails = r.take_value_pointer(THUMBNAIL_RENDERER)?;
-            // TODO: category
-            let category = r.take_value_pointer(SUBTITLE).ok();
+            let category = r
+                .take_value_pointer(SUBTITLE)
+                .ok()
+                .map(|s: String| categorize_top_release(&s));
             albums.push(GetArtistAlbumsAlbum {
                 browse_id,
                 year: None,

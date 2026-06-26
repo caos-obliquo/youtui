@@ -427,7 +427,7 @@ fn get_artist_songs(
             let temp_params = section_params?;
             let query = GetArtistAlbumsQuery::new(temp_browse_id, temp_params);
             match query_api_with_retry(&api, query).await {
-                Ok(albums) => Some(albums.into_iter().map(|a| (a.browse_id, a.category.or_else(category_fallback))).collect()),
+                Ok(albums) => Some(albums.into_iter().map(|a| (a.browse_id, a.category.map(|c| c.to_string()).or_else(category_fallback))).collect()),
                 Err(e) => {
                     error!("Received error on get_artist_albums query \"{}\"", e);
                     send_or_error(tx, GetArtistSongsProgressUpdate::GetArtistAlbumsError(e)).await;

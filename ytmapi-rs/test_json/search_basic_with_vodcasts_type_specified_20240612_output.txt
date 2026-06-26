@@ -508,6 +508,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "The Long And Winding Road (Remastered 2009)",
@@ -539,6 +540,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Let It Be (Remastered 2009)",
@@ -570,6 +572,7 @@ SearchResults {
                 },
             ],
             year: None,
+            like_status: Indifferent,
         },
     ],
     videos: [
