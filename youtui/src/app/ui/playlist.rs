@@ -1514,11 +1514,32 @@ impl Playlist {
                         let album = song.album.as_ref().map(|a| a.name.clone());
                         let dur = song.actual_duration.unwrap_or(std::time::Duration::from_secs(240));
                         self.scrobble_state = Some(crate::app::scrobbler::ScrobbleState::new(artist, song.title.clone(), album, dur));
+                        // Send now-playing notification to Last.fm
+                        if let Some(ref state) = self.scrobble_state {
+                            let cfg = self.scrobbling_config.clone();
+                            let s = state.clone();
+                            tokio::spawn(async move {
+                                crate::app::scrobbler::submit_now_playing(&cfg, &s).await;
+                            });
+                        }
                     }
                 } else {
                     // Album mode: boundary checker handles per-track scrobbling
                     self.album_current_track = 0;
                     info!("Album mode: started playback, will scrobble {} tracks", self.album_tracks.as_ref().map_or(0, |t| t.len()));
+                    // Send now-playing with first track name + album artist/album
+                    let track_name = self.album_tracks.as_ref()
+                        .and_then(|t| t.first().map(|t| t.title.clone()))
+                        .unwrap_or_default();
+                    if let Some(song) = self.get_cur_playing_song() {
+                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        let album = song.album.as_ref().map(|a| a.name.clone());
+                        let state = crate::app::scrobbler::ScrobbleState::new(artist, track_name, album, Duration::ZERO);
+                        let cfg = self.scrobbling_config.clone();
+                        tokio::spawn(async move {
+                            crate::app::scrobbler::submit_now_playing(&cfg, &state).await;
+                        });
+                    }
                 }
             }
             return effect;
