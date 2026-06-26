@@ -362,6 +362,15 @@ enum Command {
         user_channel_id: String,
         browse_params: String,
     },
+    /// Submit a test scrobble to Last.fm. Requires [scrobbling] config section.
+    TestScrobble {
+        artist: String,
+        track: String,
+        album: Option<String>,
+        /// Duration in seconds (default 240)
+        #[arg(default_value_t = 240)]
+        duration: u64,
+    },
 }
 
 pub struct RuntimeInfo {

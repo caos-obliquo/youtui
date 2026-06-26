@@ -1,5 +1,12 @@
+use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{error, info, warn};
+
+const SCROBBLE_CACHE_FILENAME: &str = "scrobble_cache.json";
+
+fn scrobble_cache_path() -> Option<PathBuf> {
+    crate::get_config_dir().ok().map(|d| d.join(SCROBBLE_CACHE_FILENAME))
+}
 
 #[derive(Debug, Clone)]
 pub struct ScrobbleState {
@@ -25,17 +32,90 @@ impl ScrobbleState {
     }
 }
 
-pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) {
-    if !config.enabled {
+/// Save failed scrobble to persistent cache for later retry.
+fn save_failed_scrobble(state: &ScrobbleState) {
+    let Some(path) = scrobble_cache_path() else { return };
+    let mut cache: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    let entry = serde_json::json!({
+        "artist": state.artist,
+        "track": state.track,
+        "album": state.album,
+        "duration_secs": state.duration.as_secs(),
+        "timestamp": state.start_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+    });
+    cache.push(entry);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap_or_default()) {
+        Ok(_) => info!("Saved failed scrobble to cache: {}", path.display()),
+        Err(e) => warn!("Failed to write scrobble cache: {}", e),
+    }
+}
+
+/// Remove a successfully-retried scrobble from the cache by index.
+fn remove_cached_scrobble(index: usize) {
+    let Some(path) = scrobble_cache_path() else { return };
+    let mut cache: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    if index < cache.len() {
+        cache.remove(index);
+        let _ = std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap_or_default());
+    }
+}
+
+/// Retry failed scrobbles from persistent cache.
+pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
+    let Some(path) = scrobble_cache_path() else { return };
+    let cache: Vec<serde_json::Value> = match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => return,
+    };
+    if cache.is_empty() {
         return;
     }
+    info!("Retrying {} failed scrobbles from cache", cache.len());
+    for (i, entry) in cache.iter().enumerate() {
+        let artist = entry["artist"].as_str().unwrap_or("").to_string();
+        let track = entry["track"].as_str().unwrap_or("").to_string();
+        let album = entry["album"].as_str().map(|s| s.to_string());
+        let duration_secs = entry["duration_secs"].as_u64().unwrap_or(0);
+        let ts = entry["timestamp"].as_u64().unwrap_or(0);
+        let state = ScrobbleState {
+            artist,
+            track,
+            album,
+            duration: Duration::from_secs(duration_secs),
+            start_time: UNIX_EPOCH + Duration::from_secs(ts),
+            scrobbled: false,
+        };
+        let success = submit_scrobble_inner(config, &state).await;
+        if success {
+            remove_cached_scrobble(i);
+        }
+    }
+    // Clean up empty cache file
+    let Ok(remaining) = std::fs::read_to_string(&path) else { return };
+    if remaining.trim() == "[]" || remaining.trim().is_empty() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+/// Inner submit: returns true if successful, false on failure.
+async fn submit_scrobble_inner(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) -> bool {
+    if !config.enabled { return false; }
     if config.api_key.is_empty() {
-        warn!("Scrobble blocked: api_key not configured in [scrobbling] section");
-        return;
+        warn!("Scrobble blocked: api_key not configured");
+        return false;
     }
     if config.session_key.is_empty() {
-        warn!("Scrobble blocked: session_key not configured in [scrobbling] section. Run 'youtui scrobble-auth' to generate one");
-        return;
+        warn!("Scrobble blocked: session_key not configured");
+        return false;
     }
     let timestamp = state.start_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let mut params: Vec<(String, String)> = vec![
@@ -50,8 +130,6 @@ pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &S
         params.push(("album".into(), album.clone()));
     }
     params.push(("duration".into(), state.duration.as_secs().to_string()));
-
-    // Last.fm requires params sorted alphabetically before signing
     params.sort_by(|a, b| a.0.cmp(&b.0));
     let sig_string: String = params.iter()
         .map(|(k, v)| format!("{}{}", k, v))
@@ -70,11 +148,23 @@ pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &S
             let text = resp.text().await.unwrap_or_default();
             if text.contains("<lfm status=\"ok\">") {
                 info!("Scrobbled: {} - {} (album: {:?})", state.artist, state.track, state.album);
+                true
             } else {
                 error!("Scrobble failed: {} (artist={}, track={})", text, state.artist, state.track);
+                false
             }
         }
-        Err(e) => error!("Scrobble HTTP error: {} (artist={}, track={})", e, state.artist, state.track),
+        Err(e) => {
+            error!("Scrobble HTTP error: {} (artist={}, track={})", e, state.artist, state.track);
+            false
+        }
+    }
+}
+
+/// Submit a scrobble to Last.fm. On failure, saves to persistent cache for retry.
+pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) {
+    if !submit_scrobble_inner(config, state).await {
+        save_failed_scrobble(state);
     }
 }
 
