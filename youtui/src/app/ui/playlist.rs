@@ -107,6 +107,8 @@ pub struct Playlist {
     category_filter: Option<&'static str>,
     romaji_mode: bool,
     pub scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
+    /// Guard: prevents duplicate scrobble submissions from overlapping progress updates
+    scrobble_pending: bool,
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
@@ -433,79 +435,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             },
             PlaylistAction::ForceSplitAlbum => {
-                let selected_idx = self.cur_selected;
-                let Some(song) = self.get_song_from_idx(selected_idx) else {
-                    self.last_error = Some("No song selected for force-split".into());
-                    return (AsyncTask::new_no_op(), None);
-                };
-                let video_raw = song.video_id.get_raw().to_string();
-                let parent = self.list.get_list_iter().enumerate()
-                    .find(|(_, s)| s.video_id.get_raw() == video_raw && s.track_no.is_none())
-                    .map(|(i, s)| (i, s.id));
-                let parent_id: ListSongID;
-                let parent_idx: usize;
-                if let Some((idx, pid)) = parent {
-                    parent_id = pid;
-                    parent_idx = idx;
-                    // Case 1: parent exists, remove all split tracks for this video_id
-                    let to_remove: Vec<usize> = self.list.get_list_iter().enumerate()
-                        .filter(|(_, t)| t.video_id.get_raw() == video_raw && t.track_no.is_some())
-                        .map(|(i, _)| i)
-                        .collect();
-                    for i in to_remove.into_iter().rev() {
-                        self.list.remove_at(i);
-                    }
-                } else {
-                    // Case 2: no parent (original was removed), use track 1 as new parent
-                    let t1_idx = self.list.get_list_iter().enumerate()
-                        .find(|(_, t)| t.video_id.get_raw() == video_raw && t.track_no == Some(1))
-                        .map(|(i, t)| (i, t.id));
-                    let Some((t1_idx, t1_id)) = t1_idx else {
-                        self.last_error = Some("No parent or track 1 found for force-split".into());
-                        return (AsyncTask::new_no_op(), None);
-                    };
-                    // Remove all split tracks except track 1
-                    let to_remove: Vec<usize> = self.list.get_list_iter().enumerate()
-                        .filter(|(i, t)| t.video_id.get_raw() == video_raw && t.track_no.is_some() && *i != t1_idx)
-                        .map(|(i, _)| i)
-                        .collect();
-                    for i in to_remove.into_iter().rev() {
-                        self.list.remove_at(i);
-                    }
-                    // Un-split track 1: clear track_no, start_offset
-                    if let Some(t) = self.list.get_list_iter_mut().nth(t1_idx) {
-                        t.track_no = None;
-                        t.start_offset = None;
-                    }
-                    parent_id = t1_id;
-                    parent_idx = t1_idx;
-                }
-                // Clear album state
-                self.album_tracks = None;
-                self.album_current_track = 0;
-                self.cur_selected = parent_idx;
-                // Extract artist+title from parent
-                let Some(p_song) = self.get_song_from_id(parent_id) else {
-                    self.last_error = Some("Parent song not found after re-indexing".into());
-                    return (AsyncTask::new_no_op(), None);
-                };
-                let artist = p_song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                let clean_title = p_song.title.clone();
-                if artist.is_empty() || clean_title.is_empty() {
-                    self.last_error = Some("Could not determine artist/title for re-validation".into());
-                    return (AsyncTask::new_no_op(), None);
-                }
-                let p_album = p_song.album.as_ref().map(|a| a.name.clone());
-                info!("Force-split: re-validating song {:?} (artist={:?}, title={:?}, album={:?})", parent_id, artist, clean_title, p_album);
-                let validation_task = AsyncTask::new_future_try(
-                    ValidateMetadata(artist, clean_title, parent_id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), p_album),
-                    HandleMetadataValidated(parent_id),
-                    HandleMetadataValidationError,
-                    None,
-                );
-                // Also trigger download for the parent song
-                let effect = self.download_upcoming_from_id(parent_id);
-                (effect.push(validation_task), None)
+                (self.handle_force_split(self.cur_selected), None)
             },
             PlaylistAction::PasteYanked => {
                 if !self.yank_buffer.is_empty() {
@@ -986,6 +916,7 @@ impl Playlist {
             romaji_mode: false,
             search_cur: 0,
             scrobble_state: None,
+            scrobble_pending: false,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
             romaji_originals: HashMap::new(),
             album_tracks: None,
@@ -1164,6 +1095,75 @@ impl Playlist {
             }
         }
         None
+    }
+
+    /// Handle ForceSplitAlbum: find/reconstruct parent, clear split tracks, re-validate metadata.
+    fn handle_force_split(&mut self, selected_idx: usize) -> ComponentEffect<Self> {
+        let Some(song) = self.get_song_from_idx(selected_idx) else {
+            self.last_error = Some("No song selected for force-split".into());
+            return AsyncTask::new_no_op();
+        };
+        let video_raw = song.video_id.get_raw().to_string();
+        let parent = self.list.get_list_iter().enumerate()
+            .find(|(_, s)| s.video_id.get_raw() == video_raw && s.track_no.is_none())
+            .map(|(i, s)| (i, s.id));
+        let parent_id: ListSongID;
+        let parent_idx: usize;
+        if let Some((idx, pid)) = parent {
+            parent_id = pid;
+            parent_idx = idx;
+            let to_remove: Vec<usize> = self.list.get_list_iter().enumerate()
+                .filter(|(_, t)| t.video_id.get_raw() == video_raw && t.track_no.is_some())
+                .map(|(i, _)| i)
+                .collect();
+            for i in to_remove.into_iter().rev() {
+                self.list.remove_at(i);
+            }
+        } else {
+            let t1_idx = self.list.get_list_iter().enumerate()
+                .find(|(_, t)| t.video_id.get_raw() == video_raw && t.track_no == Some(1))
+                .map(|(i, t)| (i, t.id));
+            let Some((t1_idx, t1_id)) = t1_idx else {
+                self.last_error = Some("No parent or track 1 found for force-split".into());
+                return AsyncTask::new_no_op();
+            };
+            let to_remove: Vec<usize> = self.list.get_list_iter().enumerate()
+                .filter(|(i, t)| t.video_id.get_raw() == video_raw && t.track_no.is_some() && *i != t1_idx)
+                .map(|(i, _)| i)
+                .collect();
+            for i in to_remove.into_iter().rev() {
+                self.list.remove_at(i);
+            }
+            if let Some(t) = self.list.get_list_iter_mut().nth(t1_idx) {
+                t.track_no = None;
+                t.start_offset = None;
+            }
+            parent_id = t1_id;
+            parent_idx = t1_idx;
+        }
+        self.album_tracks = None;
+        self.album_current_track = 0;
+        self.cur_selected = parent_idx;
+        let Some(p_song) = self.get_song_from_id(parent_id) else {
+            self.last_error = Some("Parent song not found after re-indexing".into());
+            return AsyncTask::new_no_op();
+        };
+        let artist = p_song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+        let clean_title = p_song.title.clone();
+        if artist.is_empty() || clean_title.is_empty() {
+            self.last_error = Some("Could not determine artist/title for re-validation".into());
+            return AsyncTask::new_no_op();
+        }
+        let p_album = p_song.album.as_ref().map(|a| a.name.clone());
+        info!("Force-split: re-validating song {:?} (artist={:?}, title={:?}, album={:?})", parent_id, artist, clean_title, p_album);
+        let validation_task = AsyncTask::new_future_try(
+            ValidateMetadata(artist, clean_title, parent_id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), p_album),
+            HandleMetadataValidated(parent_id),
+            HandleMetadataValidationError,
+            None,
+        );
+        let effect = self.download_upcoming_from_id(parent_id);
+        effect.push(validation_task)
     }
 
     pub fn update_song_info(&mut self, id: ListSongID, song: ListSong) {
@@ -1475,6 +1475,7 @@ impl Playlist {
             self.play_status = PlayState::Playing(id);
             self.queue_status = QueueState::NotQueued;
             if self.scrobbling_config.enabled {
+                self.scrobble_pending = false;
                 if let Some(old) = self.scrobble_state.take() {
                     if old.should_scrobble() {
                         let cfg = self.scrobbling_config.clone();
@@ -2280,6 +2281,7 @@ impl Playlist {
 
     pub fn stop(&mut self) -> ComponentEffect<Self> {
         if self.scrobbling_config.enabled {
+            self.scrobble_pending = false;
             if let Some(old) = self.scrobble_state.take() {
                 if old.should_scrobble() {
                     let cfg = self.scrobbling_config.clone();
@@ -2899,9 +2901,10 @@ impl Playlist {
         self.cur_played_dur = Some(capped);
 
         // Persistent scrobble: check on every progress update regardless of context
-        if self.scrobbling_config.enabled {
+        if self.scrobbling_config.enabled && !self.scrobble_pending {
             if let Some(ref state) = self.scrobble_state.clone() {
                 if state.should_scrobble() {
+                    self.scrobble_pending = true;
                     let cfg = self.scrobbling_config.clone();
                     let s = state.clone();
                     tokio::spawn(async move {
@@ -2909,6 +2912,7 @@ impl Playlist {
                     });
                     if let Some(s) = self.scrobble_state.as_mut() {
                         s.scrobbled = true;
+                        self.scrobble_pending = false;
                     }
                 }
             }
