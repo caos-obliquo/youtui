@@ -1096,6 +1096,13 @@ fn default_browser_artists_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
 fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('Q')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserSongs(BrowserSongsAction::QueueSong),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::BrowserSongs(BrowserSongsAction::CopySongUrl),
@@ -1173,6 +1180,10 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('N')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::InsertNext)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('q')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::QueueSong)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
