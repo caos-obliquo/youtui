@@ -34,6 +34,7 @@ use ytmapi_rs::parse::SearchResultSong;
 pub struct SongSearchBrowser {
     pub input_routing: InputRouting,
     song_list: BrowserSongsList,
+    view_indices: Vec<usize>,
     cur_selected: usize,
     pub search_popped: bool,
     pub search: SearchBlock,
@@ -374,14 +375,24 @@ impl TableView for SongSearchBrowser {
         ]
     }
     fn get_highlighted_row(&self) -> Option<usize> {
-        self.cur_playing_video_id.as_ref().and_then(|vid| {
-            self.song_list.get_list_iter().position(|s| s.video_id == *vid)
+        let vid = self.cur_playing_video_id.as_ref()?;
+        self.view_indices.iter().position(|&idx| {
+            self.song_list
+                .get_song_from_idx(idx)
+                .is_some_and(|s| s.video_id == *vid)
         })
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
-        self.song_list
-            .get_list_iter()
-            .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
+        let subcolumns = Self::subcolumns_of_vec();
+        self.view_indices
+            .iter()
+            .map(move |&idx| {
+                self.song_list
+                    .get_song_from_idx(idx)
+                    .expect("view_indices entries valid")
+                    .get_fields(subcolumns)
+                    .into_iter()
+            })
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
         ["Song", "Artist", "Album", "Duration", "Plays", "Liked"].into_iter()
@@ -402,15 +413,28 @@ impl AdvancedTableView for SongSearchBrowser {
         &self.sort.sort_commands
     }
     fn push_sort_command(&mut self, sort_command: TableSortCommand) -> Result<()> {
-        // TODO: Maintain a view only struct, for easier rendering of this.
         if !self.get_sortable_columns().contains(&sort_command.column) {
             bail!(format!("Unable to sort column {}", sort_command.column,));
         }
-        // Map the column of ArtistAlbums to a column of List and sort
-        self.song_list.sort(
-            get_adjusted_list_column(sort_command.column, Self::subcolumns_of_vec())?,
-            sort_command.direction,
-        );
+        let field = get_adjusted_list_column(sort_command.column, Self::subcolumns_of_vec())?;
+        // Sort view indices instead of the underlying list — preserves original order.
+        self.view_indices.sort_by(|&a, &b| {
+            let a_val = self
+                .song_list
+                .get_song_from_idx(a)
+                .map(|s| s.get_field(field))
+                .unwrap_or_default();
+            let b_val = self
+                .song_list
+                .get_song_from_idx(b)
+                .map(|s| s.get_field(field))
+                .unwrap_or_default();
+            match sort_command.direction {
+                SortDirection::Asc => a_val.partial_cmp(&b_val),
+                SortDirection::Desc => b_val.partial_cmp(&a_val),
+            }
+            .unwrap_or(std::cmp::Ordering::Equal)
+        });
         // Remove commands that already exist for the same column, as this new command
         // will trump the old ones. Slightly naive - loops the whole vec, could
         // short circuit.
@@ -422,6 +446,7 @@ impl AdvancedTableView for SongSearchBrowser {
     }
     fn clear_sort_commands(&mut self) {
         self.sort.sort_commands.clear();
+        self.view_indices = (0..self.song_list.len()).collect();
     }
     fn get_filter_commands(&self) -> &[TableFilterCommand] {
         &self.filter.filter_commands
@@ -492,6 +517,7 @@ impl SongSearchBrowser {
         Self {
             input_routing: Default::default(),
             song_list: Default::default(),
+            view_indices: Vec::new(),
             search_popped: false,
             search: Default::default(),
             widget_state: Default::default(),
@@ -518,16 +544,33 @@ impl SongSearchBrowser {
             if !self.get_sortable_columns().contains(&c.column) {
                 bail!(format!("Unable to sort column {}", c.column,));
             }
-            self.song_list.sort(
-                get_adjusted_list_column(c.column, Self::subcolumns_of_vec())?,
-                c.direction,
-            );
+            let field = get_adjusted_list_column(c.column, Self::subcolumns_of_vec())?;
+            self.view_indices.sort_by(|&a, &b| {
+                let a_val = self
+                    .song_list
+                    .get_song_from_idx(a)
+                    .map(|s| s.get_field(field))
+                    .unwrap_or_default();
+                let b_val = self
+                    .song_list
+                    .get_song_from_idx(b)
+                    .map(|s| s.get_field(field))
+                    .unwrap_or_default();
+                match c.direction {
+                    SortDirection::Asc => a_val.partial_cmp(&b_val),
+                    SortDirection::Desc => b_val.partial_cmp(&a_val),
+                }
+                .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
         Ok(())
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> + '_ {
         let filter_text = &self.local_filter_text;
-        self.song_list.get_list_iter().filter(move |ls| {
+        self.view_indices.iter().filter_map(move |&idx| {
+            let Some(ls) = self.song_list.get_song_from_idx(idx) else {
+                return None;
+            };
             let fuzzy_pass = if filter_text.is_empty() {
                 true
             } else {
@@ -538,8 +581,8 @@ impl SongSearchBrowser {
                     || crate::app::structures::fuzzy_match(&filter_text, &album).is_some()
                     || crate::app::structures::fuzzy_match(&filter_text, &artist).is_some()
             };
-            if !fuzzy_pass { return false; }
-            self.get_filter_commands()
+            if !fuzzy_pass { return None; }
+            let pass = self.get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
                     let match_found = command.matches_row(
@@ -548,7 +591,8 @@ impl SongSearchBrowser {
                         self.get_filterable_columns(),
                     );
                     acc && match_found
-                })
+                });
+            if pass { Some(ls) } else { None }
         })
     }
     pub fn apply_filter(&mut self) {
@@ -813,6 +857,7 @@ impl SongSearchBrowser {
     pub fn replace_song_list(&mut self, song_list: Vec<SearchResultSong>) {
         self.song_list.clear();
         self.song_list.append_raw_search_result_songs(song_list);
+        self.view_indices = (0..self.song_list.len()).collect();
         if let Err(e) = self.apply_all_sort_commands() {
             warn!("Tried to sort a column that is not sortable - error {e}")
         };

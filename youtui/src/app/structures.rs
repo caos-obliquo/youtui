@@ -399,6 +399,9 @@ impl Default for BrowserSongsList {
 }
 
 impl BrowserSongsList {
+    pub fn len(&self) -> usize {
+        self.list.len()
+    }
     pub fn get_list_iter(&self) -> std::slice::Iter<'_, ListSong> {
         self.list.iter()
     }
