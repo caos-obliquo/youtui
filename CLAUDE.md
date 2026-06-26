@@ -299,3 +299,29 @@ See `docs/09-roadmap.md` for detailed session history.
 
 ### Phase 6 🔴 — Cross-platform clipboard
 - Wayland-only `wl-copy`. No X11/macOS fallback.
+
+## Suckless Refactoring (refactor/suckless branch)
+Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.md`.
+
+### Done
+| Batch | Item | Δ Lines | Status |
+|---|---|---|---|
+| 1 | Replace 6 panic paths with proper error handling | -0 | `48c7eaa` |
+| 2 | Delete dead crates (metal-proxy, rym-definitions) | -606 | `19f4e46` |
+| 3 | Extract boilerplate (7 CRUD macro pairs, conversion fn, thumbnail fn) | -24 | `7fc6252` |
+| 4a | Subdivide MetadataEffect::apply (180→40 lines) | -0 | `35bf646` |
+| 4b | Extract clean_title_for_metadata into 4 named helpers | -0 | `35bf646` |
+| 4d | Extract handle_force_split from apply_action (75→1 line arm) | -0 | `096fa0f` |
+| **Total** | | **-630** | |
+
+### Not Done (low value)
+| Skipped | Reason |
+|---|---|
+| Batch 4c: handle_callback split | Most arms are 1-3 lines, splitting adds indirection |
+| Batch 4e: api.rs retry dedup | Complexity too high for 15-line savings |
+| Batch 4f: keymap.rs dead bindings | No automated dead binding detection |
+| Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
+
+### Verification
+- 136/136 pass, 4 ignored, 0 warnings across workspace
+- Suckless refactoring adds 0 tests (refactors existing code only)
