@@ -105,13 +105,14 @@ impl AlbumSongsPanel {
             cur_playing_video_id: None,
         }
     }
-    pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
+    pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
         [
             ListSongDisplayableField::TrackNo,
             ListSongDisplayableField::Album,
             ListSongDisplayableField::Song,
             ListSongDisplayableField::Duration,
             ListSongDisplayableField::Year,
+            ListSongDisplayableField::LikeStatus,
         ]
     }
     /// Re-apply all sort commands in the stack in the order they were stored.
@@ -403,7 +404,7 @@ impl TableView for AlbumSongsPanel {
             .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        ["#", "Album", "Song", "Duration", "Year"].into_iter()
+        ["#", "Album", "Song", "Duration", "Year", "Liked"].into_iter()
     }
     fn get_highlighted_row(&self) -> Option<usize> {
         self.cur_playing_video_id.as_ref().and_then(|vid| {
@@ -420,7 +421,7 @@ impl AdvancedTableView for AlbumSongsPanel {
         self.get_filtered_list_iter().count()
     }
     fn get_sortable_columns(&self) -> &[usize] {
-        &[1, 4]
+        &[1, 4, 5]
     }
     fn push_sort_command(&mut self, sort_command: TableSortCommand) -> Result<()> {
         // TODO: Maintain a view only struct, for easier rendering of this.

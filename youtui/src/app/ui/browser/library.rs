@@ -712,7 +712,7 @@ impl LibraryBrowser {
 
 // -- Table view helpers for all categories --
 impl LibraryBrowser {
-    pub fn liked_songs_subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
+    pub fn liked_songs_subcolumns_of_vec() -> [ListSongDisplayableField; 7] {
         [
             ListSongDisplayableField::TrackNo,
             ListSongDisplayableField::Artists,
@@ -720,10 +720,11 @@ impl LibraryBrowser {
             ListSongDisplayableField::Song,
             ListSongDisplayableField::Duration,
             ListSongDisplayableField::Year,
+            ListSongDisplayableField::LikeStatus,
         ]
     }
 
-    pub fn tracks_subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
+    pub fn tracks_subcolumns_of_vec() -> [ListSongDisplayableField; 7] {
         Self::liked_songs_subcolumns_of_vec()
     }
 
@@ -1035,10 +1036,10 @@ impl TableView for LibraryBrowser {
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
         let headings: &[&'static str] = if self.show_playlist_tracks {
-            &["#", "Artist", "Album", "Song", "Duration", "Year"]
+            &["#", "Artist", "Album", "Song", "Duration", "Year", "Liked"]
         } else {
             match self.category {
-                LibraryCategory::LikedSongs => &["#", "Artist", "Album", "Song", "Duration", "Year"],
+                LibraryCategory::LikedSongs => &["#", "Artist", "Album", "Song", "Duration", "Year", "Liked"],
                 LibraryCategory::Playlists => &["#", "Title", "Tracks", "Author"],
                 LibraryCategory::Artists => &["#", "Artist", "Byline"],
                 LibraryCategory::Albums => &["#", "Artist", "Album", "Year", "Type"],
@@ -1064,10 +1065,10 @@ impl AdvancedTableView for LibraryBrowser {
     }
     fn get_sortable_columns(&self) -> &[usize] {
         if self.show_playlist_tracks {
-            &[0, 1, 2, 3]
+            &[0, 1, 2, 3, 6]
         } else {
             match self.category {
-                LibraryCategory::LikedSongs => &[0, 1, 2, 3],
+                LibraryCategory::LikedSongs => &[0, 1, 2, 3, 6],
                 LibraryCategory::Playlists => &[1, 3],
                 LibraryCategory::Artists => &[1],
                 LibraryCategory::Albums => &[1, 2, 3],
