@@ -13,7 +13,6 @@ use ytmapi_rs::auth::OAuthToken;
 mod api;
 mod app;
 mod appevent;
-mod async_rodio_sink;
 mod cli;
 mod config;
 mod core;
@@ -187,6 +186,10 @@ enum Command {
         /// Maximum number of pages that the API is allowed to return.
         #[arg(default_value_t = 1)]
         max_pages: usize,
+    },
+    /// Debug: search albums with yt-dlp YouTube full-album fallback
+    DebugSearchAlbums {
+        query: String,
     },
     SearchSongs {
         query: String,

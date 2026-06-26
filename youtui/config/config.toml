@@ -207,3 +207,5 @@ enabled = false
 api_key = ""
 api_secret = ""
 session_key = ""
+genius_token = ""
+discogs_token = ""

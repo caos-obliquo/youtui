@@ -118,7 +118,7 @@ impl PlaylistSongsPanel {
         Ok(())
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
-        let filter_text = self.local_filter_text.clone();
+        let filter_text = &self.local_filter_text;
         self.list.get_list_iter().filter(move |ls| {
             let fuzzy_pass = if filter_text.is_empty() {
                 true
@@ -237,35 +237,6 @@ impl PlaylistSongsPanel {
         self.get_filtered_list_iter().nth(idx)
     }
 
-    #[allow(dead_code)]
-    pub fn go_to_first(&mut self) {
-        match self.route {
-            PlaylistSongsInputRouting::List => {
-                self.cur_selected = 0;
-            }
-            PlaylistSongsInputRouting::Sort => {
-                self.cur_selected = 0;
-            }
-            PlaylistSongsInputRouting::Filter => {
-                warn!("go_to_first called while in filter mode")
-            }
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn go_to_last(&mut self) {
-        match self.route {
-            PlaylistSongsInputRouting::List => {
-                self.cur_selected = self.get_filtered_list_iter().count().saturating_sub(1);
-            }
-            PlaylistSongsInputRouting::Sort => {
-                self.cur_selected = self.get_sortable_columns().len().saturating_sub(1);
-            }
-            PlaylistSongsInputRouting::Filter => {
-                warn!("go_to_last called while in filter mode")
-            }
-        }
-    }
 }
 impl SongListComponent for PlaylistSongsPanel {
     fn get_song_from_idx(&self, idx: usize) -> Option<&crate::app::structures::ListSong> {

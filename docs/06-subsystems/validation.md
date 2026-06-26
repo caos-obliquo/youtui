@@ -1,96 +1,116 @@
 # Subsystem: Metadata Validation
 
-## Pipeline
+## Modern Pipeline (MetadataRegistry)
 
-File: `app/server/messages.rs:730` — `ValidateMetadata::into_future`
+File: `libs/metadata-provider/src/registry.rs`
 
-Progressive search with 6 phases. Stops at first success.
+Replaced legacy 6-phase in-app pipeline (2026-06-23). Uses `MetadataRegistry` with 6 providers + scoring.
 
-```
-Phase 1: Last.fm album.search → album.getInfo       ← 17 tracks
-Phase 2: Last.fm track.getInfo(artist, title)       ← exact match
-Phase 3: Last.fm track.search(norm_for_lfm(title))  ← fuzzy → re-fetch for album
-Phase 4: Discogs API (no auth, underground metal)   ← fetch_album_tracks
-Phase 5: Last.fm album.search fallback              ← fetch_album_tracks
-Phase 6: MusicBrainz recording search               ← 1 req/s rate limit
-```
-
-## norm_for_lfm
-
-File: `app/server/providers/util.rs`
-
-Normalizes messy YouTube titles for database queries. Strips in order:
-
-1. `"FULL ALBUM"`, `"Full Album"`, `"full album"`, `"FULL LP"`, `"FULL EP"`, `"full-length album"`
-2. `" - Single"`, `" - EP"`, `" - LP"`, `" - full album"`
-3. Parenthesized blocks: ` (year - genre / genre2)`, ` (2000)`
-4. Bracketed blocks: ` [genre]`, ` [HD]`
-5. Replaces ` & ` → ` and ` for Last.fm compatibility
-
-## add_yt_video Title Cleaning
-
-File: `app/ui/playlist.rs:735`
-
-Before `ValidateMetadata` is spawned, raw yt-dlp title is cleaned:
-
-1. Strip `"{artist} - "` prefix (case-insensitive)
-2. Strip `"FULL ALBUM"` suffix (case-insensitive)
-3. Strip `"  ("` suffix (parenthetical metadata)
-
-## fetch_album_tracks
-
-File: `app/server/messages.rs:926`
-
-Three-phase fallback for getting full tracklists when a song is identified as part of an album:
-
-- **Phase 1**: Last.fm `album.getInfo` (requires API key)
-- **Phase 2**: Discogs API (no auth, works for underground extreme metal)
-- **Phase 3**: Last.fm `album.search` → re-fetch `album.getInfo`
-
-### Discogs API
+### Registry
 
 ```rust
-GET https://api.discogs.com/masters/{id}
-GET https://api.discogs.com/release/{id}
-```
+pub struct MetadataRegistry {
+    providers: Vec<Box<dyn MetadataProvider>>,
+    cache: MetadataCache,
+}
 
-No authentication required. Parses `tracklist` array with `title` and `duration` fields.
-Returns `Vec<TrackInfo { title, duration }>`.
-
-### MusicBrainz
-
-```rust
-GET https://musicbrainz.org/ws/2/recording?query={query}&fmt=json
-```
-
-Rate limited: 1 request per second. Uses `norm_for_lfm` for query construction.
-
-## Providers
-
-All metadata providers implement the `MetadataProvider` trait:
-
-```rust
-trait MetadataProvider {
-    fn search_album(&self, artist: &str, album: &str) -> Result<AlbumInfo>;
-    fn search_track(&self, artist: &str, track: &str) -> Result<TrackInfo>;
+impl MetadataRegistry {
+    pub fn resolve(&self, artist: &str, title: &str, album: Option<&str>) -> ResolveResult;
+    pub fn score_result(&self, data: &ParsedSong, result: &ProviderResult) -> u32;
 }
 ```
 
-File: `app/server/providers/mod.rs`
+### 6 Providers
 
-| Provider | Auth | Covers |
-|----------|------|--------|
-| Last.fm | API key | Mainstream + underground |
-| Discogs | None | Underground metal, rare releases |
-| Genius | Bearer token | Song metadata (not lyrics) |
-| MusicBrainz | 1 req/s | Comprehensive, rate-limited |
-| Overrides | Manual file | User-defined corrections |
+| Provider | Priority | Coverage | Auth |
+|----------|----------|----------|------|
+| LastfmAlbum | 0 | Mainstream + underground | API key |
+| DiscogsMaster | 1 | Underground metal, rare releases | None |
+| MusicBrainz | 2 | Comprehensive | Rate limit 1/s |
+| MetalArchives (MA_COOKIE) | 3 | Metal bands only | Cookie |
+| MetalAPI (metal-api.dev) | 4 | Metal (API returns 500) | None |
+| YTMEnrichment | 5 | Post-registry YTM API call | Cookie |
+
+### Scoring
+
+`score_result()` in `libs/metadata-provider/src/registry.rs`:
+
+| Criterion | Points |
+|-----------|--------|
+| Tracklist found | +50 |
+| Album match | +20 |
+| Artist match (exact) | +10 |
+| Artist match (contains) | +10 |
+| Year present | +10 |
+| Artist mismatch | -500 |
+| Cache threshold | >= 20 to persist |
+
+### Fallback Order
+
+1. All providers queried in priority order
+2. Best score wins (not first match)
+3. Cache threshold >= 20 prevents sparse results blocking re-resolution
+4. Album name passed as `Option<&str>` to all providers
+
+### Cache
+
+File: `~/.local/share/youtui/metadata_cache.json`
+
+- JSON format, atomic write via `.tmp` + rename
+- Loaded on startup, saved after each successful resolve
+- `ValidatedMetadata` + `AlbumTrack` implement `Serialize`/`Deserialize`
+- CLI: `ytmapi debug cache-test <artist> <title>` verifies end-to-end
+- Score >= 20 required to cache (prevents sparse results)
+
+## Title Cleaning
+
+File: `youtui/src/app/server/messages.rs` — `clean_title_for_metadata()`
+
+Before metadata lookup, raw yt-dlp title is cleaned:
+
+1. Strip `"{artist} - "` prefix (case-insensitive)
+2. Strip album indicator tags: `"FULL ALBUM"`, `"full album"`, `"FULL LP"`, `"FULL EP"`, `"full-length album"`, `" - Single"`, `" - EP"`, `" - LP"`
+3. Strip parenthetical metadata: `(year - genre / genre2)`, `(2000)`, `(Official Audio)`, `(Official Video)`
+4. Strip `c legenda`, `Legendado`, `subtitle` etc.
+5. Token-boundary tag matching (word-boundary, not substring — prevents false match "ep" in "Epic")
+6. Strip bare artist prefix when no ` - ` separator
+7. Dangling paren cleanup after strip
+
+## Artist Normalization
+
+File: `libs/metadata-provider/src/normalize.rs` — `normalize_artist_name()`
+
+- Capitalize first letter (preserves intentional lowercase: "data da morte")
+- Strip " - Topic" suffix
+- Strip Discogs "(N)" suffix
+- Strip bracket prefix `[hate5six] Artist`
+- All-caps → proper case (e.g. "METALLICA" → "Metallica")
+
+## Genre Aliasing
+
+File: `libs/metadata-provider/src/genre_map.rs`
+
+- 3,713 genres from MusicBee hierarchy (MusicBrainz + Discogs + RYM + Wikidata)
+- `normalize_genre()` normalizes provider genres to canonical form
+- Single-word auto-inference (Punk, Metal, Rock)
+- Integrated into `MetadataRegistry.resolve()`
+- 26 tests pass
+- CLI: `ytmapi debug genre <genre>`, `ytmapi debug genre-list [filter]`
+
+## Duration Ratio Heuristic
+
+File: `libs/metadata-provider/src/registry.rs`
+
+Compares video duration to metadata tracklist total:
+- Ratio >= 0.3 = split (video IS the album/EP)
+- Fallbacks: album indicator tags, >10min + >=4 tracks with artist match
+- Prevents false split for single tracks with full album tracklists
 
 ## Overrides
 
-File: `app/server/providers/overrides.rs`
+File: `libs/metadata-provider/src/overrides.rs`
 
-User can define manual metadata overrides in a file. Format:
+User-defined manual metadata overrides in JSON:
 
 ```json
 [
@@ -104,4 +124,13 @@ User can define manual metadata overrides in a file. Format:
     }
   }
 ]
+```
+
+## CLI Debug
+
+```bash
+ytmapi debug resolve "Artist" "Title"       # Full pipeline test
+ytmapi debug cache-test "Artist" "Title"     # Cache round-trip test
+ytmapi debug genre "Genre Name"              # Genre normalization test
+ytmapi debug genre-list                      # List all canonical genres
 ```

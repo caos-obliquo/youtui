@@ -123,27 +123,69 @@ pub struct Annotation {
     pub body: String,
 }
 
-/// Extract annotations from Genius page by parsing `__INITIAL_STATE__` JSON.
-/// This gives ALL annotations for the song without API token or pagination.
+/// Extract annotations from Genius page by parsing embedded JSON state.
+/// Tries `__INITIAL_STATE__` first, falls back to `__PRELOADED_STATE__`.
+/// Both give ALL annotations for the song without API token or pagination.
 pub fn extract_annotations(html: &str) -> Result<Vec<Annotation>, String> {
-    let json = extract_initial_state(html).ok_or("No __INITIAL_STATE__ found on page")?;
+    // Try __INITIAL_STATE__ first
+    if let Some(json) = extract_initial_state(html) {
+        if let Some(annotations) = extract_annotations_from_json(&json, "/annotations", "/body/dom") {
+            if !annotations.is_empty() {
+                return Ok(annotations);
+            }
+        }
+    }
+    // Fall back to __PRELOADED_STATE__
+    if let Some(json) = extract_preloaded_state(html) {
+        // Try multiple known paths for annotation data
+        for (annotations_ptr, body_ptr) in &[
+            ("/songPage/lyricsData/referents", "/annotations/0/body/dom" as &str),
+            ("/songPage/referents", "/annotations/0/body/dom"),
+            ("/entities/referents", "/annotations/0/body/dom"),
+            ("/annotations", "/body/dom"),
+        ] {
+            if let Some(anns) = extract_annotations_from_json(&json, annotations_ptr, body_ptr) {
+                if !anns.is_empty() {
+                    return Ok(anns);
+                }
+            }
+        }
+    }
+    Err("No annotations found in page state".to_string())
+}
 
-    let annotations_map = match json.pointer("/annotations") {
-        Some(Value::Object(map)) => map,
-        _ => return Err("No annotations in initial state".to_string()),
+/// Extract annotations from a pre-parsed state JSON at the given pointer paths.
+/// `annotations_ptr`: JSON pointer to the map of {key: annotation-object}.
+/// `body_ptr`: JSON pointer within each annotation object to the body DOM.
+fn extract_annotations_from_json(
+    json: &Value,
+    annotations_ptr: &str,
+    body_ptr: &str,
+) -> Option<Vec<Annotation>> {
+    let annotations_map = match json.pointer(annotations_ptr) {
+        Some(Value::Object(map)) => map.clone(),
+        Some(Value::Array(arr)) => {
+            // Some state structures use an array of referent objects instead of a map
+            let mut map = serde_json::Map::new();
+            for (i, item) in arr.iter().enumerate() {
+                map.insert(i.to_string(), item.clone());
+            }
+            map
+        }
+        _ => return None,
     };
 
     let mut annotations = Vec::new();
 
-    for (_key, val) in annotations_map {
+    for (_key, val) in &annotations_map {
         let fragment = val
             .get("fragment")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
         let body = val
-            .pointer("/body/dom")
-            .and_then(|dom| extract_text_from_dom(dom))
+            .pointer(body_ptr)
+            .and_then(extract_text_from_dom)
             .unwrap_or_default();
 
         if !fragment.is_empty() && !body.is_empty() {
@@ -152,10 +194,10 @@ pub fn extract_annotations(html: &str) -> Result<Vec<Annotation>, String> {
     }
 
     if annotations.is_empty() {
-        return Err("No annotation data could be extracted".to_string());
+        None
+    } else {
+        Some(annotations)
     }
-
-    Ok(annotations)
 }
 
 /// Find and parse `window.__INITIAL_STATE__` JSON from script tag.
@@ -192,12 +234,74 @@ fn extract_initial_state(html: &str) -> Option<Value> {
         })
         .map(|(i, _)| i + 1);
 
-    let json_str = match end {
-        Some(end) => &rest[..end],
-        None => return None,
-    };
+    let json_str = &rest[..end?];
 
     serde_json::from_str(json_str).ok()
+}
+
+/// Find and parse `window.__PRELOADED_STATE__` from script tag.
+/// Genius embeds this as `JSON.parse('...')` where the inner string is a
+/// JSON-encoded state object. Handles JS string escapes.
+fn extract_preloaded_state(html: &str) -> Option<Value> {
+    let marker = "window.__PRELOADED_STATE__ = JSON.parse('";
+    let start = html.find(marker)?;
+    let after_marker = &html[start + marker.len()..];
+
+    // Scan for closing ' — tracking JS string escapes
+    let chars: Vec<char> = after_marker.chars().collect();
+    let mut pos = 0;
+    while pos < chars.len() {
+        if chars[pos] == '\\' && pos + 1 < chars.len() {
+            pos += 2; // skip escaped pair
+            continue;
+        }
+        if chars[pos] == '\'' {
+            break;
+        }
+        pos += 1;
+    }
+    let encoded = &after_marker[..pos];
+
+    // Decode JS string escapes: \\→\, \'→', \"→", \n→\n, \t→\t, \/→/
+    let mut decoded = String::with_capacity(encoded.len());
+    let mut iter = encoded.chars();
+    while let Some(c) = iter.next() {
+        if c == '\\' {
+            match iter.next() {
+                Some('\\') => decoded.push('\\'),
+                Some('\'') => decoded.push('\''),
+                Some('"') => decoded.push('"'),
+                Some('n') => decoded.push('\n'),
+                Some('t') => decoded.push('\t'),
+                Some('r') => decoded.push('\r'),
+                Some('/') => decoded.push('/'),
+                Some('u') => {
+                    // Unicode escape \uXXXX
+                    let hex: String = iter.by_ref().take(4).collect();
+                    if hex.len() == 4 {
+                        if let Ok(cp) = u32::from_str_radix(&hex, 16) {
+                            if let Some(uc) = char::from_u32(cp) {
+                                decoded.push(uc);
+                                continue;
+                            }
+                        }
+                    }
+                    // Failed to parse unicode, push literal
+                    decoded.push_str("\\u");
+                    decoded.push_str(&hex);
+                }
+                Some(other) => {
+                    // JS: \ followed by non-special char = the char itself
+                    decoded.push(other);
+                }
+                None => break,
+            }
+        } else {
+            decoded.push(c);
+        }
+    }
+
+    serde_json::from_str(&decoded).ok()
 }
 
 /// Extract text from a Genius DOM tree structure (used for annotation bodies).
@@ -275,8 +379,8 @@ fn decode_html_entities(s: &str) -> String {
                     "#x201D" => "\"",
                     "#x200B" => "",
                     _ => {
-                        if entity.starts_with('#') {
-                            if let Ok(code) = entity[1..].parse::<u32>() {
+                        if let Some(rest) = entity.strip_prefix('#') {
+                            if let Ok(code) = rest.parse::<u32>() {
                                 if let Some(c) = char::from_u32(code) {
                                     result.push(c);
                                     i += end + 1;
@@ -354,10 +458,8 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_initial_state() {
+    fn test_extract_annotations_from_initial_state() {
         let html = r#"<html><script>window.__INITIAL_STATE__ = {"annotations":{"123":{"fragment":"test","body":{"dom":{"children":["hello"]}}}}};;</script></html>"#;
-        let state = extract_initial_state(html);
-        assert!(state.is_some());
         let annotations = extract_annotations(html).unwrap();
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].fragment, "test");
@@ -365,10 +467,38 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_annotations_from_preloaded_state() {
+        // JSON.parse('...') with songPage/lyricsData/referents structure
+        let html = r#"<html><script>window.__PRELOADED_STATE__ = JSON.parse('{"songPage":{"lyricsData":{"referents":{"abc":{"fragment":"test lyric","annotations":[{"body":{"dom":{"children":["explanation text"]}}}]}}}}}');</script></html>"#;
+        let annotations = extract_annotations(html).unwrap();
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].fragment, "test lyric");
+        assert_eq!(annotations[0].body, "explanation text");
+    }
+
+    #[test]
+    fn test_extract_preloaded_state_basic() {
+        let html = r#"<script>window.__PRELOADED_STATE__ = JSON.parse('{"song":{"id":123}}');</script>"#;
+        let state = extract_preloaded_state(html);
+        assert!(state.is_some());
+        assert_eq!(state.unwrap()["song"]["id"].as_i64(), Some(123));
+    }
+
+    #[test]
+    fn test_extract_preloaded_state_with_escapes() {
+        // JS string escape: \\→\, \"→"
+        let html = r#"<script>window.__PRELOADED_STATE__ = JSON.parse('{"key":"value with \\\"quotes\\\""}');</script>"#;
+        let state = extract_preloaded_state(html);
+        assert!(state.is_some());
+        assert_eq!(state.unwrap()["key"].as_str().unwrap(), "value with \"quotes\"");
+    }
+
+    #[test]
     fn test_extract_annotations_no_state() {
         let html = "<html><body>No state here</body></html>";
         let result = extract_annotations(html);
         assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No annotations found"));
     }
 
     #[test]
@@ -377,5 +507,14 @@ mod tests {
         let state = extract_initial_state(html);
         assert!(state.is_some());
         assert_eq!(state.unwrap()["key"].as_str().unwrap(), "value with \"quotes\"");
+    }
+
+    #[test]
+    fn test_extract_annotations_preloaded_fallback_to_second_path() {
+        // No /songPage/lyricsData, but has /songPage/referents
+        let html = r#"<script>window.__PRELOADED_STATE__ = JSON.parse('{"songPage":{"referents":{"xyz":{"fragment":"line","annotations":[{"body":{"dom":{"children":["note"]}}}]}}}}');</script>"#;
+        let annotations = extract_annotations(html).unwrap();
+        assert_eq!(annotations.len(), 1);
+        assert_eq!(annotations[0].body, "note");
     }
 }

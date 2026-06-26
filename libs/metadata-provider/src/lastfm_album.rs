@@ -19,6 +19,7 @@ impl MetadataProvider for AlbumSearchProvider {
         &'a self,
         artist: &'a str,
         title: &'a str,
+        album: Option<&'a str>,
         client: &'a reqwest::Client,
     ) -> BoxFuture<'a, Option<ValidatedMetadata>> {
         let lastfm_key = self.lastfm_key.clone();
@@ -26,7 +27,7 @@ impl MetadataProvider for AlbumSearchProvider {
             let key = lastfm_key.as_deref()?;
             if key.is_empty() { return None; }
 
-            let search_album = util::norm_for_lfm(title);
+            let search_album = album.map(util::norm_for_lfm).unwrap_or_else(|| util::norm_for_lfm(title));
             let album_search_url = format!(
                 "https://ws.audioscrobbler.com/2.0/?method=album.search&api_key={}&album={}&format=json&limit=5",
                 util::urlencoding(key), util::urlencoding(&search_album)
@@ -61,19 +62,22 @@ impl MetadataProvider for AlbumSearchProvider {
                     .or_else(|| album_data.get("releasedate"))
                     .or_else(|| album_data.get("wiki").and_then(|w| w.get("published")))
                     .and_then(|d| d.as_str())
-                    .and_then(|d| util::extract_year(d));
+                    .and_then(util::extract_year);
 
                 let mut album_tracks = Vec::new();
-                if let Some(tracklist) = album_data
-                    .get("tracks")?.get("track")?.as_array()
-                {
-                    for entry in tracklist {
-                        let t_title = entry.get("name")?.as_str()?.to_string();
-                        let duration_secs = util::extract_duration(
-                            entry.get("duration").unwrap_or(&serde_json::Value::Null)
-                        );
-                        album_tracks.push(AlbumTrack { title: t_title, duration_secs });
-                    }
+                let tracks_val = album_data.get("tracks")?.get("track")?;
+                let track_iter: Box<dyn Iterator<Item = &serde_json::Value>> = if let Some(arr) = tracks_val.as_array() {
+                    Box::new(arr.iter())
+                } else {
+                    // Single-track album: Last.fm returns object instead of array
+                    Box::new(std::iter::once(tracks_val))
+                };
+                for entry in track_iter {
+                    let t_title = entry.get("name")?.as_str()?.to_string();
+                    let duration_secs = util::extract_duration(
+                        entry.get("duration").unwrap_or(&serde_json::Value::Null)
+                    );
+                    album_tracks.push(AlbumTrack { title: t_title, duration_secs });
                 }
                 let genres: Vec<String> = album_data
                     .get("toptags").and_then(|t| t.get("tag")).and_then(|t| t.as_array())
@@ -86,10 +90,29 @@ impl MetadataProvider for AlbumSearchProvider {
                                 .unwrap_or(0);
                             Some((name, count))
                         }).collect();
-                        all.sort_by(|a, b| b.1.cmp(&a.1));
+                        all.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
                         all.into_iter().take(5).map(|(n, _)| n).collect()
                     })
                     .unwrap_or_default();
+                // Verify searched track appears in album tracklist
+                if !album_tracks.is_empty() {
+                    let title_norm: String = crate::util::norm_for_lfm(title).to_lowercase().chars()
+                        .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+                    let title_norm = title_norm.trim();
+                    let track_found = album_tracks.iter().any(|t| {
+                        let t_norm: String = crate::util::norm_for_lfm(&t.title).to_lowercase().chars()
+                            .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
+                        let t_norm = t_norm.trim();
+                        t_norm == title_norm || t_norm.contains(title_norm) || title_norm.contains(t_norm)
+                    });
+                    if !track_found {
+                        tracing::debug!(
+                            "AlbumSearchProvider: track '{}' not found in album '{}' tracklist, skipping",
+                            title, match_name
+                        );
+                        continue;
+                    }
+                }
                 if !album_tracks.is_empty() {
                     return Some(ValidatedMetadata {
                         artist: Some(match_artist.to_string()),

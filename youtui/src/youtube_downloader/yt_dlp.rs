@@ -12,7 +12,7 @@ use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
 #[derive(Clone)]
-#[allow(dead_code)]
+#[allow(dead_code)] // fields po_token, audio_quality passed at construction, read by yt-dlp subprocess
 /// # Note
 /// Cheap to clone due to use of Arc to store internals.
 pub struct YtDlpDownloader {
@@ -23,7 +23,7 @@ pub struct YtDlpDownloader {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
+#[allow(dead_code)] // variants NoOutput/FormatNotAvailable/AuthenticationError: yt-dlp error patterns kept for future handling
 pub enum YtDlpDownloaderError {
     IoError { message: String },
     NoOutput,

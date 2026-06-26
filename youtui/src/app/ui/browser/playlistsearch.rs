@@ -387,7 +387,7 @@ impl PlaylistSearchBrowser {
         let cur_idx = self.playlist_songs_panel.get_selected_item();
         if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
             let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
-            let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+            crate::app::structures::copy_to_clipboard(&raw_url);
             tracing::info!("Copied URL: {}", raw_url);
         }
         (AsyncTask::new_no_op(), None)
@@ -477,21 +477,6 @@ impl PlaylistSearchBrowser {
         self.prev_input_routing = mem::replace(&mut self.input_routing, input_routing);
     }
 
-    // TODO: Wire go_to_first — planned navigation shortcut
-    #[allow(dead_code)]
-    pub fn go_to_first(&mut self) {
-        match self.input_routing {
-            InputRouting::Playlist => self.playlist_search_panel.go_to_first(),
-            InputRouting::Song => self.playlist_songs_panel.go_to_first(),
-        }
-    }
-    #[allow(dead_code)]
-    pub fn go_to_last(&mut self) {
-        match self.input_routing {
-            InputRouting::Playlist => self.playlist_search_panel.go_to_last(),
-            InputRouting::Song => self.playlist_songs_panel.go_to_last(),
-        }
-    }
 }
 
 #[derive(Debug, PartialEq)]

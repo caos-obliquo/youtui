@@ -70,6 +70,7 @@ pub enum BrowserSongsAction {
     MoveTrackDown,
     SubscribeToArtist,
     UnsubscribeFromArtist,
+    ToggleSubscribeArtist,
     MergePlaylist,
     GetRelatedTracks,
     ToggleVisualMode,
@@ -91,22 +92,23 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::PlaySongs => "Play songs",
             BrowserSongsAction::AddSongToPlaylist => "Add song to playlist",
             BrowserSongsAction::AddSongsToPlaylist => "Add songs to playlist",
-            BrowserSongsAction::SaveToExistingPlaylist => "Save to existing playlist",
+            BrowserSongsAction::SaveToExistingPlaylist => "Add to existing playlist",
             BrowserSongsAction::InsertNext => "Play next",
             BrowserSongsAction::ViewLyrics => "View Lyrics",
             BrowserSongsAction::CopySongUrl => "Copy Song URL",
             BrowserSongsAction::GoToArtist => "Go to Artist",
             BrowserSongsAction::GoToAlbum => "Go to Album",
-            BrowserSongsAction::DeletePlaylist => "Delete Playlist",
-            BrowserSongsAction::RenamePlaylist => "Rename Playlist",
+            BrowserSongsAction::DeletePlaylist => "Delete this playlist",
+            BrowserSongsAction::RenamePlaylist => "Rename this playlist",
             BrowserSongsAction::EditPlaylistDetails => "Edit Details",
-            BrowserSongsAction::RatePlaylist => "Like / Unlike Playlist",
+            BrowserSongsAction::RatePlaylist => "Like / Unlike Album",
             BrowserSongsAction::GetPlaylistDetails => "View Details",
             BrowserSongsAction::RemoveTrackFromPlaylist => "Remove from Playlist",
             BrowserSongsAction::MoveTrackUp => "Move Track Up",
             BrowserSongsAction::MoveTrackDown => "Move Track Down",
             BrowserSongsAction::SubscribeToArtist => "Subscribe to Artist",
             BrowserSongsAction::UnsubscribeFromArtist => "Unsubscribe from Artist",
+            BrowserSongsAction::ToggleSubscribeArtist => "Toggle Subscribe / Unsubscribe",
             BrowserSongsAction::MergePlaylist => "Merge Playlist Into",
             BrowserSongsAction::GetRelatedTracks => "Get Related Tracks",
             BrowserSongsAction::ToggleVisualMode => "Toggle Visual Mode",
@@ -116,6 +118,59 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::OpenPlaylistEditor => "Edit Tracks (Vim)",
         }
         .into()
+    }
+}
+
+impl BrowserSongsAction {
+    /// Filter context menu actions based on library category.
+    /// Playlists: all playlist mgmt valid.
+    /// LikedSongs/Artists: playlist mgmt hidden.
+    /// Albums: playlist mgmt hidden except RatePlaylist (like/unlike album).
+    /// Subscribe/Unsubscribe: Artists only.
+    pub fn is_valid_for_category(&self, category: crate::app::ui::browser::library::LibraryCategory) -> bool {
+        use crate::app::ui::browser::library::LibraryCategory;
+        match category {
+            LibraryCategory::Playlists => true,
+            LibraryCategory::LikedSongs => !matches!(self,
+                BrowserSongsAction::DeletePlaylist
+                | BrowserSongsAction::RenamePlaylist
+                | BrowserSongsAction::EditPlaylistDetails
+                | BrowserSongsAction::OpenPlaylistEditor
+                | BrowserSongsAction::SaveToExistingPlaylist
+                | BrowserSongsAction::RatePlaylist
+                | BrowserSongsAction::GetPlaylistDetails
+                | BrowserSongsAction::RemoveTrackFromPlaylist
+                | BrowserSongsAction::SubscribeToArtist
+                | BrowserSongsAction::UnsubscribeFromArtist
+                | BrowserSongsAction::ToggleSubscribeArtist
+                | BrowserSongsAction::MergePlaylist
+            ),
+            LibraryCategory::Artists => !matches!(self,
+                BrowserSongsAction::DeletePlaylist
+                | BrowserSongsAction::RenamePlaylist
+                | BrowserSongsAction::EditPlaylistDetails
+                | BrowserSongsAction::OpenPlaylistEditor
+                | BrowserSongsAction::SaveToExistingPlaylist
+                | BrowserSongsAction::RatePlaylist
+                | BrowserSongsAction::GetPlaylistDetails
+                | BrowserSongsAction::RemoveTrackFromPlaylist
+                | BrowserSongsAction::GoToAlbum
+                | BrowserSongsAction::MergePlaylist
+            ),
+            LibraryCategory::Albums => !matches!(self,
+                BrowserSongsAction::DeletePlaylist
+                | BrowserSongsAction::RenamePlaylist
+                | BrowserSongsAction::EditPlaylistDetails
+                | BrowserSongsAction::OpenPlaylistEditor
+                | BrowserSongsAction::SaveToExistingPlaylist
+                | BrowserSongsAction::GetPlaylistDetails
+                | BrowserSongsAction::RemoveTrackFromPlaylist
+                | BrowserSongsAction::SubscribeToArtist
+                | BrowserSongsAction::UnsubscribeFromArtist
+                | BrowserSongsAction::ToggleSubscribeArtist
+                | BrowserSongsAction::MergePlaylist
+            ),
+        }
     }
 }
 
@@ -469,7 +524,7 @@ impl SongSearchBrowser {
         Ok(())
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> + '_ {
-        let filter_text = self.local_filter_text.clone();
+        let filter_text = &self.local_filter_text;
         self.song_list.get_list_iter().filter(move |ls| {
             let fuzzy_pass = if filter_text.is_empty() {
                 true
@@ -729,7 +784,7 @@ impl SongSearchBrowser {
         let cur_idx = self.get_selected_item();
         if let Some(song) = self.get_song_from_idx(cur_idx) {
             let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
-            let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+            crate::app::structures::copy_to_clipboard(&raw_url);
             tracing::info!("Copied URL: {}", raw_url);
         }
         (AsyncTask::new_no_op(), None)

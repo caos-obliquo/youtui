@@ -14,7 +14,7 @@ use std::borrow::Cow;
 // Currently, all queries are implemented with authentication however in future
 // this could be scaled back.
 
-#[derive(Default, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub enum GetLibrarySortOrder {
     NameAsc,
     NameDesc,

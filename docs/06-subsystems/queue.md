@@ -2,7 +2,7 @@
 
 ## Data Model
 
-File: `app/ui/playlist.rs` — `Playlist` struct (main, ~2440 lines)
+File: `youtui/src/app/ui/playlist.rs` — `Playlist` struct (main, ~3104 lines)
 
 ```rust
 pub struct Playlist {
@@ -33,7 +33,7 @@ pub struct Playlist {
 
 ## Shuffle
 
-File: `app/ui/playlist.rs`
+File: `youtui/src/app/ui/playlist.rs`
 
 Uses `rand::thread_rng()` to generate a shuffled index order. The original queue order is preserved — shuffle is a view transformation.
 

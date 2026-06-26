@@ -17,11 +17,10 @@ use crate::parse::{
     HistoryPeriod, LibraryArtist, LibraryArtistSubscription, LibraryPlaylist, Lyrics, PlaylistItem,
     SearchResultAlbum, SearchResultArtist, SearchResultEpisode, SearchResultFeaturedPlaylist,
     SearchResultPlaylist, SearchResultPodcast, SearchResultProfile, SearchResultSong,
-    SearchResultVideo, SearchResults, UserPlaylist, UserVideo, WatchPlaylistTrack,
+    SearchResultVideo, UserPlaylist, UserVideo, WatchPlaylistTrack,
 };
 use crate::query::playlist::{CreatePlaylistType, DuplicateHandlingMode, GetPlaylistDetailsQuery};
 use crate::query::rate::{RatePlaylistQuery, RateSongQuery};
-use crate::query::search::BasicSearch;
 use crate::query::search::filteredsearch::{
     AlbumsFilter, ArtistsFilter, CommunityPlaylistsFilter, EpisodesFilter, FeaturedPlaylistsFilter,
     FilteredSearch, PlaylistsFilter, PodcastsFilter, ProfilesFilter, SongsFilter, VideosFilter,
@@ -33,7 +32,7 @@ use crate::query::{
     GetArtistAlbumsQuery, GetArtistQuery, GetChannelEpisodesQuery, GetChannelQuery,
     GetEpisodeQuery, GetHistoryQuery, GetLibraryAlbumsQuery, GetLibraryArtistSubscriptionsQuery,
     GetLibraryArtistsQuery, GetLibraryChannelsQuery, GetLibraryPlaylistsQuery,
-    GetLibraryPodcastsQuery, GetLibrarySongsQuery, GetLibraryUploadAlbumQuery,
+    GetLibraryPodcastsQuery, GetLibrarySongsQuery, GetLibrarySortOrder, GetLibraryUploadAlbumQuery,
     GetLibraryUploadAlbumsQuery, GetLibraryUploadArtistQuery, GetLibraryUploadArtistsQuery,
     GetLibraryUploadSongsQuery, GetLyricsIDQuery, GetMoodCategoriesQuery, GetMoodPlaylistsQuery,
     GetNewEpisodesQuery, GetPlaylistTracksQuery, GetPodcastQuery, GetSearchSuggestionsQuery,
@@ -44,24 +43,6 @@ use crate::query::{
 use crate::{Result, YtMusic};
 
 impl<A: AuthToken> YtMusic<A> {
-    /// API Search Query that returns results for each category if available.
-    /// # Usage
-    /// ```no_run
-    /// # async {
-    /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE")
-    ///     .await
-    ///     .unwrap();
-    /// yt.search("Beatles").await
-    /// # };
-    /// ```
-    #[deprecated = "To be removed in future release - see issue #353"]
-    pub async fn search<'a, Q: Into<SearchQuery<'a, BasicSearch>>>(
-        &self,
-        query: Q,
-    ) -> Result<SearchResults> {
-        let query = query.into();
-        self.query(query).await
-    }
     /// API Search Query for Artists only.
     /// ```no_run
     /// # async {
@@ -224,6 +205,46 @@ impl<A: AuthToken> YtMusic<A> {
     ) -> Result<Vec<SearchResultProfile>> {
         let query = query.into();
         self.query(query).await
+    }
+    /// Resolves an album name (and optionally artist) to an AlbumID (browse ID).
+    /// Searches albums, matches by artist name if provided, returns first match.
+    /// ```no_run
+    /// # async {
+    /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE")
+    ///     .await
+    ///     .unwrap();
+    /// let id = yt.get_album_browse_id("Master of Puppets", Some("Metallica")).await.unwrap();
+    /// # };
+    /// ```
+    /// Resolves an album name to a browse ID by searching and filtering by artist.
+    /// ```no_run
+    /// # async {
+    /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE")
+    ///     .await
+    ///     .unwrap();
+    /// let id = yt.get_album_browse_id("Master of Puppets", Some("Metallica")).await;
+    /// # };
+    /// ```
+    pub async fn get_album_browse_id<'a, Q: Into<SearchQuery<'a, FilteredSearch<AlbumsFilter>>>>(
+        &self,
+        album_name: Q,
+        artist_name: Option<&str>,
+    ) -> Result<AlbumID<'static>> {
+        let results = self.search_albums(album_name).await?;
+        // Try artist match first, fallback to first result
+        if let Some(artist) = artist_name {
+            let lower = artist.to_lowercase();
+            for r in &results {
+                if r.artist.to_lowercase().contains(&lower) {
+                    return Ok(r.album_id.clone());
+                }
+            }
+        }
+        results
+            .into_iter()
+            .next()
+            .map(|r| r.album_id)
+            .ok_or_else(|| crate::Error::web("No album found matching query"))
     }
     /// Gets information about an artist and their top releases.
     /// ```no_run
@@ -827,7 +848,6 @@ impl<A: LoggedIn> YtMusic<A> {
         let query = RemoveHistoryItemsQuery::new(feedback_tokens);
         self.query(query).await
     }
-    // TODO: Docs / alternative constructors.
     pub async fn edit_song_library_status(
         &self,
         query: EditSongLibraryStatusQuery<'_>,
@@ -994,8 +1014,13 @@ impl<A: LoggedIn> YtMusic<A> {
     /// let results = yt.get_library_artists().await;
     /// # };
     /// ```
-    pub async fn get_library_artists(&self) -> Result<Vec<LibraryArtist>> {
-        let query = GetLibraryArtistsQuery::default();
+    pub async fn get_library_artists(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<Vec<LibraryArtist>> {
+        let query = sort_order
+            .map(GetLibraryArtistsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets a list of all songs in your Library.
@@ -1014,9 +1039,30 @@ impl<A: LoggedIn> YtMusic<A> {
     /// let results = yt.get_library_songs().await;
     /// # };
     /// ```
-    pub async fn get_library_songs(&self) -> Result<<GetLibrarySongsQuery as Query<A>>::Output> {
-        let query = GetLibrarySongsQuery::default();
+    pub async fn get_library_songs(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<<GetLibrarySongsQuery as Query<A>>::Output> {
+        let query = sort_order
+            .map(GetLibrarySongsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
+    }
+    /// Gets a list of all liked songs in your Library.
+    /// This is an alias for [`get_library_songs`] that clarifies intent.
+    /// ```no_run
+    /// # async {
+    /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE")
+    ///     .await
+    ///     .unwrap();
+    /// let results = yt.get_liked_songs(None).await;
+    /// # };
+    /// ```
+    pub async fn get_liked_songs(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<<GetLibrarySongsQuery as Query<A>>::Output> {
+        self.get_library_songs(sort_order).await
     }
     /// Gets a list of all albums in your Library.
     /// # Additional functionality
@@ -1034,8 +1080,13 @@ impl<A: LoggedIn> YtMusic<A> {
     /// let results = yt.get_library_albums().await;
     /// # };
     /// ```
-    pub async fn get_library_albums(&self) -> Result<Vec<SearchResultAlbum>> {
-        let query = GetLibraryAlbumsQuery::default();
+    pub async fn get_library_albums(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<Vec<SearchResultAlbum>> {
+        let query = sort_order
+            .map(GetLibraryAlbumsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets a list of all artist subscriptions in your Library.
@@ -1054,8 +1105,13 @@ impl<A: LoggedIn> YtMusic<A> {
     /// let results = yt.get_library_artist_subscriptions().await;
     /// # };
     /// ```
-    pub async fn get_library_artist_subscriptions(&self) -> Result<Vec<LibraryArtistSubscription>> {
-        let query = GetLibraryArtistSubscriptionsQuery::default();
+    pub async fn get_library_artist_subscriptions(
+        &self,
+        sort_order: Option<GetLibrarySortOrder>,
+    ) -> Result<Vec<LibraryArtistSubscription>> {
+        let query = sort_order
+            .map(GetLibraryArtistSubscriptionsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets a list of all podcasts in your Library.
@@ -1076,8 +1132,11 @@ impl<A: LoggedIn> YtMusic<A> {
     /// ```
     pub async fn get_library_podcasts(
         &self,
+        sort_order: Option<GetLibrarySortOrder>,
     ) -> Result<<GetLibraryPodcastsQuery as Query<A>>::Output> {
-        let query = GetLibraryPodcastsQuery::default();
+        let query = sort_order
+            .map(GetLibraryPodcastsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets a list of all channels in your Library.
@@ -1098,8 +1157,11 @@ impl<A: LoggedIn> YtMusic<A> {
     /// ```
     pub async fn get_library_channels(
         &self,
+        sort_order: Option<GetLibrarySortOrder>,
     ) -> Result<<GetLibraryChannelsQuery as Query<A>>::Output> {
-        let query = GetLibraryChannelsQuery::default();
+        let query = sort_order
+            .map(GetLibraryChannelsQuery::new)
+            .unwrap_or_default();
         self.query(query).await
     }
     /// Gets your recently played history.

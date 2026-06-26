@@ -172,16 +172,13 @@ pub fn normalize_artist_name(name: &str) -> String {
             s
         }
     };
-    // If ALL uppercase (e.g. "SUNAMI"), convert to proper case like "Sunami"
-    if !trimmed.is_empty() && trimmed.chars().all(|c| !c.is_alphabetic() || c.is_uppercase()) {
-        let lowered = trimmed.to_lowercase();
-        let mut chars = lowered.chars();
-        let first = chars.next().unwrap().to_uppercase().to_string();
-        return first + chars.as_str();
-    }
+    // Respect intentional lowercase names (e.g. "data da morte" should not become "Data da morte")
     let mut chars = trimmed.chars();
-    let first = chars.next().unwrap().to_uppercase().to_string();
-    first + chars.as_str()
+    let first = chars.next().unwrap();
+    if first.is_lowercase() {
+        return trimmed.to_string();
+    }
+    first.to_uppercase().to_string() + chars.as_str()
 }
 
 impl From<ParsedSongAlbum> for ListSongAlbum {
@@ -443,7 +440,6 @@ impl BrowserSongsList {
             );
         }
     }
-    #[allow(dead_code)]
     pub fn append_raw_playlist_items(&mut self, raw_list: Vec<PlaylistItem>) {
         for song in raw_list {
             self.add_raw_playlist_item(song);
@@ -504,7 +500,7 @@ impl BrowserSongsList {
             artist,
             album,
             duration,
-            plays: _,
+            plays,
             explicit,
             video_id,
             thumbnails,
@@ -543,7 +539,7 @@ impl BrowserSongsList {
             actual_duration: None,
             video_id,
             track_no: None,
-            plays: String::new(),
+            plays,
             title,
             explicit: Some(explicit),
             thumbnails: MaybeRc::Owned(thumbnails),
@@ -556,7 +552,6 @@ impl BrowserSongsList {
         });
         id
     }
-    #[allow(dead_code)]
     fn add_raw_playlist_item(&mut self, item: PlaylistItem) -> ListSongID {
         let id = self.create_next_id();
         let (track_no, title, video_id, duration, artists, album, thumbnails, explicit, year, like_status) = match item
@@ -727,6 +722,24 @@ impl BrowserSongsList {
         self.list.get(idx)
     }
 
+    /// Update year/genres/styles at a specific index (cache enrichment).
+    pub fn update_song_at(&mut self, idx: usize, year: Option<Rc<String>>, genres: Vec<String>, styles: Vec<String>) {
+        if let Some(song) = self.list.get_mut(idx) {
+            if year.is_some() || !genres.is_empty() || !styles.is_empty() {
+                song.year = year;
+                song.genres = genres;
+                song.styles = styles;
+            }
+        }
+    }
+    /// Sort the underlying song list in place using the given comparator.
+    pub fn sort_list_by<F>(&mut self, compare: F)
+    where
+        F: FnMut(&ListSong, &ListSong) -> std::cmp::Ordering,
+    {
+        self.list.sort_by(compare);
+    }
+
 }
 
 /// Score-based fuzzy match: returns Some(score) if all query chars appear in target in order.
@@ -767,6 +780,24 @@ pub fn fuzzy_match(query: &str, target: &str) -> Option<u64> {
     Some(score + start_bonus)
 }
 
+/// Check if text contains Japanese characters (hiragana, katakana, or kanji)
+pub fn has_japanese(text: &str) -> bool {
+    text.chars().any(|c| {
+        matches!(c,
+            '\u{3040}'..='\u{309F}' | // Hiragana
+            '\u{30A0}'..='\u{30FF}' | // Katakana
+            '\u{3400}'..='\u{4DBF}' | // CJK Extension A
+            '\u{4E00}'..='\u{9FFF}'   // CJK Unified Ideographs
+        )
+    })
+}
+
+/// Copy text to system clipboard using `wl-copy`.
+/// Wayland-only.
+pub fn copy_to_clipboard(text: &str) {
+    let _ = std::process::Command::new("wl-copy").arg(text).spawn();
+}
+
 #[cfg(test)]
 mod normalize_tests {
     use super::normalize_artist_name;
@@ -778,17 +809,18 @@ mod normalize_tests {
 
     #[test]
     fn norm_lowercase() {
-        assert_eq!(normalize_artist_name("metallica"), "Metallica");
+        // All-lowercase names preserved (intentional naming like "data da morte")
+        assert_eq!(normalize_artist_name("metallica"), "metallica");
     }
 
     #[test]
     fn norm_uppercase() {
-        assert_eq!(normalize_artist_name("METALLICA"), "Metallica");
+        assert_eq!(normalize_artist_name("METALLICA"), "METALLICA");
     }
 
     #[test]
     fn norm_single_char() {
-        assert_eq!(normalize_artist_name("a"), "A");
+        assert_eq!(normalize_artist_name("a"), "a");
     }
 
     #[test]
@@ -798,7 +830,13 @@ mod normalize_tests {
 
     #[test]
     fn norm_whitespace_padded() {
-        assert_eq!(normalize_artist_name("  metallica  "), "Metallica");
+        // Whitespace stripped, all-lowercase preserved
+        assert_eq!(normalize_artist_name("  metallica  "), "metallica");
+    }
+
+    #[test]
+    fn norm_intentional_lowercase_preserved() {
+        assert_eq!(normalize_artist_name("data da morte"), "data da morte");
     }
 }
 

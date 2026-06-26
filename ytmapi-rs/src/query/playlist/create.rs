@@ -1,6 +1,6 @@
 use super::PrivacyStatus;
 use crate::auth::AuthToken;
-use crate::common::{PlaylistID, VideoID};
+use crate::common::{PlaylistID, VideoID, YoutubeID};
 use crate::query::{PostMethod, PostQuery, Query};
 use serde_json::json;
 use std::borrow::Cow;
@@ -45,7 +45,10 @@ impl CreatePlaylistType for CreatePlaylistFromVideos<'_> {
 }
 impl CreatePlaylistType for CreatePlaylistFromPlaylist<'_> {
     fn additional_header(&self) -> Option<(String, serde_json::Value)> {
-        Some(("sourcePlaylistId".into(), json!(self.source_playlist)))
+        // sourcePlaylistId expects raw ID without VL prefix
+        let raw = self.source_playlist.get_raw();
+        let clean = raw.strip_prefix("VL").unwrap_or(raw);
+        Some(("sourcePlaylistId".into(), json!(clean)))
     }
 }
 
@@ -114,7 +117,7 @@ impl<A: AuthToken, C: CreatePlaylistType> Query<A> for CreatePlaylistQuery<'_, C
 }
 impl<C: CreatePlaylistType> PostQuery for CreatePlaylistQuery<'_, C> {
     fn header(&self) -> serde_json::Map<String, serde_json::Value> {
-        // TODO: Confirm if processing required to remove 'VL' portion of playlistId
+        // VL prefix stripped in additional_header for sourcePlaylistId
         let serde_json::Value::Object(mut map) = json!({
             "title" : self.title,
             "privacyStatus" : self.privacy_status.to_string(),

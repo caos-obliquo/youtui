@@ -11,6 +11,8 @@ use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::rc::Rc;
+use metadata_provider::genre_map;
+use std::collections::HashSet;
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -197,9 +199,15 @@ impl SongInfoPopup {
         let inner = block.inner(popup_area);
         frame.render_widget(block, popup_area);
 
+        let is_genre_edit = self.editing && self.selected_field == 4 && !self.edit_buffer.is_empty();
+        let constraints: &[Constraint] = if is_genre_edit {
+            &[Constraint::Min(1), Constraint::Length(1), Constraint::Length(1)]
+        } else {
+            &[Constraint::Min(1), Constraint::Length(1)]
+        };
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .constraints(constraints)
             .split(inner);
 
         let artist = self.song.artists.iter()
@@ -218,6 +226,20 @@ impl SongInfoPopup {
             if g.is_empty() { self.song.genres.join(", ") } else { g }
         };
         let genre_display = if genre_str.is_empty() { "-" } else { genre_str.as_str() };
+
+        // Look up RYM genre descriptions
+        let genre_descriptions: Vec<String> = if !genre_str.is_empty() {
+            let mut seen = HashSet::new();
+            genre_str.split(',')
+                .map(|g| g.trim())
+                .filter_map(|g| rym_genre_data::find_genre(g))
+                .filter_map(|g| g.description.clone())
+                .filter(|d| seen.insert(d.clone()))
+                .map(|d| if d.len() > 120 { format!("{}...", &d[..117]) } else { d })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let raw_lines = vec![
             ("Title", self.song.title.as_str()),
@@ -244,12 +266,45 @@ impl SongInfoPopup {
             };
             display.push_str(&marker);
             display.push('\n');
+            // Show RYM descriptions when Genre field is selected
+            if i == 4 && !genre_descriptions.is_empty() && self.selected_field == 4 {
+                for desc in &genre_descriptions {
+                    display.push_str(&format!("         {}\n", desc));
+                }
+            }
         }
 
         let info_widget = Paragraph::new(display)
             .style(Style::default().fg(Color::White))
             .wrap(Wrap { trim: false });
         frame.render_widget(info_widget, chunks[0]);
+
+        // Genre auto-suggest: show matching canonical genres when editing Genre field
+        if is_genre_edit {
+            let all = genre_map::all_genres();
+            let query = self.edit_buffer.to_lowercase();
+            let last_word = query.split(',').last().unwrap_or("").trim().to_string();
+            let matches: Vec<&String> = all.iter()
+                .filter(|g| {
+                    if last_word.is_empty() {
+                        query.split(',').any(|w| {
+                            let w = w.trim();
+                            !w.is_empty() && g.to_lowercase().contains(w)
+                        })
+                    } else {
+                        g.to_lowercase().contains(&last_word)
+                    }
+                })
+                .take(5)
+                .collect();
+            if !matches.is_empty() {
+                let suggest_text: String = matches.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" | ");
+                let suggest_widget = Paragraph::new(suggest_text)
+                    .style(Style::default().fg(Color::Cyan))
+                    .wrap(Wrap { trim: false });
+                frame.render_widget(suggest_widget, chunks[2]);
+            }
+        }
 
         let hint = if self.editing {
             "Enter: Save | Esc: Cancel"

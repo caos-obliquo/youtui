@@ -358,6 +358,48 @@ fn insert_album_tracks_sets_correct_metadata() {
 }
 
 #[test]
+fn insert_album_tracks_propagates_parent_metadata() {
+    use ytmapi_rs::common::Thumbnail;
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+
+    let mut orig = make_album_original("vx1", Some("2021"));
+    orig.genres = vec!["Rock".to_string(), "Metal".to_string()];
+    orig.styles = vec!["Heavy Metal".to_string()];
+    orig.thumbnails = MaybeRc::Owned(vec![Thumbnail {
+        height: 100,
+        width: 100,
+        url: "test.jpg".to_string(),
+    }]);
+    orig.like_status = LikeStatus::Liked;
+
+    let orig_id = p.list.push_song_list(vec![orig]);
+    let tracks = dummy_tracks();
+
+    p.insert_album_tracks(
+        orig_id, &tracks,
+        &Some("Artist".into()), &Some("Album".into()), &None, &None,
+    );
+
+    for i in 0..3 {
+        let track = p.list.get_list_iter().nth(i).unwrap();
+        assert_eq!(track.genres, vec!["Rock", "Metal"],
+            "Track {}: genres should propagate", i + 1);
+        assert_eq!(track.styles, vec!["Heavy Metal"],
+            "Track {}: styles should propagate", i + 1);
+        assert_eq!(track.like_status, LikeStatus::Liked,
+            "Track {}: like_status should propagate", i + 1);
+        match &track.thumbnails {
+            MaybeRc::Owned(t) => {
+                assert_eq!(t.len(), 1, "Track {}: should have 1 thumbnail", i + 1);
+                assert_eq!(t[0].url, "test.jpg");
+            }
+            _ => panic!("Track {}: thumbnails should be Owned", i + 1),
+        }
+    }
+}
+
+#[test]
 fn album_download_shares_arc_with_tracks() {
     let (mut p, _) = Playlist::new();
     p.list.state = ListStatus::Loaded;

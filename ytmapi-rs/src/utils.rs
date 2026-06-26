@@ -21,8 +21,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Calculates the Authorization hash from Google's SAPISID.
 /// https://stackoverflow.com/a/32065323/5726546
 /// Returns "{elapsed_since_epoch}_{hashed_sapisid}"
-// TODO: Add Doctest
-// TODO: Modify to be testable.
 // Consider if this should take origin from headers instead of using the
 // constant YTM_URL which I have modified.
 pub fn hash_sapisid(sapisid: &str) -> String {

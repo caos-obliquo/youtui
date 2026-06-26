@@ -1,0 +1,14 @@
+[package]
+name = "audio-player"
+version = "0.1.0"
+edition = "2024"
+description = "Async rodio audio playback wrapper with gapless support"
+license = "MIT"
+
+[dependencies]
+rodio = { version = "0.22.2", features = ["symphonia-all"] }
+tokio = { version = "1.52.1", features = ["full"] }
+futures = "0.3.32"
+tracing = "0.1.44"
+async-callback-manager = { path = "../../async-callback-manager", version = "0.1.1" }
+gag = "1.0.0"

@@ -2,7 +2,7 @@
 
 ## Download Pipeline
 
-File: `app/server/song_downloader.rs` + `app/server/messages.rs`
+File: `youtui/src/app/server/song_downloader.rs` + `youtui/src/app/server/messages.rs`
 
 ### yt-dlp (default)
 
@@ -28,13 +28,13 @@ yt-dlp -f bestaudio -o {tempfile} {url} ← audio download
 
 ### Native (rusty_ytdl, broken)
 
-File: `app/youtube_downloader/native.rs`
+File: `youtui/src/youtube_downloader/native.rs`
 
 Uses `rusty_ytdl::stream()` but ignores custom filter for some videos, downloads video-only MPEG-4. Workaround: use `:` command with yt-dlp.
 
 ## Decode + Playback
 
-File: `app/server/player.rs` + `app/async_rodio_sink.rs`
+File: `youtui/src/app/server/player.rs` + `libs/audio-player/`
 
 ### DecodeSong
 
@@ -65,7 +65,9 @@ Files cached in temp dir. Cleanup on youtui exit via `create_or_clean_directory`
 
 ### Player backend
 
-`async_rodio_sink.rs` wraps `rodio` + `symphonia` for audio playback:
+### audio-player crate
+
+`libs/audio-player/` wraps `rodio` + `symphonia` for audio playback:
 - `Sink::new()` — create playback sink
 - `Sink::append(source)` — queue audio
 - `Sink::seek(duration, direction)` — seek (Forward/Back)
@@ -76,7 +78,7 @@ Supported codecs: MP4/AAC, WebM/Opus, WAV, Ogg/Vorbis (via symphonia codecs).
 
 ### Gapless Auto-Advance
 
-File: `app/ui/playlist.rs` (inline, in queue management)
+File: `youtui/src/app/ui/playlist.rs` (inline, in queue management)
 
 ```
 Gapless threshold: 1s before track end
@@ -100,7 +102,7 @@ On every progress update (~10Hz):
 
 ## MPRIS Media Controls
 
-File: `app/media_controls.rs`
+File: `youtui/src/app/media_controls.rs`
 
 Uses `souvlaki` crate for MPRIS integration:
 - Play/Pause, Next/Previous, Seek, Volume

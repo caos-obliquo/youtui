@@ -76,7 +76,7 @@ impl Action for BrowserPlaylistsAction {
     }
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match self {
-            Self::DisplaySelectedPlaylist => "Display selected playlist",
+            Self::DisplaySelectedPlaylist => "Show playlist tracks",
         }
         .into()
     }
@@ -101,14 +101,6 @@ impl PlaylistSearchPanel {
     pub fn close_search(&mut self) {
         self.search_popped = false;
         self.route = PlaylistInputRouting::List;
-    }
-    #[allow(dead_code)]
-    pub fn go_to_first(&mut self) {
-        self.selected = 0;
-    }
-    #[allow(dead_code)]
-    pub fn go_to_last(&mut self) {
-        self.selected = self.list.len().saturating_sub(1);
     }
 }
 impl Component for PlaylistSearchPanel {
@@ -200,6 +192,6 @@ impl ListView for PlaylistSearchPanel {
 }
 impl HasTitle for PlaylistSearchPanel {
     fn get_title(&self) -> Cow<'_, str> {
-        "Playlists".into()
+        format!("Playlists - {} results", self.list.len()).into()
     }
 }

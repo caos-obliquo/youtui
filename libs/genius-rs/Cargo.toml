@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Genius.com API client with HTML scraping for lyrics"
 license = "MIT"
+authors = ["caos-obliquo"]
 
 [dependencies]
 reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }

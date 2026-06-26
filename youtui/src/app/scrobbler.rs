@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 

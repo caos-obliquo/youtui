@@ -80,10 +80,21 @@ pub struct Thumbnail {
 #[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 /// Set of both taste tokens.
 // Intentionally not marked non_exhaustive - not expecting this to change.
-// TODO: constructor
 pub struct TasteToken<'a> {
     pub impression_value: TasteTokenImpression<'a>,
     pub selection_value: TasteTokenSelection<'a>,
+}
+
+impl<'a> TasteToken<'a> {
+    pub fn new(
+        impression_value: impl Into<TasteTokenImpression<'a>>,
+        selection_value: impl Into<TasteTokenSelection<'a>>,
+    ) -> Self {
+        Self {
+            impression_value: impression_value.into(),
+            selection_value: selection_value.into(),
+        }
+    }
 }
 
 /// Collection of required fields to identify and change library status.
@@ -156,8 +167,6 @@ pub enum AlbumType {
 /// Type safe version of API ID used as part of YTM's interface.
 pub trait YoutubeID<'a> {
     fn get_raw(&self) -> &str;
-    // TODO: Create fallible version for when parsing is required. This could
-    // possiby be a seperate trait YoutubeIDFallible
     fn from_raw<S: Into<Cow<'a, str>>>(raw_str: S) -> Self;
 }
 
@@ -175,7 +184,9 @@ pub struct UserVideosParams<'a>(Cow<'a, str>);
 pub struct UserPlaylistsParams<'a>(Cow<'a, str>);
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub struct PodcastChannelParams<'a>(Cow<'a, str>);
-// TODO: Add parsing - PlaylistID begining with VL should fail.
+/// YouTube Music playlist ID. May start with `VL` prefix which should be
+/// stripped before sending mutations to the API. The consumer (youtui)
+/// handles this externally via `remove_vl_prefix()`.
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub struct PlaylistID<'a>(Cow<'a, str>);
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Serialize, Deserialize)]

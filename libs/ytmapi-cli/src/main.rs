@@ -1,11 +1,30 @@
 use ytmapi_rs::{
     YtMusic,
-    common::{AlbumID, ArtistChannelID, LikeStatus, PlaylistID, SetVideoID, VideoID, YoutubeID},
+    common::{
+        AlbumID, ArtistChannelID, LikeStatus, PlaylistID, SetVideoID, VideoID, YoutubeID,
+        PodcastChannelID, PodcastID, EpisodeID, UserChannelID,
+        UploadAlbumID, UploadArtistID, UploadEntityID,
+        BrowseParams, UserVideosParams, UserPlaylistsParams, PodcastChannelParams,
+        TasteToken, TasteTokenSelection, TasteTokenImpression,
+        MoodCategoryParams, FeedbackTokenRemoveFromHistory,
+    },
     process_json,
     query::{
         EditPlaylistQuery, GetAlbumQuery, GetPlaylistTracksQuery,
-        SearchQuery, search::{SongsFilter},
+        SearchQuery, search::SongsFilter,
         playlist::PrivacyStatus,
+        CreatePlaylistQuery,
+        GetArtistQuery, GetArtistAlbumsQuery,
+        GetTasteProfileQuery, SetTasteProfileQuery,
+        GetMoodCategoriesQuery, GetMoodPlaylistsQuery,
+        GetUserQuery, GetUserPlaylistsQuery, GetUserVideosQuery,
+        GetChannelQuery, GetChannelEpisodesQuery, GetPodcastQuery,
+        GetEpisodeQuery, GetNewEpisodesQuery,
+        DeleteUploadEntityQuery,
+        GetLibrarySortOrder, GetLibraryUploadAlbumQuery, GetLibraryUploadArtistQuery,
+        GetLibrarySongsQuery,
+        GetWatchPlaylistQuery,
+        GetLyricsQuery,
     },
 };
 
@@ -30,6 +49,10 @@ async fn main() {
                 cookie_file = Some(args.get(i).cloned().unwrap_or_default());
             }
             "--json" => json_output = true,
+            "--help" | "-h" => {
+                print_usage();
+                return;
+            }
             _ => cmd_args.push(args[i].clone()),
         }
         i += 1;
@@ -56,6 +79,16 @@ async fn main() {
     }
 }
 
+fn parse_sort_order(s: &str) -> Option<GetLibrarySortOrder> {
+    match s {
+        "name-asc" | "name_asc" => Some(GetLibrarySortOrder::NameAsc),
+        "name-desc" | "name_desc" => Some(GetLibrarySortOrder::NameDesc),
+        "recent" | "recently-saved" | "recently_saved" => Some(GetLibrarySortOrder::RecentlySaved),
+        "default" => Some(GetLibrarySortOrder::Default),
+        _ => None,
+    }
+}
+
 fn print_usage() {
     eprintln!("ytmapi - YouTube Music API CLI");
     eprintln!();
@@ -67,29 +100,87 @@ fn print_usage() {
     eprintln!("  --json              Machine-readable JSON output");
     eprintln!();
     eprintln!("COMMANDS (live, requires auth):");
+    eprintln!("  SEARCH:");
     eprintln!("  search <query>                Search songs");
     eprintln!("  search-artists <query>        Search artists");
     eprintln!("  search-albums <query>         Search albums");
     eprintln!("  search-playlists <query>      Search playlists");
+    eprintln!("  search-videos <query>         Search videos");
+    eprintln!("  search-community-playlists <q> Search community playlists");
+    eprintln!("  search-featured-playlists <q> Search featured playlists");
+    eprintln!("  search-episodes <query>       Search episodes");
+    eprintln!("  search-podcasts <query>       Search podcasts");
+    eprintln!("  search-profiles <query>       Search profiles");
+    eprintln!("  search-suggestions <query>    Get search suggestions");
+    eprintln!();
+    eprintln!("  PLAYLIST:");
     eprintln!("  playlist <id>                 Get playlist tracks");
+    eprintln!("  playlist-details <id>         Get playlist details");
     eprintln!("  playlist-songs <id>           Get playlist tracks (streaming debug)");
-    eprintln!("  album <id>                    Get album details");
-    eprintln!("  artist <id>                   Get artist");
-    eprintln!("  watch-playlist <video_id>     Get related/watch playlist for a video");
-    eprintln!("  library playlists             List library playlists");
-    eprintln!("  library songs                 List library songs");
+    eprintln!("  create-playlist <title>       Create playlist");
     eprintln!("  delete-playlist <id>          Delete a playlist");
     eprintln!("  edit-playlist <id> [opts]     Edit playlist (--title/--description/--privacy)");
     eprintln!("  rate-playlist <id> <rating>   Rate playlist (like/indifferent/dislike)");
     eprintln!("  remove-items <id> <vid...>    Remove items from playlist");
     eprintln!("  add-to-playlist <id> <vid...> Add items to playlist");
+    eprintln!("  merge-playlist <dest> <src>   Add all tracks from src playlist to dest");
+    eprintln!();
+    eprintln!("  ALBUM / ARTIST / SONG:");
+    eprintln!("  album <id>                    Get album details");
+    eprintln!("  artist <channel_id>           Get artist");
+    eprintln!("  artist-albums <channel_id>    Get artist albums");
+    eprintln!("  subscribe <channel_id>        Subscribe to artist");
+    eprintln!("  unsubscribe <channel_id>...   Unsubscribe from artists");
+    eprintln!("  rate-song <video_id> <rating> Rate song (like/indifferent/dislike)");
+    eprintln!("  lyrics <video_id>             Get lyrics for a song");
+    eprintln!("  tracking-url <video_id>       Get song tracking URL");
+    eprintln!("  resolve-album <name> [artist]  Resolve album name to browse ID");
+    eprintln!("  watch-playlist <video_id>     Get related/watch playlist");
+    eprintln!();
+    eprintln!("  LIBRARY [--sort name-asc|name-desc|recent|default]:");
+    eprintln!("  library playlists             List library playlists");
+    eprintln!("  library songs                 List library songs");
+    eprintln!("  library albums                List library albums");
+    eprintln!("  library artists               List library artists");
+    eprintln!("  library artist-subscriptions  List subscribed artists");
+    eprintln!("  library podcasts              List library podcasts");
+    eprintln!("  library channels              List library channels");
+    eprintln!("  library upload-songs          List uploaded songs");
+    eprintln!("  library upload-artists        List upload artists");
+    eprintln!("  library upload-albums         List upload albums");
+    eprintln!("  library upload-album <id>     Get upload album details");
+    eprintln!("  library upload-artist <id>    Get upload artist songs");
+    eprintln!("  library upload <file>         Upload a song to library");
+    eprintln!("  delete-upload <entity_id>     Delete uploaded entity");
+    eprintln!();
+    eprintln!("  HISTORY:");
+    eprintln!("  history                       Get listening history");
+    eprintln!("  remove-history <token...>     Remove items from history");
+    eprintln!();
+    eprintln!("  RECOMMENDATIONS:");
+    eprintln!("  taste-profile                 Get taste profile artists");
+    eprintln!("  set-taste-profile <tokens...> Set taste profile");
+    eprintln!("  mood-categories               Get mood categories");
+    eprintln!("  mood-playlists <params>       Get mood playlists");
+    eprintln!();
+    eprintln!("  PODCASTS:");
+    eprintln!("  channel <channel_id>          Get podcast channel");
+    eprintln!("  channel-episodes <channel_id> Get channel episodes");
+    eprintln!("  podcast <podcast_id>          Get podcast");
+    eprintln!("  episode <episode_id>          Get episode");
+    eprintln!("  new-episodes                  Get new episodes");
+    eprintln!();
+    eprintln!("  USER:");
+    eprintln!("  user <channel_id>             Get user profile");
+    eprintln!("  user-videos <channel_id>      Get user videos");
+    eprintln!("  user-playlists <channel_id>   Get user playlists");
     eprintln!();
     eprintln!("COMMANDS (offline, no auth):");
-    eprintln!("  fixture <file> [--type search|playlist|album]");
+    eprintln!("  fixture <file> [--type search|search-basic|playlist|album|artist|library-songs|watch-playlist|lyrics|mood-categories]");
     eprintln!("  debug meta <title> [artist]    Test title cleaning + artist normalization");
     eprintln!("  debug clean <title>            Test title cleaning only");
     eprintln!("  debug artist <name>            Test artist normalization only");
-    eprintln!("  debug resolve <artist> <title>  Test full resolution pipeline");
+    eprintln!("  debug resolve <artist> <title> Test full resolution pipeline");
     eprintln!("  debug genre <genre>            Test genre normalization");
     eprintln!("  debug genre-list [filter]      List known genres");
     eprintln!();
@@ -126,6 +217,7 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
     };
 
     match command {
+        // ── SEARCH ──────────────────────────────────────────────────────
         "search" => {
             let query = args.join(" ");
             if query.is_empty() { eprintln!("Usage: ytmapi search <query>"); return; }
@@ -158,6 +250,64 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                 Err(e) => eprintln!("Search error: {}", e),
             }
         }
+        "search-videos" => {
+            let query = args.join(" ");
+            if query.is_empty() { eprintln!("Usage: ytmapi search-videos <query>"); return; }
+            match yt.search_videos(&query).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Search error: {}", e),
+            }
+        }
+        "search-community-playlists" => {
+            let query = args.join(" ");
+            if query.is_empty() { eprintln!("Usage: ytmapi search-community-playlists <query>"); return; }
+            match yt.search_community_playlists(&query).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Search error: {}", e),
+            }
+        }
+        "search-featured-playlists" => {
+            let query = args.join(" ");
+            if query.is_empty() { eprintln!("Usage: ytmapi search-featured-playlists <query>"); return; }
+            match yt.search_featured_playlists(&query).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Search error: {}", e),
+            }
+        }
+        "search-episodes" => {
+            let query = args.join(" ");
+            if query.is_empty() { eprintln!("Usage: ytmapi search-episodes <query>"); return; }
+            match yt.search_episodes(&query).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Search error: {}", e),
+            }
+        }
+        "search-podcasts" => {
+            let query = args.join(" ");
+            if query.is_empty() { eprintln!("Usage: ytmapi search-podcasts <query>"); return; }
+            match yt.search_podcasts(&query).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Search error: {}", e),
+            }
+        }
+        "search-profiles" => {
+            let query = args.join(" ");
+            if query.is_empty() { eprintln!("Usage: ytmapi search-profiles <query>"); return; }
+            match yt.search_profiles(&query).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Search error: {}", e),
+            }
+        }
+        "search-suggestions" => {
+            let query = args.join(" ");
+            if query.is_empty() { eprintln!("Usage: ytmapi search-suggestions <query>"); return; }
+            match yt.get_search_suggestions(&query).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Suggestions error: {}", e),
+            }
+        }
+
+        // ── PLAYLIST ────────────────────────────────────────────────────
         "playlist" => {
             if args.is_empty() { eprintln!("Usage: ytmapi playlist <id>"); return; }
             let id = PlaylistID::from_raw(&args[0]);
@@ -175,42 +325,40 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                 Err(e) => eprintln!("Playlist error: {}", e),
             }
         }
-        "album" => {
-            if args.is_empty() { eprintln!("Usage: ytmapi album <id>"); return; }
-            let id = AlbumID::from_raw(&args[0]);
-            match yt.get_album(id).await {
-                Ok(result) => print_results(&result, json),
-                Err(e) => eprintln!("Album error: {}", e),
+        "playlist-details" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi playlist-details <id>"); return; }
+            let id = PlaylistID::from_raw(&args[0]);
+            match yt.get_playlist_details(id).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Details error: {}", e),
             }
         }
-        "artist" => {
-            if args.is_empty() { eprintln!("Usage: ytmapi artist <channel_id>"); return; }
-            let id = ArtistChannelID::from_raw(&args[0]);
-            match yt.get_artist(id).await {
-                Ok(result) => print_results(&result, json),
-                Err(e) => eprintln!("Artist error: {}", e),
+        "create-playlist" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi create-playlist <title> [--description <d>] [--privacy private|public|unlisted]"); return; }
+            let title = &args[0];
+            let mut desc: Option<String> = None;
+            let mut privacy = PrivacyStatus::Private;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--description" => { i += 1; desc = Some(args.get(i).cloned().unwrap_or_default()); }
+                    "--privacy" => {
+                        i += 1;
+                        privacy = match args.get(i).map(|s| s.as_str()) {
+                            Some("private") => PrivacyStatus::Private,
+                            Some("public") => PrivacyStatus::Public,
+                            Some("unlisted") => PrivacyStatus::Unlisted,
+                            _ => { eprintln!("Invalid privacy. Use: private, public, unlisted"); return; }
+                        };
+                    }
+                    _ if args[i].starts_with("--") => { eprintln!("Unknown flag: {}", args[i]); return; }
+                    _ => {} // skip positional args we already consumed
+                }
+                i += 1;
             }
-        }
-        "watch-playlist" => {
-            if args.is_empty() { eprintln!("Usage: ytmapi watch-playlist <video_id>"); return; }
-            let id = VideoID::from_raw(&args[0]);
-            match yt.get_watch_playlist_from_video_id(id).await {
-                Ok(result) => print_results(&result, json),
-                Err(e) => eprintln!("Watch playlist error: {}", e),
-            }
-        }
-        "library" => {
-            if args.is_empty() { eprintln!("Usage: ytmapi library <playlists|songs>"); return; }
-            match args[0].as_str() {
-                "playlists" => match yt.get_library_playlists().await {
-                    Ok(results) => print_results(&results, json),
-                    Err(e) => eprintln!("Library error: {}", e),
-                },
-                "songs" => match yt.get_library_songs().await {
-                    Ok(results) => print_results(&results, json),
-                    Err(e) => eprintln!("Library error: {}", e),
-                },
-                _ => eprintln!("Unknown library subcommand: {}. Use 'playlists' or 'songs'", args[0]),
+            match yt.create_playlist(CreatePlaylistQuery::new(title, desc.as_deref(), privacy)).await {
+                Ok(id) => println!("Created playlist: {}", id.get_raw()),
+                Err(e) => eprintln!("Create error: {}", e),
             }
         }
         "delete-playlist" => {
@@ -259,8 +407,8 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                 }
                 i += 1;
             }
-            let mut query = if let Some(t) = title {
-                EditPlaylistQuery::new_title(&id, t)
+            let mut query = if let Some(ref t) = title {
+                EditPlaylistQuery::new_title(&id, t.as_str())
             } else {
                 EditPlaylistQuery::new_title(&id, "")
             };
@@ -289,12 +437,366 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                 Err(e) => eprintln!("Add error: {}", e),
             }
         }
+        "merge-playlist" => {
+            if args.len() < 2 { eprintln!("Usage: ytmapi merge-playlist <dest_playlist_id> <src_playlist_id>"); return; }
+            let dest = PlaylistID::from_raw(&args[0]);
+            let src = PlaylistID::from_raw(&args[1]);
+            match yt.add_playlist_to_playlist(dest, src).await {
+                Ok(results) => println!("Merged {} tracks", results.len()),
+                Err(e) => eprintln!("Merge error: {}", e),
+            }
+        }
+
+        // ── ALBUM / ARTIST / SONG ───────────────────────────────────────
+        "album" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi album <id>"); return; }
+            let id = AlbumID::from_raw(&args[0]);
+            match yt.get_album(id).await {
+                Ok(result) => print_results(&result, json),
+                Err(e) => eprintln!("Album error: {}", e),
+            }
+        }
+        "artist" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi artist <channel_id>"); return; }
+            let id = ArtistChannelID::from_raw(&args[0]);
+            match yt.get_artist(id).await {
+                Ok(result) => print_results(&result, json),
+                Err(e) => eprintln!("Artist error: {}", e),
+            }
+        }
+        "artist-albums" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi artist-albums <channel_id> [--params <browse_params>]"); return; }
+            let channel_id = ArtistChannelID::from_raw(&args[0]);
+            let browse_params = if args.len() > 2 && args[1] == "--params" {
+                BrowseParams::from_raw(args[2].clone())
+            } else {
+                BrowseParams::from_raw("")
+            };
+            match yt.query(GetArtistAlbumsQuery::new(channel_id, browse_params)).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Artist albums error: {}", e),
+            }
+        }
+        "subscribe" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi subscribe <channel_id>"); return; }
+            let channel_id = ArtistChannelID::from_raw(&args[0]);
+            match yt.subscribe_artist(channel_id).await {
+                Ok(_) => println!("Subscribed successfully"),
+                Err(e) => eprintln!("Subscribe error: {}", e),
+            }
+        }
+        "unsubscribe" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi unsubscribe <channel_id>..."); return; }
+            let channels: Vec<ArtistChannelID<'_>> = args.iter().map(|v| ArtistChannelID::from_raw(v.clone())).collect();
+            match yt.unsubscribe_artists(channels).await {
+                Ok(_) => println!("Unsubscribed successfully"),
+                Err(e) => eprintln!("Unsubscribe error: {}", e),
+            }
+        }
+        "rate-song" => {
+            if args.len() < 2 { eprintln!("Usage: ytmapi rate-song <video_id> <like|indifferent|dislike>"); return; }
+            let video_id = VideoID::from_raw(&args[0]);
+            let rating = match args[1].as_str() {
+                "like" => LikeStatus::Liked,
+                "indifferent" => LikeStatus::Indifferent,
+                "dislike" => LikeStatus::Disliked,
+                _ => { eprintln!("Invalid rating. Use: like, indifferent, or dislike"); return; }
+            };
+            match yt.rate_song(video_id, rating).await {
+                Ok(_) => println!("Song rated successfully"),
+                Err(e) => eprintln!("Rate error: {}", e),
+            }
+        }
+        "lyrics" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi lyrics <video_id>"); return; }
+            let video_id = VideoID::from_raw(&args[0]);
+            let lyrics_id = match yt.get_lyrics_id(video_id).await {
+                Ok(id) => id,
+                Err(e) => { eprintln!("Lyrics ID error: {}", e); return; }
+            };
+            match yt.get_lyrics(lyrics_id).await {
+                Ok(lyrics) => print_results(&lyrics, json),
+                Err(e) => eprintln!("Lyrics error: {}", e),
+            }
+        }
+        "tracking-url" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi tracking-url <video_id>"); return; }
+            let video_id = VideoID::from_raw(&args[0]);
+            match yt.get_song_tracking_url(video_id).await {
+                Ok(url) => println!("Tracking URL: {}", url.get_raw()),
+                Err(e) => eprintln!("Tracking URL error: {}", e),
+            }
+        }
+        "resolve-album" => {
+            let (album_name, artist_name) = if args.len() >= 2 {
+                (&args[0], Some(&args[1]))
+            } else if args.len() == 1 {
+                (&args[0], None)
+            } else {
+                eprintln!("Usage: ytmapi resolve-album <album_name> [artist_name]");
+                return;
+            };
+            match yt.get_album_browse_id(album_name, artist_name.map(|x| x.as_str())).await {
+                Ok(id) => println!("Album ID: {}", id.get_raw()),
+                Err(e) => eprintln!("Resolve error: {}", e),
+            }
+        }
+        "watch-playlist" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi watch-playlist <video_id>"); return; }
+            let id = VideoID::from_raw(&args[0]);
+            match yt.get_watch_playlist_from_video_id(id).await {
+                Ok(result) => print_results(&result, json),
+                Err(e) => eprintln!("Watch playlist error: {}", e),
+            }
+        }
+
+                // ── LIBRARY ─────────────────────────────────────────────────────
+        "library" => {
+            // Parse --sort flag before subcommand
+            let mut sort_order: Option<GetLibrarySortOrder> = None;
+            let mut sub_args: Vec<String> = Vec::new();
+            let mut i = 0;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--sort" => {
+                        i += 1;
+                        if let Some(val) = args.get(i) {
+                            if let Some(order) = parse_sort_order(val) {
+                                sort_order = Some(order);
+                            } else {
+                                eprintln!("Invalid --sort value '{}'. Valid: name-asc, name-desc, recent, default", val);
+                                return;
+                            }
+                        } else {
+                            eprintln!("--sort requires a value (name-asc, name-desc, recent, default)");
+                            return;
+                        }
+                    }
+                    _ => sub_args.push(args[i].clone()),
+                }
+                i += 1;
+            }
+            if sub_args.is_empty() { eprintln!("Usage: ytmapi library <subcommand> [--sort <order>]"); return; }
+            match sub_args[0].as_str() {
+                "playlists" => match yt.get_library_playlists().await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+                "songs" => match yt.get_library_songs(sort_order).await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+                "albums" => match yt.get_library_albums(sort_order).await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+                "artists" => match yt.get_library_artists(sort_order).await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+                "artist-subscriptions" => match yt.get_library_artist_subscriptions(sort_order).await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+                "podcasts" => match yt.get_library_podcasts(sort_order).await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+                "channels" => match yt.get_library_channels(sort_order).await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+
+
+                "upload-songs" => match yt.get_library_upload_songs().await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+                "upload-artists" => match yt.get_library_upload_artists().await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+                "upload-albums" => match yt.get_library_upload_albums().await {
+                    Ok(results) => print_results(&results, json),
+                    Err(e) => eprintln!("Library error: {}", e),
+                },
+                "upload-album" => {
+                    if args.len() < 2 { eprintln!("Usage: ytmapi library upload-album <album_id>"); return; }
+                    let id = UploadAlbumID::from_raw(&args[1]);
+                    match yt.query(GetLibraryUploadAlbumQuery::new(id)).await {
+                        Ok(results) => print_results(&results, json),
+                        Err(e) => eprintln!("Library error: {}", e),
+                    }
+                }
+                "upload-artist" => {
+                    if args.len() < 2 { eprintln!("Usage: ytmapi library upload-artist <artist_id>"); return; }
+                    let id = UploadArtistID::from_raw(&args[1]);
+                    match yt.query(GetLibraryUploadArtistQuery::new(id)).await {
+                        Ok(results) => print_results(&results, json),
+                        Err(e) => eprintln!("Library error: {}", e),
+                    }
+                }
+                "upload" => {
+                    if args.len() < 2 { eprintln!("Usage: ytmapi library upload <file_path>"); return; }
+                    match yt.upload_song(&args[1]).await {
+                        Ok(outcome) => println!("Upload result: {:?}", outcome),
+                        Err(e) => eprintln!("Upload error: {}", e),
+                    }
+                }
+                _ => eprintln!("Unknown library subcommand: {}. See ytmapi --help", args[0]),
+            }
+        }
+        "delete-upload" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi delete-upload <entity_id>"); return; }
+            let id = UploadEntityID::from_raw(&args[0]);
+            match yt.query(DeleteUploadEntityQuery::new(id)).await {
+                Ok(_) => println!("Upload entity deleted"),
+                Err(e) => eprintln!("Delete error: {}", e),
+            }
+        }
+
+        // ── HISTORY ─────────────────────────────────────────────────────
+        "history" => {
+            match yt.get_history().await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("History error: {}", e),
+            }
+        }
+        "remove-history" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi remove-history <feedback_token>..."); return; }
+            let tokens: Vec<FeedbackTokenRemoveFromHistory<'_>> = args.iter().map(|v| FeedbackTokenRemoveFromHistory::from_raw(v.clone())).collect();
+            match yt.remove_history_items(tokens).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Remove history error: {}", e),
+            }
+        }
+
+        // ── RECOMMENDATIONS ─────────────────────────────────────────────
+        "taste-profile" => {
+            match yt.query(GetTasteProfileQuery).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Taste profile error: {}", e),
+            }
+        }
+        "set-taste-profile" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi set-taste-profile <impression_token> <selection_token>..."); return; }
+            if args.len() < 2 || args.len() % 2 != 0 {
+                eprintln!("Usage: ytmapi set-taste-profile <impression_token> <selection_token>...");
+                return;
+            }
+            let tokens: Vec<TasteToken<'_>> = args.chunks(2).map(|chunk| {
+                TasteToken {
+                    impression_value: TasteTokenImpression::from_raw(chunk[0].clone()),
+                    selection_value: TasteTokenSelection::from_raw(chunk[1].clone()),
+                }
+            }).collect();
+            match yt.query(SetTasteProfileQuery::new(tokens)).await {
+                Ok(_) => println!("Taste profile set"),
+                Err(e) => eprintln!("Set taste profile error: {}", e),
+            }
+        }
+        "mood-categories" => {
+            match yt.query(GetMoodCategoriesQuery).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Mood categories error: {}", e),
+            }
+        }
+        "mood-playlists" => {
+            let params = if args.is_empty() { MoodCategoryParams::from_raw("") } else { MoodCategoryParams::from_raw(args.join(" ")) };
+            match yt.query(GetMoodPlaylistsQuery::new(params)).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Mood playlists error: {}", e),
+            }
+        }
+
+        // ── PODCASTS ────────────────────────────────────────────────────
+        "channel" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi channel <channel_id>"); return; }
+            let id = PodcastChannelID::from_raw(&args[0]);
+            match yt.query(GetChannelQuery::new(id)).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Channel error: {}", e),
+            }
+        }
+        "channel-episodes" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi channel-episodes <channel_id> [--params <params>]"); return; }
+            let channel_id = PodcastChannelID::from_raw(&args[0]);
+            let params = if args.len() > 2 && args[1] == "--params" {
+                PodcastChannelParams::from_raw(args[2].clone())
+            } else {
+                PodcastChannelParams::from_raw("")
+            };
+            match yt.query(GetChannelEpisodesQuery::new(channel_id, params)).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Channel episodes error: {}", e),
+            }
+        }
+        "podcast" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi podcast <podcast_id>"); return; }
+            let id = PodcastID::from_raw(&args[0]);
+            match yt.query(GetPodcastQuery::new(id)).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Podcast error: {}", e),
+            }
+        }
+        "episode" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi episode <episode_id>"); return; }
+            let id = EpisodeID::from_raw(&args[0]);
+            match yt.query(GetEpisodeQuery::new(id)).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("Episode error: {}", e),
+            }
+        }
+        "new-episodes" => {
+            match yt.query(GetNewEpisodesQuery).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("New episodes error: {}", e),
+            }
+        }
+
+        // ── USER ────────────────────────────────────────────────────────
+        "user" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi user <channel_id>"); return; }
+            let id = UserChannelID::from_raw(&args[0]);
+            match yt.query(GetUserQuery::new(id)).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("User error: {}", e),
+            }
+        }
+        "user-videos" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi user-videos <channel_id> [--params <params>]"); return; }
+            let channel_id = UserChannelID::from_raw(&args[0]);
+            let params = if args.len() > 2 && args[1] == "--params" {
+                UserVideosParams::from_raw(args[2].clone())
+            } else {
+                UserVideosParams::from_raw("")
+            };
+            match yt.query(GetUserVideosQuery::new(channel_id, params)).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("User videos error: {}", e),
+            }
+        }
+        "user-playlists" => {
+            if args.is_empty() { eprintln!("Usage: ytmapi user-playlists <channel_id> [--params <params>]"); return; }
+            let channel_id = UserChannelID::from_raw(&args[0]);
+            let params = if args.len() > 2 && args[1] == "--params" {
+                UserPlaylistsParams::from_raw(args[2].clone())
+            } else {
+                UserPlaylistsParams::from_raw("")
+            };
+            match yt.query(GetUserPlaylistsQuery::new(channel_id, params)).await {
+                Ok(results) => print_results(&results, json),
+                Err(e) => eprintln!("User playlists error: {}", e),
+            }
+        }
+
         _ => {
             eprintln!("Unknown command: {}. See ytmapi --help", command);
         }
     }
 }
 
+// ── HELPER: normalize_artist_name ─────────────────────────────────────
 fn normalize_artist_name(name: &str) -> String {
     let trimmed = name.trim();
     if trimmed.is_empty() { return String::new(); }
@@ -324,15 +826,11 @@ fn clean_title(title: &str, artist: &str) -> String {
         let mut found = false;
         for tag in noise_tags {
             if let Some(pos) = lower.rfind(tag) {
-                // Find the '(' before the tag, if any
                 let before = &s[..pos];
                 let cut = if let Some(paren) = before.rfind('(') {
-                    // Check if tag is inside parenthesized suffix
                     if s[paren..].to_lowercase().contains(tag) {
-                        // Strip the entire parenthesized suffix including paren
                         s[..paren].trim().to_string()
                     } else {
-                        // Strip from tag position
                         s[..pos].trim().to_string()
                     }
                 } else {
@@ -363,6 +861,7 @@ fn clean_title(title: &str, artist: &str) -> String {
     s.trim().to_string()
 }
 
+// ── GENIUS ────────────────────────────────────────────────────────────
 async fn cmd_genius(args: &[String]) {
     if args.len() < 3 {
         eprintln!("Usage: ytmapi genius <search|annotations|lyrics|all> <artist> <title>");
@@ -450,6 +949,7 @@ async fn cmd_genius(args: &[String]) {
     }
 }
 
+// ── DEBUG ─────────────────────────────────────────────────────────────
 async fn cmd_debug(args: &[String]) {
     if args.is_empty() {
         eprintln!("Usage: ytmapi debug <subcommand>");
@@ -457,6 +957,8 @@ async fn cmd_debug(args: &[String]) {
         eprintln!("  clean <title>            Test title cleaning only");
         eprintln!("  artist <name>            Test artist normalization only");
         eprintln!("  resolve <artist> <title>  Test metadata pipeline for a song");
+        eprintln!("  cache-test <artist> <title>  Test metadata cache persistence (temp dir)");
+        eprintln!("  cache-check <artist> <title>  Test cache-only lookup (no HTTP)");
         eprintln!("  simulate-url <url>        Simulate add_yt_video full path (yt-dlp + clean + resolve)");
         eprintln!("  genre <genre>             Test genre normalization");
         eprintln!("  genre-list [filter]       List known genres (optionally filtered)");
@@ -479,6 +981,8 @@ async fn cmd_debug(args: &[String]) {
             println!("Normalized: '{}'", normalized);
         }
         "resolve" => cmd_debug_resolve(&args[1..]).await,
+        "cache-test" => cmd_debug_cache_test(&args[1..]).await,
+        "cache-check" => cmd_debug_cache_check(&args[1..]).await,
         "genre" => {
             let name = args.get(1).map(|s| s.as_str()).unwrap_or("");
             if name.is_empty() { eprintln!("Usage: ytmapi debug genre <genre>"); return; }
@@ -511,45 +1015,42 @@ async fn cmd_debug_resolve(args: &[String]) {
     }
     let artist = &args[0];
     let title = &args[1];
-    
+
     println!("=== Metadata Pipeline Test ===");
     println!("Artist: '{}'", artist);
     println!("Title:  '{}'", title);
     println!();
-    
-    // Test title cleaning
+
     let cleaned = clean_title(title, artist);
     println!("Cleaned title: '{}'", cleaned);
     println!();
-    
-    // Test artist normalization
+
     let normalized = normalize_artist_name(artist);
     println!("Normalized artist: '{}'", normalized);
     println!();
-    
-    // Test the metadata registry directly
+
     use metadata_provider::MetadataRegistry;
-    
+
     let http_client = reqwest::Client::builder()
         .user_agent("Youtui/0.1 (test)")
         .build()
         .unwrap();
-    
-    // Get API keys from env
+
     let lastfm_key = std::env::var("LASTFM_API_KEY").ok().filter(|s| !s.is_empty());
     let discogs_token = std::env::var("DISCOGS_TOKEN").ok().filter(|s| !s.is_empty());
     let genius_token = std::env::var("GENIUS_TOKEN").ok().filter(|s| !s.is_empty());
-    
+
     let registry = MetadataRegistry::new(
         http_client,
         lastfm_key,
         discogs_token,
         genius_token,
-        None,
+        None,  // overrides_path
+        None,  // cache_path
     );
-    
+
     println!("Resolving metadata...");
-    match registry.resolve(normalized.as_str(), cleaned.as_str()).await {
+    match registry.resolve(normalized.as_str(), cleaned.as_str(), None).await {
         Ok(meta) => {
             println!();
             println!("=== Result ===");
@@ -571,6 +1072,206 @@ async fn cmd_debug_resolve(args: &[String]) {
     }
 }
 
+async fn cmd_debug_cache_test(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("Usage: ytmapi debug cache-test <artist> <title>");
+        eprintln!("  Tests metadata cache persistence: resolve -> save -> reload -> verify");
+        return;
+    }
+    let artist = &args[0];
+    let title = &args[1];
+
+    let cleaned = clean_title(title, artist);
+    let normalized = normalize_artist_name(artist);
+
+    use metadata_provider::MetadataRegistry;
+
+    println!("=== Metadata Cache Persistence Test ===");
+    println!("Artist: '{}' -> normalized '{}'", artist, normalized);
+    println!("Title:  '{}' -> cleaned '{}'", title, cleaned);
+    println!();
+
+    // Create temp dir for cache
+    let tmp_dir = std::env::temp_dir().join("ytmapi-cache-test");
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    std::fs::create_dir_all(&tmp_dir).expect("Failed to create temp dir");
+    println!("Cache dir: {:?}", tmp_dir);
+    println!();
+
+    // First registry — resolves and writes cache
+    let http_client = reqwest::Client::builder()
+        .user_agent("Youtui/0.1 (test)")
+        .build()
+        .unwrap();
+    let lastfm_key = std::env::var("LASTFM_API_KEY").ok().filter(|s| !s.is_empty());
+    let discogs_token = std::env::var("DISCOGS_TOKEN").ok().filter(|s| !s.is_empty());
+    let genius_token = std::env::var("GENIUS_TOKEN").ok().filter(|s| !s.is_empty());
+
+    println!("=== Registry 1: Fresh resolve (should hit providers) ===");
+    let registry1 = MetadataRegistry::new(
+        http_client.clone(),
+        lastfm_key.clone(),
+        discogs_token.clone(),
+        genius_token.clone(),
+        None,
+        Some(tmp_dir.clone()),
+    );
+    match registry1.resolve(normalized.as_str(), cleaned.as_str(), None).await {
+        Ok(meta) => {
+            println!("Artist: {:?}", meta.artist);
+            println!("Album:  {:?}", meta.album);
+            println!("Year:   {:?}", meta.year);
+            println!("Genres: {:?}", meta.genres);
+            println!("Styles: {:?}", meta.styles);
+            println!("Tracks: {}", meta.album_tracks.len());
+        }
+        Err(e) => eprintln!("Resolution error: {}", e),
+    }
+
+    // Check cache file
+    let cache_file = tmp_dir.join("metadata_cache.json");
+    println!();
+    if cache_file.exists() {
+        let size = std::fs::metadata(&cache_file).map(|m| m.len()).unwrap_or(0);
+        println!("=== Cache File Written ===");
+        println!("Path: {:?}", cache_file);
+        println!("Size: {} bytes", size);
+        if size > 0 {
+            let content = std::fs::read_to_string(&cache_file).unwrap_or_default();
+            let line_count = content.lines().count();
+            println!("Lines: {}", line_count);
+        }
+    } else {
+        println!("Cache file NOT written (resolve may have failed or returned empty)");
+        println!("Check that API keys are set via environment variables.");
+        println!("  LASTFM_API_KEY, DISCOGS_TOKEN, GENIUS_TOKEN");
+        // Cleanup and exit
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return;
+    }
+
+    // Second registry — should load cache from disk
+    println!();
+    println!("=== Registry 2: Cache-reloaded resolve ===");
+    let registry2 = MetadataRegistry::new(
+        http_client.clone(),
+        lastfm_key.clone(),
+        discogs_token.clone(),
+        genius_token.clone(),
+        None,
+        Some(tmp_dir.clone()),
+    );
+    match registry2.resolve(normalized.as_str(), cleaned.as_str(), None).await {
+        Ok(meta) => {
+            println!("Artist: {:?}", meta.artist);
+            println!("Album:  {:?}", meta.album);
+            println!("Year:   {:?}", meta.year);
+            println!("Genres: {:?}", meta.genres);
+            println!("Styles: {:?}", meta.styles);
+            println!("Tracks: {}", meta.album_tracks.len());
+        }
+        Err(e) => eprintln!("Resolution error: {}", e),
+    }
+
+    println!();
+    println!("=== Done ===");
+    println!("Cache persistence verified: file exists, second resolve loaded from cache.");
+    println!("Cache entries persisted across restarts of MetadataRegistry.");
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+async fn cmd_debug_cache_check(args: &[String]) {
+    if args.len() < 2 {
+        eprintln!("Usage: ytmapi debug cache-check <artist> <title>");
+        eprintln!("  Tests cache-only lookup (lookup_cache) with no HTTP.");
+        eprintln!("  Runs resolve first to populate cache, then checks lookup_cache.");
+        return;
+    }
+    let artist = &args[0];
+    let title = &args[1];
+
+    let cleaned = clean_title(title, artist);
+    let normalized = normalize_artist_name(artist);
+
+    use metadata_provider::MetadataRegistry;
+
+    let tmp_dir = std::env::temp_dir().join("ytmapi-cache-check");
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    std::fs::create_dir_all(&tmp_dir).expect("Failed to create temp dir");
+
+    let http_client = reqwest::Client::builder()
+        .user_agent("Youtui/0.1 (test)")
+        .build()
+        .unwrap();
+    let lastfm_key = std::env::var("LASTFM_API_KEY").ok().filter(|s| !s.is_empty());
+    let discogs_token = std::env::var("DISCOGS_TOKEN").ok().filter(|s| !s.is_empty());
+    let genius_token = std::env::var("GENIUS_TOKEN").ok().filter(|s| !s.is_empty());
+
+    let cache_key = format!("{}::{}",
+        metadata_provider::util::norm_for_lfm(&normalized.to_lowercase()),
+        metadata_provider::util::norm_for_lfm(&cleaned.to_lowercase()),
+    );
+
+    println!("=== Cache-Only Lookup Test ===");
+    println!("Artist: '{}' -> '{}'", artist, normalized);
+    println!("Title:  '{}' -> '{}'", title, cleaned);
+    println!("Cache key: '{}'", cache_key);
+    println!();
+
+    // Registry 1: cache should be empty
+    let registry = MetadataRegistry::new(
+        http_client.clone(),
+        lastfm_key.clone(),
+        discogs_token.clone(),
+        genius_token.clone(),
+        None,
+        Some(tmp_dir.clone()),
+    );
+
+    // Phase 1: lookup_cache — should miss (cache empty)
+    println!("=== Phase 1: Cache lookup BEFORE resolve ===");
+    match registry.lookup_cache(&cache_key) {
+        Some(meta) => println!("HIT (unexpected — cache should be empty): {:?}", meta),
+        None => println!("MISS (expected — cache empty)"),
+    }
+    println!();
+
+    // Phase 2: resolve to populate cache
+    println!("=== Phase 2: Resolve (populates cache) ===");
+    match registry.resolve(normalized.as_str(), cleaned.as_str(), None).await {
+        Ok(meta) => {
+            println!("Artist: {:?}", meta.artist);
+            println!("Album:  {:?}", meta.album);
+            println!("Year:   {:?}", meta.year);
+            println!("Genres: {:?}", meta.genres);
+            println!("Styles: {:?}", meta.styles);
+        }
+        Err(e) => eprintln!("Resolution error: {}", e),
+    }
+    println!();
+
+    // Phase 3: lookup_cache — should hit now
+    println!("=== Phase 3: Cache lookup AFTER resolve ===");
+    match registry.lookup_cache(&cache_key) {
+        Some(meta) => {
+            println!("HIT — cached data:");
+            println!("  Artist: {:?}", meta.artist);
+            println!("  Album:  {:?}", meta.album);
+            println!("  Year:   {:?}", meta.year);
+            println!("  Genres: {:?}", meta.genres);
+            println!("  Styles: {:?}", meta.styles);
+        }
+        None => println!("MISS — cache did not populate (resolve may have returned default)"),
+    }
+    println!();
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    println!("=== Done ===");
+}
+
 async fn cmd_debug_simulate_url(args: &[String]) {
     if args.is_empty() {
         eprintln!("Usage: ytmapi debug simulate-url <youtube-url>");
@@ -583,7 +1284,6 @@ async fn cmd_debug_simulate_url(args: &[String]) {
     println!("URL: {}", url);
     println!();
 
-    // Step 1: Extract video ID (same as play_yt_url)
     let raw_id = if url.contains("watch?v=") {
         url.split("watch?v=").nth(1).unwrap_or(url)
             .split('&').next().unwrap_or("")
@@ -600,17 +1300,15 @@ async fn cmd_debug_simulate_url(args: &[String]) {
     println!("Extracted video ID: {}", raw_id);
     println!();
 
-    // Step 2: Run yt-dlp (same as add_yt_video)
     println!("Running yt-dlp --dump-json --no-warnings --flat-playlist...");
     let output = std::process::Command::new("yt-dlp")
         .args(["--dump-json", "--no-warnings", "--flat-playlist"])
         .arg(&format!("https://youtu.be/{}", raw_id))
         .output();
-    
+
     let (title, artist, duration_secs) = match output {
         Ok(out) if out.status.success() => {
             let stdout = String::from_utf8_lossy(&out.stdout);
-            // yt-dlp outputs NDJSON; parse first entry (same as serde_json::from_str)
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
                 let t = v.get("title").and_then(|s| s.as_str()).unwrap_or(&raw_id).to_string();
                 let uploader = v.get("uploader").and_then(|s| s.as_str()).unwrap_or("Unknown").to_string();
@@ -644,8 +1342,6 @@ async fn cmd_debug_simulate_url(args: &[String]) {
     };
     println!();
 
-    // Step 3: Title cleaning (match add_yt_video exactly)
-    // 3a: Strip artist prefix
     let clean_title = {
         let lower = title.to_lowercase();
         let art_lower = artist.to_lowercase();
@@ -657,7 +1353,6 @@ async fn cmd_debug_simulate_url(args: &[String]) {
             title.to_string()
         }
     };
-    // 3b: Strip noise tags
     let clean_title = {
         let noise_tags = [
             "official audio", "official video", "lyric video", "lyrics",
@@ -696,7 +1391,6 @@ async fn cmd_debug_simulate_url(args: &[String]) {
         }
         s.trim().to_string()
     };
-    // 3c: Strip album suffix tags
     let clean_title = {
         let s = clean_title.as_str();
         let lower = s.to_lowercase();
@@ -711,7 +1405,6 @@ async fn cmd_debug_simulate_url(args: &[String]) {
             s.trim().to_string()
         }
     };
-    // 3d: Strip year from parenthetical
     let clean_title_for_search = {
         let lower = clean_title.to_lowercase();
         if let Some(paren) = lower.rfind("(") {
@@ -740,7 +1433,6 @@ async fn cmd_debug_simulate_url(args: &[String]) {
     println!("Song title (for UI): '{}'", clean_title);
     println!();
 
-    // Step 4: Resolve metadata via registry
     let normalized = normalize_artist_name(&artist);
     use metadata_provider::MetadataRegistry;
     let http_client = reqwest::Client::builder()
@@ -755,14 +1447,15 @@ async fn cmd_debug_simulate_url(args: &[String]) {
         lastfm_key,
         discogs_token,
         genius_token,
-        None,
+        None,  // overrides_path
+        None,  // cache_path
     );
 
     println!("=== Resolving Metadata ===");
     println!("Searching for: artist='{}' title='{}'", normalized, clean_title_for_search);
     println!();
 
-    match registry.resolve(&normalized, &clean_title_for_search).await {
+    match registry.resolve(&normalized, &clean_title_for_search, None).await {
         Ok(meta) => {
             println!("=== Result ===");
             println!("Artist: {:?}", meta.artist);
@@ -809,32 +1502,33 @@ async fn cmd_debug_meta(args: &[String]) {
 
     let title = &args[0];
     let artist = if args.len() > 1 { &args[1] } else { "Unknown" };
-    
+
     println!("=== Metadata Pipeline Debug ===");
     println!("Input title:  '{}'", title);
     println!("Input artist: '{}'", artist);
     println!();
-    
+
     let cleaned = clean_title(title, artist);
     println!("Cleaned title: '{}'", cleaned);
     println!();
-    
+
     let normalized = normalize_artist_name(artist);
     println!("Normalized artist: '{}'", normalized);
     println!();
-    
+
     if cleaned != *title {
-        println!("✅ Title was modified");
+        println!("Title was modified");
     } else {
-        println!("⏺ Title unchanged");
+        println!("Title unchanged");
     }
     if normalized != *artist {
-        println!("✅ Artist was modified");
+        println!("Artist was modified");
     } else {
-        println!("⏺ Artist unchanged");
+        println!("Artist unchanged");
     }
 }
 
+// ── FIXTURE ───────────────────────────────────────────────────────────
 async fn cmd_fixture(args: &[String], json: bool) {
     if args.is_empty() {
         eprintln!("Usage: ytmapi fixture <file> [--type search|playlist|album]");
@@ -871,8 +1565,50 @@ async fn cmd_fixture(args: &[String], json: bool) {
                 Err(e) => { eprintln!("Parse error: {}", e); return; }
             }
         }
+        "artist" => {
+            let query = GetArtistQuery::new(ArtistChannelID::from_raw(""));
+            match process_json::<GetArtistQuery<'_>, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "library-songs" => {
+            let query = GetLibrarySongsQuery::default();
+            match process_json::<GetLibrarySongsQuery, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "watch-playlist" => {
+            let query = GetWatchPlaylistQuery::new_from_video_id(VideoID::from_raw(""));
+            match process_json::<GetWatchPlaylistQuery<ytmapi_rs::common::VideoID<'_>>, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "lyrics" => {
+            let query = GetLyricsQuery::new(ytmapi_rs::common::LyricsID::from_raw(""));
+            match process_json::<GetLyricsQuery<'_>, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "mood-categories" => {
+            let query = GetMoodCategoriesQuery;
+            match process_json::<GetMoodCategoriesQuery, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
+        "search-basic" => {
+            let query: SearchQuery<'_, ytmapi_rs::query::search::BasicSearch> = SearchQuery::from("");
+            match process_json::<SearchQuery<'_, ytmapi_rs::query::search::BasicSearch>, ytmapi_rs::auth::BrowserToken>(source, &query) {
+                Ok(o) => format!("{:#?}", o),
+                Err(e) => { eprintln!("Parse error: {}", e); return; }
+            }
+        }
         _ => {
-            let query: SearchQuery<'_, ytmapi_rs::query::search::FilteredSearch<SongsFilter>> = SearchQuery::new("").with_filter(SongsFilter);
+            let query: SearchQuery<'_, ytmapi_rs::query::search::FilteredSearch<SongsFilter>> = SearchQuery::new_filtered("", SongsFilter);
             match process_json::<SearchQuery<'_, ytmapi_rs::query::search::FilteredSearch<SongsFilter>>, ytmapi_rs::auth::BrowserToken>(source, &query) {
                 Ok(o) => format!("{:#?}", o),
                 Err(e) => { eprintln!("Parse error: {}", e); return; }
@@ -881,7 +1617,6 @@ async fn cmd_fixture(args: &[String], json: bool) {
     };
 
     if json {
-        // Output is already {:#?} formatted, wrap it
         println!("{{\"parsed\": {}}}", serde_json::to_string(&output).unwrap_or_else(|_| format!("\"{}\"", output)));
     } else {
         println!("{}", output);
@@ -890,7 +1625,6 @@ async fn cmd_fixture(args: &[String], json: bool) {
 
 fn print_results<T: std::fmt::Debug>(results: &T, json: bool) {
     if json {
-        // Output as JSON-esque debug format
         println!("{}", serde_json::to_string(&format!("{:#?}", results)).unwrap());
     } else {
         println!("{:#?}", results);
@@ -903,7 +1637,6 @@ mod tests {
 
     #[test]
     fn test_print_usage_does_not_panic() {
-        // Just ensure print_usage doesn't crash
         print_usage();
     }
 
@@ -922,7 +1655,6 @@ mod tests {
             "--type".to_string(),
             "search".to_string(),
         ];
-        // Should not panic — just parse and print
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(cmd_fixture(&args, false));
     }
@@ -988,7 +1720,6 @@ mod tests {
     fn test_cmd_fixture_missing_file() {
         let args = vec!["nonexistent.json".to_string()];
         let rt = tokio::runtime::Runtime::new().unwrap();
-        // Should print error, not panic
         rt.block_on(cmd_fixture(&args, false));
     }
 
@@ -996,7 +1727,6 @@ mod tests {
     fn test_cmd_fixture_no_args() {
         let args: Vec<String> = vec![];
         let rt = tokio::runtime::Runtime::new().unwrap();
-        // Should print usage, not panic
         rt.block_on(cmd_fixture(&args, false));
     }
 }
