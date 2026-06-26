@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::iter::{ExactSizeIterator, Iterator};
 use tracing::warn;
+use ytmapi_rs::parse::PlaylistItem;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum PlaylistSongsInputRouting {
@@ -35,6 +36,7 @@ pub enum PlaylistSongsInputRouting {
 #[derive(Clone)]
 pub struct PlaylistSongsPanel {
     pub list: BrowserSongsList,
+    view_indices: Vec<usize>,
     pub route: PlaylistSongsInputRouting,
     pub sort: SortManager,
     pub filter: FilterManager,
@@ -87,6 +89,7 @@ impl PlaylistSongsPanel {
         PlaylistSongsPanel {
             cur_selected: Default::default(),
             list: Default::default(),
+            view_indices: Vec::new(),
             route: Default::default(),
             sort: SortManager::new(),
             filter: FilterManager::new(),
@@ -94,6 +97,15 @@ impl PlaylistSongsPanel {
             local_filter_text: String::new(),
             cur_playing_video_id: None,
         }
+    }
+    pub fn clear_songs(&mut self) {
+        self.list.clear();
+        self.view_indices.clear();
+    }
+    pub fn append_songs(&mut self, song_list: Vec<PlaylistItem>) {
+        let old_len = self.list.len();
+        self.list.append_raw_playlist_items(song_list);
+        self.view_indices.extend(old_len..self.list.len());
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
         [
@@ -111,16 +123,33 @@ impl PlaylistSongsPanel {
             if !self.get_sortable_columns().contains(&c.column) {
                 bail!(format!("Unable to sort column {}", c.column,));
             }
-            self.list.sort(
-                get_adjusted_list_column(c.column, Self::subcolumns_of_vec())?,
-                c.direction,
-            );
+            let field = get_adjusted_list_column(c.column, Self::subcolumns_of_vec())?;
+            self.view_indices.sort_by(|&a, &b| {
+                let a_val = self
+                    .list
+                    .get_song_from_idx(a)
+                    .map(|s| s.get_field(field))
+                    .unwrap_or_default();
+                let b_val = self
+                    .list
+                    .get_song_from_idx(b)
+                    .map(|s| s.get_field(field))
+                    .unwrap_or_default();
+                match c.direction {
+                    SortDirection::Asc => a_val.partial_cmp(&b_val),
+                    SortDirection::Desc => b_val.partial_cmp(&a_val),
+                }
+                .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
         Ok(())
     }
-    pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
+    pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> + '_ {
         let filter_text = &self.local_filter_text;
-        self.list.get_list_iter().filter(move |ls| {
+        self.view_indices.iter().filter_map(move |&idx| {
+            let Some(ls) = self.list.get_song_from_idx(idx) else {
+                return None;
+            };
             let fuzzy_pass = if filter_text.is_empty() {
                 true
             } else {
@@ -131,8 +160,8 @@ impl PlaylistSongsPanel {
                     || fuzzy_match(&filter_text, &album).is_some()
                     || fuzzy_match(&filter_text, &artist).is_some()
             };
-            if !fuzzy_pass { return false; }
-            self.get_filter_commands()
+            if !fuzzy_pass { return None; }
+            let pass = self.get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
                     let match_found = command.matches_row(
@@ -141,7 +170,8 @@ impl PlaylistSongsPanel {
                         self.get_filterable_columns(),
                     );
                     acc && match_found
-                })
+                });
+            if pass { Some(ls) } else { None }
         })
     }
     pub fn apply_filter(&mut self) {
@@ -336,16 +366,26 @@ impl TableView for PlaylistSongsPanel {
         ]
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
-        self.list
-            .get_list_iter()
-            .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
+        let subcolumns = Self::subcolumns_of_vec();
+        self.view_indices
+            .iter()
+            .map(move |&idx| {
+                self.list
+                    .get_song_from_idx(idx)
+                    .expect("view_indices entries valid")
+                    .get_fields(subcolumns)
+                    .into_iter()
+            })
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
         ["#", "Artist", "Album", "Song", "Duration", "Liked"].into_iter()
     }
     fn get_highlighted_row(&self) -> Option<usize> {
-        self.cur_playing_video_id.as_ref().and_then(|vid| {
-            self.list.get_list_iter().position(|s| s.video_id == *vid)
+        let vid = self.cur_playing_video_id.as_ref()?;
+        self.view_indices.iter().position(|&idx| {
+            self.list
+                .get_song_from_idx(idx)
+                .is_some_and(|s| s.video_id == *vid)
         })
     }
     fn get_mut_state(&mut self) -> &mut ScrollingTableState {
@@ -362,15 +402,28 @@ impl AdvancedTableView for PlaylistSongsPanel {
         &[0, 1, 2, 3, 5]
     }
     fn push_sort_command(&mut self, sort_command: TableSortCommand) -> Result<()> {
-        // TODO: Maintain a view only struct, for easier rendering of this.
         if !self.get_sortable_columns().contains(&sort_command.column) {
             bail!(format!("Unable to sort column {}", sort_command.column,));
         }
-        // Map the column of ArtistAlbums to a column of List and sort
-        self.list.sort(
-            get_adjusted_list_column(sort_command.column, Self::subcolumns_of_vec())?,
-            sort_command.direction,
-        );
+        let field = get_adjusted_list_column(sort_command.column, Self::subcolumns_of_vec())?;
+        // Sort view indices instead of the underlying list — preserves original order.
+        self.view_indices.sort_by(|&a, &b| {
+            let a_val = self
+                .list
+                .get_song_from_idx(a)
+                .map(|s| s.get_field(field))
+                .unwrap_or_default();
+            let b_val = self
+                .list
+                .get_song_from_idx(b)
+                .map(|s| s.get_field(field))
+                .unwrap_or_default();
+            match sort_command.direction {
+                SortDirection::Asc => a_val.partial_cmp(&b_val),
+                SortDirection::Desc => b_val.partial_cmp(&a_val),
+            }
+            .unwrap_or(std::cmp::Ordering::Equal)
+        });
         // Remove commands that already exist for the same column, as this new command
         // will trump the old ones. Slightly naive - loops the whole vec, could
         // short circuit.
@@ -382,6 +435,7 @@ impl AdvancedTableView for PlaylistSongsPanel {
     }
     fn clear_sort_commands(&mut self) {
         self.sort.sort_commands.clear();
+        self.view_indices = (0..self.list.len()).collect();
     }
     fn get_sort_commands(&self) -> &[TableSortCommand] {
         &self.sort.sort_commands
@@ -427,11 +481,11 @@ impl HasTitle for PlaylistSongsPanel {
             ListStatus::Loading => "Songs - loading".into(),
             ListStatus::InProgress => format!(
                 "Songs - {} results - loading",
-                self.list.get_list_iter().len()
+                self.list.len()
             )
             .into(),
             ListStatus::Loaded => {
-                format!("Songs - {} results", self.list.get_list_iter().len()).into()
+                format!("Songs - {} results", self.list.len()).into()
             }
             ListStatus::Error => "Songs - Error receieved".into(),
         }

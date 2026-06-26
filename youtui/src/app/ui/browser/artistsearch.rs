@@ -297,7 +297,7 @@ impl ArtistSearchBrowser {
     pub fn get_songs(&mut self) -> ComponentEffect<Self> {
         let selected = self.artist_search_panel.get_selected_item();
         self.change_routing(InputRouting::Song);
-        self.album_songs_panel.list.clear();
+        self.album_songs_panel.clear_songs();
 
         let Some(cur_artist_id) = self
             .artist_search_panel
@@ -320,7 +320,7 @@ impl ArtistSearchBrowser {
     pub fn load_artist_by_id(&mut self, channel_id: ArtistChannelID<'static>) -> ComponentEffect<Self> {
         self.change_routing(InputRouting::Song);
         self.artist_search_panel.search_popped = false;
-        self.album_songs_panel.list.clear();
+        self.album_songs_panel.clear_songs();
         AsyncTask::new_stream(
             GetArtistSongs(channel_id.clone()),
             HandleGetArtistSongsProgressUpdate(channel_id),
@@ -554,10 +554,8 @@ impl ArtistSearchBrowser {
         thumbnails: Vec<Thumbnail>,
     ) {
         self.album_songs_panel
-            .list
-            .append_raw_album_songs(song_list, album, year, artists, thumbnails);
-        // If sort commands exist, sort the list.
-        // Naive - can result in multiple calls to sort every time songs are appended.
+            .append_album_songs(song_list, album, year, artists, thumbnails);
+        // If sort commands exist, sort the view indices.
         if let Err(e) = self.album_songs_panel.apply_all_sort_commands() {
             error!("Error <{e}> sorting album songs panel");
         }
