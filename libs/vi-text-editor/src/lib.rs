@@ -564,21 +564,27 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Backspace if self.cursor > 0 => {
                 self.save_undo();
-                self.cursor -= 1;
+                let prev_len = self.buffer[..self.cursor]
+                    .chars().last().map(|c| c.len_utf8()).unwrap_or(1);
+                self.cursor -= prev_len;
                 self.buffer.remove(self.cursor);
                 self.insert_buffer.pop();
             }
             crossterm::event::KeyCode::Char(c) => {
                 self.save_undo();
                 self.buffer.insert(self.cursor, c);
-                self.cursor += 1;
+                self.cursor += c.len_utf8();
                 self.insert_buffer.push(c);
             }
             crossterm::event::KeyCode::Left if self.cursor > 0 => {
-                self.cursor -= 1;
+                let prev_len = self.buffer[..self.cursor]
+                    .chars().last().map(|c| c.len_utf8()).unwrap_or(1);
+                self.cursor -= prev_len;
             }
             crossterm::event::KeyCode::Right if self.cursor < self.buffer.len() => {
-                self.cursor += 1;
+                if let Some(c) = self.buffer[self.cursor..].chars().next() {
+                    self.cursor += c.len_utf8();
+                }
             }
             crossterm::event::KeyCode::Home => self.cursor = 0,
             crossterm::event::KeyCode::End => self.cursor = self.buffer.len(),
@@ -689,19 +695,19 @@ impl ViTextEditor {
                 self.cursor = end_of_big_word(&self.buffer, self.cursor);
             }
             crossterm::event::KeyCode::Char('~') if self.cursor < self.buffer.len() => {
-                let b = self.buffer.as_bytes()[self.cursor];
-                let toggled = if b.is_ascii_lowercase() {
-                    b.to_ascii_uppercase()
-                } else if b.is_ascii_uppercase() {
-                    b.to_ascii_lowercase()
+                let c = self.buffer[self.cursor..].chars().next().unwrap();
+                let toggled = if c.is_ascii_lowercase() {
+                    c.to_ascii_uppercase()
+                } else if c.is_ascii_uppercase() {
+                    c.to_ascii_lowercase()
                 } else {
-                    b
+                    c
                 };
-                if toggled != b {
+                if toggled != c {
                     self.save_undo();
                     self.buffer.remove(self.cursor);
-                    self.buffer.insert(self.cursor, toggled as char);
-                    self.last_change = LastChange::ReplaceChar(toggled as char);
+                    self.buffer.insert(self.cursor, toggled);
+                    self.last_change = LastChange::ReplaceChar(toggled);
                 }
             }
             crossterm::event::KeyCode::Char('%') if !self.buffer.is_empty() => {
