@@ -30,15 +30,14 @@ Used for: album metadata, track info, album art, scrobbling.
 api_key = "your_lastfm_api_key"
 ```
 
-For scrobbling (submits plays to your Last.fm/Libre.fm account):
+For scrobbling (submits plays to your Last.fm account):
 
 ```toml
 [scrobbling]
 enabled = true
 api_key = "your_lastfm_api_key"
-api_secret = "your_lastfm_api_secret"
+api_secret = "your_lastfm_secret"
 session_key = "your_lastfm_session_key"
-api_url = "https://libre.fm"   # default: last.fm
 ```
 
 Priority in pipeline: 10 (runs 2nd, after Metal Archives).
@@ -88,30 +87,31 @@ matches).
 
 Used for: metal band metadata (genre, year, tracklists).
 
-**Only works with a Cloudflare bypass cookie.** The public REST API
-(metal-api.dev) returns 500 errors and is unusable.
+**Works only with a Cloudflare bypass cookie.** The public REST API
+(metal-api.dev) is down (returns 500). The `metal-proxy` crate has been
+removed from workspace.
 
-The only working path is direct Metal Archives access with a
-`cf_clearance` cookie:
+The only working path is direct access with a `cf_clearance` cookie:
 
-**Option A — env var (easiest):**
 1. Open https://www.metal-archives.com/ in your browser
 2. Open DevTools → Application → Cookies → copy `cf_clearance` value
-3. Run: `export MA_COOKIE="cf_clearance=your_value"`
-4. Start youtui in same terminal (or add to `.bashrc`/`.zshrc`)
+3. Run with: `MA_COOKIE="cf_clearance=your_value" youtui`
+   (or add to `.bashrc`/`.zshrc`)
 
-**Option B — local proxy (auto-cookie):**
-```bash
-cargo run --release -p metal-proxy -- --get-cookie
-```
-This opens Chromium, you log into Metal Archives manually, and it saves
-the cookie to `~/.config/youtui/ma_cookie`. The cookie expires ~30 min
-and needs periodic refresh.
+Cookies expire ~30 min. Refresh from browser DevTools as needed.
 
-**Without a cookie**, Metal Archives metadata is skipped entirely.
-Other providers (MusicBrainz, Discogs, Last.fm) still run.
+**Without a cookie**, Metal Archives is skipped. Other providers still run.
 
-Priority in pipeline: 5 (highest — runs first if cookie available).
+Priority in pipeline: 5 (runs first if cookie present).
+
+## LRCLIB
+
+Used for: synchronized lyrics (free, no API key).
+
+No setup needed - LRCLIB is a free, open-source lyrics API. Runs as
+fallback when Genius fails.
+
+Priority in lyrics pipeline: 2nd (after Genius slug URL + API search).
 
 ## Metadata Pipeline Order
 
@@ -120,12 +120,23 @@ wins. Lower number = checked first.
 
 | Priority | Provider | Requires |
 |----------|----------|----------|
-| 5 | Metal Archives | `MA_COOKIE` env or local proxy |
+| 5 | Metal Archives | `MA_COOKIE` env |
 | 7 | MusicBrainz | nothing |
-| 8 | Discogs | `discogs_token` |
-| 10 | Last.fm album | `api_key` |
-| 10 | Last.fm track | `api_key` |
-| 40 | Genius | `genius_token` |
+| 8 | Discogs | `discogs_token` in config |
+| 10 | Last.fm album | `api_key` in config |
+| 15 | YTM album enrichment | (uses YTM client) |
+| 20 | Last.fm track | `api_key` in config |
+| 40 | Genius | `genius_token` in config |
+| 50 | MusicBrainz (2nd pass) | nothing |
+
+## Lyrics Pipeline Order
+
+| Priority | Provider | Requires |
+|----------|----------|----------|
+| 1 | Genius (slug URL + API) | nothing (token optional for annotations) |
+| 2 | LRCLIB | nothing |
+| 3 | bandcamp-lyrics CLI | external `bandcamp-lyrics` binary |
+| 4 | lyr CLI | external `lyr` binary |
 
 ## Cache
 

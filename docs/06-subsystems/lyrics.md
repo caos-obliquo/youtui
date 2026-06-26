@@ -3,16 +3,16 @@
 ## Pipeline Order
 
 ```
-Priority 0: Genius JSON API ← preferred (full lyrics, no auth)
-Priority 1: Musixmatch ← may return partial (free tier)
-Priority 2: Bandcamp ← constructed URL → bandcamp-lyrics CLI
-Priority 3: lyr CLI ← last resort, multiple artist variants
-Priority 4: Error("No lyrics found from any provider")
+Priority 1: Genius JSON API ← preferred (full lyrics, no auth, slug URL first)
+Priority 2: LRCLIB ← free, open-source, no API key needed
+Priority 3: Bandcamp ← constructed URL → bandcamp-lyrics CLI
+Priority 4: lyr CLI ← last resort, multiple artist variants
+Priority 5: Error("No lyrics found from any provider")
 ```
 
 ## Implementation
 
-File: `app/server/messages.rs:502-705` — `GetLyrics` backend task.
+File: `youtui/src/app/server/messages.rs:886-977` — `GetLyrics` backend task.
 
 Called from: `effect_handlers_playlist.rs` when `ViewLyrics` callback fires.
 
@@ -57,13 +57,13 @@ struct GetLyrics(String, String, String);
 
 `[Verse 1]`, `[Chorus]`, `[Bridge]` are plain text in Genius HTML — preserved automatically.
 
-## Musixmatch (Priority 1 — Planned, Not Integrated)
+## LRCLIB (Priority 2 — Live)
 
-Not yet wired. Would use `Musixmatch` Rust crate (matcher_lyrics endpoint). Free tier returns partial lyrics (~16 lines, chorus+bridge only). Full lyrics require API key.
+Wired via `lrclib-rs` crate. Free, open-source, no API key needed.
+Returns plain-text and synced (LRC format) lyrics. Used as first fallback
+when Genius fails.
 
-See TODO.md Step 2.
-
-## Bandcamp (Priority 2)
+## Bandcamp (Priority 3)
 
 Constructs URL from artist/title slugs, calls external `bandcamp-lyrics` CLI:
 
@@ -73,7 +73,7 @@ https://{artist_slug}.bandcamp.com/track/{song_slug}
 
 Tries these suffixes for the artist slug: `""`, `"-2"`, `"-3"`, `"-4"`, `"-5"`.
 
-## lyr CLI (Priority 3)
+## lyr CLI (Priority 4)
 
 External `lyr` command, tries multiple artist/title normalization variants:
 
@@ -192,5 +192,4 @@ If a lyric line starts with `[m:ss]` or `[mm:ss]`, pressing `Enter` seeks to tha
 
 ## Known Issues
 
-- Free Musixmatch returns partial lyrics (quality gate: >50 chars and >3 lines — too lenient for detecting partial)
 - Annotation panel: last annotation entry may be cut off by popup height

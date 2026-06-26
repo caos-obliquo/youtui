@@ -2,7 +2,7 @@
 
 ## Protocol
 
-File: `app/scrobbler.rs`
+File: `youtui/src/app/scrobbler.rs`
 
 Implements the [Last.fm scrobbling protocol](https://www.last.fm/api/scrobbling) — compatible with Libre.fm, GNU FM, and Last.fm itself.
 
@@ -11,10 +11,9 @@ Implements the [Last.fm scrobbling protocol](https://www.last.fm/api/scrobbling)
 ```toml
 [scrobbling]
 enabled = true
-api_url = "https://libre.fm"    # Last.fm: "https://ws.audioscrobbler.com"
-api_key = "your_api_key"
-api_secret = "your_api_secret"
-session_key = "your_session_key"
+api_key = "your_lastfm_api_key"
+api_secret = "your_lastfm_secret"
+session_key = "your_lastfm_session_key"
 ```
 
 ## Scrobble Flow

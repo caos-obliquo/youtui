@@ -15,7 +15,7 @@ individual tracks with metadata, seeking offsets, and gapless playback.
 
 ## Track Creation
 
-File: `app/ui/playlist.rs:1025` — `insert_album_tracks`
+File: `youtui/src/app/ui/playlist.rs` — `insert_album_tracks`
 
 Each track becomes a `ListSong` with:
 
@@ -57,7 +57,7 @@ from MusicBrainz but should NOT be split).
 
 ## Arc Sharing
 
-File: `app/ui/playlist.rs:1599` — `handle_song_downloaded`
+File: `youtui/src/app/ui/playlist.rs` — `handle_song_downloaded`
 
 When the original album entry finishes downloading, its `Arc<InMemSong>` is
 cheaply cloned to all track entries:
@@ -72,7 +72,7 @@ for track in &mut album_tracks {
 
 ## Cascade Guard
 
-File: `app/ui/playlist/effect_handlers_playlist.rs`, `app/ui/playlist.rs:1025`
+File: `youtui/src/app/ui/playlist/effect_handlers_playlist.rs`, `youtui/src/app/ui/playlist.rs`
 
 Prevents re-triggering:
 
@@ -90,7 +90,7 @@ full-album entry is removed from the queue. Two paths:
 
 ## Decode With Offsets
 
-File: `app/server/messages.rs:734` — `DecodeSong`
+File: `youtui/src/app/server/messages.rs` — `DecodeSong`
 
 When both offset AND actual_duration are `Some`, ffmpeg extracts with:
 
@@ -102,7 +102,7 @@ Each track gets its own decoded file of exact length for seamless seeking.
 
 ## Progress Display
 
-File: `app/ui/playlist.rs` — `handle_set_song_play_progress`
+File: `youtui/src/app/ui/playlist.rs` — `handle_set_song_play_progress`
 
 ```rust
 if song.track_no.is_some() {
@@ -117,7 +117,7 @@ progress = progress.min(song.actual_duration.unwrap_or(progress));
 
 ## Title Cleaning (4 stages)
 
-File: `app/ui/playlist.rs` — `add_yt_video`
+File: `youtui/src/app/ui/playlist.rs` — `add_yt_video`
 
 1. **Artist prefix strip**: If title starts with artist name followed by `-` or
    `--`, remove the prefix. Single-char artist name guard prevents corruption.
@@ -205,7 +205,7 @@ the resolved metadata is still returned (log warning, keep original).
 
 ## Force Split (`o.f`)
 
-File: `app/ui/playlist.rs` — `ForceSplitAlbum` handler
+File: `youtui/src/app/ui/playlist.rs` — `ForceSplitAlbum` handler
 
 Manual re-split:
 

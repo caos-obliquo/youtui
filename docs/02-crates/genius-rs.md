@@ -184,5 +184,5 @@ Blank line BETWEEN sections (not after header). This is controlled in `scrape.rs
 
 ```bash
 cargo test --release -p genius-rs
-# 14 tests: lyrics extraction, annotations, HTML entities, edge cases, DOM text extraction
+# 18 tests: lyrics extraction, annotations, HTML entities, edge cases, DOM text extraction
 ```

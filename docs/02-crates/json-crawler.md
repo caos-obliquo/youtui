@@ -70,5 +70,5 @@ Returns items one at a time without materializing the entire array — useful fo
 
 ```bash
 cargo test --release -p json-crawler
-# 8 tests pass
+# 2 tests pass (0 lib + 2 doctests)
 ```

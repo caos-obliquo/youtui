@@ -4,7 +4,7 @@ File: `~/.config/youtui/config.toml`
 
 ## ConfigIR Fields
 
-All fields parsed from TOML into `ConfigIR` (app/config.rs:106), then converted to `Config`.
+All fields parsed from TOML into `ConfigIR` (youtui/src/config.rs:106), then converted to `Config`.
 
 ### auth_type
 
@@ -30,11 +30,11 @@ Default: `"yt-dlp"` — path to yt-dlp binary.
 ```toml
 [scrobbling]
 enabled = false
-api_url = "https://libre.fm"
 api_key = ""
 api_secret = ""
 session_key = ""
-genius_token = ""
+genius_token = ""         # Required for reliable Genius annotations
+discogs_token = ""        # Better Discogs album metadata coverage
 ```
 
 ### keybinds
@@ -70,10 +70,11 @@ yt_dlp_command = "yt-dlp"
 
 [scrobbling]
 enabled = true
-api_url = "https://libre.fm"
-api_key = "your_api_key"
-api_secret = "your_api_secret"
-session_key = "your_session_key"
+api_key = "your_lastfm_api_key"
+api_secret = "your_lastfm_secret"
+session_key = "your_lastfm_session_key"
+genius_token = "your_genius_token"
+discogs_token = "your_discogs_token"
 ```
 
 Custom keybind example (override specific keys):

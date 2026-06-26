@@ -179,7 +179,7 @@
 | 7 | metadata-provider | Extracted | 47 |
 | 8 | lrclib-rs | Extracted | 4 |
 | 9 | rym-genre-data | Extracted | 10 |
-| 10 | metal-proxy | Extracted | 0 |
+| 10 | metal-proxy | Removed (API down) | 0 |
 | 11 | audio-player | Extracted ✅ | 0 |
 | 12 | rym-definitions | Extracted (scraper) | 0 |
 
