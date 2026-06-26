@@ -142,7 +142,7 @@
 
 | Crate | Passed | Ignored |
 |-------|--------|---------|
-| youtui | 141 | 4 |
+| youtui | 151 | 4 |
 | metadata-provider | 47 | 0 |
 | vi-text-editor | 65 | 0 |
 | ytmapi-rs (lib) | 85 | 0 |
@@ -152,11 +152,11 @@
 | ytmapi-cli | 7 | 0 |
 | lrclib-rs | 4 | 0 |
 | rym-genre-data | 10 | 0 |
-| **Total** | **393** | **4** |
+| **Total** | **403** | **4** |
 
 1 warning (pre-existing ytmapi-cli deprecation), 0 failures across workspace.
 
-## 2026-06-26 — Scrobbler Integration + Suckless Refactoring
+## Completed 2026-06-26 — Scrobbler + Suckless + PR #3 Perf
 
 ### Scrobbler Fixes (fix/scrobbler-signature branch)
 | # | Item | Status | Files |
@@ -179,6 +179,29 @@
 | 82 | Batch 4a: Subdivide MetadataEffect::apply (180→40 lines) | ✅ | effect_handlers_playlist.rs |
 | 83 | Batch 4b: Split clean_title_for_metadata into 4 helpers | ✅ | playlist.rs |
 | 84 | Batch 4d: Extract handle_force_split (75→1 line in apply_action) | ✅ | playlist.rs |
+
+### PR #3 Performance Fixes (perf/enter-cancel-render + test coverage)
+| # | Feature | Files |
+|---|---------|-------|
+| 85 | **Render throttle**: needs_redraw + 33ms interval, max ~30fps | `app.rs` |
+| 86 | **Stale download cancel**: cancel_all_downloads() calls .cancel() on tokens | `playlist.rs` |
+| 87 | **Enter-spam guard**: PlayDebouncer struct, 300ms cooldown | `app.rs` |
+| 88 | **Library lazy iterator**: Box<dyn Iterator> instead of eager .collect() | `library.rs` |
+| 89 | **Footer protocol cache**: cached_album_protocol skips re-encode on same art | `ui.rs`, `footer.rs` |
+| 90 | **Help menu single-pass**: collect to [String; 3] once, reuse | `draw.rs` |
+| 91 | **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy (4) | 4 files |
+| 92 | **invalidate_protocol_cache()** method on YoutuiWindow | `ui.rs` |
+
+### PR #3 Test Coverage (perf/pr3-test-coverage branch)
+| # | Feature | Files |
+|---|---------|-------|
+| 85 | **Enter-spam guard**: PlayDebouncer struct, 300ms cooldown | `app.rs` |
+| 86 | **Stale download cancel**: cancel_all_downloads() calls .cancel() on tokens | `app/ui/playlist.rs` |
+| 87 | **Library lazy iterator**: Box<dyn Iterator> instead of eager .collect() | `app/ui/browser/library.rs` |
+| 88 | **Footer protocol cache**: cached_album_protocol skips re-encode on same art | `app/ui.rs`, `app/ui/footer.rs` |
+| 89 | **Help menu single-pass**: collect to [String; 3] once, reuse | `app/ui/draw.rs` |
+| 90 | **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy iterator (4) | 4 files |
+| 91 | **invalidate_protocol_cache()** method on YoutuiWindow | `app/ui.rs` |
 
 ## Medium Term
 

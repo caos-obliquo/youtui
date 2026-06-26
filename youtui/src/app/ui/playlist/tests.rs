@@ -11,7 +11,6 @@ use crate::app::ui::playlist::{
     DownloadTask, HandleGetSongThumbnailError, HandleGetSongThumbnailOk,
     HandlePlayUpdateError, HandlePlayUpdateOk, Playlist, QueueState,
 };
-
 use async_callback_manager::{AsyncTask, Constraint, TryBackendTaskExt};
 use pretty_assertions::assert_eq;
 use std::rc::Rc;
@@ -495,6 +494,49 @@ fn non_album_progress_subtracts_offset() {
     // Non-album: d - offset = 250 - 203 = 47
     let _ = p.handle_set_song_play_progress(Duration::from_secs(250), id);
     assert_eq!(p.cur_played_dur, Some(Duration::from_secs(47)));
+}
+
+#[test]
+fn cancel_all_downloads_triggers_tokens() {
+    let p = get_dummy_playlist();
+    // Register a download task
+    let cancel_token = Arc::new(tokio_util::sync::CancellationToken::new());
+    let task = DownloadTask { cancel_token: cancel_token.clone() };
+    p.active_downloads.lock().unwrap().push((ListSongID(999), task));
+
+    assert_eq!(p.active_downloads.lock().unwrap().len(), 1);
+    assert!(!cancel_token.is_cancelled());
+
+    p.cancel_all_downloads();
+
+    assert!(cancel_token.is_cancelled());
+    assert!(p.active_downloads.lock().unwrap().is_empty());
+}
+
+#[test]
+fn cancel_all_downloads_empty_is_noop() {
+    let p = get_dummy_playlist();
+    assert!(p.active_downloads.lock().unwrap().is_empty());
+    p.cancel_all_downloads();
+    assert!(p.active_downloads.lock().unwrap().is_empty());
+}
+
+#[test]
+fn cancel_all_downloads_multiple_tasks() {
+    let p = get_dummy_playlist();
+    let token1 = Arc::new(tokio_util::sync::CancellationToken::new());
+    let token2 = Arc::new(tokio_util::sync::CancellationToken::new());
+    let token3 = Arc::new(tokio_util::sync::CancellationToken::new());
+    p.active_downloads.lock().unwrap().push((ListSongID(1), DownloadTask { cancel_token: token1.clone() }));
+    p.active_downloads.lock().unwrap().push((ListSongID(2), DownloadTask { cancel_token: token2.clone() }));
+    p.active_downloads.lock().unwrap().push((ListSongID(3), DownloadTask { cancel_token: token3.clone() }));
+
+    p.cancel_all_downloads();
+
+    assert!(token1.is_cancelled());
+    assert!(token2.is_cancelled());
+    assert!(token3.is_cancelled());
+    assert!(p.active_downloads.lock().unwrap().is_empty());
 }
 
 #[test]

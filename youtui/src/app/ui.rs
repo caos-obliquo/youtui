@@ -1262,6 +1262,12 @@ impl YoutuiWindow {
     fn key_pending(&self) -> bool {
         !self.key_stack.is_empty()
     }
+    /// Invalidate the cached album protocol, forcing re-encode on next draw.
+    /// Use when terminal capabilities or album art dimensions may have changed.
+    #[allow(dead_code)]
+    pub fn invalidate_protocol_cache(&mut self) {
+        self.cached_album_protocol = None;
+    }
     pub fn toggle_help(&mut self) {
         if self.help.shown {
             self.help.shown = false;
@@ -1676,7 +1682,29 @@ fn extract_video_id(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_playlist_id, extract_video_id};
+    use super::{extract_playlist_id, extract_video_id, YoutuiWindow};
+    use crate::config::Config;
+
+    #[tokio::test]
+    async fn invalidate_protocol_cache_is_none_by_default() {
+        let (window, _) = YoutuiWindow::new(Config::default(), None, None);
+        assert!(window.cached_album_protocol.is_none());
+    }
+
+    #[tokio::test]
+    async fn invalidate_protocol_cache_sets_none() {
+        let (mut window, _) = YoutuiWindow::new(Config::default(), None, None);
+        window.invalidate_protocol_cache();
+        assert!(window.cached_album_protocol.is_none());
+    }
+
+    #[tokio::test]
+    async fn invalidate_protocol_cache_idempotent() {
+        let (mut window, _) = YoutuiWindow::new(Config::default(), None, None);
+        window.invalidate_protocol_cache();
+        window.invalidate_protocol_cache();
+        assert!(window.cached_album_protocol.is_none());
+    }
 
     #[test]
     fn extract_playlist_id_album_url() {

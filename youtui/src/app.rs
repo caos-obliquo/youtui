@@ -32,6 +32,35 @@ use std::time::Duration;
 use std::time::Instant;
 use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID, AlbumID};
 
+/// Debounce guard for rapid play-actions (Enter-spam).
+/// Allows one play action per cooldown window.
+#[derive(Debug)]
+pub(crate) struct PlayDebouncer {
+    last_play_time: Option<Instant>,
+    cooldown: Duration,
+}
+
+impl PlayDebouncer {
+    pub fn new(cooldown: Duration) -> Self {
+        Self { last_play_time: None, cooldown }
+    }
+    /// Returns `true` if the action should proceed (not debounced).
+    pub fn try_play(&mut self) -> bool {
+        if let Some(t) = self.last_play_time
+            && t.elapsed() < self.cooldown
+        {
+            info!("Debouncing rapid play event");
+            return false;
+        }
+        self.last_play_time = Some(Instant::now());
+        true
+    }
+    #[allow(dead_code)]
+    pub fn reset(&mut self) {
+        self.last_play_time = None;
+    }
+}
+
 #[derive(Debug)]
 pub enum NavTarget {
     Artist(String),
@@ -93,7 +122,7 @@ pub struct Youtui {
     needs_redraw: bool,
     render_interval: tokio::time::Interval,
     /// Debounce rapid Enter-spam on play actions
-    last_play_time: Option<Instant>,
+    play_debouncer: PlayDebouncer,
 }
 
 #[derive(PartialEq)]
@@ -275,7 +304,7 @@ impl Youtui {
             terminal_image_capabilities,
             needs_redraw: false,
             render_interval: tokio::time::interval(Duration::from_millis(33)),
-            last_play_time: None,
+            play_debouncer: PlayDebouncer::new(Duration::from_millis(300)),
         })
     }
     pub async fn run(&mut self) -> Result<()> {
@@ -412,14 +441,9 @@ impl Youtui {
                 self.window_state.handle_add_songs_to_playlist(song_list),
             ),
             AppCallback::AddSongsToPlaylistAndPlay(song_list) => {
-                // Debounce: ignore if last play was < 300ms ago
-                if let Some(t) = self.last_play_time
-                    && t.elapsed() < Duration::from_millis(300)
-                {
-                    info!("Debouncing rapid play event");
+                if !self.play_debouncer.try_play() {
                     return;
                 }
-                self.last_play_time = Some(Instant::now());
                 self.task_manager.spawn_task(
                     &self.server,
                     self.window_state
@@ -951,4 +975,46 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
     tui_logger::init_logger(tui_logger_log_level)
         .expect("Expected logger to initialise succesfully");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn play_debouncer_allows_first_play() {
+        let mut d = PlayDebouncer::new(Duration::from_millis(300));
+        assert!(d.try_play());
+    }
+
+    #[test]
+    fn play_debouncer_blocks_rapid_play() {
+        let mut d = PlayDebouncer::new(Duration::from_millis(300));
+        d.try_play(); // first: allowed
+        assert!(!d.try_play()); // second: blocked (<300ms)
+    }
+
+    #[test]
+    fn play_debouncer_allows_after_cooldown() {
+        let mut d = PlayDebouncer::new(Duration::from_millis(1));
+        d.try_play(); // first: allowed
+        std::thread::sleep(Duration::from_millis(2));
+        assert!(d.try_play()); // cooldown expired
+    }
+
+    #[test]
+    fn play_debouncer_reset_clears() {
+        let mut d = PlayDebouncer::new(Duration::from_millis(300));
+        d.try_play();
+        d.reset();
+        assert!(d.try_play()); // reset clears debounce
+    }
+
+    #[test]
+    fn play_debouncer_zero_cooldown_allows_all() {
+        let mut d = PlayDebouncer::new(Duration::from_millis(0));
+        assert!(d.try_play());
+        assert!(d.try_play()); // 0 cooldown, always passes
+    }
 }
