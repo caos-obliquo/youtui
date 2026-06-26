@@ -383,7 +383,7 @@ impl TableView for SongSearchBrowser {
             .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        ["Song", "Artist", "Album", "Duration", "Plays"].into_iter()
+        ["Song", "Artist", "Album", "Duration", "Plays", "Liked"].into_iter()
     }
     fn get_mut_state(&mut self) -> &mut ScrollingTableState {
         &mut self.widget_state
@@ -395,7 +395,7 @@ impl AdvancedTableView for SongSearchBrowser {
         self.get_filtered_list_iter().count()
     }
     fn get_sortable_columns(&self) -> &[usize] {
-        &[0, 1, 2]
+        &[0, 1, 2, 5]
     }
     fn get_sort_commands(&self) -> &[TableSortCommand] {
         &self.sort.sort_commands
@@ -501,13 +501,14 @@ impl SongSearchBrowser {
             cur_playing_video_id: None,
         }
     }
-    pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
+    pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
         [
             ListSongDisplayableField::Song,
             ListSongDisplayableField::Artists,
             ListSongDisplayableField::Album,
             ListSongDisplayableField::Duration,
             ListSongDisplayableField::Plays,
+            ListSongDisplayableField::LikeStatus,
         ]
     }
     /// Re-apply all sort commands in the stack in the order they were stored.

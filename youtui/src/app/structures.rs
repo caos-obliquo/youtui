@@ -225,6 +225,7 @@ pub enum ListSongDisplayableField {
     Duration,
     Year,
     Plays,
+    LikeStatus,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -331,6 +332,10 @@ impl ListSong {
             ListSongDisplayableField::Song => self.title.as_str().into(),
             ListSongDisplayableField::Duration => self.duration_string.as_str().into(),
             ListSongDisplayableField::Plays => self.plays.as_str().into(),
+            ListSongDisplayableField::LikeStatus => match self.like_status {
+                LikeStatus::Liked => Cow::Borrowed("\u{2665}"),
+                _ => Cow::Borrowed(""),
+            },
         }
     }
     pub fn create_with_metadata(
@@ -507,6 +512,7 @@ impl BrowserSongsList {
             video_id,
             thumbnails,
             year,
+            like_status,
             ..
         } = song;
         self.list.push(ListSong {
@@ -550,7 +556,7 @@ impl BrowserSongsList {
             genres: Vec::new(),
             styles: Vec::new(),
             start_offset: None,
-            like_status: LikeStatus::Indifferent,
+            like_status,
         });
         id
     }

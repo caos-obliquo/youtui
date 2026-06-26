@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## [1.0.0](https://github.com/caos-obliquo/youtui/compare/youtui/v0.0.37...youtui/v1.0.0) - 2026-06-26
+
+### Added
+- Liked songs column (♥) in all 5 browser song tables (PR #11)
+- LikeStatus parsed from YTM search results (was always Indifferent)
+- Liked column sortable in all browser tabs
+- Liked column filterable in all browser tabs
+- Persistent scrobble cache with retry (max 3, background 5-min loop)
+- Rate limit handling (error 29) stops retry loop, deferred to next startup
+- 5-min background retry loop for cached scrobbles
+- CLI test-scrobble tool for direct Last.fm API testing
+- Album-mode scrobble now uses song album (fixes inconsistent Last.fm album art)
+- now_playing notification on song start (track.updateNowPlaying)
+- Protocol cache chunk dimension tracking (prevents 8-bit fallback on resize)
+- Debug logging for terminal Picker detection (PR #8)
+- o.v zero-pixel image guard with "No image data" fallback (PR #9)
+- 15 new unit tests: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy iterator (4)
+- 5 scrobble cache unit tests (roundtrip, max size, retry increment, drop expired, legacy default)
+- Max cache size: 200 entries (oldest evicted when exceeded)
+- 2-second delay between cache retries
+
+### Changed
+- Full metadata pipeline: 6-provider scoring, album tracklist validation, year fallback
+- Album split detection expanded: Full EP, Full LP, Full Album tags
+- ValidateMetadata enrichment now searches YTM album even when original album was None
+- Footer: 2-line layout (playing line + album/status line), removed play/pause button
+- Browser play triggers album split + artist/album normalization + year fallback
+- All browser tabs use AdvancedTableView with sort/filter/search
+- Library page: context menu per-category, GoToAlbum direct tracks, F1 search all categories
+- Playlist editor: nvim-driven, 100-level undo, visual mode, :w/:wq/:q command mode
+- Suckless refactoring: -630 lines, 6 panic paths fixed, 2 dead crates deleted, boilerplate extracted
+- Updated all 11 workspace crate docs with accurate test counts and line counts
+
+### Fixed
+- Scrobble signature sort (error 13) — params sorted alphabetically before HMAC signing
+- Album track scrobbling — removed should_scrobble() guard, all split tracks now scrobble
+- scrobble_pending race — stays true until async submit completes
+- Rescrobbled spawn removed — no duplicate scrobbles from systemd + embedded scrobbler
+- Render throttle: 33ms max ~30fps, no 1000fps on key spam
+- Stale download cancel: calls .cancel() on each CancellationToken before clear()
+- Enter-spam guard: 300ms PlayDebouncer cooldown
+- Library lazy iterator: Box<dyn Iterator> instead of eager Vec heap alloc per frame
+- Footer protocol cache: Rc::ptr_eq skips CPU-heavy re-encode when album art unchanged
+- Help menu single-pass: DisplayableKeyAction collected once, not twice per draw
+- Flatpak icon path for notification on Fedora Silverblue
+- Album art popup: symmetric centering, sixel persistence on close, pagination
+- Genius lyrics: Bearer search prioritized over slug URL, find_and_fetch hit validation
+- Multi-artist name normalization: ALL-CAPS preserved, " - Topic" album suffix stripped
+- 6 panic paths replaced with proper error handling
+
 ## [0.0.37](https://github.com/nick42d/youtui/compare/youtui/v0.0.36...youtui/v0.0.37) - 2026-05-15
 
 ### Fixed
