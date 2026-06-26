@@ -206,8 +206,9 @@ fn try_decode(song: Arc<InMemSong>, start_offset: Option<Duration>, actual_durat
 /// Fallback: convert any audio bytes to WAV via ffmpeg. Returns None on failure.
 fn convert_to_wav_fallback(data: &[u8]) -> Option<Vec<u8>> {
     let pid = std::process::id();
-    let in_file = format!("/tmp/youtui_wav_{}.bin", pid);
-    let out_file = format!("/tmp/youtui_wav_{}.wav", pid);
+    let tmp = std::env::temp_dir();
+    let in_file = tmp.join(format!("youtui_wav_{}.bin", pid)).to_string_lossy().into_owned();
+    let out_file = tmp.join(format!("youtui_wav_{}.wav", pid)).to_string_lossy().into_owned();
 
     let _ = std::fs::write(&in_file, data);
     let status = std::process::Command::new("ffmpeg")
@@ -246,8 +247,9 @@ fn remux_moov(in_file: &str) -> bool {
 /// Falls back to accurate decode-based seek if fast path produces garbage.
 fn extract_section(song: &Arc<InMemSong>, offset: Duration, duration: Option<Duration>) -> anyhow::Result<InMemSong> {
     let pid = std::process::id();
-    let in_file = format!("/tmp/youtui_seek_{}.m4a", pid);
-    let out_file = format!("/tmp/youtui_seek_{}_out.m4a", pid);
+    let tmp = std::env::temp_dir();
+    let in_file = tmp.join(format!("youtui_seek_{}.m4a", pid)).to_string_lossy().into_owned();
+    let out_file = tmp.join(format!("youtui_seek_{}_out.m4a", pid)).to_string_lossy().into_owned();
 
     std::fs::write(&in_file, &song.as_ref().0).context("write temp input")?;
 

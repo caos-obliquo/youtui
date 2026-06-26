@@ -592,6 +592,7 @@ impl YoutuiWindow {
             crate::app::scrobbler::retry_failed_scrobbles(&retry_config).await;
         });
         playlist.yt_dlp_cookie_path = cookie_path;
+        playlist.cookie_browser = config.cookie_browser.clone();
         let mut this = YoutuiWindow {
             context: WindowContext::Browser,
             prev_context: WindowContext::Browser,

@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 161 pass, 4 ignore
+cargo test --release -p youtui --bin youtui       # 164 pass, 4 ignore
 cargo test --release -p metadata-provider          # 47 pass
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
@@ -61,7 +61,7 @@ cargo test --release -p ytmapi-cli                 # 7 pass
 cargo test --release -p lrclib-rs                  # 4 pass
 cargo test --release -p rym-genre-data             # 10 pass
 ```
-Total: **~413/413 pass, 0 fail, 4 ignored, 0 warnings** (161 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 413)
+Total: **~416/416 pass, 0 fail, 4 ignored, 0 warnings** (164 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 416)
 
 ## Warnings
 `cargo build --release` — **0 warnings across workspace** (all 11 crates clean).
@@ -77,6 +77,28 @@ Batch of 6 perf fixes merged 2026-06-26, ea2fc1c:
 
 Tests: 15 new unit tests added (5 PlayDebouncer, 3 protocol cache, 3 download cancel, 4 library lazy iterator).
 
+## PR #19 — View-Indices Sort (2026-06-26)
+Sorted `view_indices: Vec<usize>` instead of sorting the backing `BrowserSongsList.list` in-place across 3 tab structs (SongSearchBrowser, PlaylistSongsPanel, AlbumSongsPanel). `clear_sort_commands()` resets view_indices to identity — restores original fetch order without re-fetch from server. +226/-75. 3 TODO comments removed.
+
+## PR #20 — Artist Categories (ytmapi-rs, 2026-06-26)
+`ArtistTopReleaseCategory` made pub enum (was private) with Display/Serialize/Deserialize/Default. `GetArtistAlbumsAlbum.category`: `Option<String>` -> `Option<ArtistTopReleaseCategory>`. Wired Videos arm (MRLIR carousel items), Related arm (MTRIR artist cards), Playlists arm (MTRIR) in `parse_artist_top_releases_from_section_list_contents`. Added `GetArtistTopReleases.playlists: Option<GetArtistAlbums>` field. Two TODOs removed. ytmapi-rs lib: 85/85 pass (was 76/85 before test output fix).
+
+## Platform Compatibility (Current Status)
+All 6 platform-specific items fixed. Youtui compiles on Linux (Wayland/X11) and macOS. Windows builds fail at compile-time with a clear error.
+
+| Priority | Issue | Fix | Status |
+|----------|-------|-----|--------|
+| BLOCKER | Clipboard `wl-copy` hardcoded | Fallback chain: wl-copy/xclip/xsel/pbcopy in `copy_to_clipboard()` | ✅ DONE |
+| BLOCKER | `gag` crate Unix-only | `#[cfg(unix)]` gate on gag usage in audio-player | ✅ DONE |
+| HIGH | `/tmp/` hardcoded paths | `std::env::temp_dir()` in `player.rs` | ✅ DONE |
+| HIGH | Chromium hardcoded for cookies | `cookie_browser` config field (default "chromium") | ✅ DONE |
+| HIGH | ffmpeg + yt-dlp on PATH | Documented as required deps | ✅ DONE |
+| LOW | SignalWatcher no fallback | Already has `#[cfg(unix)]` and `#[cfg(windows)]` impls | ✅ N/A |
+
+## Unwanted Features (Explicitly Rejected)
+- Radio mode — user declined
+- Windows — blocked at compile-time via `compile_error!` in `main.rs`. Supported targets: Linux (Wayland/X11), macOS.
+
 ## Arch (3-layer async callback)
 ```
 Frontend (UI) -> TaskManager -> Backend (Server)
@@ -86,7 +108,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## 11 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 161 |
+| `youtui` | Main binary | 164 |
 | `ytmapi-rs` | YT Music API client | 85 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 65 |
 | `metadata-provider` | Metadata trait + impls | 47 |
@@ -218,7 +240,7 @@ See `docs/09-roadmap.md` for detailed session history.
 - Starts in Normal mode (navigate with j/k, edit with i)
 - `scroll_offset` keeps cursor visible in long files
 - Esc exits Insert/Visual mode to Normal (never closes popup)
-- System clipboard yank via `wl-copy` in visual mode
+- System clipboard yank via cross-platform fallback chain (wl-copy/xclip/xsel/pbcopy)
 - See `docs/subsystems/notes.md` for full architecture
 
 ## Genius API
@@ -270,9 +292,6 @@ See `docs/09-roadmap.md` for detailed session history.
 
 
 ## Remaining Items (Detailed)
-### Blocked: Cross-platform clipboard
-**Problem**: Clipboard yank uses Wayland-only `wl-copy`. No X11/macOS fallback.
-
 ### P3: ytmapi-rs ~68 remaining TODOs
 **Problem**: ~37 legitimate TODOs remaining (artist categories, i18n, continuations, unfulfilled feature fields). All LOW value for youtui.
 
@@ -339,8 +358,12 @@ See `docs/09-roadmap.md` for detailed session history.
 - yt-dlp per-video bounded concurrent (max 30, 5 semaphore) ✅
 - `EnrichRelatedTracks` task + `HandleEnrichRelatedTracksOk`/`Err` handlers ✅
 
-### Phase 6 🔴 — Cross-platform clipboard
-- Wayland-only `wl-copy`. No X11/macOS fallback.
+### Phase 6 ✅ — Cross-platform compatibility
+- Clipboard fallback chain (wl-copy/xclip/xsel/pbcopy) ✅
+- `gag` crate `#[cfg(unix)]` gate ✅
+- `/tmp/` paths replaced with `std::env::temp_dir()` ✅
+- Chromium hardcoded → `cookie_browser` config field ✅
+- Windows compile-time block ✅
 
 ## Suckless Refactoring (refactor/suckless branch)
 Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.md`.
