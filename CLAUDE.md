@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 141 pass, 4 ignore
+cargo test --release -p youtui --bin youtui       # 151 pass, 4 ignore
 cargo test --release -p metadata-provider          # 47 pass
 cargo test --release -p vi-text-editor             # 65 pass
 cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
@@ -61,10 +61,21 @@ cargo test --release -p ytmapi-cli                 # 7 pass
 cargo test --release -p lrclib-rs                  # 4 pass
 cargo test --release -p rym-genre-data             # 10 pass
 ```
-Total: **~393/393 pass, 0 fail, 4 ignored, 0 warnings** (141 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 393)
+Total: **~403/403 pass, 0 fail, 4 ignored, 0 warnings** (151 + 47 + 65 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 403)
 
 ## Warnings
 `cargo build --release` — **0 warnings across workspace** (all 11 crates clean).
+
+## Performance (PR #3 — perf/enter-cancel-render)
+Batch of 6 perf fixes merged 2026-06-26, ea2fc1c:
+- **Render throttle**: `needs_redraw` bool + 33ms `tokio::time::Interval` max ~30fps. No 1000fps on key spam.
+- **Stale download cancel**: `cancel_all_downloads()` calls `.cancel()` on each `CancellationToken` before `clear()`. Was leaking tokens.
+- **Enter-spam guard**: `PlayDebouncer` struct — 300ms cooldown on `AddSongsToPlaylistAndPlay` via `Instant` check in `handle_callback`.
+- **Library lazy iterator**: `get_filtered_items()` returns `Box<dyn Iterator>` instead of eager `.collect()` into `Vec<Vec<Cow>>`. Eliminates O(n) heap alloc per frame.
+- **Footer protocol cache**: `cached_album_protocol: Option<Protocol>` in `YoutuiWindow`. Skips CPU-heavy `new_protocol()` re-encode when `Rc::ptr_eq` shows album art unchanged. `invalidate_protocol_cache()` method added.
+- **Help menu single-pass**: Collects `DisplayableKeyAction` into owned `[String; 3]` once, reuses for widths + table render. Was calling `get_help_list_items()` twice per draw.
+
+Tests: 15 new unit tests added (5 PlayDebouncer, 3 protocol cache, 3 download cancel, 4 library lazy iterator).
 
 ## Arch (3-layer async callback)
 ```
@@ -75,7 +86,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## 11 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 141 |
+| `youtui` | Main binary | 151 |
 | `ytmapi-rs` | YT Music API client | 85 lib + 28/52 auth |
 | `vi-text-editor` | Vim text editor widget | 65 |
 | `metadata-provider` | Metadata trait + impls | 47 |

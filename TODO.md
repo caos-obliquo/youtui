@@ -56,6 +56,13 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - **normalize_artist_name**: preserves intentional lowercase (e.g. "data da morte"). Same fix in metal_api
 - Test counts: youtui 136, metadata-provider 45, workspace ~369
 
+### Session 2026-06-26 — PR #3 perf batch + test coverage
+- **6 perf fixes merged** (ea2fc1c): render throttle, stale download cancel, enter-spam guard, library lazy iterator, footer protocol cache, help menu single-pass
+- **PlayDebouncer struct** extracted to `app.rs` — testable enter-spam guard (300ms cooldown)
+- **invalidate_protocol_cache()** added to `YoutuiWindow` — clears cached ratatui_image::Protocol
+- **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy iterator (4)
+- Test counts: youtui 151, workspace ~403
+
 ### Session 2026-06-25 — Metadata Cache Persistence + Library Album Fix
 
 - **Library songs now keep album data**: `HandleLibrarySongsOk` no longer drops `ts.album.name` and `ts.album.id` — Album column in library browser now shows real names from YTM API.
@@ -74,6 +81,23 @@ Full vim-driven TUI for YouTube Music. Keyboard-only. No mouse.
 - **Context menu awareness**: `Browser::is_song_action_visible()` filters BrowserSongsAction per browser variant + sub-state.
 - **Phase 5 (Related tracks)**: yt-dlp per-video bounded concurrent enrichment (max 30, 5 semaphore) — `EnrichRelatedTracks` task + handlers.
 - **Docs hygiene**: CLAUDE.md + TODO.md updated. Phase status, test counts (46→47 metadata, 14→18 genius), crate count (9→12). Added liked-songs-table planned feature.
+
+### Session 2026-06-25 — Audit batch (SortAction, dead deps, wl-copy helper, expect safety, perf)
+- **SortAction context fix**: fixed wrong `ApplicationAction` variant in `shared_components.rs` (o.S in Library context was silently no-op)
+- **Musixmatch/gag deps removed**: `musixmatch-inofficial` and `gag` removed from youtui/Cargo.toml (unused)
+- **clear_cookie() removed**: dead fn in `metal_api.rs` (metal-proxy removed, fn was dead code)
+- **config.toml fields**: added `genius_token` and `discogs_token` to `config/config.toml` (were in docs but not in default config)
+- **copy_to_clipboard() helper**: extracted to `structures.rs` fn, 15 hardcoded `wl-copy` call sites replaced across 6 files
+- **expect→safe**: audio-player rodio sink `expect` → `warn!()+return`, messages.rs playlist `expect` → proper `Err` return
+- **Perf**: 6 `.clone()` → `&str` ref in browser local_filter_text calls
+- **ytmapi-rs deprecations removed**: 10 items removed (`from_browser_token`, `from_oauth_token`, `with_browser_token`, `with_oauth_token`, `SearchQuery::new`, 5 `SpellingMode` variants). Test refs updated to `new_filtered()`
+- **rym-definitions + metal-proxy removed**: both removed from workspace Cargo.toml (standalone/blocked tools, zero dependents). 13→11 crates.
+
+### Session 2026-06-25 — Docs overhaul (17 files)
+- **17 docs files updated**: README.md (full rewrite w/ accurate keybinds), CLAUDE.md (paths, test counts, crate count), CODEBASE_GUIDE.md (complete rewrite), docs/04-configuration.md (removed api_url ghost, added discogs_token), docs/05-keybindings.md (fixed wrong keybinds, added missing contexts), docs/api-services.md (removed api_url, added LRCLIB), docs/06-subsystems/*.md (fixed paths, removed stale content), docs/02-crates/*.md (fixed test counts), docs/README.md (fixed TOC), youtui/TODO.md (test status updated)
+- **Build**: 0 errors, 0 warnings across workspace
+- **Tests**: 388/388 pass across 11 crates
+- **PR #2 merged**: 34 commits, 112 files changed, clean merge to main
 
 ### Phases A–M (All Implemented)
 - **A**: Annotations cutoff fixed — `lyrics_popup.rs:547` added `.saturating_sub(1)`
