@@ -307,6 +307,7 @@ impl TableView for AlbumSearchBrowser {
             BasicConstraint::Percentage(Percentage(75)),
             BasicConstraint::Length(8),
             BasicConstraint::Length(5),
+            BasicConstraint::Length(4),
         ]
     }
     fn get_highlighted_row(&self) -> Option<usize> {
