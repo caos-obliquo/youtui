@@ -142,7 +142,7 @@
 
 | Crate | Passed | Ignored |
 |-------|--------|---------|
-| youtui | 151 | 4 |
+| youtui | 161 | 4 |
 | metadata-provider | 47 | 0 |
 | vi-text-editor | 65 | 0 |
 | ytmapi-rs (lib) | 85 | 0 |
@@ -152,9 +152,9 @@
 | ytmapi-cli | 7 | 0 |
 | lrclib-rs | 4 | 0 |
 | rym-genre-data | 10 | 0 |
-| **Total** | **403** | **4** |
+| **Total** | **413** | **4** |
 
-1 warning (pre-existing ytmapi-cli deprecation), 0 failures across workspace.
+0 failures, 0 build warnings across workspace.
 
 ## Completed 2026-06-26 — Scrobbler + Suckless + PR #3 Perf
 
@@ -203,6 +203,27 @@
 | 90 | **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy iterator (4) | 4 files |
 | 91 | **invalidate_protocol_cache()** method on YoutuiWindow | `app/ui.rs` |
 
+### PR #7 — Background scrobble retry + rate limit handling
+| # | Feature | Files |
+|---|---------|-------|
+| 92 | ScrobbleResult enum (Success/Failure/RateLimited) | `scrobbler.rs` |
+| 93 | Rate limit stops retry loop (error 29) | `scrobbler.rs` |
+| 94 | Background 5-min retry loop in main event loop | `app.rs` |
+| 95 | 2s delay between retries | `scrobbler.rs` |
+| 96 | Max cache size: 200 entries (oldest evicted) | `scrobbler.rs` |
+| 97 | 5 cache unit tests (roundtrip, max size, retry increment, drop expired, legacy default) | `scrobbler.rs` |
+
+### PR #8 — Protocol cache chunk dimension tracking + debug logging
+| # | Feature | Files |
+|---|---------|-------|
+| 98 | Chunk dimension tracking prevents 8-bit fallback on terminal resize | `footer.rs`, `ui.rs` |
+| 99 | Debug logging for terminal Picker detection | `ui.rs` |
+
+### PR #9 — o.v zero-pixel image guard
+| # | Feature | Files |
+|---|---------|-------|
+| 100 | Zero-pixel in_mem_image guard shows 'No image data' fallback | `playlist.rs` |
+
 ## Medium Term
 
 | # | Feature | Est | Notes |
@@ -211,7 +232,7 @@
 | 2 | Liked songs in browser tables | med | Parse like_status from YTM search, add column to AdvancedTableView in all tabs. |
 | 3 | ytmapi-rs artist categories (5 TODOs) | med | Incomplete parse fields in GetArtist |
 | 4 | Batch reorder (not just swap) in ytmapi-rs | large | `ytmapi-rs/` |
-| 5 | **Footer FFT bars**: ringbuffer → `rustfft` → 1-line freq bars | med | `footer.rs`. Rust-only, no Cava dep. Cosmetic. |
+
 
 ## Crate Extraction Status
 
@@ -228,7 +249,7 @@
 | 9 | rym-genre-data | Extracted | 10 |
 | 10 | metal-proxy | Removed (API down) | 0 |
 | 11 | audio-player | Extracted ✅ | 0 |
-| 12 | rym-definitions | Extracted (scraper) | 0 |
+| 12 | rym-definitions | Removed (merged into rym-genre-data) | 0 |
 
 ## Browser Tabs Feature Parity
 
