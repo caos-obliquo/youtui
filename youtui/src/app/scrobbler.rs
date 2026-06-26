@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 const SCROBBLE_CACHE_FILENAME: &str = "scrobble_cache.json";
 
@@ -79,7 +79,7 @@ pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
     if cache.is_empty() {
         return;
     }
-    info!("Retrying {} failed scrobbles from cache", cache.len());
+    info!("Retrying {} failed scrobbles from cache (with 2s delay between each)", cache.len());
     for (i, entry) in cache.iter().enumerate() {
         let artist = entry["artist"].as_str().unwrap_or("").to_string();
         let track = entry["track"].as_str().unwrap_or("").to_string();
@@ -94,10 +94,19 @@ pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
             start_time: UNIX_EPOCH + Duration::from_secs(ts),
             scrobbled: false,
         };
-        let success = submit_scrobble_inner(config, &state).await;
-        if success {
-            remove_cached_scrobble(i);
+        match submit_scrobble_inner(config, &state).await {
+            ScrobbleResult::Success => {
+                remove_cached_scrobble(i);
+            }
+            ScrobbleResult::RateLimited => {
+                warn!("Rate limited during cache retry — stopping retries, keeping remaining entries for next startup");
+                break;
+            }
+            ScrobbleResult::Failure => {
+                // Leave in cache for next retry attempt
+            }
         }
+        tokio::time::sleep(Duration::from_secs(2)).await;
     }
     // Clean up empty cache file
     let Ok(remaining) = std::fs::read_to_string(&path) else { return };
@@ -106,16 +115,25 @@ pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
     }
 }
 
-/// Inner submit: returns true if successful, false on failure.
-async fn submit_scrobble_inner(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) -> bool {
-    if !config.enabled { return false; }
+pub(crate) enum ScrobbleResult {
+    Success,
+    Failure,
+    RateLimited,
+}
+
+/// Inner submit: returns Success if accepted, Failure on error, RateLimited when rate-limited.
+pub(crate) async fn submit_scrobble_inner(
+    config: &crate::config::ScrobblingConfig,
+    state: &ScrobbleState,
+) -> ScrobbleResult {
+    if !config.enabled { return ScrobbleResult::Failure; }
     if config.api_key.is_empty() {
         warn!("Scrobble blocked: api_key not configured");
-        return false;
+        return ScrobbleResult::Failure;
     }
     if config.session_key.is_empty() {
         warn!("Scrobble blocked: session_key not configured");
-        return false;
+        return ScrobbleResult::Failure;
     }
     let timestamp = state.start_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let mut params: Vec<(String, String)> = vec![
@@ -136,6 +154,7 @@ async fn submit_scrobble_inner(config: &crate::config::ScrobblingConfig, state: 
         .collect::<Vec<_>>()
         .join("") + &config.api_secret;
     let api_sig = format!("{:x}", md5::compute(sig_string.as_bytes()));
+    debug!("Scrobble params: {:?}, api_sig={}", params, api_sig);
     params.push(("api_sig".into(), api_sig));
 
     let client = reqwest::Client::new();
@@ -148,23 +167,29 @@ async fn submit_scrobble_inner(config: &crate::config::ScrobblingConfig, state: 
             let text = resp.text().await.unwrap_or_default();
             if text.contains("<lfm status=\"ok\">") {
                 info!("Scrobbled: {} - {} (album: {:?})", state.artist, state.track, state.album);
-                true
+                ScrobbleResult::Success
+            } else if text.contains("error code=\"29\"") {
+                error!("Scrobble rate limited: {} (artist={}, track={})", text, state.artist, state.track);
+                eprintln!("SCROBBLE_API_RESPONSE={}", text);
+                ScrobbleResult::RateLimited
             } else {
                 error!("Scrobble failed: {} (artist={}, track={})", text, state.artist, state.track);
-                false
+                eprintln!("SCROBBLE_API_RESPONSE={}", text);
+                ScrobbleResult::Failure
             }
         }
         Err(e) => {
             error!("Scrobble HTTP error: {} (artist={}, track={})", e, state.artist, state.track);
-            false
+            ScrobbleResult::Failure
         }
     }
 }
 
 /// Submit a scrobble to Last.fm. On failure, saves to persistent cache for retry.
 pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) {
-    if !submit_scrobble_inner(config, state).await {
-        save_failed_scrobble(state);
+    match submit_scrobble_inner(config, state).await {
+        ScrobbleResult::Success => {},
+        _ => { save_failed_scrobble(state); },
     }
 }
 
