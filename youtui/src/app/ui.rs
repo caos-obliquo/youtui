@@ -1,6 +1,6 @@
 use self::browser::{Browser, BrowserAction};
 use self::logger::Logger;
-use self::playlist::Playlist;
+use self::playlist::{Playlist, PlaylistAction};
 use self::playlist::album_art_popup::AlbumArtPopup;
 use self::playlist::notes_popup::NotesPopup;
 use self::playlist::config_editor_popup::ConfigEditorPopup;
@@ -23,7 +23,7 @@ use super::component::actionhandler::{
     handle_key_stack,
 };
 use super::server::{IncreaseVolume, SetVolume};
-use super::structures::ListSong;
+use super::structures::{ListSong, has_japanese};
 use audio_player::{SeekDirection, VolumeUpdate};
 use crate::config::Config;
 use crate::config::keymap::Keymap;
@@ -1590,8 +1590,25 @@ impl YoutuiWindow {
         let displayable_commands: Vec<DisplayableKeyAction<'_>> = keys.iter()
             .filter(|(_, kt)| {
                 if let crate::config::keymap::KeyActionTree::Key(k) = kt {
-                    if let AppAction::BrowserSongs(action) = &k.action {
-                        return self.browser.is_song_action_visible(action);
+                    match &k.action {
+                        AppAction::BrowserSongs(action) => {
+                            return self.browser.is_song_action_visible(action);
+                        }
+                        AppAction::Playlist(action) => {
+                            match action {
+                                PlaylistAction::TogglePlaylistCategoryFilter => {
+                                    return false; // category filter only relevant in browser
+                                }
+                                PlaylistAction::ToggleRomaji => {
+                                    // hide romaji toggle when no songs have Japanese text
+                                    let has_jp = self.playlist.list.get_list_iter()
+                                        .any(|s| has_japanese(&s.title));
+                                    return has_jp;
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 true

@@ -25,7 +25,7 @@ pub async fn main() -> Result<(), ytmapi_rs::Error> {
 )]
 use crate::{
     Result, YtMusic,
-    auth::{BrowserToken, OAuthToken},
+    auth::BrowserToken,
     client::Client,
 };
 use std::path::Path;
@@ -107,28 +107,6 @@ impl<T> YtMusicBuilder<T> {
             token: _,
         } = self;
         let token = FromCookieFile(cookie_file);
-        YtMusicBuilder {
-            client_options,
-            token,
-        }
-    }
-    #[deprecated = "Use generic `with_auth_token` instead"]
-    pub fn with_browser_token(self, token: BrowserToken) -> YtMusicBuilder<BrowserToken> {
-        let YtMusicBuilder {
-            client_options,
-            token: _,
-        } = self;
-        YtMusicBuilder {
-            client_options,
-            token,
-        }
-    }
-    #[deprecated = "Use generic `with_auth_token` instead"]
-    pub fn with_oauth_token(self, token: OAuthToken) -> YtMusicBuilder<OAuthToken> {
-        let YtMusicBuilder {
-            client_options,
-            token: _,
-        } = self;
         YtMusicBuilder {
             client_options,
             token,

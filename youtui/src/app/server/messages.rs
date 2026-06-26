@@ -600,7 +600,7 @@ impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
                 }
             }
 
-            Ok(first_playlist_id.expect("at least one playlist should have been created"))
+            Ok(first_playlist_id.ok_or_else(|| anyhow::anyhow!("No playlist was created: empty video ID list"))?)
         }
     }
 }

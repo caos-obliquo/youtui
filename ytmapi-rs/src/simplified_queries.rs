@@ -17,11 +17,10 @@ use crate::parse::{
     HistoryPeriod, LibraryArtist, LibraryArtistSubscription, LibraryPlaylist, Lyrics, PlaylistItem,
     SearchResultAlbum, SearchResultArtist, SearchResultEpisode, SearchResultFeaturedPlaylist,
     SearchResultPlaylist, SearchResultPodcast, SearchResultProfile, SearchResultSong,
-    SearchResultVideo, SearchResults, UserPlaylist, UserVideo, WatchPlaylistTrack,
+    SearchResultVideo, UserPlaylist, UserVideo, WatchPlaylistTrack,
 };
 use crate::query::playlist::{CreatePlaylistType, DuplicateHandlingMode, GetPlaylistDetailsQuery};
 use crate::query::rate::{RatePlaylistQuery, RateSongQuery};
-use crate::query::search::BasicSearch;
 use crate::query::search::filteredsearch::{
     AlbumsFilter, ArtistsFilter, CommunityPlaylistsFilter, EpisodesFilter, FeaturedPlaylistsFilter,
     FilteredSearch, PlaylistsFilter, PodcastsFilter, ProfilesFilter, SongsFilter, VideosFilter,
@@ -44,24 +43,6 @@ use crate::query::{
 use crate::{Result, YtMusic};
 
 impl<A: AuthToken> YtMusic<A> {
-    /// API Search Query that returns results for each category if available.
-    /// # Usage
-    /// ```no_run
-    /// # async {
-    /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE")
-    ///     .await
-    ///     .unwrap();
-    /// yt.search("Beatles").await
-    /// # };
-    /// ```
-    #[deprecated = "To be removed in future release - see issue #353"]
-    pub async fn search<'a, Q: Into<SearchQuery<'a, BasicSearch>>>(
-        &self,
-        query: Q,
-    ) -> Result<SearchResults> {
-        let query = query.into();
-        self.query(query).await
-    }
     /// API Search Query for Artists only.
     /// ```no_run
     /// # async {

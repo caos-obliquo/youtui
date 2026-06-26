@@ -79,7 +79,7 @@ impl Action for FilterAction {
 
 impl Action for SortAction {
     fn context(&self) -> std::borrow::Cow<'_, str> {
-        "Filter".into()
+        "Sort".into()
     }
     fn describe(&self) -> std::borrow::Cow<'_, str> {
         match self {

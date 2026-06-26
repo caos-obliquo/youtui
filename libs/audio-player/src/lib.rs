@@ -197,8 +197,13 @@ where
                     return;
                 }
             };
-            let mixer_device_sink = rodio::DeviceSinkBuilder::open_default_sink()
-                .expect("Expect to get a handle to output stream");
+            let mixer_device_sink = match rodio::DeviceSinkBuilder::open_default_sink() {
+                Ok(sink) => sink,
+                Err(e) => {
+                    warn!("No audio output device available: {e}");
+                    return;
+                }
+            };
             let sink = rodio::Player::connect_new(mixer_device_sink.mixer());
             // Hopefully someone else can't create a song with the same ID?!
             let mut cur_song_duration = None;
