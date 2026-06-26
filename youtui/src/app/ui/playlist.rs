@@ -2902,16 +2902,28 @@ impl Playlist {
 
         // Persistent scrobble: check on every progress update regardless of context
         if self.scrobbling_config.enabled && !self.scrobble_pending {
+            // Refresh album from current song: metadata may have arrived since play start
+            let fresh_album = self.get_cur_playing_song()
+                .and_then(|s| s.album.as_ref().map(|a| a.name.clone()));
+            if let Some(ref mut state) = self.scrobble_state {
+                state.album = fresh_album;
+            }
             if let Some(ref state) = self.scrobble_state.clone() {
                 if state.should_scrobble() {
-                    self.scrobble_pending = true;
-                    let cfg = self.scrobbling_config.clone();
-                    let s = state.clone();
-                    tokio::spawn(async move {
-                        crate::app::scrobbler::submit_scrobble(&cfg, &s).await;
-                    });
-                    if let Some(s) = self.scrobble_state.as_mut() {
-                        s.scrobbled = true;
+                    // Wait for album metadata if still missing (max ~5s from play start)
+                    let album_ok = state.album.is_some();
+                    let waited = state.start_time.elapsed()
+                        .ok().map_or(true, |e| e >= Duration::from_secs(5));
+                    if album_ok || waited {
+                        self.scrobble_pending = true;
+                        let cfg = self.scrobbling_config.clone();
+                        let s = state.clone();
+                        tokio::spawn(async move {
+                            crate::app::scrobbler::submit_scrobble(&cfg, &s).await;
+                        });
+                        if let Some(s) = self.scrobble_state.as_mut() {
+                            s.scrobbled = true;
+                        }
                     }
                 }
             }
