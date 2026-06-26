@@ -1601,7 +1601,7 @@ async fn cmd_fixture(args: &[String], json: bool) {
             }
         }
         "search-basic" => {
-            let query: SearchQuery<'_, ytmapi_rs::query::search::BasicSearch> = SearchQuery::new("");
+            let query: SearchQuery<'_, ytmapi_rs::query::search::BasicSearch> = SearchQuery::from("");
             match process_json::<SearchQuery<'_, ytmapi_rs::query::search::BasicSearch>, ytmapi_rs::auth::BrowserToken>(source, &query) {
                 Ok(o) => format!("{:#?}", o),
                 Err(e) => { eprintln!("Parse error: {}", e); return; }

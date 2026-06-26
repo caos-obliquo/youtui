@@ -229,7 +229,7 @@ impl AlbumSearchBrowser {
         ]
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> + '_ {
-        let filter_text = self.local_filter_text.clone();
+        let filter_text = &self.local_filter_text;
         self.track_list.get_list_iter().filter(move |ls| {
             let fuzzy_pass = if filter_text.is_empty() {
                 true
@@ -431,7 +431,7 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
             BrowserSongsAction::CopySongUrl => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
                     let url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
-                    let _ = std::process::Command::new("wl-copy").arg(&url).spawn();
+                    crate::app::structures::copy_to_clipboard(&url);
                     info!("Copied URL: {url}");
                 }
                 return (AsyncTask::new_no_op(), None);

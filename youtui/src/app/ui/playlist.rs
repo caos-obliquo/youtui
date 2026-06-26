@@ -346,7 +346,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                         .skip(start).take(end - start + 1)
                         .cloned()
                         .collect();
-                    let _ = std::process::Command::new("wl-copy").arg(lines.join("\n")).spawn();
+                    crate::app::structures::copy_to_clipboard(&lines.join("\n"));
                     info!("Yanked {} lines from visual selection to clipboard and buffer", self.yank_buffer.len());
                     self.visual_mode = false;
                     return (AsyncTask::new_no_op(), None);
@@ -354,7 +354,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 if let Some(song) = self.get_song_from_idx(actual_index) {
                     let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
-                    let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                    crate::app::structures::copy_to_clipboard(&raw_url);
                     info!("Copied URL: {}", raw_url);
                 }
                 (AsyncTask::new_no_op(), None)
@@ -368,7 +368,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                             AlbumOrUploadAlbumID::UploadAlbum(id) => id.get_raw(),
                         };
                         let raw_url = format!("https://music.youtube.com/browse/{}", raw);
-                        let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                        crate::app::structures::copy_to_clipboard(&raw_url);
                         info!("Copied album URL: {}", raw_url);
                     }
                 }

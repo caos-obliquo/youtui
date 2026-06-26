@@ -350,14 +350,6 @@ pub fn save_cookie(cookie: &str) {
     }
 }
 
-/// Delete expired cookie file.
-#[allow(dead_code)]
-pub fn clear_cookie() {
-    if let Some(path) = cookie_file_path() {
-        let _ = std::fs::remove_file(&path);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -118,7 +118,7 @@ impl PlaylistSongsPanel {
         Ok(())
     }
     pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
-        let filter_text = self.local_filter_text.clone();
+        let filter_text = &self.local_filter_text;
         self.list.get_list_iter().filter(move |ls| {
             let fuzzy_pass = if filter_text.is_empty() {
                 true

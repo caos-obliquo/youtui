@@ -778,7 +778,7 @@ impl LibraryBrowser {
     }
 
     pub fn get_tracks_filtered_list_iter(&self) -> impl Iterator<Item = &ListSong> {
-        let filter_text = self.local_filter_text.clone();
+        let filter_text = &self.local_filter_text;
         self.playlist_tracks.iter().filter(move |ls| {
             if filter_text.is_empty() {
                 return true;
@@ -793,7 +793,7 @@ impl LibraryBrowser {
     }
 
     fn get_liked_songs_filtered_iter(&self) -> impl Iterator<Item = &ListSong> {
-        let ft = self.local_filter_text.clone();
+        let ft = &self.local_filter_text;
         self.song_list.get_list_iter().filter(move |ls| {
             if ft.is_empty() { return true; }
             let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
@@ -1375,7 +1375,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
                         let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
-                        let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                        crate::app::structures::copy_to_clipboard(&raw_url);
                         info!("Copied URL: {raw_url}");
                     }
                     return (AsyncTask::new_no_op(), None);
@@ -1466,12 +1466,12 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     if self.show_playlist_tracks {
                         if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
                             let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
-                            let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                            crate::app::structures::copy_to_clipboard(&raw_url);
                             info!("Copied URL: {raw_url}");
                         }
                     } else if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
                         let raw_url = format!("https://music.youtube.com/playlist?list={}", pl.playlist_id.get_raw().strip_prefix("VL").unwrap_or(pl.playlist_id.get_raw()));
-                        let _ = std::process::Command::new("wl-copy").arg(&raw_url).spawn();
+                        crate::app::structures::copy_to_clipboard(&raw_url);
                         info!("Copied URL: {raw_url}");
                     }
                     return (AsyncTask::new_no_op(), None);

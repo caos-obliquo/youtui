@@ -145,15 +145,6 @@ impl YtMusic<NoAuthToken> {
     }
 }
 impl YtMusic<BrowserToken> {
-    /// Create a new API handle using a BrowserToken.
-    /// Utilises the default TLS option for the enabled features.
-    /// # Panics
-    /// This will panic in some situations - see <https://docs.rs/reqwest/latest/reqwest/struct.Client.html#panics>
-    #[deprecated = "Use generic `from_auth_token` instead"]
-    pub fn from_browser_token(token: BrowserToken) -> YtMusic<BrowserToken> {
-        let client = Client::new().expect("Expected Client build to succeed");
-        YtMusic { client, token }
-    }
     /// Create a new API handle using a real browser authentication cookie saved
     /// to a file on disk.
     /// Utilises the default TLS option for the enabled features.
@@ -186,15 +177,6 @@ impl YtMusic<BrowserToken> {
     }
 }
 impl YtMusic<OAuthToken> {
-    /// Create a new API handle using an OAuthToken.
-    /// Utilises the default TLS option for the enabled features.
-    /// # Panics
-    /// This will panic in some situations - see <https://docs.rs/reqwest/latest/reqwest/struct.Client.html#panics>
-    #[deprecated = "Use generic `from_auth_token` instead"]
-    pub fn from_oauth_token(token: OAuthToken) -> YtMusic<OAuthToken> {
-        let client = Client::new().expect("Expected Client build to succeed");
-        YtMusic { client, token }
-    }
     /// Refresh the internal oauth token, and return a clone of it (for user to
     /// store locally, e.g).
     pub async fn refresh_token(&mut self) -> Result<OAuthToken> {
@@ -227,8 +209,7 @@ impl<A: AuthToken> YtMusic<A> {
     ///
     /// # async {
     /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE").await?;
-    /// let query = ytmapi_rs::query::SearchQuery::new("Beatles")
-    ///     .with_filter(ytmapi_rs::query::search::ArtistsFilter);
+    /// let query = ytmapi_rs::query::SearchQuery::new_filtered("Beatles", ytmapi_rs::query::search::ArtistsFilter);
     /// let result = yt.raw_json_query(query).await?;
     /// assert!(result.len() != 0);
     /// # Ok::<(), ytmapi_rs::Error>(())
@@ -249,8 +230,7 @@ impl<A: AuthToken> YtMusic<A> {
     ///
     /// # async {
     /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE").await?;
-    /// let query = ytmapi_rs::query::SearchQuery::new("Beatles")
-    ///     .with_filter(ytmapi_rs::query::search::ArtistsFilter);
+    /// let query = ytmapi_rs::query::SearchQuery::new_filtered("Beatles", ytmapi_rs::query::search::ArtistsFilter);
     /// let result = yt.json_query(query).await?;
     /// println!("{:?}", result);
     /// # Ok::<(), ytmapi_rs::Error>(())
@@ -277,8 +257,7 @@ impl<A: AuthToken> YtMusic<A> {
     /// ```no_run
     /// # async {
     /// let yt = ytmapi_rs::YtMusic::from_cookie("").await?;
-    /// let query = ytmapi_rs::query::SearchQuery::new("Beatles")
-    ///     .with_filter(ytmapi_rs::query::search::ArtistsFilter);
+    /// let query = ytmapi_rs::query::SearchQuery::new_filtered("Beatles", ytmapi_rs::query::search::ArtistsFilter);
     /// let result = yt.query(query).await?;
     /// assert_eq!(result[0].artist, "The Beatles");
     /// # Ok::<(), ytmapi_rs::Error>(())
@@ -425,8 +404,7 @@ pub async fn generate_browser_token<S: AsRef<str>>(
 /// # Usage
 /// ```
 /// let json = r#"{ "test" : true }"#.to_string();
-/// let query = ytmapi_rs::query::SearchQuery::new("Beatles")
-///     .with_filter(ytmapi_rs::query::search::ArtistsFilter);
+/// let query = ytmapi_rs::query::SearchQuery::new_filtered("Beatles", ytmapi_rs::query::search::ArtistsFilter);
 /// let result = ytmapi_rs::process_json::<_, ytmapi_rs::auth::BrowserToken>(json, query);
 /// assert!(result.is_err());
 /// ```

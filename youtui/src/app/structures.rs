@@ -780,6 +780,24 @@ pub fn fuzzy_match(query: &str, target: &str) -> Option<u64> {
     Some(score + start_bonus)
 }
 
+/// Check if text contains Japanese characters (hiragana, katakana, or kanji)
+pub fn has_japanese(text: &str) -> bool {
+    text.chars().any(|c| {
+        matches!(c,
+            '\u{3040}'..='\u{309F}' | // Hiragana
+            '\u{30A0}'..='\u{30FF}' | // Katakana
+            '\u{3400}'..='\u{4DBF}' | // CJK Extension A
+            '\u{4E00}'..='\u{9FFF}'   // CJK Unified Ideographs
+        )
+    })
+}
+
+/// Copy text to system clipboard using `wl-copy`.
+/// Wayland-only.
+pub fn copy_to_clipboard(text: &str) {
+    let _ = std::process::Command::new("wl-copy").arg(text).spawn();
+}
+
 #[cfg(test)]
 mod normalize_tests {
     use super::normalize_artist_name;

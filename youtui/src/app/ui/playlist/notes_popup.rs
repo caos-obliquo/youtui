@@ -110,7 +110,7 @@ impl NotesPopup {
                 self.editor.handle_key(event.code, false, false);
                 let text = self.editor.get_clipboard();
                 if !text.is_empty() {
-                    let _ = std::process::Command::new("wl-copy").arg(&text).spawn();
+                    crate::app::structures::copy_to_clipboard(&text);
                 }
                 (AsyncTask::new_no_op(), None)
             }
@@ -118,7 +118,7 @@ impl NotesPopup {
                 self.editor.handle_key(event.code, false, false);
                 let text = self.editor.get_clipboard();
                 if !text.is_empty() {
-                    let _ = std::process::Command::new("wl-copy").arg(&text).spawn();
+                    crate::app::structures::copy_to_clipboard(&text);
                 }
                 (AsyncTask::new_no_op(), None)
             }

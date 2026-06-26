@@ -1,4 +1,5 @@
 use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffect, YoutuiEffect};
+use crate::app::structures::has_japanese;
 use crate::app::ui::AppCallback;
 use crate::drawutils::VISUAL_MODE_COLOUR;
 use async_callback_manager::AsyncTask;
@@ -481,7 +482,7 @@ impl LyricsPopup {
                             })
                             .collect();
                         let text = lines.join("\n");
-                        let _ = std::process::Command::new("wl-copy").arg(&text).spawn();
+                        crate::app::structures::copy_to_clipboard(&text);
                     } else {
                         // Yank from lyrics
                         let (start, end) = if self.visual_start <= self.visual_end {
@@ -491,7 +492,7 @@ impl LyricsPopup {
                         };
                         let lines = self.lines[start..=end.min(self.lines.len().saturating_sub(1))]
                             .join("\n");
-                        let _ = std::process::Command::new("wl-copy").arg(&lines).spawn();
+                        crate::app::structures::copy_to_clipboard(&lines);
                     }
                     self.visual_mode = false;
                     return (AsyncTask::new_no_op(), None);
@@ -790,7 +791,7 @@ impl LyricsPopup {
                 if self.focus == Focus::Annotations {
                     if let Some(ann) = self.annotations.get(self.ann_scroll_offset) {
                         let text = format!("{} — {}", ann.fragment, ann.explanation);
-                        let _ = std::process::Command::new("wl-copy").arg(&text).spawn();
+                        crate::app::structures::copy_to_clipboard(&text);
                         tracing::info!(fragment = %ann.fragment, "Annotation copied to clipboard");
                         return (AsyncTask::new_no_op(), None);
                     }
@@ -1120,18 +1121,6 @@ impl LyricsPopup {
             .split(r);
         vert[1]
     }
-}
-
-/// Check if text contains Japanese characters (hiragana, katakana, or kanji)
-pub fn has_japanese(text: &str) -> bool {
-    text.chars().any(|c| {
-        matches!(c,
-            '\u{3040}'..='\u{309F}' | // Hiragana
-            '\u{30A0}'..='\u{30FF}' | // Katakana
-            '\u{3400}'..='\u{4DBF}' | // CJK Extension A
-            '\u{4E00}'..='\u{9FFF}'   // CJK Unified Ideographs
-        )
-    })
 }
 
 /// Convert Japanese text to romaji using lindera (kanji→kana) + ib-romaji (kana→latin)

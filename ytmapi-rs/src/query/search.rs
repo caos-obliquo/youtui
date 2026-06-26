@@ -101,18 +101,6 @@ impl<'a, Q: Into<Cow<'a, str>>, S: SearchType> From<Q> for SearchQuery<'a, S> {
     }
 }
 
-// By default, uses SpellingMode exactmatch.
-impl<'a> SearchQuery<'a, BasicSearch> {
-    #[deprecated = "To be removed in future release - see issue #353"]
-    pub fn new<Q: Into<Cow<'a, str>>>(q: Q) -> SearchQuery<'a, BasicSearch> {
-        SearchQuery {
-            query: q.into(),
-            spelling_mode: SpellingMode::default(),
-            search_type: BasicSearch {},
-        }
-    }
-}
-
 impl<'a, S: SearchType> SearchQuery<'a, S> {
     /// Set spelling mode.
     pub fn with_spelling_mode(mut self, spelling_mode: SpellingMode) -> Self {
@@ -126,38 +114,7 @@ impl<'a, S: SearchType> SearchQuery<'a, S> {
     }
 }
 
-impl<'a> SearchQuery<'a, BasicSearch> {
-    /// Apply a filter to the search. May change type of results returned.
-    #[deprecated = "To be removed in future release - see issue #353"]
-    pub fn with_filter<F: FilteredSearchType>(
-        self,
-        filter: F,
-    ) -> SearchQuery<'a, FilteredSearch<F>> {
-        SearchQuery {
-            query: self.query,
-            spelling_mode: self.spelling_mode,
-            search_type: FilteredSearch { filter },
-        }
-    }
-    /// Search only uploads.
-    #[deprecated = "To be removed in future release - see issue #353"]
-    pub fn uploads(self) -> SearchQuery<'a, UploadSearch> {
-        SearchQuery {
-            query: self.query,
-            spelling_mode: self.spelling_mode,
-            search_type: UploadSearch,
-        }
-    }
-    /// Search only library.
-    #[deprecated = "To be removed in future release - see issue #353"]
-    pub fn library(self) -> SearchQuery<'a, LibrarySearch> {
-        SearchQuery {
-            query: self.query,
-            spelling_mode: self.spelling_mode,
-            search_type: LibrarySearch,
-        }
-    }
-}
+
 
 impl<'a, F: FilteredSearchType> SearchQuery<'a, FilteredSearch<F>> {
     pub fn new_filtered<Q: Into<Cow<'a, str>>>(
@@ -179,15 +136,6 @@ impl<'a, F: FilteredSearchType> SearchQuery<'a, FilteredSearch<F>> {
             query: self.query,
             spelling_mode: self.spelling_mode,
             search_type: FilteredSearch { filter },
-        }
-    }
-    /// Remove filter from the query.
-    #[deprecated = "To be removed in future release - see issue #353"]
-    pub fn unfiltered(self) -> SearchQuery<'a, BasicSearch> {
-        SearchQuery {
-            query: self.query,
-            spelling_mode: self.spelling_mode,
-            search_type: BasicSearch,
         }
     }
 }
