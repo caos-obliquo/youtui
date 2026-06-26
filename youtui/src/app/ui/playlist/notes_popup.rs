@@ -14,7 +14,6 @@ pub struct NotesPopup {
     pub notes_path: std::path::PathBuf,
     command_mode: bool,
     command_editor: ViTextEditor,
-    scroll_offset: usize,
 }
 
 impl_youtui_component!(NotesPopup);
@@ -29,7 +28,6 @@ impl NotesPopup {
             notes_path,
             command_mode: false,
             command_editor: ViTextEditor::new(),
-            scroll_offset: 0,
         }
     }
 
@@ -141,7 +139,7 @@ impl NotesPopup {
         let inner = block.inner(popup_area);
         frame.render_widget(block, popup_area);
 
-        let [text_area, footer_area] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
+        let [text_area, footer_area] = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).areas(inner);
 
         if self.command_mode {
             let display = self.editor.render_simple("");
@@ -157,29 +155,35 @@ impl NotesPopup {
                 footer_area,
             );
         } else {
-            let mark = self.editor.cursor_marker();
             let cur_line = self.editor.cursor_line();
             let cur_col = self.editor.cursor_col();
-            let visual_range = self.editor.visual_line_range();
-            let block_range = self.editor.visual_block_range();
             let total_lines = self.editor.get_text().split('\n').count();
-            let visible_lines = text_area.height as usize;
-            if cur_line < self.scroll_offset {
-                self.scroll_offset = cur_line;
-            } else if visible_lines > 0 && cur_line >= self.scroll_offset + visible_lines {
-                self.scroll_offset = cur_line + 1 - visible_lines;
-            }
-            let max_scroll = total_lines.saturating_sub(visible_lines.saturating_sub(1));
-            self.scroll_offset = self.scroll_offset.min(max_scroll);
+            let visible_rows = text_area.height.saturating_sub(1).max(1) as usize;
+
+            // Calculate scroll offset: keep cursor in the middleish of screen
+            let ideal = cur_line.saturating_sub(visible_rows / 2);
+            let scroll_offset = ideal.min(total_lines.saturating_sub(visible_rows));
+
+            // Take visible slice of lines
+            let all_lines: Vec<&str> = self.editor.get_text().split('\n').collect();
+            let visible_slice: &[&str] = if scroll_offset < all_lines.len() {
+                &all_lines[scroll_offset..all_lines.len().min(scroll_offset + visible_rows)]
+            } else {
+                &[]
+            };
 
             let line_num_width = (total_lines.max(1) as f64).log10().floor() as usize + 1;
+            let visual_range = self.editor.visual_line_range();
+            let block_range = self.editor.visual_block_range();
+
             let mut lines: Vec<ratatui::text::Line> = Vec::new();
-            for (i, line_text) in self.editor.get_text().split('\n').enumerate() {
-                let is_cursor = i == cur_line;
-                let line_num = format!("{:>width$} ", i + 1, width = line_num_width);
+            for (display_idx, line_text) in visible_slice.iter().enumerate() {
+                let abs_line = scroll_offset + display_idx;
+                let is_cursor = abs_line == cur_line;
+                let line_num = format!("{:>width$} ", abs_line + 1, width = line_num_width);
+
                 if let Some((top, left, bot, right)) = block_range {
-                    // Visual block mode: highlight column range on lines in range
-                    if i >= top && i <= bot {
+                    if abs_line >= top && abs_line <= bot {
                         let cols = left.min(right);
                         let cole = right.max(left);
                         let before = &line_text[..cols.min(line_text.len())];
@@ -187,65 +191,54 @@ impl NotesPopup {
                         let mid_end = cole.min(line_text.len());
                         let mid = &line_text[mid_start..mid_end];
                         let after = &line_text[mid_end..];
-                        if is_cursor && i == cur_line {
-                            let (c_before, c_after) = line_text.split_at(cur_col.min(line_text.len()));
-                            let c_after_skip = if mark == "\u{2588}" {
-                                c_after.chars().next().map(|c| &c_after[c.len_utf8()..]).unwrap_or(c_after)
-                            } else {
-                                c_after
-                            };
-                            lines.push(ratatui::text::Line::from(vec![
-                                ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
-                                ratatui::text::Span::styled(c_before.to_string(), Style::default().fg(Color::White)),
-                                ratatui::text::Span::styled(mark.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
-                                ratatui::text::Span::styled(c_after_skip.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
-                            ]));
-                        } else {
-                            lines.push(ratatui::text::Line::from(vec![
-                                ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
-                                ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White)),
-                                ratatui::text::Span::styled(mid.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
-                                ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White)),
-                            ]));
-                        }
-                    } else {
                         lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
-                            ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White)),
+                            ratatui::text::Span::styled(line_num, Style::default().fg(Color::DarkGray)),
+                            ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White)),
+                            ratatui::text::Span::styled(mid.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
+                            ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White)),
                         ]));
-                    }
-                } else {
-                    let selected = visual_range.map_or(false, |(s, e)| i >= s && i <= e);
-                    let bg = if selected { Color::Rgb(0x00, 0x5f, 0x5f) } else { ratatui::style::Color::default() };
-                    if is_cursor {
-                        let (before, after) = line_text.split_at(cur_col.min(line_text.len()));
-                        let after_rest = after.chars().next().map(|c| &after[c.len_utf8()..]).unwrap_or(after);
-                        // Show character under cursor with inverted colors (Black on White)
-                        lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
-                            ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White).bg(bg)),
-                            ratatui::text::Span::styled(
-                                after.chars().next().map(|c| c.to_string()).unwrap_or_else(|| " ".to_string()),
-                                Style::default().fg(Color::Black).bg(Color::White),
-                            ),
-                            ratatui::text::Span::styled(after_rest.to_string(), Style::default().fg(Color::White).bg(bg)),
-                        ]));
-                    } else {
-                        lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled(line_num.clone(), Style::default().fg(Color::DarkGray)),
-                            ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White).bg(bg)),
-                        ]));
+                        continue;
                     }
                 }
+
+                let selected = visual_range.map_or(false, |(s, e)| abs_line >= s && abs_line <= e);
+                let bg = if selected { Color::Rgb(0x00, 0x5f, 0x5f) } else { ratatui::style::Color::default() };
+
+                if is_cursor {
+                    let (before, after) = line_text.split_at(cur_col.min(line_text.len()));
+                    let after_rest = after.chars().next().map(|c| &after[c.len_utf8()..]).unwrap_or(after);
+                    // Show character under cursor with inverted colors (Black on White)
+                    lines.push(ratatui::text::Line::from(vec![
+                        ratatui::text::Span::styled(line_num, Style::default().fg(Color::DarkGray)),
+                        ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White).bg(bg)),
+                        ratatui::text::Span::styled(
+                            after.chars().next().map(|c| c.to_string()).unwrap_or_else(|| " ".to_string()),
+                            Style::default().fg(Color::Black).bg(Color::White),
+                        ),
+                        ratatui::text::Span::styled(after_rest.to_string(), Style::default().fg(Color::White).bg(bg)),
+                    ]));
+                } else {
+                    lines.push(ratatui::text::Line::from(vec![
+                        ratatui::text::Span::styled(line_num, Style::default().fg(Color::DarkGray)),
+                        ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White).bg(bg)),
+                    ]));
+                }
             }
+
             frame.render_widget(
-                Paragraph::new(lines).scroll((self.scroll_offset as u16, 0)).wrap(Wrap { trim: false }),
+                Paragraph::new(lines).wrap(Wrap { trim: false }),
                 text_area,
             );
+
+            // Footer: cursor position + key hints
+            let pos_info = format!("Ln {}, Col {}", cur_line + 1, cur_col + 1);
             frame.render_widget(
-                Paragraph::new(":w Save | :wq Save+Quit | :q Quit | Enter URL | i Insert | j/k Navigate")
-                    .style(Style::default().fg(Color::DarkGray))
-                    .alignment(Alignment::Center),
+                Paragraph::new(format!(
+                    "{} | :w Save | :wq Save+Quit | :q Quit | Enter URL | i Insert | j/k Navigate",
+                    pos_info
+                ))
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Left),
                 footer_area,
             );
         }
