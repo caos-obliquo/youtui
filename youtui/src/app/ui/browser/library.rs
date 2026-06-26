@@ -834,7 +834,15 @@ impl LibraryBrowser {
     fn build_liked_songs_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
         let fields = Self::liked_songs_subcolumns_of_vec();
         self.song_list.get_list_iter()
-            .map(|ls| ls.get_fields(fields).to_vec())
+            .enumerate()
+            .map(|(i, ls)| {
+                let mut row = ls.get_fields(fields).to_vec();
+                // Replace TrackNo display with row index (liked songs have no track numbers)
+                if let Some(col) = row.get_mut(0) {
+                    *col = Cow::Owned((i + 1).to_string());
+                }
+                row
+            })
             .collect()
     }
 
