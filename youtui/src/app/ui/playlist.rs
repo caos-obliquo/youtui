@@ -2912,7 +2912,6 @@ impl Playlist {
                     });
                     if let Some(s) = self.scrobble_state.as_mut() {
                         s.scrobbled = true;
-                        self.scrobble_pending = false;
                     }
                 }
             }
