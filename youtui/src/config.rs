@@ -55,6 +55,7 @@ pub struct Config {
     pub auth_type: AuthType,
     pub downloader_type: DownloaderType,
     pub yt_dlp_command: String,
+    pub cookie_browser: String,
     pub keybinds: YoutuiKeymap,
     pub scrobbling: ScrobblingConfig,
 }
@@ -87,12 +88,17 @@ fn default_yt_dlp_command() -> String {
     String::from("yt-dlp")
 }
 
+fn default_cookie_browser() -> String {
+    String::from("chromium")
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
             auth_type: Default::default(),
             downloader_type: Default::default(),
             yt_dlp_command: default_yt_dlp_command(),
+            cookie_browser: default_cookie_browser(),
             keybinds: Default::default(),
             scrobbling: Default::default(),
         }
@@ -108,6 +114,8 @@ pub struct ConfigIR {
     pub downloader_type: DownloaderType,
     #[serde(default = "default_yt_dlp_command")]
     pub yt_dlp_command: String,
+    #[serde(default = "default_cookie_browser")]
+    pub cookie_browser: String,
     pub keybinds: YoutuiKeymapIR,
     pub mode_names: YoutuiModeNamesIR,
     pub scrobbling: ScrobblingConfig,
@@ -122,12 +130,14 @@ impl TryFrom<ConfigIR> for Config {
             keybinds,
             mode_names,
             yt_dlp_command,
+            cookie_browser,
             scrobbling,
         } = value;
         Ok(Config {
             auth_type,
             downloader_type,
             keybinds: YoutuiKeymap::try_from_stringy(keybinds, mode_names)?,
+            cookie_browser,
             scrobbling,
             yt_dlp_command,
         })

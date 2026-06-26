@@ -25,6 +25,11 @@ mod youtube_downloader;
 #[cfg(test)]
 mod tests;
 
+/// Windows is not supported. yt-dlp, wl-copy/xclip/xsel/pbcopy, ffmpeg,
+/// and ALSA are required deps not available on Windows.
+#[cfg(target_os = "windows")]
+compile_error!("youtui does not support Windows. Linux (Wayland/X11) and macOS are the only supported platforms.");
+
 pub const POTOKEN_FILENAME: &str = "po_token.txt";
 pub const COOKIE_FILENAME: &str = "cookie.txt";
 pub const OAUTH_FILENAME: &str = "oauth.json";
@@ -485,7 +490,7 @@ async fn try_main() -> anyhow::Result<()> {
         let child = std::process::Command::new("yt-dlp")
             .args([
                 "--cookies-from-browser",
-                "chromium",
+                &config.cookie_browser,
                 "--cookies",
                 &tmp,
                 "--skip-download",
