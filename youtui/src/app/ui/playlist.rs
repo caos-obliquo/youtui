@@ -107,6 +107,8 @@ pub struct Playlist {
     category_filter: Option<&'static str>,
     romaji_mode: bool,
     pub scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
+    /// Guard: prevents duplicate scrobble submissions from overlapping progress updates
+    scrobble_pending: bool,
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
@@ -984,6 +986,7 @@ impl Playlist {
             romaji_mode: false,
             search_cur: 0,
             scrobble_state: None,
+            scrobble_pending: false,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
             romaji_originals: HashMap::new(),
             album_tracks: None,
@@ -1468,6 +1471,7 @@ impl Playlist {
             self.play_status = PlayState::Playing(id);
             self.queue_status = QueueState::NotQueued;
             if self.scrobbling_config.enabled {
+                self.scrobble_pending = false;
                 if let Some(old) = self.scrobble_state.take() {
                     if old.should_scrobble() {
                         let cfg = self.scrobbling_config.clone();
@@ -2299,6 +2303,7 @@ impl Playlist {
 
     pub fn stop(&mut self) -> ComponentEffect<Self> {
         if self.scrobbling_config.enabled {
+            self.scrobble_pending = false;
             if let Some(old) = self.scrobble_state.take() {
                 if old.should_scrobble() {
                     let cfg = self.scrobbling_config.clone();
@@ -2918,9 +2923,10 @@ impl Playlist {
         self.cur_played_dur = Some(capped);
 
         // Persistent scrobble: check on every progress update regardless of context
-        if self.scrobbling_config.enabled {
+        if self.scrobbling_config.enabled && !self.scrobble_pending {
             if let Some(ref state) = self.scrobble_state.clone() {
                 if state.should_scrobble() {
+                    self.scrobble_pending = true;
                     let cfg = self.scrobbling_config.clone();
                     let s = state.clone();
                     tokio::spawn(async move {
@@ -2928,6 +2934,7 @@ impl Playlist {
                     });
                     if let Some(s) = self.scrobble_state.as_mut() {
                         s.scrobbled = true;
+                        self.scrobble_pending = false;
                     }
                 }
             }
