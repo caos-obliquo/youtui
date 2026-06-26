@@ -1,5 +1,5 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{info, warn};
+use tracing::{error, info};
 
 #[derive(Debug, Clone)]
 pub struct ScrobbleState {
@@ -43,6 +43,8 @@ pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &S
     }
     params.push(("duration".into(), state.duration.as_secs().to_string()));
 
+    // Last.fm requires params sorted alphabetically before signing
+    params.sort_by(|a, b| a.0.cmp(&b.0));
     let sig_string: String = params.iter()
         .map(|(k, v)| format!("{}{}", k, v))
         .collect::<Vec<_>>()
@@ -61,9 +63,9 @@ pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &S
             if text.contains("<lfm status=\"ok\">") {
                 info!("Scrobbled: {} - {} (album: {:?})", state.artist, state.track, state.album);
             } else {
-                warn!("Scrobble failed: {}", text);
+                error!("Scrobble failed: {} (artist={}, track={})", text, state.artist, state.track);
             }
         }
-        Err(e) => warn!("Scrobble HTTP error: {}", e),
+        Err(e) => error!("Scrobble HTTP error: {} (artist={}, track={})", e, state.artist, state.track),
     }
 }

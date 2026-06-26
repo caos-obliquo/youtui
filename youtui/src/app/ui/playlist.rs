@@ -2972,12 +2972,10 @@ impl Playlist {
                                         None,
                                         Duration::from_secs_f64(track.duration_secs),
                                     );
-                                    if state.should_scrobble() {
-                                        let cfg2 = cfg.clone();
-                                        tokio::spawn(async move {
-                                            crate::app::scrobbler::submit_scrobble(&cfg2, &state).await;
-                                        });
-                                    }
+                                    let cfg2 = cfg.clone();
+                                    tokio::spawn(async move {
+                                        crate::app::scrobbler::submit_scrobble(&cfg2, &state).await;
+                                    });
                                     info!("Album track scrobbled: #{} {} ({})", scrobbled_idx + 1, track.title, track.duration_secs);
                                 }
                             }
