@@ -1714,44 +1714,36 @@ impl Playlist {
         self.volume.0 = new_vol.clamp(0, 100);
     }
 
+    /// Extract thumbnails from a song list and spawn download tasks.
+    /// Sets `song.album_art = AlbumArtState::None` for songs without thumbnails.
+    fn collect_thumbnail_tasks(song_list: &mut [ListSong]) -> ComponentEffect<Self> {
+        let albums = song_list.iter_mut().filter_map(|song| {
+            let thumb_url = song.thumbnails.as_ref().iter()
+                .max_by_key(|t| t.height * t.width)
+                .map(|t| t.url.clone());
+            let Some(thumb_url) = thumb_url else {
+                song.album_art = AlbumArtState::None;
+                return None;
+            };
+            let thumb_url = upgrade_thumbnail_url(&thumb_url);
+            let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
+            Some((thumbnail_id, thumb_url))
+        }).collect::<HashMap<SongThumbnailID, String>>();
+        albums.into_iter().map(|(thumbnail_id, thumbnail_url)| {
+            AsyncTask::new_future_try(
+                GetSongThumbnail { thumbnail_url, thumbnail_id: thumbnail_id.clone() },
+                HandleGetSongThumbnailOk,
+                HandleGetSongThumbnailError(thumbnail_id),
+                None,
+            )
+        }).collect()
+    }
+
     pub fn push_song_list(
         &mut self,
         mut song_list: Vec<ListSong>,
     ) -> (ListSongID, ComponentEffect<Self>) {
-        let get_largest_thumbnails_url = |thumbs: &Vec<Thumbnail>| {
-            thumbs
-                .iter()
-                .max_by_key(|thumbs| thumbs.height * thumbs.width)
-                .map(|thumb| thumb.url.clone())
-        };
-
-        let albums = song_list
-            .iter_mut()
-            .filter_map(|song| {
-                let Some(thumb_url) = get_largest_thumbnails_url(song.thumbnails.as_ref()) else {
-                    song.album_art = AlbumArtState::None;
-                    return None;
-                };
-                let thumb_url = upgrade_thumbnail_url(&thumb_url);
-                let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
-                Some((thumbnail_id, thumb_url))
-            })
-            .collect::<HashMap<SongThumbnailID, String>>();
-
-        let effect: ComponentEffect<Self> = albums
-            .into_iter()
-            .map(|(thumbnail_id, thumbnail_url)| {
-                AsyncTask::new_future_try(
-                    GetSongThumbnail {
-                        thumbnail_url,
-                        thumbnail_id: thumbnail_id.clone(),
-                    },
-                    HandleGetSongThumbnailOk,
-                    HandleGetSongThumbnailError(thumbnail_id),
-                    None,
-                )
-            })
-            .collect();
+        let effect = Self::collect_thumbnail_tasks(&mut song_list);
 
         let was_playing = self.get_cur_playing_id();
         let first_id = self.list.push_song_list(song_list);
@@ -1800,26 +1792,8 @@ impl Playlist {
         &mut self,
         mut song_list: Vec<ListSong>,
     ) -> (ListSongID, ComponentEffect<Self>) {
-        let get_largest_thumbnails_url = |thumbs: &Vec<Thumbnail>| {
-            thumbs.iter().max_by_key(|thumbs| thumbs.height * thumbs.width).map(|thumb| thumb.url.clone())
-        };
-        let albums = song_list.iter_mut().filter_map(|song| {
-            let Some(thumb_url) = get_largest_thumbnails_url(song.thumbnails.as_ref()) else {
-                song.album_art = AlbumArtState::None;
-                return None;
-            };
-            let thumb_url = upgrade_thumbnail_url(&thumb_url);
-            let thumbnail_id = SongThumbnailID::from(song as &ListSong).into_owned();
-            Some((thumbnail_id, thumb_url))
-        }).collect::<HashMap<SongThumbnailID, String>>();
-        let effect: ComponentEffect<Self> = albums.into_iter().map(|(thumbnail_id, thumbnail_url)| {
-            AsyncTask::new_future_try(
-                GetSongThumbnail { thumbnail_url, thumbnail_id: thumbnail_id.clone() },
-                HandleGetSongThumbnailOk,
-                HandleGetSongThumbnailError(thumbnail_id),
-                None,
-            )
-        }).collect();
+        let effect = Self::collect_thumbnail_tasks(&mut song_list);
+
         let insert_pos = self.get_cur_playing_index().map(|i| i + 1).unwrap_or(0);
         let first_id = self.list.insert_song_list_at(song_list, insert_pos);
         if self.shuffle_enabled {
