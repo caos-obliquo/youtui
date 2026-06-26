@@ -2021,4 +2021,103 @@ mod tests {
         lib.apply_action(BrowserLibraryAction::CycleSortOrder);
         assert_eq!(lib.sort_order, GetLibrarySortOrder::Default);
     }
+
+    #[test]
+    fn get_filtered_items_playlists_yields_lazy_iterator() {
+        let mut lib = LibraryBrowser::new();
+        lib.category = LibraryCategory::Playlists;
+        lib.playlist_data = vec![
+            LibraryPlaylist::new(
+                PlaylistID::from_raw("PL1"),
+                "My Favorites".into(),
+                vec![],
+                "42 songs".into(),
+                None,
+                "Author1".into(),
+            ),
+            LibraryPlaylist::new(
+                PlaylistID::from_raw("PL2"),
+                "Chill Vibes".into(),
+                vec![],
+                "15 songs".into(),
+                None,
+                "Author2".into(),
+            ),
+        ];
+
+        let items: Vec<Vec<Cow<'_, str>>> = lib.get_filtered_items()
+            .map(|row| row.collect())
+            .collect();
+
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0][1], "My Favorites");
+        assert_eq!(items[0][2], "42 songs");
+        assert_eq!(items[1][1], "Chill Vibes");
+        assert_eq!(items[1][2], "15 songs");
+    }
+
+    #[test]
+    fn get_filtered_items_artists_yields_lazy_iterator() {
+        let mut lib = LibraryBrowser::new();
+        lib.category = LibraryCategory::Artists;
+        // Use serde_json to construct non-exhaustive struct from external crate
+        let radiohead: LibraryArtist = serde_json::from_str(
+            r#"{"channel_id":"CH1","artist":"Radiohead","byline":"12 songs"}"#
+        ).unwrap();
+        let nirvana: LibraryArtist = serde_json::from_str(
+            r#"{"channel_id":"CH2","artist":"Nirvana","byline":"8 songs"}"#
+        ).unwrap();
+        lib.artist_data = vec![radiohead, nirvana];
+
+        let items: Vec<Vec<Cow<'_, str>>> = lib.get_filtered_items()
+            .map(|row| row.collect())
+            .collect();
+
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0][1], "Radiohead");
+        assert_eq!(items[1][1], "Nirvana");
+    }
+
+    #[test]
+    fn get_filtered_items_empty_default() {
+        let lib = LibraryBrowser::new();
+        assert_eq!(lib.playlist_data.len(), 0);
+        // Default category is LikedSongs, which has no songs
+        let items: Vec<Vec<Cow<'_, str>>> = lib.get_filtered_items()
+            .map(|row| row.collect())
+            .collect();
+        assert_eq!(items.len(), 0);
+    }
+
+    #[test]
+    fn get_filtered_items_playlists_respects_local_filter() {
+        let mut lib = LibraryBrowser::new();
+        lib.category = LibraryCategory::Playlists;
+        lib.playlist_data = vec![
+            LibraryPlaylist::new(
+                PlaylistID::from_raw("PL1"),
+                "My Favorites".into(),
+                vec![],
+                "42 songs".into(),
+                None,
+                "Author1".into(),
+            ),
+            LibraryPlaylist::new(
+                PlaylistID::from_raw("PL2"),
+                "Chill Vibes".into(),
+                vec![],
+                "15 songs".into(),
+                None,
+                "Author2".into(),
+            ),
+        ];
+        lib.local_filter_text = "chill".into();
+
+        let items: Vec<Vec<Cow<'_, str>>> = lib.get_filtered_items()
+            .map(|row| row.collect())
+            .collect();
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0][1], "Chill Vibes");
+    }
 }

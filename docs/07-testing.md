@@ -4,7 +4,7 @@
 
 | Suite | Command | Count | Notes |
 |-------|---------|-------|-------|
-| Main app | `cargo test --release -p youtui --bin youtui` | 141 pass + 4 ignore | Unit + integration |
+| Main app | `cargo test --release -p youtui --bin youtui` | 151 pass + 4 ignore | Unit + integration |
 | ViTextEditor | `cargo test --release -p vi-text-editor` | 65 | Unit + proptests |
 | ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 85 | All pass offline |
 | ytmapi-rs (full) | `cargo test --release -p ytmapi-rs` | 28 pass / 52 fail | Needs browser auth |
@@ -59,6 +59,17 @@ paste_does_not_corrupt        // Paste at any position → invariants pass
 ```
 
 Uses `proptest` crate with `QuickCheck`-style randomized input generation.
+
+## PR #3 Test Coverage (2026-06-26)
+
+15 new unit tests for the perf batch (ea2fc1c):
+
+| Area | Tests | File | What it tests |
+|------|-------|------|---------------|
+| PlayDebouncer | 5 | `app.rs` | allow/deny/cooldown/reset/multiple rapid events |
+| Protocol cache | 3 | `app/ui.rs` | invalidate_protocol_cache(), None/Some invalidation |
+| Download cancel | 3 | `app/ui/playlist.rs` | cancel_all_downloads() with active/cancelled/mixed tokens |
+| Library lazy iterator | 4 | `app/ui/browser/library.rs` | get_filtered_items() returns lazy iterators for all 4 categories + tracks view |
 
 ## Test Structure
 

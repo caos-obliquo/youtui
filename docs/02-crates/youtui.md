@@ -7,7 +7,7 @@
 ```
 youtui/src/
 ├── main.rs                 — Entry point, CLI parsing, Youtui::run()
-├── app.rs                  — Youtui struct, AppCallback enum, event loop
+├── app.rs                  — Youtui struct, PlayDebouncer, AppCallback enum, event loop
 ├── appevent.rs             — EventHandler, Crossterm event stream
 ├── core.rs                 — Temp file management, file cleanup
 ├── drawutils.rs            — Rect math, alignment helpers
@@ -63,12 +63,12 @@ youtui/src/
     │   └── song_thumbnail_downloader.rs — Album art fetch
     │
     └── ui/
-        ├── mod.rs          — YoutuiWindow, HelpMenu, context routing
+├── mod.rs              — YoutuiWindow (cached_album_protocol, invalidate_protocol_cache), HelpMenu, context routing
         ├── action.rs       — AppAction enum, ALL action variants
         ├── draw.rs         — Main draw function: popups, help, footer
         ├── draw_media_controls.rs — Media progress bar
         ├── header.rs       — Top bar: mode, title, controls
-        ├── footer.rs       — Bottom bar: keybinding hints
+        ├── footer.rs       — Bottom bar: keybinding hints, album art protocol cache
         ├── logger.rs       — Logs view (tui-logger)
         │
         ├── browser/
