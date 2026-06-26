@@ -156,7 +156,7 @@
 
 1 warning (pre-existing ytmapi-cli deprecation), 0 failures across workspace.
 
-## 2026-06-26 — Scrobbler Integration + Suckless Refactoring + PR #3 Perf
+## Completed 2026-06-26 — Scrobbler + Suckless + PR #3 Perf
 
 ### Scrobbler Fixes (fix/scrobbler-signature branch)
 | # | Item | Status | Files |
@@ -191,6 +191,17 @@
 | 90 | **Help menu single-pass**: collect to [String; 3] once, reuse | `draw.rs` |
 | 91 | **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy (4) | 4 files |
 | 92 | **invalidate_protocol_cache()** method on YoutuiWindow | `ui.rs` |
+
+### PR #3 Test Coverage (perf/pr3-test-coverage branch)
+| # | Feature | Files |
+|---|---------|-------|
+| 85 | **Enter-spam guard**: PlayDebouncer struct, 300ms cooldown | `app.rs` |
+| 86 | **Stale download cancel**: cancel_all_downloads() calls .cancel() on tokens | `app/ui/playlist.rs` |
+| 87 | **Library lazy iterator**: Box<dyn Iterator> instead of eager .collect() | `app/ui/browser/library.rs` |
+| 88 | **Footer protocol cache**: cached_album_protocol skips re-encode on same art | `app/ui.rs`, `app/ui/footer.rs` |
+| 89 | **Help menu single-pass**: collect to [String; 3] once, reuse | `app/ui/draw.rs` |
+| 90 | **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy iterator (4) | 4 files |
+| 91 | **invalidate_protocol_cache()** method on YoutuiWindow | `app/ui.rs` |
 
 ## Medium Term
 

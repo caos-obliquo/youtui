@@ -4,7 +4,8 @@
 
 | Suite | Command | Count | Notes |
 |-------|---------|-------|-------|
-| Main app | `cargo test --release -p youtui --bin youtui` | 151 pass + 4 ignore | Unit + integration |
+| `youtui` | Binary | `cargo test --release -p youtui --bin youtui` | 156 | 136 unit + 15 integ + 3 tokio |
+| Main app | `cargo test --release -p youtui --bin youtui` | 156 pass + 4 ignore | Unit + integration |
 | ViTextEditor | `cargo test --release -p vi-text-editor` | 65 | Unit + proptests |
 | ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 85 | All pass offline |
 | ytmapi-rs (full) | `cargo test --release -p ytmapi-rs` | 28 pass / 52 fail | Needs browser auth |

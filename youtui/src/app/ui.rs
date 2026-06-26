@@ -1685,21 +1685,21 @@ mod tests {
     use super::{extract_playlist_id, extract_video_id, YoutuiWindow};
     use crate::config::Config;
 
-    #[test]
-    fn invalidate_protocol_cache_is_none_by_default() {
+    #[tokio::test]
+    async fn invalidate_protocol_cache_is_none_by_default() {
         let (window, _) = YoutuiWindow::new(Config::default(), None, None);
         assert!(window.cached_album_protocol.is_none());
     }
 
-    #[test]
-    fn invalidate_protocol_cache_sets_none() {
+    #[tokio::test]
+    async fn invalidate_protocol_cache_sets_none() {
         let (mut window, _) = YoutuiWindow::new(Config::default(), None, None);
         window.invalidate_protocol_cache();
         assert!(window.cached_album_protocol.is_none());
     }
 
-    #[test]
-    fn invalidate_protocol_cache_idempotent() {
+    #[tokio::test]
+    async fn invalidate_protocol_cache_idempotent() {
         let (mut window, _) = YoutuiWindow::new(Config::default(), None, None);
         window.invalidate_protocol_cache();
         window.invalidate_protocol_cache();
