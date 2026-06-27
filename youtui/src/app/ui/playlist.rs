@@ -1469,6 +1469,13 @@ impl Playlist {
         }
         self.drop_unscoped_from_id(id);
 
+        // Clear stale album split state when playing a non-split track.
+        // Prevents boundary scrobbler from leaking split track
+        // names from previous album into current song.
+        if self.get_song_from_id(id).map_or(true, |s| s.track_no.is_none()) {
+            self.album_tracks = None;
+        }
+
         let mut effect = self.download_upcoming_from_id(id);
 
         self.cur_played_dur = None;
@@ -1589,6 +1596,11 @@ impl Playlist {
 
     pub fn autoplay_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
         self.drop_unscoped_from_id(id);
+
+        // Clear stale album split state when autoplaying a non-split track.
+        if self.get_song_from_id(id).map_or(true, |s| s.track_no.is_none()) {
+            self.album_tracks = None;
+        }
 
         let mut effect = self.download_upcoming_from_id(id);
 
