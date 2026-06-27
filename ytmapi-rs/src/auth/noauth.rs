@@ -16,6 +16,7 @@ pub struct NoAuthToken {
 impl NoAuthToken {
     pub async fn new(client: &Client) -> Result<Self> {
         let initial_headers = [
+            // TODO: Confirm if parsing for expired user agent also relevant here.
             ("User-Agent", USER_AGENT.into()),
             ("X-Origin", YTM_URL.into()),
             ("Content-Type", "application/json".into()),
@@ -56,8 +57,10 @@ impl AuthToken for NoAuthToken {
     ) -> Result<crate::parse::ProcessedResult<Q>> {
         let processed = ProcessedResult::try_from(raw)?;
         // Guard against error codes in json response.
+        // TODO: Add a test for this
         if let Some(error) = processed.get_json().pointer("/error") {
             let Some(code) = error.pointer("/code").and_then(|v| v.as_u64()) else {
+                // TODO: Better error.
                 return Err(Error::response("API reported an error but no code"));
             };
             let message = error
@@ -71,6 +74,7 @@ impl AuthToken for NoAuthToken {
     }
     fn headers(&self) -> Result<impl IntoIterator<Item = (&str, Cow<'_, str>)>> {
         Ok([
+            // TODO: Confirm if parsing for expired user agent also relevant here.
             ("User-Agent", USER_AGENT.into()),
             ("X-Origin", YTM_URL.into()),
             ("X-Goog-Visitor-Id", (&self.visitor_id).into()),

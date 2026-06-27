@@ -514,14 +514,13 @@ impl BrowserSongsList {
             explicit,
             video_id,
             thumbnails,
-            year,
-            like_status,
             ..
         } = song;
+        let like_status = LikeStatus::Indifferent;
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
-            year: year.map(std::rc::Rc::new),
+            year: None,
             artists: MaybeRc::Owned(vec![ListSongArtist {
                 name: normalize_artist_name(&artist),
                 id: None,
@@ -565,7 +564,7 @@ impl BrowserSongsList {
     }
     fn add_raw_playlist_item(&mut self, item: PlaylistItem) -> ListSongID {
         let id = self.create_next_id();
-        let (track_no, title, video_id, duration, artists, album, thumbnails, explicit, year, like_status) = match item
+        let (track_no, title, video_id, duration, artists, album, thumbnails, explicit, like_status) = match item
         {
             PlaylistItem::Song(PlaylistSong {
                 video_id,
@@ -576,7 +575,6 @@ impl BrowserSongsList {
                 thumbnails,
                 track_no,
                 explicit,
-                year,
                 like_status,
                 ..
             }) => (
@@ -588,7 +586,6 @@ impl BrowserSongsList {
                 Some(album.into()),
                 thumbnails,
                 Some(explicit),
-                year,
                 like_status,
             ),
             PlaylistItem::Video(PlaylistVideo {
@@ -606,7 +603,6 @@ impl BrowserSongsList {
                 vec![],
                 None,
                 thumbnails,
-                None,
                 None,
                 LikeStatus::Indifferent,
             ),
@@ -632,14 +628,13 @@ impl BrowserSongsList {
                 album.map(Into::into),
                 thumbnails,
                 None,
-                None,
                 LikeStatus::Indifferent,
             ),
         };
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
-            year: year.map(std::rc::Rc::new),
+            year: None,
             artists: MaybeRc::Owned(artists),
             album: album.map(MaybeRc::Owned),
             actual_duration: None,

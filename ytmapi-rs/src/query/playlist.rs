@@ -169,7 +169,7 @@ impl<A: AuthToken> Query<A> for GetPlaylistTracksQuery<'_> {
 }
 impl PostQuery for GetPlaylistTracksQuery<'_> {
     fn header(&self) -> serde_json::Map<String, serde_json::Value> {
-        // browseId needs VL prefix for library playlists — keep as-is
+        // TODO: Confirm if processing required to add 'VL' portion of playlistId
         let serde_json::Value::Object(map) = json!({
             "browseId" : self.id.get_raw(),
         }) else {
@@ -193,7 +193,7 @@ impl<A: AuthToken> Query<A> for GetPlaylistDetailsQuery<'_> {
 }
 impl PostQuery for GetPlaylistDetailsQuery<'_> {
     fn header(&self) -> serde_json::Map<String, serde_json::Value> {
-        // browseId needs VL prefix for library playlists — keep as-is
+        // TODO: Confirm if processing required to add 'VL' portion of playlistId
         let serde_json::Value::Object(map) = json!({
             "browseId" : self.id.get_raw(),
         }) else {
@@ -240,6 +240,11 @@ impl PostQuery for RemovePlaylistItemsQuery<'_> {
     fn header(&self) -> serde_json::Map<String, serde_json::Value> {
         let raw = self.id.get_raw();
         let clean_id = raw.strip_prefix("VL").unwrap_or(raw);
+        let serde_json::Value::Object(mut map) = json!({
+            "playlistId": clean_id,
+        }) else {
+            unreachable!()
+        };
         let actions: Vec<serde_json::Value> = self
             .video_items
             .iter()
@@ -251,12 +256,7 @@ impl PostQuery for RemovePlaylistItemsQuery<'_> {
                 })
             })
             .collect();
-        let serde_json::Value::Object(map) = json!({
-            "playlistId": clean_id,
-            "actions": actions,
-        }) else {
-            unreachable!()
-        };
+        map.insert("actions".into(), json!(actions));
         map
     }
     fn path(&self) -> &str {

@@ -1,10 +1,9 @@
-use super::{AuthToken, RawResult, fallback_client_version};
+use super::{AuthToken, RawResult};
 use crate::client::Client;
 use crate::error::{Error, Result};
 use crate::parse::ProcessedResult;
 use crate::utils;
 use crate::utils::constants::{USER_AGENT, YTM_URL};
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -15,7 +14,6 @@ pub struct BrowserToken {
     sapisid: String,
     client_version: String,
     cookies: String,
-    visitor_id: Option<String>,
 }
 
 impl AuthToken for BrowserToken {
@@ -26,8 +24,12 @@ impl AuthToken for BrowserToken {
         raw: RawResult<Q, Self>,
     ) -> Result<crate::parse::ProcessedResult<Q>> {
         let processed = ProcessedResult::try_from(raw)?;
+        // Guard against error codes in json response.
+        // TODO: Check for a response the reflects an expired Headers token
+        // TODO: Add a test for this
         if let Some(error) = processed.get_json().pointer("/error") {
             let Some(code) = error.pointer("/code").and_then(|v| v.as_u64()) else {
+                // TODO: Better error.
                 return Err(Error::response("API reported an error but no code"));
             };
             let message = error
@@ -41,33 +43,46 @@ impl AuthToken for BrowserToken {
     }
     fn headers(&self) -> Result<impl IntoIterator<Item = (&str, Cow<'_, str>)>> {
         let hash = utils::hash_sapisid(&self.sapisid);
-        let mut headers: Vec<(&str, Cow<'_, str>)> = vec![
-            ("User-Agent", USER_AGENT.into()),
-            ("Content-Type", "application/json".into()),
-            ("X-Goog-Api-Format-Version", "1".into()),
-            ("X-YouTube-Client-Name", "67".into()),
-            ("X-YouTube-Client-Version", self.client_version.as_str().into()),
+        Ok([
             ("X-Origin", YTM_URL.into()),
             ("Origin", YTM_URL.into()),
-            ("Referer", format!("{YTM_URL}/").into()),
+            ("Content-Type", "application/json".into()),
             ("Authorization", format!("SAPISIDHASH {hash}").into()),
             ("Cookie", self.cookies.as_str().into()),
-        ];
-        if let Some(ref vid) = self.visitor_id {
-            headers.push(("X-Goog-Visitor-Id", vid.as_str().into()));
-        }
-        Ok(headers)
+            ("Accept", "*/*".into()),
+            ("Accept-Encoding", "gzip, deflate".into()),
+        ])
     }
 }
 
 impl BrowserToken {
-    pub async fn from_str(cookie_str: &str, _client: &Client) -> Result<Self> {
+    pub async fn from_str(cookie_str: &str, client: &Client) -> Result<Self> {
         let trimmed = cookie_str.trim();
         let cookies = if trimmed.contains('\t') {
             parse_netscape_cookies(trimmed)
         } else {
             trimmed.to_string()
         };
+        let user_agent = USER_AGENT;
+        // TODO: Confirm if parsing for expired user agent also relevant here.
+        let initial_headers = [
+            ("User-Agent", user_agent.into()),
+            ("Cookie", cookies.as_str().into()),
+        ];
+        let response_text = client.get_query(YTM_URL, initial_headers, &()).await?.text;
+        // parse for user agent issues here.
+        if response_text.contains("Sorry, YouTube Music is not optimised for your browser. Check for updates or try Google Chrome.") {
+            return Err(Error::invalid_user_agent(user_agent));
+        };
+        // TODO: Better error.
+        let client_version = response_text
+            .split_once("INNERTUBE_CLIENT_VERSION\":\"")
+            .ok_or(Error::header())?
+            .1
+            .split_once('\"')
+            .ok_or(Error::header())?
+            .0
+            .to_string();
         let sapisid = cookies
             .split_once("SAPISID=")
             .ok_or(Error::header())?
@@ -76,12 +91,10 @@ impl BrowserToken {
             .ok_or(Error::header())?
             .0
             .to_string();
-        let client_version = fallback_client_version(&Utc::now());
         Ok(Self {
             sapisid,
             client_version,
             cookies,
-            visitor_id: None,
         })
     }
     pub async fn from_cookie_file<P>(path: P, client: &Client) -> Result<Self>
