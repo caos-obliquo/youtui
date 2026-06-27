@@ -56,7 +56,7 @@ impl MetadataRegistry {
 
 File: `~/.local/share/youtui/metadata_cache.json`
 
-> **Cross-Platform:** Data path resolved via `data_local_dir()` from `directories` crate — `~/.local/share/youtui/` on Linux, `~/Library/Application Support/com.nick42.youtui/` on macOS. Config path (overrides) via `config_local_dir()` — `~/.config/youtui/` on Linux.
+> **Cross-Platform:** Data path resolved via `data_local_dir()` from `directories` crate - `~/.local/share/youtui/` on Linux, `~/Library/Application Support/com.nick42.youtui/` on macOS. Config path (overrides) via `config_local_dir()` - `~/.config/youtui/` on Linux.
 
 - JSON format, atomic write via `.tmp` + rename
 - Loaded on startup, saved after each successful resolve
@@ -66,7 +66,7 @@ File: `~/.local/share/youtui/metadata_cache.json`
 
 ## Title Cleaning
 
-File: `youtui/src/app/server/messages.rs` — `clean_title_for_metadata()`
+File: `youtui/src/app/server/messages.rs` - `clean_title_for_metadata()`
 
 Before metadata lookup, raw yt-dlp title is cleaned:
 
@@ -74,13 +74,13 @@ Before metadata lookup, raw yt-dlp title is cleaned:
 2. Strip album indicator tags: `"FULL ALBUM"`, `"full album"`, `"FULL LP"`, `"FULL EP"`, `"full-length album"`, `" - Single"`, `" - EP"`, `" - LP"`
 3. Strip parenthetical metadata: `(year - genre / genre2)`, `(2000)`, `(Official Audio)`, `(Official Video)`
 4. Strip `c legenda`, `Legendado`, `subtitle` etc.
-5. Token-boundary tag matching (word-boundary, not substring — prevents false match "ep" in "Epic")
+5. Token-boundary tag matching (word-boundary, not substring - prevents false match "ep" in "Epic")
 6. Strip bare artist prefix when no ` - ` separator
 7. Dangling paren cleanup after strip
 
 ## Artist Normalization
 
-File: `libs/metadata-provider/src/normalize.rs` — `normalize_artist_name()`
+File: `libs/metadata-provider/src/normalize.rs` - `normalize_artist_name()`
 
 - Capitalize first letter (preserves intentional lowercase: "data da morte")
 - Strip " - Topic" suffix

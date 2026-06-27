@@ -42,9 +42,9 @@ QUICKCHECK_TESTS=1000 cargo test --release -p vi-text-editor -- invariants
 
 | Test | Reason |
 |------|--------|
-| `test_downloads` | Costly — requires network + yt-dlp |
+| `test_downloads` | Costly - requires network + yt-dlp |
 | `test_downloading_a_song_with_ytdlp` | Network + yt-dlp required |
-| `test_semaphore_limiting` | Flaky — dynamic concurrency |
+| `test_semaphore_limiting` | Flaky - dynamic concurrency |
 | `test_default_config_equals_deserialized_config` | Config drifts from defaults |
 
 Run ignored tests explicitly: `cargo test --release -- --ignored`
@@ -76,55 +76,55 @@ Uses `proptest` crate with `QuickCheck`-style randomized input generation.
 
 ```
 youtui/src/
-├── tests.rs                      — Integration tests
+├── tests.rs                      - Integration tests
 ├── app/
 │   ├── server/providers/
-│   │   ├── discogs.rs (inline)   — Parse tests
-│   │   ├── genius.rs (inline)    — Metadata parse tests
+│   │   ├── discogs.rs (inline)   - Parse tests
+│   │   ├── genius.rs (inline)    - Metadata parse tests
 │   │   ├── lastfm_album.rs (inline)
 │   │   ├── lastfm_track.rs (inline)
 │   │   ├── musicbrainz.rs (inline)
-│   │   └── util.rs (inline)      — norm_for_lfm tests
+│   │   └── util.rs (inline)      - norm_for_lfm tests
 │   ├── ui/
 │   │   ├── browser/
-│   │   │   ├── artistsearch/ (inline) — Search/submit behavior
+│   │   │   ├── artistsearch/ (inline) - Search/submit behavior
 │   │   │   ├── playlistsearch/ (inline)
-│   │   │   └── shared_components.rs (inline) — Search suggestions, list columns
+│   │   │   └── shared_components.rs (inline) - Search suggestions, list columns
 │   │   ├── playlist/
-│   │   │   ├── tests.rs          — Album splitting, ARC sharing, progress
-│   │   │   └── browser.rs (inline) — Keybinding validation
-│   │   └── action.rs (via actionhandler.rs) — Key stack resolution
-│   ├── view/ (inline)            — Filter constraint tests
-│   ├── queue_persistence/ (inline) — Serialization roundtrip
-│   ├── component/actionhandler.rs (inline) — Key stack parsing
-│   └── structures/ (inline)      — Fuzzy matching tests
+│   │   │   ├── tests.rs          - Album splitting, ARC sharing, progress
+│   │   │   └── browser.rs (inline) - Keybinding validation
+│   │   └── action.rs (via actionhandler.rs) - Key stack resolution
+│   ├── view/ (inline)            - Filter constraint tests
+│   ├── queue_persistence/ (inline) - Serialization roundtrip
+│   ├── component/actionhandler.rs (inline) - Key stack parsing
+│   └── structures/ (inline)      - Fuzzy matching tests
 ├── config/
-│   ├── keymap.rs (inline)        — Keybinding parsing
-│   └── mod.rs (inline)           — Config IR roundtrip, deserialization
-├── core.rs (inline)              — File management, temp cleanup
-├── drawutils.rs (inline)         — Rect boundary checks
-├── keybind.rs (inline)           — Key parsing
+│   ├── keymap.rs (inline)        - Keybinding parsing
+│   └── mod.rs (inline)           - Config IR roundtrip, deserialization
+├── core.rs (inline)              - File management, temp cleanup
+├── drawutils.rs (inline)         - Rect boundary checks
+├── keybind.rs (inline)           - Key parsing
 ├── widgets/
-│   ├── scrolling_list.rs (inline) — Scrolling behavior
-│   ├── scrolling_table.rs (inline) — Scrolling + grapheme handling
-│   ├── tab_grid.rs (inline)      — Grid layout
-│   └── mod.rs (inline)           — Split point tests
-└── youtube_downloader/ (inline)  — yt-dlp argument generation
+│   ├── scrolling_list.rs (inline) - Scrolling behavior
+│   ├── scrolling_table.rs (inline) - Scrolling + grapheme handling
+│   ├── tab_grid.rs (inline)      - Grid layout
+│   └── mod.rs (inline)           - Split point tests
+└── youtube_downloader/ (inline)  - yt-dlp argument generation
 ```
 
 ## Testing Latest Updates (2026-06-23)
 
-### VL Prefix Regression Test (historical — ytmapi-cli removed from workspace)
+### VL Prefix Regression Test (historical - ytmapi-cli removed from workspace)
 
 Mutation endpoints must strip `VL` from playlist IDs. Browse endpoints must keep `VL`.
 
 Manual test via youtui binary (ytmapi-cli removed in PR #27):
 ```bash
-# Delete (strips VL) — use playlist editor or o.D context menu
-# Edit/rename (strips VL) — use o.R context menu
-# Rate (strips VL) — use o.t context menu
-# Read/browse (needs VL) — Enter on playlist
-# Add to playlist (strips VL) — use o.a/o.A context menu
+# Delete (strips VL) - use playlist editor or o.D context menu
+# Edit/rename (strips VL) - use o.R context menu
+# Rate (strips VL) - use o.t context menu
+# Read/browse (needs VL) - Enter on playlist
+# Add to playlist (strips VL) - use o.a/o.A context menu
 ```
 
 Expected: mutations return 200 (not 400/404), reads return playlist data.
@@ -163,9 +163,13 @@ In `youtui/src/app/scrobbler.rs`:
 ```bash
 # Direct scrobble submission (bypasses UI)
 youtui test-scrobble --artist "Artist" --title "Song" --album "Album" --duration 180
+
+# Test metadata validation pipeline (bypasses UI)
+youtui test-validate-metadata "Artist" "Title" ["Album hint"]
 ```
 
-Tests the full pipeline: session_key retrieval → HMAC signing → Last.fm API submission. Returns API response status + timing info.
+- `test-scrobble`: Tests full scrobble pipeline: session_key → HMAC signing → Last.fm API.
+- `test-validate-metadata`: Tests MetadataRegistry against all providers (Last.fm, MusicBrainz, Discogs, MetalArchives, Genius). Prints resolved artist/album/year/tracklist.
 
 ## Persistent Scrobble Cache
 
@@ -185,4 +189,4 @@ Tests the full pipeline: session_key retrieval → HMAC signing → Last.fm API 
 5. Verify j/k/gg/G scroll annotations, seek commands `( ) < > [ ]` still work (global controls)
 6. Press `Tab`/`h` to return focus to lyrics
 7. Verify j/k/gg/G scroll lyrics, seek commands still work
-8. Press `a` to toggle annotations off — focus returns to lyrics full width
+8. Press `a` to toggle annotations off - focus returns to lyrics full width

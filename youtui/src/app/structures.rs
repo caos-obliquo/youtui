@@ -99,6 +99,7 @@ pub struct ListSong {
     pub thumbnails: MaybeRc<Vec<Thumbnail>>,
     pub album: Option<MaybeRc<ListSongAlbum>>,
     pub like_status: LikeStatus,
+    pub is_album_upload: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -375,15 +376,16 @@ impl ListSong {
             id: ListSongID(0),
             duration_string,
             actual_duration: None,
+            start_offset: None,
             year: None,
-            album_art: AlbumArtState::None,
             genres: Vec::new(),
             styles: Vec::new(),
-            start_offset: None,
+            album_art: AlbumArtState::None,
             artists: MaybeRc::Owned(list_artists),
             thumbnails: MaybeRc::Owned(thumb.unwrap_or_default()),
             album: list_album,
             like_status: LikeStatus::Indifferent,
+            is_album_upload: false,
         }
     }
 }
@@ -500,11 +502,118 @@ impl BrowserSongsList {
             styles: Vec::new(),
             start_offset: None,
             like_status,
+            is_album_upload: false,
         });
         id
     }
-    pub fn add_raw_search_result_song(&mut self, song: SearchResultSong) -> ListSongID {
+    /// Strip known channel upload suffixes from an album name extracted from a video title.
+    /// E.g., "Pixel Death FULL ALBUM" -> "Pixel Death", "Demo 2024 FULL EP" -> "Demo 2024"
+    /// Also strips parenthetical groups containing years like "(2020 - Goregrind)".
+    /// Extract a 4-digit year (1900-2100) from a parenthetical group in a title.
+/// E.g., "Pixel Death FULL ALBUM (2020 - Goregrind)" -> Some("2020")
+fn extract_year_from_title(title: &str) -> Option<String> {
+    let lower = title.to_lowercase();
+    let paren = lower.rfind('(')?;
+    let inner_lower = lower[paren..].to_lowercase();
+    inner_lower
+        .split(|c: char| !c.is_ascii_digit())
+        .find(|p| p.len() == 4 && p.parse::<u16>().ok().is_some_and(|y| (1900..2100).contains(&y)))
+        .map(|s| s.to_string())
+}
+
+fn clean_channel_album_name(name: &str) -> String {
+        let suffixes = [
+            "full album", "full ep", "full lp", "full demo", "full single",
+            "full-length album", "full-length",
+            "official album", "official audio", "official video",
+            "lyric video", "lyrics",
+        ];
+        let mut s = name.trim().to_string();
+        loop {
+            let lower = s.to_lowercase();
+            let mut found = false;
+            for suffix in &suffixes {
+                if let Some(pos) = lower.rfind(suffix) {
+                    let before = &s[..pos].trim();
+                    if before.len() < s.len() {
+                        s = before.to_string();
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if !found {
+                break;
+            }
+        }
+        // Strip parenthetical containing a year (e.g., "(2020 - Goregrind)")
+        let lower = s.to_lowercase();
+        if let Some(paren) = lower.rfind('(') {
+            let inner = &s[paren..];
+            let inner_lower = inner.to_lowercase();
+            let has_year = inner_lower.split(|c: char| !c.is_ascii_digit())
+                .any(|p| p.len() == 4 && p.parse::<u16>().map(|y| (1900..2100).contains(&y)).unwrap_or(false));
+            if has_year {
+                s = s[..paren].trim().to_string();
+            }
+        }
+        s.trim_matches('-').trim().to_string()
+    }
+
+    pub fn add_raw_search_result_song(&mut self, mut song: SearchResultSong) -> ListSongID {
         let id = self.create_next_id();
+        let mut is_album_upload = false;
+        let mut channel_year: Option<String> = None;
+        // When YTM returns no album and title contains " - ", try to extract
+        // real artist and album name from title (channel uploads where YTM
+        // artist = channel name and actual metadata is embedded in title).
+        if song.album.is_none() && song.title.contains(" - ") {
+            let parts: Vec<&str> = song.title.splitn(2, " - ").collect();
+            if parts.len() == 2 {
+                let extracted_artist = parts[0].trim().to_string();
+                let second = parts[1].trim().to_string();
+                // Drop borrow on song.title before reassigning
+                drop(parts);
+                if !extracted_artist.is_empty() && extracted_artist.len() < 80 {
+                    // Override artist - YTM gave channel name, title has real artist
+                    song.artist = extracted_artist;
+                }
+                // Check if original title has album indicator tags (e.g. "Full Album")
+                let lower_second = second.to_lowercase();
+                is_album_upload = lower_second.contains("full album")
+                    || lower_second.contains("full ep")
+                    || lower_second.contains("full lp")
+                    || lower_second.contains("full demo")
+                    || lower_second.contains("full single")
+                    || lower_second.contains("full-length")
+                    || lower_second.contains("studio album")
+                    || lower_second.contains("live album")
+                    || lower_second.contains("official album")
+                    || lower_second.contains("compilation")
+                    || lower_second.contains("bootleg")
+                    || lower_second.contains("anthology")
+                    || lower_second.contains("collection")
+                    || lower_second.contains("self-titled")
+                    || lower_second.contains("self titled");
+                // Extract year from parenthetical group before stripping (e.g., "(2020 - Goregrind)")
+                channel_year = Self::extract_year_from_title(&second);
+                // Strip artist prefix from title, keep only the song/album part
+                let cleaned_second = Self::clean_channel_album_name(&second);
+                song.title = if cleaned_second.is_empty() {
+                    second.clone()
+                } else {
+                    cleaned_second.clone()
+                };
+                // Extract album name from second part, stripping noise suffixes
+                let album_name = Self::clean_channel_album_name(&second);
+                if !album_name.is_empty() {
+                    song.album = Some(ParsedSongAlbum {
+                        name: album_name,
+                        id: AlbumID::from_raw(""),
+                    });
+                }
+            }
+        }
         let SearchResultSong {
             title,
             artist,
@@ -520,7 +629,7 @@ impl BrowserSongsList {
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,
-            year: None,
+            year: channel_year.map(Rc::new),
             artists: MaybeRc::Owned(vec![ListSongArtist {
                 name: normalize_artist_name(&artist),
                 id: None,
@@ -559,6 +668,7 @@ impl BrowserSongsList {
             styles: Vec::new(),
             start_offset: None,
             like_status,
+            is_album_upload,
         });
         id
     }
@@ -650,6 +760,7 @@ impl BrowserSongsList {
             styles: Vec::new(),
             start_offset: None,
             like_status,
+            is_album_upload: false,
         });
         id
     }
@@ -830,7 +941,7 @@ pub fn copy_to_clipboard(text: &str) {
             return;
         }
     }
-    // No clipboard tool found — silently no-op.
+    // No clipboard tool found - silently no-op.
 }
 
 #[cfg(test)]
@@ -872,6 +983,52 @@ mod normalize_tests {
     #[test]
     fn norm_intentional_lowercase_preserved() {
         assert_eq!(normalize_artist_name("data da morte"), "data da morte");
+    }
+}
+
+#[cfg(test)]
+mod channel_title_tests {
+    use super::BrowserSongsList;
+
+    fn extract_year(title: &str) -> Option<String> {
+        BrowserSongsList::extract_year_from_title(title)
+    }
+
+    #[test]
+    fn year_from_parenthetical_with_dash() {
+        assert_eq!(extract_year("Pixel Death FULL ALBUM (2020 - Goregrind)"), Some("2020".into()));
+    }
+
+    #[test]
+    fn year_from_parenthetical_only_year() {
+        assert_eq!(extract_year("Demo 2024 FULL EP (2024)"), Some("2024".into()));
+    }
+
+    #[test]
+    fn year_out_of_range() {
+        assert_eq!(extract_year("Song (1899)"), None);
+        assert_eq!(extract_year("Song (2101)"), None);
+    }
+
+    #[test]
+    fn year_missing_no_parenthetical() {
+        assert_eq!(extract_year("Plain Title"), None);
+    }
+
+    #[test]
+    fn year_missing_parenthetical_no_year() {
+        assert_eq!(extract_year("Song (Remastered)"), None);
+    }
+
+    #[test]
+    fn year_extracted_before_cleaning() {
+        // verify year extraction before clean_channel_album_name strips parenthetical
+        assert_eq!(extract_year("First Days of Humanity - Pixel Death FULL ALBUM (2020 - Goregrind)"), Some("2020".into()));
+    }
+
+    #[test]
+    fn year_multiple_parentheticals() {
+        assert_eq!(extract_year("Album (2005 Remaster) (2020 - Reissue)"), Some("2020".into()));
     }
 }
 

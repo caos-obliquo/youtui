@@ -25,7 +25,7 @@ pub async fn fetch_annotations(
 }
 
 /// Check if a Genius page exists at the given path (returns true if status 200).
-/// Does NOT validate content — use fetch_lyrics for that.
+/// Does NOT validate content - use fetch_lyrics for that.
 pub async fn page_exists(client: &reqwest::Client, song_path: &str) -> bool {
     let url = format!("https://genius.com{}", song_path);
     match client.get(&url).send().await {
@@ -247,20 +247,24 @@ fn extract_preloaded_state(html: &str) -> Option<Value> {
     let start = html.find(marker)?;
     let after_marker = &html[start + marker.len()..];
 
-    // Scan for closing ' — tracking JS string escapes
-    let chars: Vec<char> = after_marker.chars().collect();
-    let mut pos = 0;
-    while pos < chars.len() {
-        if chars[pos] == '\\' && pos + 1 < chars.len() {
-            pos += 2; // skip escaped pair
-            continue;
-        }
-        if chars[pos] == '\'' {
+    // Scan for closing ' - tracking JS string escapes
+    // Use byte-indexed iteration to avoid char boundary panics
+    let mut byte_end = after_marker.len();
+    let mut chars = after_marker.char_indices().peekable();
+    while let Some((byte_idx, c)) = chars.next() {
+        if c == '\\' {
+            // skip escaped character
+            if chars.next().is_some() {
+                continue;
+            }
             break;
         }
-        pos += 1;
+        if c == '\'' {
+            byte_end = byte_idx;
+            break;
+        }
     }
-    let encoded = &after_marker[..pos];
+    let encoded = &after_marker[..byte_end];
 
     // Decode JS string escapes: \\→\, \'→', \"→", \n→\n, \t→\t, \/→/
     let mut decoded = String::with_capacity(encoded.len());

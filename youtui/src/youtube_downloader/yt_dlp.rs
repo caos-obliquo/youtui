@@ -115,7 +115,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             
             let format_string = "bestaudio[ext=m4a][abr>=256]/bestaudio[ext=m4a]/bestaudio/best".to_string();
             
-            // web_creator extractor needs cookies — only use it when configured
+            // web_creator extractor needs cookies - only use it when configured
             // Default extractor works without auth for most videos
             let use_web_creator = self.cookie_path.is_some();
             

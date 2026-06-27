@@ -1098,7 +1098,7 @@ async fn cmd_debug_cache_test(args: &[String]) {
     println!("Cache dir: {:?}", tmp_dir);
     println!();
 
-    // First registry — resolves and writes cache
+    // First registry - resolves and writes cache
     let http_client = reqwest::Client::builder()
         .user_agent("Youtui/0.1 (test)")
         .build()
@@ -1150,7 +1150,7 @@ async fn cmd_debug_cache_test(args: &[String]) {
         return;
     }
 
-    // Second registry — should load cache from disk
+    // Second registry - should load cache from disk
     println!();
     println!("=== Registry 2: Cache-reloaded resolve ===");
     let registry2 = MetadataRegistry::new(
@@ -1230,11 +1230,11 @@ async fn cmd_debug_cache_check(args: &[String]) {
         Some(tmp_dir.clone()),
     );
 
-    // Phase 1: lookup_cache — should miss (cache empty)
+    // Phase 1: lookup_cache - should miss (cache empty)
     println!("=== Phase 1: Cache lookup BEFORE resolve ===");
     match registry.lookup_cache(&cache_key) {
-        Some(meta) => println!("HIT (unexpected — cache should be empty): {:?}", meta),
-        None => println!("MISS (expected — cache empty)"),
+        Some(meta) => println!("HIT (unexpected - cache should be empty): {:?}", meta),
+        None => println!("MISS (expected - cache empty)"),
     }
     println!();
 
@@ -1252,18 +1252,18 @@ async fn cmd_debug_cache_check(args: &[String]) {
     }
     println!();
 
-    // Phase 3: lookup_cache — should hit now
+    // Phase 3: lookup_cache - should hit now
     println!("=== Phase 3: Cache lookup AFTER resolve ===");
     match registry.lookup_cache(&cache_key) {
         Some(meta) => {
-            println!("HIT — cached data:");
+            println!("HIT - cached data:");
             println!("  Artist: {:?}", meta.artist);
             println!("  Album:  {:?}", meta.album);
             println!("  Year:   {:?}", meta.year);
             println!("  Genres: {:?}", meta.genres);
             println!("  Styles: {:?}", meta.styles);
         }
-        None => println!("MISS — cache did not populate (resolve may have returned default)"),
+        None => println!("MISS - cache did not populate (resolve may have returned default)"),
     }
     println!();
 

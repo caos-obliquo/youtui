@@ -394,6 +394,14 @@ enum Command {
         #[arg(default_value_t = 240)]
         duration: u64,
     },
+    /// Test the metadata validation pipeline. Queries Last.fm/MusicBrainz/etc
+    /// and prints the resolved album info and track listing.
+    TestValidateMetadata {
+        artist: String,
+        title: String,
+        /// Optional album name hint
+        album: Option<String>,
+    },
 }
 
 pub struct RuntimeInfo {

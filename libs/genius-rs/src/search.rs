@@ -190,10 +190,13 @@ pub fn hit_matches_query(hit: &SongHit, artist: &str, title: &str) -> bool {
     let hit_title = norm(&hit.title);
     let query_artist = norm(artist);
     let query_title = norm(title);
-    // Artist must match closely; title must overlap significantly
-    hit_artist == query_artist
+    // Artist AND title must both match (no artist-only match)
+    let artist_ok = hit_artist == query_artist
         || hit_artist.contains(&query_artist)
-        || query_artist.contains(&hit_artist) || hit_title.contains(&query_title) || query_title.contains(&hit_title)
+        || query_artist.contains(&hit_artist);
+    let title_ok = hit_title.contains(&query_title)
+        || query_title.contains(&hit_title);
+    artist_ok && title_ok
 }
 #[cfg(test)]
 mod tests {

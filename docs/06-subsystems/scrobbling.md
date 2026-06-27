@@ -4,7 +4,7 @@
 
 File: `youtui/src/app/scrobbler.rs`
 
-Implements the [Last.fm scrobbling protocol](https://www.last.fm/api/scrobbling) — compatible with Libre.fm, GNU FM, and Last.fm itself.
+Implements the [Last.fm scrobbling protocol](https://www.last.fm/api/scrobbling) - compatible with Libre.fm, GNU FM, and Last.fm itself.
 
 ## Configuration
 
@@ -48,23 +48,23 @@ struct ScrobbleState {
 }
 ```
 
-Condition: `self.album_tracks.is_none() || song.track_no.is_some()` — track entries scrobble individually (not the full-album entry). Album mode uses boundary checker for per-track scrobbling at `playlist.rs:2947-2964`.
+Condition: `self.album_tracks.is_none() || song.track_no.is_some()` - track entries scrobble individually (not the full-album entry). Album boundary scrobbler (`playlist.rs`, progress handler) only runs for non-split tracks (`!is_album_track`). Split tracks scrobble individually via ScrobbleState.
 
 ## Persistent Scrobble
 
-Unlike scrobbling only at song change, youtui checks `should_scrobble()` on every progress update (~10Hz). This ensures scrobbles work in any context: lyrics popup, browser, playlist — not just when the queue view is focused.
+Unlike scrobbling only at song change, youtui checks `should_scrobble()` on every progress update (~10Hz). This ensures scrobbles work in any context: lyrics popup, browser, playlist - not just when the queue view is focused.
 
 ## Failed Scrobble Cache
 
 File: `~/.config/youtui/scrobble_cache.json`
 
-> **Cross-Platform:** Path resolved via `directories` crate (`ProjectDirs::config_local_dir()`) — `~/.config/youtui/` on Linux, `~/Library/Application Support/com.nick42.youtui/` on macOS. Temp files use `std::env::temp_dir()` for platform-correct temp directory.
+> **Cross-Platform:** Path resolved via `directories` crate (`ProjectDirs::config_local_dir()`) - `~/.config/youtui/` on Linux, `~/Library/Application Support/com.nick42.youtui/` on macOS. Temp files use `std::env::temp_dir()` for platform-correct temp directory.
 
 Failed scrobbles are persisted to disk and retried:
 
-- `save_failed_scrobble()` — writes failed submission to JSON array with `retry_count` field
-- `retry_failed_scrobbles()` — called on startup + every 5 min in background loop
-- `remove_cached_scrobble()` — removes entry after successful retry (`#[allow(dead_code)]`, tests only)
+- `save_failed_scrobble()` - writes failed submission to JSON array with `retry_count` field
+- `retry_failed_scrobbles()` - called on startup + every 5 min in background loop
+- `remove_cached_scrobble()` - removes entry after successful retry (`#[allow(dead_code)]`, tests only)
 - Max retries: 3 per entry (dropped after 3 failures)
 - Max cache size: 200 entries (oldest evicted)
 - `ScrobbleResult` enum: `Success`, `Failure(String)`, `RateLimited`
@@ -73,7 +73,11 @@ Failed scrobbles are persisted to disk and retried:
 
 ## Album Mode Scrobbling
 
-Album-split tracks use a boundary checker (`playlist.rs:2920-2970`) that scrobbles each track as playback progresses. Album name is read from the currently playing song's album field (fixes inconsistent Last.fm album art detection).
+Album-split tracks scrobble individually via `ScrobbleState` created in `play_song_id()` and `autoplay_song_id()`. Boundary checker (progress handler) only runs on non-split original entry. Album name uses canonical Last.fm name resolved via `album.getInfo` in `FetchAlbumArt` pipeline.
+
+## Autoplay Scrobble (v1.0.3)
+
+`autoplay_song_id()` now mirrors `play_song_id()` scrobble setup: resets `scrobble_pending`, submits previous pending scrobble, creates `ScrobbleState`, sends `submit_now_playing`, and triggers `FetchAlbumArt` for tracks without art. Previously autoplay had zero scrobble setup - tracks auto-advanced after the first never scrobbled.
 
 ## Signature Requirement
 

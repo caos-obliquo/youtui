@@ -357,7 +357,7 @@ impl BackendTask<ArcServer> for GetAllLibraryAlbums {
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::WatchPlaylistTrack;
 
-/// Cache-only enrichment for library songs — no HTTP.
+/// Cache-only enrichment for library songs - no HTTP.
 /// Input: (index_in_browser, artist, title)
 /// Output: (index, year, genres, styles) for cache hits only.
 #[derive(Debug, PartialEq)]
@@ -1026,7 +1026,7 @@ impl BackendTask<ArcServer> for SearchSongs {
                 .map_err(|e| anyhow::anyhow!("yt-dlp search failed: {}", e))?;
 
             fn extract_artist_from_title(title: &str, fallback: &str) -> String {
-                // Title is often "Artist - Song Title" — extract artist before " - "
+                // Title is often "Artist - Song Title" - extract artist before " - "
                 if let Some(idx) = title.find(" - ") {
                     let candidate = title[..idx].trim();
                     if !candidate.is_empty() && candidate.len() < 80 {

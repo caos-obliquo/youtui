@@ -1,4 +1,4 @@
-# Suckless Refactoring — Complete ✅
+# Suckless Refactoring - Complete ✅
 
 Branch: `refactor/suckless`
 Goal: Clean, minimal, robust codebase aligned with suckless philosophy
@@ -38,8 +38,8 @@ Replace `.expect()` and `.unwrap()` that can panic at runtime:
 - `core.rs:218`: `FromStr::from_str(value).unwrap()` → propagate error
 
 ### Batch 2: Kill Dead Crates
-- `libs/metal-proxy/` (Cargo.toml + src/) — -317 lines
-- `libs/rym-definitions/` (Cargo.toml + src/) — -289 lines
+- `libs/metal-proxy/` (Cargo.toml + src/) - -317 lines
+- `libs/rym-definitions/` (Cargo.toml + src/) - -289 lines
 
 ### Batch 3: Extract Boilerplate
 - 7 CRUD OK handlers + 8 error handlers → shared macro
@@ -48,8 +48,8 @@ Replace `.expect()` and `.unwrap()` that can panic at runtime:
 - Skipped: api.rs retry dedup (complexity too high for ~15-line savings)
 
 ### Batch 4a: Subdivide MetadataEffect::apply (180→40 lines)
-- Extract `apply_metadata_fields()` — applies artist/album/year/genres/styles to song
-- Extract `handle_album_split()` — duration ratio check, tracklist validation, insert tracks, fetch album art
+- Extract `apply_metadata_fields()` - applies artist/album/year/genres/styles to song
+- Extract `handle_album_split()` - duration ratio check, tracklist validation, insert tracks, fetch album art
 - Main fn drops from 183 to ~40 lines of routing
 
 ### Batch 4b: Split clean_title_for_metadata (130→10 lines)
@@ -62,6 +62,6 @@ Replace `.expect()` and `.unwrap()` that can panic at runtime:
 - apply_action drops 74 lines of inline logic
 
 ## Verification
-- `cargo build --release` — 0 warnings across workspace (all 10 crates, ytmapi-cli removed)
-- `cargo test --release -p youtui --bin youtui` — 164 pass, 4 ignored
+- `cargo build --release` - 0 warnings across workspace (all 10 crates, ytmapi-cli removed)
+- `cargo test --release -p youtui --bin youtui` - 164 pass, 4 ignored
 - Suckless refactoring adds 0 tests (refactors existing code only)

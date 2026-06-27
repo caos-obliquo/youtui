@@ -78,7 +78,7 @@ impl MetadataRegistry {
     fn score_result(meta: &ValidatedMetadata, artist: &str, title: &str) -> i32 {
         let mut score = 0;
         let mut artist_ok = false;
-        // Artist match is CRITICAL — heavy weight
+        // Artist match is CRITICAL - heavy weight
         if let Some(ref a) = meta.artist {
             let a_low = util::norm_for_lfm(a).to_lowercase();
             let art_low = util::norm_for_lfm(artist).to_lowercase();
@@ -108,7 +108,7 @@ impl MetadataRegistry {
         }
         // More tracks = more complete: +2 per track (up to +30)
         score += (meta.album_tracks.len() as i32).min(15) * 2;
-        // PENALTY: if artist IS present but doesn't match at all — wrong band
+        // PENALTY: if artist IS present but doesn't match at all - wrong band
         if !artist_ok {
             if let Some(ref a) = meta.artist {
                 let a_low = util::norm_for_lfm(a).to_lowercase();
@@ -236,7 +236,7 @@ impl MetadataRegistry {
         }
     }
 
-    /// Cache-only lookup — no HTTP, no provider resolution.
+    /// Cache-only lookup - no HTTP, no provider resolution.
     /// Returns None if not in LRU cache or if result is sparse (no album/year).
     pub fn lookup_cache(&self, key: &str) -> Option<ValidatedMetadata> {
         self.cache.lock().unwrap().get(key).cloned()

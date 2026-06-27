@@ -4,9 +4,9 @@ Full-screen vim-driven playlist editor popup. Opens from Browser > Library > Pla
 
 ## Files
 
-- `app/ui/playlist/playlist_editor_popup.rs` (~748 lines) — editor UI + keybindings
-- `app/ui/playlist/effect_handlers_playlist.rs` — overwrite save chain handlers
-- `app.rs` — `OpenPlaylistEditor`, `OverwritePlaylistTracks` callbacks
+- `app/ui/playlist/playlist_editor_popup.rs` (~748 lines) - editor UI + keybindings
+- `app/ui/playlist/effect_handlers_playlist.rs` - overwrite save chain handlers
+- `app.rs` - `OpenPlaylistEditor`, `OverwritePlaylistTracks` callbacks
 
 ## Struct
 
@@ -139,7 +139,7 @@ Opens `PlaylistUpdatePopup` with track IDs. User selects target playlist.
 
 ## Integration
 
-- Wired in `app/ui/browser/library.rs` — `OpenPlaylistEditor` handler
-- Routed in `youtui/src/app/ui.rs` — `playlist_editor_popup` field + event interception
-- Drawn in `app/ui/draw.rs` — popup render
-- Callback in `app.rs` — `OpenPlaylistEditor` creates the popup, `OverwritePlaylistTracks` triggers save chain
+- Wired in `app/ui/browser/library.rs` - `OpenPlaylistEditor` handler
+- Routed in `youtui/src/app/ui.rs` - `playlist_editor_popup` field + event interception
+- Drawn in `app/ui/draw.rs` - popup render
+- Callback in `app.rs` - `OpenPlaylistEditor` creates the popup, `OverwritePlaylistTracks` triggers save chain

@@ -1063,7 +1063,7 @@ impl Playlist {
                 id: self.list.create_next_id(),
                 duration_string: dur_str,
                 actual_duration: if is_last {
-                    // Fill remaining time up to parent duration for last track
+                    // Fill remaining time up to parent duration, fall back to track duration
                     parent_duration.map(|total| {
                         let remaining = total.as_secs_f64() - accum;
                         if remaining > 0.0 {
@@ -1071,7 +1071,7 @@ impl Playlist {
                         } else {
                             std::time::Duration::from_secs_f64(track.duration_secs)
                         }
-                    })
+                    }).or_else(|| Some(std::time::Duration::from_secs_f64(track.duration_secs)))
                 } else {
                     Some(std::time::Duration::from_secs_f64(track.duration_secs))
                 },
@@ -1084,6 +1084,7 @@ impl Playlist {
                 thumbnails: src_thumbnails.clone(),
                 album: list_album,
                 like_status: src_like_status.clone(),
+                is_album_upload: false,
             };
             self.list.insert_after(src_idx + i, list_song);
             accum += track.duration_secs;
@@ -1221,6 +1222,7 @@ impl Playlist {
             "legendado", "c legendado", "c legenda", "com legenda",
             "com legendado", "legendado pt", "legendado pt-br",
             "subtitle", "subtitles",
+            "full album", "full ep", "full lp", "full demo", "full single",
         ];
         let mut s = title.to_string();
         loop {
@@ -1523,7 +1525,7 @@ impl Playlist {
                 if let Some(song) = self.get_song_from_idx(song_index) {
                     let should_fetch = matches!(song.album_art, crate::app::structures::AlbumArtState::None | AlbumArtState::Init)
                         && !self.album_art_fetching
-                        && self.cur_played_dur.map_or(false, |d| d.as_secs() > 5 || d.is_zero());
+                        && self.cur_played_dur.map_or(true, |d| d.as_secs() > 5 || d.is_zero());
                     if should_fetch {
                         if let Some(ref album) = song.album {
                             let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
@@ -1609,7 +1611,7 @@ impl Playlist {
                 }
             };
             let task = DecodeSong(pointer, offset, actual_dur).map_stream(AutoplayDecodedSong(id));
-            let effect = effect.push(AsyncTask::new_stream_try(
+            let mut effect = effect.push(AsyncTask::new_stream_try(
                 task,
                 HandleAutoplayUpdateOk,
                 HandlePlayUpdateError(id),
@@ -1617,6 +1619,67 @@ impl Playlist {
             ));
             self.play_status = PlayState::Playing(id);
             self.queue_status = QueueState::NotQueued;
+            // Scrobble + album art setup for autoplayed tracks
+            if self.scrobbling_config.enabled {
+                self.scrobble_pending = false;
+                let keep_canonical = self.get_song_from_idx(song_index)
+                    .and_then(|s| s.album.as_ref().map(|a| crate::app::scrobbler::clean_album_for_scrobble(&a.name)))
+                    .zip(self.canonical_album_name.as_deref())
+                    .map_or(false, |(new_cleaned, old_canonical)| new_cleaned == old_canonical);
+                if !keep_canonical {
+                    self.canonical_album_name = None;
+                }
+                if let Some(old) = self.scrobble_state.take() {
+                    if old.should_scrobble() {
+                        let cfg = self.scrobbling_config.clone();
+                        tokio::spawn(async move {
+                            crate::app::scrobbler::submit_scrobble(&cfg, &old).await;
+                        });
+                    }
+                }
+                // Extract song data in narrow scope, drop borrow before mutable ops
+                let song_data = self.get_song_from_idx(song_index).map(|song| {
+                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                    let album = song.album.as_ref().map(|a| a.name.clone());
+                    let title = song.title.clone();
+                    let album_art = song.album_art.clone();
+                    let actual_dur = song.actual_duration;
+                    (artist, album, title, album_art, actual_dur, song.artists.first().map(|a| a.name.clone()))
+                });
+                if let Some((song_artist, song_album, song_title, song_album_art, actual_dur, album_artist)) = song_data {
+                    let album = self.canonical_album_name.clone().or_else(|| song_album.clone());
+                    let dur = actual_dur.unwrap_or(std::time::Duration::from_secs(240));
+                    let state = crate::app::scrobbler::ScrobbleState::new(
+                        song_artist.clone(), song_title, album,
+                        album_artist, dur,
+                    );
+                    self.scrobble_state = Some(state.clone());
+                    let cfg = self.scrobbling_config.clone();
+                    tokio::spawn(async move {
+                        crate::app::scrobbler::submit_now_playing(&cfg, &state).await;
+                    });
+                    // Trigger FetchAlbumArt if track has no art yet
+                    let should_fetch = matches!(song_album_art, crate::app::structures::AlbumArtState::None | AlbumArtState::Init)
+                        && !self.album_art_fetching;
+                    if should_fetch {
+                        if let Some(ref alb_name) = song_album {
+                            let art_artist = song_artist;
+                            let art_album = alb_name.clone();
+                            let api_key = self.scrobbling_config.api_key.clone();
+                            if !api_key.is_empty() && !art_artist.is_empty() && !art_album.is_empty() {
+                                self.album_art_fetching = true;
+                                self.album_art_fetching_name = Some(art_album.clone());
+                                effect = effect.push(AsyncTask::new_future_try(
+                                    crate::app::server::FetchAlbumArt(art_artist, art_album, api_key),
+                                    HandleFetchAlbumArtOk,
+                                    HandleFetchAlbumArtErr,
+                                    None,
+                                ).map_frontend(|this: &mut Self| this));
+                            }
+                        }
+                    }
+                }
+            }
             return effect;
         }
         effect
@@ -3011,8 +3074,9 @@ impl Playlist {
             }
         }
 
-        // Album boundary scrobbling: only when playing the ORIGINAL entry (full album)
-        if !is_album_track {
+        // Album boundary scrobbling: track album track boundaries
+        // Only for non-split tracks - split tracks scrobble individually via ScrobbleState
+        if self.album_tracks.is_some() && !is_album_track {
             if let Some(ref tracks) = self.album_tracks.clone() {
                 if tracks.len() >= 2 {
                     let total_album_dur: f64 = tracks.iter().map(|t| t.duration_secs).sum();
@@ -3092,12 +3156,12 @@ impl Playlist {
             {
                 let offset = next_song.start_offset;
                 let actual_dur = next_song.actual_duration;
-                let task = DecodeSong(song.clone(), offset, actual_dur).map_stream(QueueDecodedSong(id));
+                let task = DecodeSong(song.clone(), offset, actual_dur).map_stream(QueueDecodedSong(next_song.id));
                 info!("Queuing up song!");
                 let effect = AsyncTask::new_stream_try(
                     task,
                     HandleQueueUpdateOk,
-                    HandlePlayUpdateError(id),
+                    HandlePlayUpdateError(next_song.id),
                     None,
                 );
                 self.queue_status = QueueState::Queued(next_song.id);

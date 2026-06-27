@@ -1,4 +1,4 @@
-# Youtui — Project Knowledge
+# Youtui - Project Knowledge
 
 ## GOLDEN RULE
 One feature at a time. Implement -> test (user validates) -> commit -> next. Never batch changes.
@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 172 pass, 4 ignore
+cargo test --release -p youtui --bin youtui       # 181 pass, 4 ignore
 cargo test --release -p metadata-provider          # 48 pass
 cargo test --release -p vi-text-editor             # 67 pass
 cargo test --release -p ytmapi-rs --lib            # 82 pass (no auth)
@@ -60,36 +60,57 @@ cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
 cargo test --release -p lrclib-rs                  # 4 pass
 cargo test --release -p rym-genre-data             # 10 pass
 ```
-Total: **~417/417 pass, 0 fail, 4 ignored, 0 warnings** (172 + 48 + 67 + 82 + 18 + 14 + 2 + 4 + 10 = 417)
+Total: **~426/426 pass, 0 fail, 4 ignored, 0 warnings** (181 + 48 + 67 + 82 + 18 + 14 + 2 + 4 + 10 = 426)
 
 ## Warnings
-`cargo build --release` — **0 warnings across workspace** (all 10 crates clean).
+`cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
 
-## Performance (PR #3 — perf/enter-cancel-render)
+## Performance (PR #3 - perf/enter-cancel-render)
 Batch of 6 perf fixes merged 2026-06-26, ea2fc1c:
 - **Render throttle**: `needs_redraw` bool + 33ms `tokio::time::Interval` max ~30fps. No 1000fps on key spam.
 - **Stale download cancel**: `cancel_all_downloads()` calls `.cancel()` on each `CancellationToken` before `clear()`. Was leaking tokens.
-- **Enter-spam guard**: `PlayDebouncer` struct — 300ms cooldown on `AddSongsToPlaylistAndPlay` via `Instant` check in `handle_callback`.
+- **Enter-spam guard**: `PlayDebouncer` struct - 300ms cooldown on `AddSongsToPlaylistAndPlay` via `Instant` check in `handle_callback`.
 - **Library lazy iterator**: `get_filtered_items()` returns `Box<dyn Iterator>` instead of eager `.collect()` into `Vec<Vec<Cow>>`. Eliminates O(n) heap alloc per frame.
 - **Footer protocol cache**: `cached_album_protocol: Option<Protocol>` in `YoutuiWindow`. Skips CPU-heavy `new_protocol()` re-encode when `Rc::ptr_eq` shows album art unchanged. `invalidate_protocol_cache()` method added.
 - **Help menu single-pass**: Collects `DisplayableKeyAction` into owned `[String; 3]` once, reuses for widths + table render. Was calling `get_help_list_items()` twice per draw.
 
 Tests: 15 new unit tests added (5 PlayDebouncer, 3 protocol cache, 3 download cancel, 4 library lazy iterator).
 
-## PR #19 — View-Indices Sort (2026-06-26)
-Sorted `view_indices: Vec<usize>` instead of sorting the backing `BrowserSongsList.list` in-place across 3 tab structs (SongSearchBrowser, PlaylistSongsPanel, AlbumSongsPanel). `clear_sort_commands()` resets view_indices to identity — restores original fetch order without re-fetch from server. +226/-75. 3 TODO comments removed.
+## PR #19 - View-Indices Sort (2026-06-26)
+Sorted `view_indices: Vec<usize>` instead of sorting the backing `BrowserSongsList.list` in-place across 3 tab structs (SongSearchBrowser, PlaylistSongsPanel, AlbumSongsPanel). `clear_sort_commands()` resets view_indices to identity - restores original fetch order without re-fetch from server. +226/-75. 3 TODO comments removed.
 
-## PR #20 — Artist Categories (ytmapi-rs, 2026-06-26)
+## PR #20 - Artist Categories (ytmapi-rs, 2026-06-26)
 `ArtistTopReleaseCategory` made pub enum (was private) with Display/Serialize/Deserialize/Default. `GetArtistAlbumsAlbum.category`: `Option<String>` -> `Option<ArtistTopReleaseCategory>`. Wired Videos arm (MRLIR carousel items), Related arm (MTRIR artist cards), Playlists arm (MTRIR) in `parse_artist_top_releases_from_section_list_contents`. Added `GetArtistTopReleases.playlists: Option<GetArtistAlbums>` field. Two TODOs removed. ytmapi-rs lib: 85/85 pass (was 76/85 before test output fix). **Note: PR #27 ytmapi-rs slimming reverted Category enum → `Option<String>`, removed playlists field, 3 locale tests removed → 82/82.**
 
-## PR #27 — ytmapi-rs regression fix (2026-06-27, NOT merged)
+## PR #27 - ytmapi-rs regression fix (2026-06-27, NOT merged)
 Fixed 5 regressions from ytmapi-rs working tree slimming (+804/-2107 lines, 60 files):
-- **Auth**: restored `parse_netscape_cookies()` — yt-dlp Netscape cookie format needs parsing before use as Cookie header
+- **Auth**: restored `parse_netscape_cookies()` - yt-dlp Netscape cookie format needs parsing before use as Cookie header
 - **EP/singles not showing**: deleted `categorize_top_release()` replaced with case-insensitive `contains()` matching; Singles/EPs carousel sections were never processed (always `()`)
 - **reqwest 0.13.3 → 0.11**: 0.13.3 has TLS issues
 - **VL prefix stripping restored**: 5 mutation files (`playlist.rs`, `additems.rs`, `create.rs`, `edit.rs`, `rate.rs`)
 - **RemovePlaylistItems endpoint restored**: `playlist/edit` (was incorrectly `browse/edit_playlist`)
-ytmapi-rs lib: 82/82 pass (was 85 — 3 locale tests removed). ytmapi-cli removed from workspace.
+ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli removed from workspace.
+
+## PR #28 - Last.fm canonical album name + v1.0.2 (2026-06-27, merged)
+4 bugs fixed across 4 files. See (b4) for details.
+- **Bug #1**: cross-song guard used raw `album_art_fetching_name` vs cleaned `state.album`
+- **Bug #2**: `canonical_album_name` unconditionally cleared on every song change (same-album tracks)
+- **Bug #3**: YTM prefixes `EP:/Album:/Single:` not stripped in `clean_album_for_scrobble`
+- **Bug #4 (CRITICAL)**: `state.album` set from raw `song.album.name` with prefixes, not cleaned
+- 8 new tests added. 172/172 youtui, 417 total workspace.
+
+## PR #29 - Scrobble/album-art/sixel/gapless fixes + v1.0.3 (2026-06-27)
+9 fixes + 13 tests. 181/181 youtui, 426 total workspace.
+- **Year from channel upload titles**: `extract_year_from_title()` parses `(YYYY - Genre)` before cleaning
+- **Autoplay scrobble dead**: `autoplay_song_id()` had zero scrobble setup. Added full mirror of `play_song_id` scrobble block
+- **Boundary scrobbler double-firing**: re-added `!is_album_track` guard (split tracks scrobble individually)
+- **Footer cache wipe**: `AlbumArtState::None` was clearing `cached_album_protocol/last_album_art`. Split into `Some(None)` preserves cache, only `Option::None` clears
+- **FetchAlbumArt never fired**: `cur_played_dur.map_or(false, ...)` blocked on initial play. Changed to `map_or(true, ...)`
+- **FetchAlbumArt in autoplay**: added trigger for tracks without art
+- **Scrobble sent album name as track title**: autoplay passed `song_album` instead of `song_title`
+- **Tmux sixel vanishing**: `flush_sixel` gated by `is_tmux`. Removed guard, added unconditional DCS clear
+- **Last track duration leak**: `parent_duration=None` gave `None` actual_duration → progress bar uncapped. `or_else` fallback added
+- **Gapless advance ID mismatch**: `QueueDecodedSong(id)` used current song ID not next song ID. Progress updates rejected after autoplay switched tracks. Stopped playback after track 2 for album splits.
 
 ## Platform Compatibility (Current Status)
 All 6 platform-specific items fixed. Youtui compiles on Linux (Wayland/X11) and macOS. Windows builds fail at compile-time with a clear error.
@@ -104,8 +125,8 @@ All 6 platform-specific items fixed. Youtui compiles on Linux (Wayland/X11) and 
 | LOW | SignalWatcher no fallback | Already has `#[cfg(unix)]` and `#[cfg(windows)]` impls | ✅ N/A |
 
 ## Unwanted Features (Explicitly Rejected)
-- Radio mode — user declined
-- Windows — blocked at compile-time via `compile_error!` in `main.rs`. Supported targets: Linux (Wayland/X11), macOS.
+- Radio mode - user declined
+- Windows - blocked at compile-time via `compile_error!` in `main.rs`. Supported targets: Linux (Wayland/X11), macOS.
 
 ## Arch (3-layer async callback)
 ```
@@ -167,48 +188,48 @@ Album splitting: Detects full-album/EP/LP/demo/single entries (tags: full album,
 See `playlist_editor_popup.rs` for implementation.
 
 ### Motions
-- `j`/`k` — move down/up (with `Nj`/`Nk` count prefix)
-- `g`/`gg` — go to first line (or `Ng` to line N)
-- `G` — go to last line (or `NG` to line N)
+- `j`/`k` - move down/up (with `Nj`/`Nk` count prefix)
+- `g`/`gg` - go to first line (or `Ng` to line N)
+- `G` - go to last line (or `NG` to line N)
 
 ### Delete (d operator)
-- `dd`/`Ndd` — delete N lines
-- `dN`+`j` — delete N lines down
-- `dN`+`k` — delete N lines up
-- `dg` — delete to top
-- `dG`/`D` — delete to end
+- `dd`/`Ndd` - delete N lines
+- `dN`+`j` - delete N lines down
+- `dN`+`k` - delete N lines up
+- `dg` - delete to top
+- `dG`/`D` - delete to end
 
 ### Yank (y operator)
-- `yy`/`Nyy` — yank N lines
-- `yj` — yank line below
-- `yk` — yank line above
-- `ygg` — yank to top
-- `yG` — yank to end
-- `Y` — yank current line
+- `yy`/`Nyy` - yank N lines
+- `yj` - yank line below
+- `yk` - yank line above
+- `ygg` - yank to top
+- `yG` - yank to end
+- `Y` - yank current line
 
 ### Paste
-- `p` — paste below cursor
-- `P` — paste above cursor
+- `p` - paste below cursor
+- `P` - paste above cursor
 
 ### Visual mode
-- `V` — toggle visual line selection
-- `j`/`k` — extend selection
-- `d`/`x` — delete selection
-- `y` — yank selection
-- `p`/`P` — paste over selection
+- `V` - toggle visual line selection
+- `j`/`k` - extend selection
+- `d`/`x` - delete selection
+- `y` - yank selection
+- `p`/`P` - paste over selection
 
 ### Undo/Redo
-- `u` — undo (100-level stack)
-- `C-r` — redo slot (unbound yet)
+- `u` - undo (100-level stack)
+- `C-r` - redo slot (unbound yet)
 
 ### Insert/Reorder
-- `o`/`O` — insert blank line below/above
-- `J`/`K` — move line down/up (swap, with undo)
+- `o`/`O` - insert blank line below/above
+- `J`/`K` - move line down/up (swap, with undo)
 
 ### Other
-- `:` — command mode (`:w` save, `:wq` save+quit, `:q` quit, `:q!` force quit, `:d N` delete, `:m N M` move, `:rename`, `:privacy`, `:rate`)
-- `q`/`Esc` — close
-- `E` — save to existing playlist
+- `:` - command mode (`:w` save, `:wq` save+quit, `:q` quit, `:q!` force quit, `:d N` delete, `:m N M` move, `:rename`, `:privacy`, `:rate`)
+- `q`/`Esc` - close
+- `E` - save to existing playlist
 - Capacity bar at top: `Tracks: N/5000 [■■■■] [□□□□] [□□□□] [□□□□]` (4 blocks × 1250)
 - Pending count shows in mode indicator: `[5]`, `[DELETE 3]`, `[V]`
 
@@ -240,7 +261,7 @@ See `docs/09-roadmap.md` for detailed session history.
 
 ## Notes Popup Features
 - Vim-driven text editor for storing URLs, song links, personal notes
-- File: `~/.config/youtui/notes.txt` — plain text, persists across sessions
+- File: `~/.config/youtui/notes.txt` - plain text, persists across sessions
 - Keybindings: `:w` save, `:wq` save+quit, `:q` quit
 - Enter on URL line → opens in yt-dlp
 - Full ViTextEditor support: j/k/h/l/gg/G/w/b, dd/yy/p, u/C-r, visual line/block
@@ -275,23 +296,23 @@ See `docs/09-roadmap.md` for detailed session history.
 
 ### Fixes in `fix/scrobbler-signature` branch
 - **Signature sort**: Last.fm API requires params sorted alphabetically before signing (`params.sort_by()` added before HMAC signing)
-- **Album track scrobbling**: Removed `should_scrobble()` guard on album track submission — all album split tracks now scrobble
+- **Album track scrobbling**: Removed `should_scrobble()` guard on album track submission - all album split tracks now scrobble
 - **scrobble_pending guard**: `self.scrobble_pending = false` cleared in `play_song_id()` and `stop()` to prevent stale state
-- **Rescrobbled spawn removed**: `extend_rescrobbled_process_keepalive` dropped — no duplicate scrobbles from systemd+embedded scrobbler
+- **Rescrobbled spawn removed**: `extend_rescrobbled_process_keepalive` dropped - no duplicate scrobbles from systemd+embedded scrobbler
 - **5 scrobbler tests**: Unit tests covering scrobble state timing, session_key usage, signature sorting, rate limiting, error handling
 
 ### Persistent Scrobble Cache
-- File: `~/.config/youtui/scrobble_cache.json` — JSON array of failed scrobble payloads
-- `save_failed_scrobble()` — writes failed submission to disk with retry_count field
-- `retry_failed_scrobbles()` — called on YoutuiWindow::new() startup; retries cached failures
-- `remove_cached_scrobble()` — removes entry after successful retry (`#[allow(dead_code)]`, used only in tests)
+- File: `~/.config/youtui/scrobble_cache.json` - JSON array of failed scrobble payloads
+- `save_failed_scrobble()` - writes failed submission to disk with retry_count field
+- `retry_failed_scrobbles()` - called on YoutuiWindow::new() startup; retries cached failures
+- `remove_cached_scrobble()` - removes entry after successful retry (`#[allow(dead_code)]`, used only in tests)
 - Max retries: 3 per entry (incremented each attempt, entries dropped after 3 failures)
 - Max cache size: 200 entries (oldest evicted when exceeded)
-- `ScrobbleResult` enum: `Success`, `Failure(String)`, `RateLimited` — rate limit stops retry loop
+- `ScrobbleResult` enum: `Success`, `Failure(String)`, `RateLimited` - rate limit stops retry loop
 - Background retry: 5-minute interval loop in main event loop, retries cached failures continuously until cleared or rate limited
 
 ### CLI Scrobble Test Tool
-- `youtui test-scrobble` — direct scrobble submission command
+- `youtui test-scrobble` - direct scrobble submission command
 - Usage: `youtui test-scrobble --artist "Artist" --title "Song" --album "Album" --duration 180`
 - Prints full params + API response + timing info
 - Tests the full scrobble pipeline: session_key retrieval, HMAC signing, Last.fm API submission
@@ -302,70 +323,70 @@ See `docs/09-roadmap.md` for detailed session history.
 ### P3: ytmapi-rs ~68 remaining TODOs
 **Problem**: ~37 legitimate TODOs remaining (artist categories, i18n, continuations, unfulfilled feature fields). All LOW value for youtui.
 
-### Ann: Annotation wrapping — fixed
+### Ann: Annotation wrapping - fixed
 **Problem**: Last annotation entry partially cut off with very long explanation text. **Fixed**: Wrapping-aware line counting added, accounts for Paragraph widget line-wrapping of long explanation lines.
 
 ### Feature: Liked songs in browser tables
 **Problem**: `LikeStatus` only visible on currently playing track (footer heart icon). Not shown in Songs/Albums/Library browser tables.
 **Plan**: Parse `like_status` from YTM search response (`SearchResultSong`), add "Liked" column to `AdvancedTableView`. `AlbumSong` already has `like_status` field available. Medium effort.
 
-## Phase Tracking (from m0094 — updated 2026-06-25)
+## Phase Tracking (from m0094 - updated 2026-06-25)
 
-### Phase 1 ✅ — Small UI fixes
+### Phase 1 ✅ - Small UI fixes
 1. Annotation panel last entry cut-off (`lyrics_popup.rs`)
 2. Force-split visual feedback (`playlist.rs`, `effect_handlers_playlist.rs`)
 3. Album `audio_playlist_id` None guard (`albumsearch.rs`)
 
-### Phase 1.5 ✅ — Scroll-centering + early Library fixes
+### Phase 1.5 ✅ - Scroll-centering + early Library fixes
 1. Vim centered-scrolling (all table views: `scrolling_table.rs`, `draw.rs`)
 2. Library Albums format (`Artist - Album`)
 3. Browser Albums auto-load removed (`albumsearch.rs`, `browser.rs`)
 4. GoToArtist in Library (`library.rs`)
 
-### Library Page Revision ✅ — Complete overhaul
+### Library Page Revision ✅ - Complete overhaul
 1. Context menu per-category filtering (`songsearch.rs`, `ui.rs`, `browser.rs`)
 2. GoToAlbum→AlbumOpen direct tracks (`library.rs`, `app.rs`, `albumsearch.rs`, `browser.rs`, `ytmapi-rs`)
 3. Enter: Artists→channel, Albums→AlbumOpen
 4. F1 search all categories (`library.rs`)
 5. `/` filter all 4 categories (`draw.rs`)
-6. `/` filter guard rail — zero command bleeding (`ui.rs`, `browser.rs`)
+6. `/` filter guard rail - zero command bleeding (`ui.rs`, `browser.rs`)
 7. Subscribe single toggle S key (`songsearch.rs`, `library.rs`, `keymap.rs`)
 8. Plays column preserved from YTM (`structures.rs`)
 9. Lowercase artist names (`structures.rs`)
-10. Album art vanish fix — DCS clear only in popup block (`draw.rs`)
+10. Album art vanish fix - DCS clear only in popup block (`draw.rs`)
 11. RatePlaylist for Library Albums (`library.rs`)
 12. Removed hardcoded "No albums/playlists found" (`draw.rs`)
 
 ### Metadata Pipeline Fixes ✅
-1. Fallback split guard — requires `video_dur` OR album tags (`effect_handlers_playlist.rs:655`)
-2. Album override guard — keep YTM when present (`effect_handlers_playlist.rs:578`)
-3. Track-presence check — reject wrong album split (`effect_handlers_playlist.rs:652`)
+1. Fallback split guard - requires `video_dur` OR album tags (`effect_handlers_playlist.rs:655`)
+2. Album override guard - keep YTM when present (`effect_handlers_playlist.rs:578`)
+3. Track-presence check - reject wrong album split (`effect_handlers_playlist.rs:652`)
 4. DiscogsProvider track validation (`discogs.rs:102-111`)
 5. AlbumSearchProvider track validation (`lastfm_album.rs:98-111`)
 6. TrackSearchProvider title matching (`lastfm_track.rs:55-59`)
-7. normalize_artist_name — ALL-CAPS preserved (`structures.rs:176-181`)
+7. normalize_artist_name - ALL-CAPS preserved (`structures.rs:176-181`)
 8. 6-provider metadata audit completed (MetalApi, MusicBrainz, Discogs, Last.fm Album/Track, Genius)
 
-### Phase 2 ✅ — Genius fallback + Year coverage + Scoring
-1. Genius annotations fallback — `__PRELOADED_STATE__ = JSON.parse('...')` extraction ✅
-2. FFT footer bars — cancelled (cosmetic, user skipped) 
-3. Year coverage gaps — Library LikedSongs + title parenthetical fallbacks ✅
+### Phase 2 ✅ - Genius fallback + Year coverage + Scoring
+1. Genius annotations fallback - `__PRELOADED_STATE__ = JSON.parse('...')` extraction ✅
+2. FFT footer bars - cancelled (cosmetic, user skipped) 
+3. Year coverage gaps - Library LikedSongs + title parenthetical fallbacks ✅
 4. Metadata scoring review (+100 tracklist bias gated) ✅
 
-### Phase 3 ✅ — Musixmatch/LRCLIB + RYM genre data
+### Phase 3 ✅ - Musixmatch/LRCLIB + RYM genre data
 1. LRCLIB lyrics crate (`libs/lrclib-rs/`) with CLI debug tool ✅
 2. RYM genre/descriptor data from pre-scraped GitHub (`libs/rym-genre-data/`) ✅
 3. RYM genre descriptions in song info popup (`song_info_popup.rs`) ✅
 
-### Phase 4 ✅ — audio-player crate extraction
+### Phase 4 ✅ - audio-player crate extraction
 - `libs/audio-player/` extracted from `async_rodio_sink.rs` ✅
 - 7 files' import paths updated; old file deleted ✅
 
-### Phase 5 ✅ — Related tracks metadata enrichment
+### Phase 5 ✅ - Related tracks metadata enrichment
 - yt-dlp per-video bounded concurrent (max 30, 5 semaphore) ✅
 - `EnrichRelatedTracks` task + `HandleEnrichRelatedTracksOk`/`Err` handlers ✅
 
-### Phase 6 ✅ — Cross-platform compatibility
+### Phase 6 ✅ - Cross-platform compatibility
 - Clipboard fallback chain (wl-copy/xclip/xsel/pbcopy) ✅
 - `gag` crate `#[cfg(unix)]` gate ✅
 - `/tmp/` paths replaced with `std::env::temp_dir()` ✅
@@ -395,5 +416,13 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 164/164 pass, 4 ignored, 0 warnings across workspace
+- 181/181 pass, 4 ignored, 0 warnings across workspace
 - Suckless refactoring adds 0 tests (refactors existing code only)
+
+## Inspirations & Thanks
+
+Youtui stands on the shoulders of these projects:
+
+- **[ncspot](https://github.com/hrkfdn/ncspot)** — ncurses Spotify TUI. Enter = primary action (never sub-menu) design copied directly. Queue-centric playback model.
+- **[kopuz](https://github.com/kopuz-music/kopuz)** — Terminal music player with Last.fm native scrobbling. Inspired the embedded scrobbler architecture.
+- **[youtui](https://github.com/caos-obliquo/youtui)** — This project itself. Special thanks to the contributors and testers who shaped every feature.

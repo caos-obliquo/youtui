@@ -5,18 +5,18 @@
 ```
 ┌────────────────────────────────────────────────────────────┐
 │                        youtui                              │
-│  (35k LOC, 71 files — main TUI application)                │
+│  (35k LOC, 71 files - main TUI application)                │
 │                                                            │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │ app/ — core application logic                        │  │
-│  │  ├── app.rs — main event loop, callback dispatch     │  │
-│  │  ├── ui.rs — YoutuiWindow, HelpMenu, component tree  │  │
-│  │  ├── server/ — backend tasks, providers, downloader  │  │
-│  │  ├── view/ — table/filter/sort system                │  │
-│  │  └── component/ — action handler, key router traits  │  │
-│  ├── config/ — config.toml parsing + keymap IR          │  │
-│  ├── widgets/ — scrolling_list, scrolling_table, tab    │  │
-│  ├── youtube_downloader/ — yt-dlp + native downloaders  │  │
+│  │ app/ - core application logic                        │  │
+│  │  ├── app.rs - main event loop, callback dispatch     │  │
+│  │  ├── ui.rs - YoutuiWindow, HelpMenu, component tree  │  │
+│  │  ├── server/ - backend tasks, providers, downloader  │  │
+│  │  ├── view/ - table/filter/sort system                │  │
+│  │  └── component/ - action handler, key router traits  │  │
+│  ├── config/ - config.toml parsing + keymap IR          │  │
+│  ├── widgets/ - scrolling_list, scrolling_table, tab    │  │
+│  ├── youtube_downloader/ - yt-dlp + native downloaders  │  │
 │  └── audio-player/                              │  │
 └────────┬────────────────────────────────────────────────┘  │
          │ depends on:                                       │
@@ -88,19 +88,19 @@ pub enum WindowContext {
 
 ### Context priority (highest to lowest)
 
-1. **Popups** — lyrics, song info, album art, config editor, save/update playlist (full intercept)
-2. **Command mode** (`:` prompt) — ViTextEditor captures all keys
-3. **Quit confirm** — `y`/`n` only
-4. **Current context** — Browser, Playlist, or Logs
-5. **Global** — F-keys, volume, seek, toggle browser/queue
+1. **Popups** - lyrics, song info, album art, config editor, save/update playlist (full intercept)
+2. **Command mode** (`:` prompt) - ViTextEditor captures all keys
+3. **Quit confirm** - `y`/`n` only
+4. **Current context** - Browser, Playlist, or Logs
+5. **Global** - F-keys, volume, seek, toggle browser/queue
 
 ### Context switching
 
-- `F1` — toggle YTM search panel (overlays current context)
-- `F2` — toggle Browser (saves/restores prev_context)
-- `F3` — toggle Playlist (saves/restores prev_context)
-- `F11` — toggle Logs
-- `Esc`/`q` in popups — close popup, return to underlying context
+- `F1` - toggle YTM search panel (overlays current context)
+- `F2` - toggle Browser (saves/restores prev_context)
+- `F3` - toggle Playlist (saves/restores prev_context)
+- `F11` - toggle Logs
+- `Esc`/`q` in popups - close popup, return to underlying context
 
 ## Component Trait System
 

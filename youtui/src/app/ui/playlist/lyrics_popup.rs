@@ -267,7 +267,7 @@ impl LyricsPopup {
         if !self.visual_mode {
             // Fall through to normal mode handling below
         } else {
-            // Visual mode — use annotation fields when focused on annotations
+            // Visual mode - use annotation fields when focused on annotations
             let focus_annotations = self.focus == Focus::Annotations;
             let (v_end_ptr, v_cursor_ptr, max_val): (*mut usize, *mut usize, usize) = if focus_annotations {
                 let max = self.annotations.len().saturating_sub(1);
@@ -790,7 +790,7 @@ impl LyricsPopup {
                 self.reset_count();
                 if self.focus == Focus::Annotations {
                     if let Some(ann) = self.annotations.get(self.ann_scroll_offset) {
-                        let text = format!("{} — {}", ann.fragment, ann.explanation);
+                        let text = format!("{} - {}", ann.fragment, ann.explanation);
                         crate::app::structures::copy_to_clipboard(&text);
                         tracing::info!(fragment = %ann.fragment, "Annotation copied to clipboard");
                         return (AsyncTask::new_no_op(), None);
@@ -1009,14 +1009,12 @@ impl LyricsPopup {
                     if self.ann_scroll_offset >= self.annotations.len() {
                         self.ann_scroll_offset = self.annotations.len().saturating_sub(1);
                     }
-                    // Compute centered display offset
+                    // Soft centering: cursor always 2nd from top (1st at top of list)
                     let ann_display_offset = if ann_visible > 0 {
-                        let ann_center = ann_visible / 2;
-                        let offset = if self.ann_scroll_offset > ann_center {
-                            self.ann_scroll_offset.saturating_sub(ann_center)
+                        let offset = if self.ann_scroll_offset > 1 {
+                            self.ann_scroll_offset.saturating_sub(1)
                         } else { 0 };
-                        let max_display = self.annotations.len().saturating_sub(ann_visible);
-                        offset.min(max_display)
+                        offset.min(self.annotations.len().saturating_sub(1))
                     } else { 0 };
                     let ann_max_digits = self.annotations.len().max(1).to_string().len().max(3);
                     let ann_width = ann_inner.width as usize;

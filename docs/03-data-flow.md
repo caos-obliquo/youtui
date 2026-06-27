@@ -75,20 +75,20 @@ Dominant keybinds > active context keybinds > global keybinds
 ```
 
 Each keymap context:
-- `Global` — F1/F2/F3/F7/F11, volume, seek, play/pause, quit
-- `Playlist` — j/k/d/y/V, shuffle, repeat, delete, etc.
-- `Browser` — tab switching, navigation
-- `BrowserSongs` — song list actions
-- `BrowserArtists` — artist list actions
-- `BrowserPlaylists` — playlist list actions
-- `Filter` — local filter mode
-- `Sort` — sort mode
-- `Help` — help screen
-- `TextEntry` — ViTextEditor keybindings
-- `List` — up/down/page navigation
-- `Log` — log viewer
-- `PlaylistSavePopup` — save playlist popup
-- `PlaylistUpdatePopup` — update playlist popup
+- `Global` - F1/F2/F3/F7/F11, volume, seek, play/pause, quit
+- `Playlist` - j/k/d/y/V, shuffle, repeat, delete, etc.
+- `Browser` - tab switching, navigation
+- `BrowserSongs` - song list actions
+- `BrowserArtists` - artist list actions
+- `BrowserPlaylists` - playlist list actions
+- `Filter` - local filter mode
+- `Sort` - sort mode
+- `Help` - help screen
+- `TextEntry` - ViTextEditor keybindings
+- `List` - up/down/page navigation
+- `Log` - log viewer
+- `PlaylistSavePopup` - save playlist popup
+- `PlaylistUpdatePopup` - update playlist popup
 
 ## 4. Task Spawning
 

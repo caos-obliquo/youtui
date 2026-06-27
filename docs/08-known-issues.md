@@ -4,9 +4,9 @@
 
 | Issue | Workaround |
 |-------|------------|
-| **Footer album art broken in tmux**: Sixel rendering corrupts when running inside tmux. Footer shows garbage or missing image. | `:reload` re-renders everything, often fixes it. Also try `tmux set -g allow-passthrough on` in `~/.tmux.conf`. |
-| **`o.v` album art popup broken in tmux**: Same root cause. Sixel overlay can render partially, fail to clear, or leave artifacts. | Same fix. If popup persists after close, `:reload` clears it fully. |
-| **No sixel support at all**: Terminal emulator does not support sixel graphics. | Album art silently skipped. Check with `printf '\eP#? \e\\'` — no response = no sixel. |
+| **Footer album art broken in tmux** - **FIXED v1.0.3**: `flush_sixel` no longer gated by `is_tmux`. Unconditional DCS clear `\x1bP0p\x1b\\` before re-write prevents stale pixel corruption. | N/A - fix is permanent. |
+| **`o.v` album art popup broken in tmux** - **FIXED v1.0.3**: Same root cause as footer - unconditional DCS clear on sixel flush. | N/A - fix is permanent. |
+| **No sixel support at all**: Terminal emulator does not support sixel graphics. | Album art silently skipped. Check with `printf '\eP#? \e\\'` - no response = no sixel. |
 
 ### What is sixel?
 

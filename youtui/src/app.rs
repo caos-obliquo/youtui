@@ -312,7 +312,6 @@ impl Youtui {
         })
     }
     pub async fn run(&mut self) -> Result<()> {
-        let is_tmux = std::env::var("TERM").ok().map_or(false, |t| t.starts_with("tmux"));
         // Initial draw before first event
         self.terminal.draw(|f| {
             ui::draw::draw_app(
@@ -321,7 +320,7 @@ impl Youtui {
                 &self.terminal_image_capabilities,
             );
         })?;
-        if is_tmux { self.flush_sixel()?; }
+        self.flush_sixel()?;
         if let Some(media_controls) = &mut self.media_controls {
             media_controls.update_controls(
                 ui::draw_media_controls::draw_app_media_controls(&self.window_state),
@@ -356,7 +355,7 @@ impl Youtui {
                                         &self.terminal_image_capabilities,
                                     );
                                 })?;
-                                if is_tmux { self.flush_sixel()?; }
+                                self.flush_sixel()?;
                                 if let Some(media_controls) = &mut self.media_controls {
                                     media_controls.update_controls(
                                         ui::draw_media_controls::draw_app_media_controls(&self.window_state),
@@ -914,6 +913,8 @@ impl Youtui {
         let rect = self.window_state.sixel_rect;
         if let Some((data, rect)) = self.window_state.sixel_data.as_ref().zip(rect) {
             let mut stdout = io::stdout();
+            // Clear stale sixel at this position before re-drawing
+            stdout.write_all(b"\x1bP0p\x1b\\")?;
             crossterm::execute!(&mut stdout, crossterm::cursor::MoveTo(rect.x, rect.y))?;
             stdout.write_all(data.as_bytes())?;
             stdout.flush()?;

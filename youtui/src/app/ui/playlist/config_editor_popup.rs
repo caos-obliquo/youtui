@@ -83,7 +83,7 @@ impl ConfigEditorPopup {
                 if event.code == KeyCode::Char('Z')
                     && self.editor.mode == ViMode::Normal
                 {
-                    // Wait for next key via key stack? No — handle key chords here.
+                    // Wait for next key via key stack? No - handle key chords here.
                     // We can't do ZZ in a single handle_key call.
                     // We'll handle it via the key_stack mechanism.
                 }

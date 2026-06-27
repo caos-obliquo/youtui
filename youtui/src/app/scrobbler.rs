@@ -37,8 +37,8 @@ impl ScrobbleState {
 /// Strip common album-name suffixes that prevent Last.fm art matching.
 /// Also strips YTM format prefixes (EP:, Album:, Single:, LP:).
 /// Last.fm creates new empty album entries when the name differs even slightly.
-/// Safe patterns — clearly not canonical title (format markers, edition labels).
-/// Does NOT strip year-parentheticals like "(2007 Remaster)" — those ARE canonical.
+/// Safe patterns - clearly not canonical title (format markers, edition labels).
+/// Does NOT strip year-parentheticals like "(2007 Remaster)" - those ARE canonical.
 pub(crate) fn clean_album_for_scrobble(album: &str) -> String {
     let mut s = album.to_string();
     // YTM prefixes: format descriptors before canonical title
@@ -147,10 +147,10 @@ pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
         match submit_scrobble_inner(config, &state).await {
             ScrobbleResult::Success => {
                 cache.remove(i);
-                // Don't increment i — next entry shifts into this position
+                // Don't increment i - next entry shifts into this position
             }
             ScrobbleResult::RateLimited => {
-                warn!("Rate limited during cache retry — stopping retries, keeping remaining entries for next startup");
+                warn!("Rate limited during cache retry - stopping retries, keeping remaining entries for next startup");
                 // Increment retry_count for remaining entries so they eventually expire
                 for entry in cache.iter_mut() {
                     let rc = entry["retry_count"].as_u64().unwrap_or(0);
@@ -438,7 +438,7 @@ mod tests {
             "track": "B",
             "duration_secs": 240u64,
             "timestamp": 1000u64,
-            // No retry_count field — legacy format
+            // No retry_count field - legacy format
         });
         let rc = entry["retry_count"].as_u64().unwrap_or(0);
         assert_eq!(rc, 0, "Legacy entries should default to retry_count=0");
@@ -483,7 +483,7 @@ mod tests {
         params.push(("album".into(), state.album.clone().unwrap()));
         params.push(("duration".into(), state.duration.as_secs().to_string()));
 
-        // Sort — this is what the fix does
+        // Sort - this is what the fix does
         params.sort_by(|a, b| a.0.cmp(&b.0));
 
         // Verify sorted order
@@ -513,7 +513,7 @@ mod tests {
             ("album".into(), state.album.clone().unwrap()),
             ("duration".into(), state.duration.as_secs().to_string()),
         ];
-        // NO sort — use insertion order
+        // NO sort - use insertion order
         let unsorted_sig = format!("{:x}", md5::compute(
             unsorted_params.iter()
                 .map(|(k, v)| format!("{}{}", k, v))
@@ -552,7 +552,7 @@ mod tests {
             discogs_token: String::new(),
         };
         let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
-        // This should not panic — just return immediately
+        // This should not panic - just return immediately
         let _fut = submit_scrobble(&config, &state);
         // We can't easily block on async in non-async test,
         // but at least verify the function signature compiles and doesn't panic at start

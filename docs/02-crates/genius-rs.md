@@ -32,7 +32,7 @@ let hit = client.find_song("FIDLAR", "Wasted").await?;
 // Fetch lyrics (scraped from HTML)
 let lyrics = client.fetch_lyrics("/Fidlar-wasted-lyrics").await?;
 
-// Fetch annotations (page scrape — only works if __INITIAL_STATE__ present)
+// Fetch annotations (page scrape - only works if __INITIAL_STATE__ present)
 let annotations = client.fetch_annotations("/Fidlar-wasted-lyrics").await?;
 
 // Fetch annotations with API fallback (tries API first if token available, then page scrape)
@@ -100,8 +100,8 @@ The Genius lyrics API endpoint (`/api/songs/{id}/lyrics`) returns **403 Forbidde
 3. Fetch the public song page HTML
 4. Find `<div data-lyrics-container="true">` with CSS selector
 5. Walk DOM: extract text from all child nodes, preserving `<br>` as newlines
-6. `<a>`, `<i>`, `<b>`, `<span>` tags are recursed into (span was missing — fixed bug)
-7. Section headers like `[Verse 1]`, `[Chorus]` are plain text — preserved verbatim
+6. `<a>`, `<i>`, `<b>`, `<span>` tags are recursed into (span was missing - fixed bug)
+7. Section headers like `[Verse 1]`, `[Chorus]` are plain text - preserved verbatim
 8. Blank lines inserted BETWEEN sections (not after headers): `[Verse 1]\ntext\n\n[Chorus]\ntext`
 9. Clean HTML entities, strip junk lines ("You might also like", "Contributors", etc.)
 
@@ -113,7 +113,7 @@ When search API returns wrong results (e.g., artist=title="Love Letter" was find
 let path = search::compute_path("Love Letter", "Love Letter");
 // → "/love-letter-love-letter-lyrics"
 // Fetches https://genius.com/love-letter-love-letter-lyrics directly
-// No API call needed — works even with ambiguous search queries
+// No API call needed - works even with ambiguous search queries
 ```
 
 ## Annotations
@@ -123,21 +123,21 @@ Three-tier fallback for annotations (in order):
 1. **API with Bearer token** (`annotations.rs:fetch_from_api()`):
    - Calls `https://api.genius.com/referents?song_id={id}` with `Authorization: Bearer {token}`
    - Returns ALL annotations for the song (no pagination limit)
-   - **Requires `GENIUS_TOKEN` env var** — set in your shell profile
+   - **Requires `GENIUS_TOKEN` env var** - set in your shell profile
    - Most reliable method
 
 2. **Page scrape** (`scrape.rs:extract_annotations()`):
    - Parses `window.__INITIAL_STATE__` JSON embedded in the page
    - Returns all annotations from the JSON
-   - **Only works on modern Genius pages** — many pages don't embed this JSON
+   - **Only works on modern Genius pages** - many pages don't embed this JSON
 
-3. **Empty result** — if both fail, returns empty vec with warning
+3. **Empty result** - if both fail, returns empty vec with warning
 
 ```bash
 # With token (reliable):
 GENIUS_TOKEN=your_token_here cargo run --bin genius-rs all "Queen" "Bohemian Rhapsody"
 
-# Without token (unreliable — depends on page structure):
+# Without token (unreliable - depends on page structure):
 cargo run --bin genius-rs all "FIDLAR" "Wasted"
 ```
 
@@ -169,16 +169,16 @@ Blank line BETWEEN sections (not after header). This is controlled in `scrape.rs
 |-------|-------|------------|
 | Annotations return 0 | No `GENIUS_TOKEN` set | Add `GENIUS_TOKEN` env var |
 | `__INITIAL_STATE__` missing | Old/legacy Genius pages | Use Bearer token with `fetch_annotations_with_token()` |
-| Lyrics truncated | `<span>` tags inside `<a>` | Fixed — `span` added to recursive tag handler |
-| Wrong song matched | Ambiguous artist/title (e.g., "Love Letter") | Fixed — slug URL tried first before API search |
+| Lyrics truncated | `<span>` tags inside `<a>` | Fixed - `span` added to recursive tag handler |
+| Wrong song matched | Ambiguous artist/title (e.g., "Love Letter") | Fixed - slug URL tried first before API search |
 
 ## Deps
 
-- `reqwest` — HTTP client
-- `scraper` — HTML parsing (CSS selectors)
-- `serde_json` — JSON parsing for search API + initial state
-- `tokio` — async runtime
-- `tracing` + `tracing-subscriber` — logging
+- `reqwest` - HTTP client
+- `scraper` - HTML parsing (CSS selectors)
+- `serde_json` - JSON parsing for search API + initial state
+- `tokio` - async runtime
+- `tracing` + `tracing-subscriber` - logging
 
 ## Tests
 

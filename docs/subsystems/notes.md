@@ -6,19 +6,19 @@ A vim-driven text editor popup for storing frequently-visited URLs, song links, 
 
 ## Why
 
-The user frequently visits specific music URLs (albums, playlists, songs) that are hard to discover through YTM search alone — niche artists, algorithm-unfriendly genres, specific album IDs. Instead of retyping URLs into the `:` command each time, Notes provides a persistent scratchpad with vim navigation and URL-opening on Enter.
+The user frequently visits specific music URLs (albums, playlists, songs) that are hard to discover through YTM search alone - niche artists, algorithm-unfriendly genres, specific album IDs. Instead of retyping URLs into the `:` command each time, Notes provides a persistent scratchpad with vim navigation and URL-opening on Enter.
 
-Built suckless: plain text file, no database, no JSON, no serialization — just `~/.config/youtui/notes.txt` read and written as-is.
+Built suckless: plain text file, no database, no JSON, no serialization - just `~/.config/youtui/notes.txt` read and written as-is.
 
 ## File Format
 
 ```
-~/.config/youtui/notes.txt — plain UTF-8 text, one line per entry
+~/.config/youtui/notes.txt - plain UTF-8 text, one line per entry
 ```
 
-> **Cross-Platform:** Config path resolved via `directories` crate (`ProjectDirs::config_local_dir()`) — `~/.config/youtui/` on Linux, `~/Library/Application Support/com.nick42.youtui/` on macOS. Temp files use `std::env::temp_dir()`.
+> **Cross-Platform:** Config path resolved via `directories` crate (`ProjectDirs::config_local_dir()`) - `~/.config/youtui/` on Linux, `~/Library/Application Support/com.nick42.youtui/` on macOS. Temp files use `std::env::temp_dir()`.
 
-Lines starting with `http://` or `https://` are URLs — pressing Enter on them opens the URL in yt-dlp. Lines without URL prefix are plain text notes (descriptions, metadata, reminders).
+Lines starting with `http://` or `https://` are URLs - pressing Enter on them opens the URL in yt-dlp. Lines without URL prefix are plain text notes (descriptions, metadata, reminders).
 
 Example:
 ```
@@ -75,7 +75,7 @@ https://genius.com/Queen-bohemian-rhapsody-lyrics
 
 ### Why no hardware cursor (unlike ConfigEditorPopup)?
 
-The Notes popup uses the `▎` character from `ViTextEditor::render_simple()` as cursor indicator — same behavior as F1 search box. ConfigEditorPopup additionally calls `Frame::set_cursor_position()` to position the hardware cursor, but this caused visual mismatch when both the `▎` character and the hardware cursor appeared at slightly different positions. Matching the search box behavior (cursor character only) proved more consistent and less error-prone across terminals.
+The Notes popup uses the `▎` character from `ViTextEditor::render_simple()` as cursor indicator - same behavior as F1 search box. ConfigEditorPopup additionally calls `Frame::set_cursor_position()` to position the hardware cursor, but this caused visual mismatch when both the `▎` character and the hardware cursor appeared at slightly different positions. Matching the search box behavior (cursor character only) proved more consistent and less error-prone across terminals.
 
 ### Why Esc behavior differs from vim?
 
@@ -98,7 +98,7 @@ Previous VTE behavior (now fixed): `cursor -= 1` moved cursor back one character
 6. Next `:notes` reads the updated file
 ```
 
-The file persists across sessions and reboots — stored on disk, not in memory.
+The file persists across sessions and reboots - stored on disk, not in memory.
 
 ## Integration Points
 
@@ -112,9 +112,9 @@ The file persists across sessions and reboots — stored on disk, not in memory.
 ## Tests
 
 Visual testing only (no unit tests):
-- Open `:notes` — popup displays with file content
-- Press `i` — cursor changes to insert position, title shows `[I]`
-- Press `Esc` — exits to Normal mode, title shows `[N]`
-- Press `:` then `:w` — saves, stays open
-- Press `:` then `:q` — quits
-- Enter on URL line — opens in yt-dlp
+- Open `:notes` - popup displays with file content
+- Press `i` - cursor changes to insert position, title shows `[I]`
+- Press `Esc` - exits to Normal mode, title shows `[N]`
+- Press `:` then `:w` - saves, stays open
+- Press `:` then `:q` - quits
+- Enter on URL line - opens in yt-dlp

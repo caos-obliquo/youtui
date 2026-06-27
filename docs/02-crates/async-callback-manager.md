@@ -1,6 +1,6 @@
 # Crate: async-callback-manager
 
-**1,802 LOC, 12 files** — Generic async callback management for UI frameworks.
+**1,802 LOC, 12 files** - Generic async callback management for UI frameworks.
 
 ## Purpose
 
@@ -38,18 +38,18 @@ pub struct TaskOutcome { ... }
 
 ```
 src/
-├── lib.rs                   — Re-exports
-├── adaptors.rs              — Task construction helpers
-├── constraint.rs            — Concurrency limiting (semaphore)
-├── error.rs                 — Error handling for task execution
-├── manager.rs               — AsyncCallbackManager main implementation
-├── manager/task_list.rs     — Internal task storage + dispatch
-├── panicking_receiver_stream.rs — Stream wrapper for non-panicking receive
-├── task.rs                  — Task enum (Future / BackendTask variants)
-├── task/dyn_task.rs         — Dynamic dispatch for BackendTask
-├── task/dyn_task/handlers.rs— Handler functions
-├── task/map.rs              — Frontend type mapping (map_frontend)
-└── task/tests.rs            — Unit tests
+├── lib.rs                   - Re-exports
+├── adaptors.rs              - Task construction helpers
+├── constraint.rs            - Concurrency limiting (semaphore)
+├── error.rs                 - Error handling for task execution
+├── manager.rs               - AsyncCallbackManager main implementation
+├── manager/task_list.rs     - Internal task storage + dispatch
+├── panicking_receiver_stream.rs - Stream wrapper for non-panicking receive
+├── task.rs                  - Task enum (Future / BackendTask variants)
+├── task/dyn_task.rs         - Dynamic dispatch for BackendTask
+├── task/dyn_task/handlers.rs- Handler functions
+├── task/map.rs              - Frontend type mapping (map_frontend)
+└── task/tests.rs            - Unit tests
 ```
 
 ## Constraint System

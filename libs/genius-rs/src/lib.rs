@@ -32,7 +32,7 @@ impl GeniusClient {
     /// Bearer search first (gives real song ID for annotations),
     /// then slug URL fallback, then public search.
     pub async fn find_song(&self, artist: &str, title: &str) -> Result<Option<SongHit>, String> {
-        // Bearer search first — gives real song ID for annotations API
+        // Bearer search first - gives real song ID for annotations API
         if self.token.as_deref().is_some_and(|t| !t.is_empty()) {
             let hits = search::search(&self.client, artist, title, self.token.as_deref()).await
                 .unwrap_or_default();
@@ -101,7 +101,7 @@ impl GeniusClient {
                 Err(e) => tracing::info!("Genius: simple slug failed: {}", e),
             }
         }
-        // Slug failed — try search API
+        // Slug failed - try search API
         tracing::info!("Genius: fallback to search API");
         let hit = self
             .find_song(artist, title)

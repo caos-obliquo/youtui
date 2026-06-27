@@ -2,7 +2,7 @@
 
 ## Data Model
 
-File: `youtui/src/app/ui/playlist.rs` — `Playlist` struct (main, ~3104 lines)
+File: `youtui/src/app/ui/playlist.rs` - `Playlist` struct (main, ~3104 lines)
 
 ```rust
 pub struct Playlist {
@@ -23,19 +23,19 @@ pub struct Playlist {
 | Play song | `play_song(id)` | Enter |
 | Next track | `next_song()` | `l` |
 | Previous track | `previous_song()` | `h` |
-| Add to end | `add_song_to_playlist(song)` | — |
+| Add to end | `add_song_to_playlist(song)` | - |
 | Remove from queue | `remove_from_playlist(id)` | `d` |
 | Move up | `shift_up(id)` | `K` |
 | Move down | `shift_down(id)` | `J` |
 | Clear queue | (context menu) | `o.c` |
-| Toggle shuffle | `toggle_shuffle()` | — |
-| Cycle repeat | `cycle_repeat()` | — |
+| Toggle shuffle | `toggle_shuffle()` | - |
+| Cycle repeat | `cycle_repeat()` | - |
 
 ## Shuffle
 
 File: `youtui/src/app/ui/playlist.rs`
 
-Uses `rand::thread_rng()` to generate a shuffled index order. The original queue order is preserved — shuffle is a view transformation.
+Uses `rand::thread_rng()` to generate a shuffled index order. The original queue order is preserved - shuffle is a view transformation.
 
 ```rust
 pub fn toggle_shuffle(&mut self) {

@@ -33,8 +33,8 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | [ytmapi-rs-status](ytmapi-rs-status.md) | Feature matrix vs Python ytmusicapi |
 | [subsystems/album_art_popup](subsystems/album_art_popup.md) | Sixel album art popup architecture |
 | [subsystems/notes](subsystems/notes.md) | Notes popup system |
-| [man/genius-rs.1](man/genius-rs.1) | Man page — genius-rs CLI (lyrics + annotations) |
-| [man/ytmapi-cli.1](man/ytmapi-cli.1) | Man page — ytmapi-cli (YTM API debug tool) |
+| [man/genius-rs.1](man/genius-rs.1) | Man page - genius-rs CLI (lyrics + annotations) |
+| [man/ytmapi-cli.1](man/ytmapi-cli.1) | Man page - ytmapi-cli (YTM API debug tool) |
 
 ## Man Pages
 
@@ -61,8 +61,8 @@ man ytmapi-cli
 | Platform | Backend | Notes |
 |----------|---------|-------|
 | Linux | ALSA (`alsa-lib`) | Install via system package manager |
-| macOS | CoreAudio | Built-in — no extra install |
-| BSD | OSS | Built-in — no extra install |
+| macOS | CoreAudio | Built-in - no extra install |
+| BSD | OSS | Built-in - no extra install |
 
 Install runtime deps per platform:
 ```bash
@@ -101,7 +101,7 @@ cargo test --release -p ytmapi-rs --lib         # 82 tests (no auth)
 cargo test --release -p ytmapi-rs              # 29/51 auth (needs cookie)
 ```
 
-All paths use XDG convention (`~/.config/youtui/`, `~/.local/share/youtui/`) — compatible with Linux, macOS, and BSD.
+All paths use XDG convention (`~/.config/youtui/`, `~/.local/share/youtui/`) - compatible with Linux, macOS, and BSD.
 
 ## Key Files
 
