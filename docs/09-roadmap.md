@@ -145,17 +145,16 @@
 | youtui | 164 | 4 |
 | metadata-provider | 48 | 0 |
 | vi-text-editor | 67 | 0 |
-| ytmapi-rs (lib) | 85 | 0 |
+| ytmapi-rs (lib) | 82 | 0 |
 | genius-rs | 18 | 0 |
 | async-callback-manager | 14 | 0 |
 | json-crawler | 2 | 0 |
-| ytmapi-cli | 7 | 0 |
 | lrclib-rs | 4 | 0 |
 | rym-genre-data | 10 | 0 |
 | audio-player | 0 | 0 |
-| **Total** | **419** | **4** |
+| **Total** | **409** | **4** |
 
-0 failures, 0 build warnings across 11 workspace crates.
+0 failures, 0 build warnings across 10 workspace crates.
 
 ## Completed 2026-06-26 — Scrobbler + Suckless + PR #3 Perf
 
@@ -275,6 +274,17 @@
 | 124 | clear_sort_commands() resets to identity (restores fetch order without re-fetch) | 3 files |
 | 125 | 3 TODO comments removed | 3 files |
 
+### PR #27 — ytmapi-rs regression fix (5 regressions from working tree slimming)
+| # | Feature | Files |
+|---|---------|-------|
+| 131 | **Auth fix**: restored `parse_netscape_cookies()` — Netscape cookie format from yt-dlp needs parsing before reqwest Cookie header | `auth/browser.rs` |
+| 132 | **EP/singles fix**: case-insensitive `contains()` matching for carousel section titles — `categorize_top_release()` was deleted, Singles/EPs never processed | `parse/artist.rs` |
+| 133 | **reqwest 0.13.3 → 0.11**: TLS broken in 0.13.3, reverted | `Cargo.toml` |
+| 134 | **VL prefix stripping restored**: 5 mutation files had stripping removed — all mutation ops on VL playlists would fail 400/404 | 5 query files |
+| 135 | **RemovePlaylistItems endpoint fixed**: `browse/edit_playlist` → `playlist/edit` | `query/playlist.rs` |
+| 136 | **ytmapi-rs slimming**: +804/-2107 lines across 60 files. ytmapi-cli removed from workspace. Simplified queries reduced. Auth consolidated. Test fixtures regenerated. | ytmapi-rs/ |
+| 137 | **ytmapi-rs lib tests**: 85→82 (3 locale `with_language`/`with_location` tests removed) | test files |
+
 ### PR #20 — ytmapi-rs artist categories
 | # | Feature | Files |
 |---|---------|-------|
@@ -298,18 +308,17 @@
 
 | # | Crate | Status | Tests |
 |---|-------|--------|-------|
-| 1 | ytmapi-rs | Extracted | 85 lib |
+| 1 | ytmapi-rs | Extracted | 82 lib |
 | 2 | json-crawler | Extracted | 2 |
 | 3 | async-callback-manager | Extracted | 14 |
-| 4 | vi-text-editor | Extracted | 65 |
+| 4 | vi-text-editor | Extracted | 67 |
 | 5 | genius-rs | Extracted | 18 |
-| 6 | ytmapi-cli | Extracted | 7 |
-| 7 | metadata-provider | Extracted | 48 |
-| 8 | lrclib-rs | Extracted | 4 |
-| 9 | rym-genre-data | Extracted | 10 |
-| 10 | metal-proxy | Removed (API down) | 0 |
-| 11 | audio-player | Extracted ✅ | 0 |
-| 12 | rym-definitions | Removed (merged into rym-genre-data) | 0 |
+| 6 | metadata-provider | Extracted | 48 |
+| 7 | lrclib-rs | Extracted | 4 |
+| 8 | rym-genre-data | Extracted | 10 |
+| 9 | metal-proxy | Removed (API down) | 0 |
+| 10 | audio-player | Extracted ✅ | 0 |
+| 11 | rym-definitions | Removed (merged into rym-genre-data) | 0 |
 
 ## Browser Tabs Feature Parity
 

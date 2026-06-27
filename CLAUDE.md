@@ -49,22 +49,21 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 164 pass, 4 ignore
+cargo test --release -p youtui --bin youtui       # 172 pass, 4 ignore
 cargo test --release -p metadata-provider          # 48 pass
 cargo test --release -p vi-text-editor             # 67 pass
-cargo test --release -p ytmapi-rs --lib            # 85 pass (no auth)
+cargo test --release -p ytmapi-rs --lib            # 82 pass (no auth)
 cargo test --release -p ytmapi-rs                  # 29/51 auth (needs cookie)
 cargo test --release -p genius-rs                  # 18 pass
 cargo test --release -p async-callback-manager     # 14 pass (3 lib + 11 integ)
 cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
-cargo test --release -p ytmapi-cli                 # 7 pass
 cargo test --release -p lrclib-rs                  # 4 pass
 cargo test --release -p rym-genre-data             # 10 pass
 ```
-Total: **~419/419 pass, 0 fail, 4 ignored, 0 warnings** (164 + 48 + 67 + 85 + 18 + 14 + 2 + 7 + 4 + 10 = 419)
+Total: **~417/417 pass, 0 fail, 4 ignored, 0 warnings** (172 + 48 + 67 + 82 + 18 + 14 + 2 + 4 + 10 = 417)
 
 ## Warnings
-`cargo build --release` — **0 warnings across workspace** (all 11 crates clean).
+`cargo build --release` — **0 warnings across workspace** (all 10 crates clean).
 
 ## Performance (PR #3 — perf/enter-cancel-render)
 Batch of 6 perf fixes merged 2026-06-26, ea2fc1c:
@@ -81,7 +80,16 @@ Tests: 15 new unit tests added (5 PlayDebouncer, 3 protocol cache, 3 download ca
 Sorted `view_indices: Vec<usize>` instead of sorting the backing `BrowserSongsList.list` in-place across 3 tab structs (SongSearchBrowser, PlaylistSongsPanel, AlbumSongsPanel). `clear_sort_commands()` resets view_indices to identity — restores original fetch order without re-fetch from server. +226/-75. 3 TODO comments removed.
 
 ## PR #20 — Artist Categories (ytmapi-rs, 2026-06-26)
-`ArtistTopReleaseCategory` made pub enum (was private) with Display/Serialize/Deserialize/Default. `GetArtistAlbumsAlbum.category`: `Option<String>` -> `Option<ArtistTopReleaseCategory>`. Wired Videos arm (MRLIR carousel items), Related arm (MTRIR artist cards), Playlists arm (MTRIR) in `parse_artist_top_releases_from_section_list_contents`. Added `GetArtistTopReleases.playlists: Option<GetArtistAlbums>` field. Two TODOs removed. ytmapi-rs lib: 85/85 pass (was 76/85 before test output fix).
+`ArtistTopReleaseCategory` made pub enum (was private) with Display/Serialize/Deserialize/Default. `GetArtistAlbumsAlbum.category`: `Option<String>` -> `Option<ArtistTopReleaseCategory>`. Wired Videos arm (MRLIR carousel items), Related arm (MTRIR artist cards), Playlists arm (MTRIR) in `parse_artist_top_releases_from_section_list_contents`. Added `GetArtistTopReleases.playlists: Option<GetArtistAlbums>` field. Two TODOs removed. ytmapi-rs lib: 85/85 pass (was 76/85 before test output fix). **Note: PR #27 ytmapi-rs slimming reverted Category enum → `Option<String>`, removed playlists field, 3 locale tests removed → 82/82.**
+
+## PR #27 — ytmapi-rs regression fix (2026-06-27, NOT merged)
+Fixed 5 regressions from ytmapi-rs working tree slimming (+804/-2107 lines, 60 files):
+- **Auth**: restored `parse_netscape_cookies()` — yt-dlp Netscape cookie format needs parsing before use as Cookie header
+- **EP/singles not showing**: deleted `categorize_top_release()` replaced with case-insensitive `contains()` matching; Singles/EPs carousel sections were never processed (always `()`)
+- **reqwest 0.13.3 → 0.11**: 0.13.3 has TLS issues
+- **VL prefix stripping restored**: 5 mutation files (`playlist.rs`, `additems.rs`, `create.rs`, `edit.rs`, `rate.rs`)
+- **RemovePlaylistItems endpoint restored**: `playlist/edit` (was incorrectly `browse/edit_playlist`)
+ytmapi-rs lib: 82/82 pass (was 85 — 3 locale tests removed). ytmapi-cli removed from workspace.
 
 ## Platform Compatibility (Current Status)
 All 6 platform-specific items fixed. Youtui compiles on Linux (Wayland/X11) and macOS. Windows builds fail at compile-time with a clear error.
@@ -105,17 +113,16 @@ Frontend (UI) -> TaskManager -> Backend (Server)
 ```
 See `docs/` for full reference (4.1k lines, 31 files).
 
-## 11 Workspace Crates (50k+ LOC)
+## 10 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
 | `youtui` | Main binary | 164 |
-| `ytmapi-rs` | YT Music API client | 85 lib + 29/51 auth |
+| `ytmapi-rs` | YT Music API client | 82 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 67 |
 | `metadata-provider` | Metadata trait + impls | 48 |
 | `genius-rs` | Genius lyrics/annotations | 18 |
 | `async-callback-manager` | Async task dispatch | 14 |
 | `json-crawler` | JSON path parser | 2 |
-| `ytmapi-cli` | CLI debug tool | 7 |
 | `lrclib-rs` | LRCLIB lyrics provider | 4 |
 | `rym-genre-data` | RYM genre/descriptor hierarchy | 10 |
 | `audio-player` | Async rodio-based audio player | 0 |

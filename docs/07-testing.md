@@ -7,11 +7,10 @@
 | `youtui` | Binary | `cargo test --release -p youtui --bin youtui` | 164 | 146 unit + 18 integ |
 | Main app | `cargo test --release -p youtui --bin youtui` | 164 pass + 4 ignore | Unit + integration |
 | ViTextEditor | `cargo test --release -p vi-text-editor` | 67 | Unit + proptests |
-| ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 85 | All pass offline |
+| ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 82 | All pass offline (3 locale tests removed in slimming) |
 | ytmapi-rs (full) | `cargo test --release -p ytmapi-rs` | 28 pass / 52 fail | Needs browser auth |
 | genius-rs | `cargo test --release -p genius-rs` | 18 | Unit tests for scraping + search + annotations |
 | metadata-provider | `cargo test --release -p metadata-provider` | 48 | Unit: providers, genre_map, scoring, cache |
-| ytmapi-cli | `cargo test --release -p ytmapi-cli` | 7 | Fixture parsing, CLI usage |
 | async-callback-manager | `cargo test --release -p async-callback-manager` | 14 | 3 unit + 11 integration |
 | json-crawler | `cargo test --release -p json-crawler` | 2 | Unit + 2 doctests |
 | lrclib-rs | `cargo test --release -p lrclib-rs` | 4 | LRCLIB API lyrics provider |
@@ -115,26 +114,17 @@ youtui/src/
 
 ## Testing Latest Updates (2026-06-23)
 
-### VL Prefix Regression Test
+### VL Prefix Regression Test (historical — ytmapi-cli removed from workspace)
 
 Mutation endpoints must strip `VL` from playlist IDs. Browse endpoints must keep `VL`.
 
-Manual test via ytmapi-cli:
+Manual test via youtui binary (ytmapi-cli removed in PR #27):
 ```bash
-# Delete (strips VL)
-cargo run --release -p ytmapi-cli -- delete-playlist VLPL...
-
-# Edit/rename (strips VL)
-cargo run --release -p ytmapi-cli -- edit-playlist VLPL... --title "new"
-
-# Rate (strips VL)
-cargo run --release -p ytmapi-cli -- rate-playlist VLPL... like
-
-# Read/browse (needs VL)
-cargo run --release -p ytmapi-cli -- playlist-songs VLPL...
-
-# Add to playlist (strips VL)
-cargo run --release -p ytmapi-cli -- add-to-playlist VLPL... <videoId>
+# Delete (strips VL) — use playlist editor or o.D context menu
+# Edit/rename (strips VL) — use o.R context menu
+# Rate (strips VL) — use o.t context menu
+# Read/browse (needs VL) — Enter on playlist
+# Add to playlist (strips VL) — use o.a/o.A context menu
 ```
 
 Expected: mutations return 200 (not 400/404), reads return playlist data.
