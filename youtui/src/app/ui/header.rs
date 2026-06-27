@@ -27,7 +27,7 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
 
     let mut spans: Vec<Span> = Vec::new();
 
-    // Prepend vi mode indicator at the very start — always visible
+    // Prepend vi mode indicator at the very start - always visible
     let vi_mode: Option<String> = if w.command_mode {
         Some(w.command_editor.mode_char().to_string())
     } else if let Some(ref popup) = w.config_editor_popup {

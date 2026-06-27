@@ -125,6 +125,28 @@ fn queued_song_plays_if_not_already_playing() {
     assert_eq!(p.queue_status, QueueState::NotQueued);
 }
 
+#[tokio::test]
+async fn autoplay_song_id_sets_up_scrobble_state() {
+    let mut p = get_dummy_playlist();
+    p.scrobbling_config = crate::config::ScrobblingConfig {
+        enabled: true,
+        ..Default::default()
+    };
+    let song_id = ListSongID(1);
+    let dummy_song = Arc::new(InMemSong(vec![1]));
+    p.list.get_list_iter_mut().nth(1).unwrap().download_status =
+        DownloadStatus::Downloaded(dummy_song.clone());
+    // Simulate scrobble_pending latch from previous track
+    p.scrobble_pending = true;
+    p.scrobble_state = None;
+
+    let _effect = p.autoplay_song_id(song_id);
+
+    assert_eq!(p.play_status, PlayState::Playing(song_id));
+    assert!(!p.scrobble_pending, "autoplay must reset scrobble_pending");
+    assert!(p.scrobble_state.is_some(), "autoplay must create scrobble_state");
+}
+
 #[test]
 fn compact_song_ref_contains_all_fields() {
     let song_ref = CompactSongRef {
@@ -279,6 +301,7 @@ fn make_album_original(video: &'static str, year: Option<&str>) -> ListSong {
         thumbnails: MaybeRc::Owned(Vec::new()),
         album: None,
         like_status: LikeStatus::Indifferent,
+        is_album_upload: false,
     }
 }
 
@@ -304,6 +327,7 @@ fn make_track_entry(video: &'static str, track_no: usize, title: &'static str, d
         thumbnails: MaybeRc::Owned(Vec::new()),
         album: None,
         like_status: LikeStatus::Indifferent,
+        is_album_upload: false,
     }
 }
 
@@ -348,12 +372,38 @@ fn insert_album_tracks_sets_correct_metadata() {
     assert_eq!(t2.actual_duration, Some(Duration::from_secs_f64(148.0)));
     assert_eq!(t2.title, "Track 2");
 
-    // Track 3: last track, offset 203+148 = 351, plays to EOF (None duration)
+    // Track 3: last track, offset 203+148 = 351, uses track duration (parent_duration is None)
     let t3 = p.list.get_list_iter().nth(3).unwrap();
     assert_eq!(t3.track_no, Some(3));
     assert_eq!(t3.start_offset, Some(Duration::from_secs_f64(351.0)));
-    assert_eq!(t3.actual_duration, None); // last track plays to EOF
+    assert_eq!(t3.actual_duration, Some(Duration::from_secs_f64(194.0)));
     assert_eq!(t3.title, "Track 3");
+}
+
+#[test]
+fn insert_album_tracks_last_track_fills_remaining_when_parent_has_duration() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    // Parent has actual_duration = 450s - last track should fill remaining
+    let mut orig = make_album_original("vx1", Some("2021"));
+    orig.actual_duration = Some(Duration::from_secs(450));
+    let orig_id = p.list.push_song_list(vec![orig]);
+    let tracks = dummy_tracks(); // 203 + 148 + 194 = 545 total (overflows 450)
+
+    p.insert_album_tracks(
+        orig_id, &tracks,
+        &Some("Artist".into()), &Some("Album".into()), &None, &None,
+    );
+
+    // Track 1: non-last, uses track duration
+    let t1 = p.list.get_list_iter().nth(1).unwrap();
+    assert_eq!(t1.actual_duration, Some(Duration::from_secs_f64(203.0)));
+    // Track 2: non-last, uses track duration
+    let t2 = p.list.get_list_iter().nth(2).unwrap();
+    assert_eq!(t2.actual_duration, Some(Duration::from_secs_f64(148.0)));
+    // Track 3: last, fills remaining (450 - 203 - 148 = 99s)
+    let t3 = p.list.get_list_iter().nth(3).unwrap();
+    assert_eq!(t3.actual_duration, Some(Duration::from_secs_f64(99.0)));
 }
 
 #[test]

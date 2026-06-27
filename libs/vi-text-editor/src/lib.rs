@@ -51,8 +51,8 @@ pub enum ViMode {
     Search(FindDir, String), // (direction, query)
     OperatorPending(char),
     TextObjectPending(char, char), // (i/a, operator)
-    SurroundAddPending(char), // (operator) — awaiting motion/text-object + char
-    SurroundTargetChar(char), // (operator) — awaiting the target surround char (for cs)
+    SurroundAddPending(char), // (operator) - awaiting motion/text-object + char
+    SurroundTargetChar(char), // (operator) - awaiting the target surround char (for cs)
 }
 
 impl Default for ViTextEditor {
@@ -1093,14 +1093,14 @@ impl ViTextEditor {
                 return false;
             }
             crossterm::event::KeyCode::Char('s') => {
-                // yss — wrap entire line
+                // yss - wrap entire line
                 let start = if self.multiline { self.line_start() } else { 0 };
                 let end = if self.multiline { self.line_end() } else { self.buffer.len() };
                 self.surround_range = Some((start, end));
                 return false;
             }
             crossterm::event::KeyCode::Char(ch) => {
-                // Treat as surround char directly — wrap current word
+                // Treat as surround char directly - wrap current word
                 let (s, e) = current_word_range(&self.buffer, self.cursor);
                 self.surround_wrap_range(ch, s, e);
             }
@@ -1128,7 +1128,7 @@ impl ViTextEditor {
             self.cursor = open.min(self.buffer.len());
             self.mode = ViMode::Normal;
         } else if op == 'c' {
-            // cs{ch}: waiting for replacement char — enter surround-add with range set
+            // cs{ch}: waiting for replacement char - enter surround-add with range set
             let close_adj = if close < self.buffer.len() { close + 1 } else { close };
             self.buffer.remove(close_adj - 1);
             self.buffer.remove(open);

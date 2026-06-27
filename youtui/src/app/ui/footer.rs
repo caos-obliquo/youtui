@@ -200,7 +200,35 @@ pub fn draw_footer(
             w.cached_album_chunk = None;
             f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
         }
-        _ => {
+        Some(AlbumArtState::None) => {
+            // Song has no art yet - show cached fallback while fetch is pending
+            w.sixel_data = None;
+            if let Some(cached) = w.cached_album_protocol.take() {
+                render_album_protocol(f, w, album_art_chunk, &cached);
+                w.cached_album_protocol = Some(cached);
+            } else if let Some(ref last) = w.last_album_art {
+                if let Some(protocol) = encode_album_protocol(
+                    album_art_chunk, last.in_mem_image.clone(), terminal_image_capabilities,
+                ) {
+                    w.cached_album_protocol = Some(protocol.clone());
+                    render_album_protocol(f, w, album_art_chunk, &protocol);
+                } else {
+                    f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
+                }
+            } else {
+                f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
+            }
+        }
+        None => {
+            // No song playing - clear stale cache
+            w.sixel_data = None;
+            w.cached_album_protocol = None;
+            w.cached_album_chunk = None;
+            w.last_album_art = None;
+            f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
+        }
+        Some(AlbumArtState::Init) => {
+            // Loading placeholder - show cached old art while fetch pending
             w.sixel_data = None;
             if let Some(cached) = w.cached_album_protocol.take() {
                 render_album_protocol(f, w, album_art_chunk, &cached);

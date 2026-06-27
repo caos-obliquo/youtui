@@ -41,10 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated all 11 workspace crate docs with accurate test counts and line counts
 
 ### Fixed
-- Scrobble signature sort (error 13) — params sorted alphabetically before HMAC signing
-- Album track scrobbling — removed should_scrobble() guard, all split tracks now scrobble
-- scrobble_pending race — stays true until async submit completes
-- Rescrobbled spawn removed — no duplicate scrobbles from systemd + embedded scrobbler
+- Scrobble signature sort (error 13) - params sorted alphabetically before HMAC signing
+- Album track scrobbling - removed should_scrobble() guard, all split tracks now scrobble
+- scrobble_pending race - stays true until async submit completes
+- Rescrobbled spawn removed - no duplicate scrobbles from systemd + embedded scrobbler
 - Render throttle: 33ms max ~30fps, no 1000fps on key spam
 - Stale download cancel: calls .cancel() on each CancellationToken before clear()
 - Enter-spam guard: 300ms PlayDebouncer cooldown

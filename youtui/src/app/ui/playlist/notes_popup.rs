@@ -240,7 +240,7 @@ impl NotesPopup {
             if is_empty {
                 lines.push(ratatui::text::Line::from(vec![
                     ratatui::text::Span::styled(
-                        "  ~ Notes file is empty — press i to start typing",
+                        "  ~ Notes file is empty - press i to start typing",
                         Style::default().fg(Color::DarkGray),
                     ),
                 ]));

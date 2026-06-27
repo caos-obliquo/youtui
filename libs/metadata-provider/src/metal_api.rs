@@ -11,13 +11,13 @@ static YEAR_DIGITS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d{4}").u
 static GENRE_DT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)<dt[^>]*>Genre:</dt>\s*<dd[^>]*>(.*?)</dd>").unwrap());
 
 /// Provider for Encyclopaedia Metallum (Metal Archives) data.
-/// Priority 5 (highest) — catches metal bands before any other provider.
+/// Priority 5 (highest) - catches metal bands before any other provider.
 ///
 /// Tries sources in order:
-///   1. https://metal-api.dev/ — approved community REST API (primary)
-///   2. http://localhost:5000/ — optional Rust proxy (bypasses Cloudflare via Chromium)
+///   1. https://metal-api.dev/ - approved community REST API (primary)
+///   2. http://localhost:5000/ - optional Rust proxy (bypasses Cloudflare via Chromium)
 ///
-/// The Rust proxy is in libs/metal-proxy/ — run with:
+/// The Rust proxy is in libs/metal-proxy/ - run with:
 ///   cargo run --release -p metal-proxy
 /// (requires Chromium installed)
 pub struct MetalApiProvider;
@@ -48,7 +48,7 @@ async fn do_lookup(artist: &str, title: &str, client: &reqwest::Client) -> Optio
     if band.is_empty() { return None; }
 
     // 1. Try direct MA access with cf_clearance cookie (env or file).
-    //    Fastest & most reliable — metal-api.dev is down, proxy requires setup.
+    //    Fastest & most reliable - metal-api.dev is down, proxy requires setup.
     let result = try_direct_ma(band, title).await;
     if result.is_some() { return result; }
 
@@ -60,7 +60,7 @@ async fn do_lookup(artist: &str, title: &str, client: &reqwest::Client) -> Optio
 
     tracing::debug!("local proxy unavailable, trying metal-api.dev");
 
-    // 3. Try metal-api.dev (approved community REST API — currently returning 500)
+    // 3. Try metal-api.dev (approved community REST API - currently returning 500)
     try_metal_api(band, title, client).await
 }
 

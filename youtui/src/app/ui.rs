@@ -478,7 +478,7 @@ impl ActionHandler<AppAction> for YoutuiWindow {
             }
             AppAction::ViewLogs => {
                 if self.context == WindowContext::Logs {
-                    // Toggle off — restore prev_context
+                    // Toggle off - restore prev_context
                     std::mem::swap(&mut self.context, &mut self.prev_context);
                 } else {
                     self.handle_change_context(WindowContext::Logs);
@@ -962,7 +962,7 @@ impl YoutuiWindow {
     pub fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
         use crossterm::event::KeyCode;
 
-        // Intercept keys when browser filter is active — prevent command bleeding
+        // Intercept keys when browser filter is active - prevent command bleeding
         if self.context == WindowContext::Browser && self.browser.filter_active() {
             self.browser.handle_filter_key(key_event);
             return YoutuiEffect::new_no_op();
@@ -973,7 +973,7 @@ impl YoutuiWindow {
             let now = std::time::Instant::now();
             if let Some(last) = self.last_esc_time {
                 if now.duration_since(last).as_millis() < 300 {
-                    // Double Esc — dismiss everything
+                    // Double Esc - dismiss everything
                     self.count_prefix = 0;
                     self.key_stack.clear();
                     self.dismiss_search();
@@ -1003,10 +1003,10 @@ impl YoutuiWindow {
         if let KeyCode::Char(c) = key_event.code {
             if c.is_ascii_digit() && count_prefix_active {
                 if !self.key_stack.is_empty() {
-                    // A digit after already having keys — not a count (part of mode)
+                    // A digit after already having keys - not a count (part of mode)
                     self.key_stack.push(key_event);
                 } else {
-                    // First key is a digit — accumulate as count
+                    // First key is a digit - accumulate as count
                     let digit = c.to_digit(10).unwrap_or(0) as usize;
                     self.count_prefix = self.count_prefix * 10 + digit;
                     tracing::debug!("Count prefix: {}", self.count_prefix);
@@ -1308,7 +1308,7 @@ impl YoutuiWindow {
         if self.context == WindowContext::Playlist {
             // Leave Playlist → restore where we were
             if matches!(self.prev_context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup | WindowContext::PlaylistEditor | WindowContext::Notes) {
-                // prev_context is a stale popup context — go to Browser instead
+                // prev_context is a stale popup context - go to Browser instead
                 self.prev_context = WindowContext::Playlist;
                 self.context = WindowContext::Browser;
             } else {
@@ -1482,7 +1482,7 @@ impl YoutuiWindow {
         self.prev_context = self.context;
         self.context = WindowContext::Playlist;
 
-        // Check for playlist URL FIRST — before video extraction
+        // Check for playlist URL FIRST - before video extraction
         if let Some(list_id) = extract_playlist_id(&url) {
             let pl_id = ytmapi_rs::common::PlaylistID::from_raw(format!("VL{}", list_id));
             use crate::app::server::GetPlaylistTracks;
@@ -1550,7 +1550,7 @@ impl YoutuiWindow {
         // as a stale popup context (would trap user on next toggle).
         self.context = self.prev_context;
         if matches!(self.context, WindowContext::Lyrics | WindowContext::SongInfo | WindowContext::PlaylistSavePopup | WindowContext::PlaylistUpdatePopup | WindowContext::PlaylistEditor | WindowContext::PlaylistRenamePopup | WindowContext::PlaylistEditPopup | WindowContext::PlaylistDetailsPopup | WindowContext::Notes) {
-            // prev_context was also a popup (nested) — fall back to safe context
+            // prev_context was also a popup (nested) - fall back to safe context
             self.context = WindowContext::Playlist;
         }
         self.prev_context = WindowContext::Browser;

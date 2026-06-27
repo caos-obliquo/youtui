@@ -1,4 +1,4 @@
-/// RYM genre/descriptor data — parsed from RateYourMusic Hierarchy.txt
+/// RYM genre/descriptor data - parsed from RateYourMusic Hierarchy.txt
 /// at compile time, indexed for fast runtime lookup.
 use serde::Deserialize;
 

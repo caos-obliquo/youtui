@@ -12,9 +12,9 @@ yt-dlp -f bestaudio -o {tempfile} {url} ← audio download
 ```
 
 **Key flags:**
-- `--force-overwrites` — prevents yt-dlp resume from treating 0-byte temp files as complete
-- `--extractor-args youtube:player_client=web_creator` — only with cookie_path
-- `--cookies-from-browser chromium` — when cookie path configured
+- `--force-overwrites` - prevents yt-dlp resume from treating 0-byte temp files as complete
+- `--extractor-args youtube:player_client=web_creator` - only with cookie_path
+- `--cookies-from-browser chromium` - when cookie path configured
 - Writes to tempfile via `tempfile::Builder::new().suffix(".m4a")`
 
 **Timeout:** 5-minute proc wait prevents hung processes.
@@ -68,11 +68,11 @@ Files cached in temp dir. Cleanup on youtui exit via `create_or_clean_directory`
 ### audio-player crate
 
 `libs/audio-player/` wraps `rodio` + `symphonia` for audio playback:
-- `Sink::new()` — create playback sink
-- `Sink::append(source)` — queue audio
-- `Sink::seek(duration, direction)` — seek (Forward/Back)
-- `Sink::stop()` — stop playback
-- `Sink::current_position()` — query position
+- `Sink::new()` - create playback sink
+- `Sink::append(source)` - queue audio
+- `Sink::seek(duration, direction)` - seek (Forward/Back)
+- `Sink::stop()` - stop playback
+- `Sink::current_position()` - query position
 
 Supported codecs: MP4/AAC, WebM/Opus, WAV, Ogg/Vorbis (via symphonia codecs).
 

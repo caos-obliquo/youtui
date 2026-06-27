@@ -248,7 +248,7 @@ impl PlaylistEditorPopup {
             }
             "q" => {
                 if self.modified {
-                    tracing::info!(":q with modified tracks — use :q! to force quit");
+                    tracing::info!(":q with modified tracks - use :q! to force quit");
                 } else {
                     return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
                 }

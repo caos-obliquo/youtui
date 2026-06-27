@@ -279,7 +279,7 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
         use crate::app::structures::ListSongArtist;
         use crate::app::structures::ArtistOrUploadArtistID;
         use ytmapi_rs::common::AlbumID;
-        // YTM library song has no year field — extract from album name parenthetical
+        // YTM library song has no year field - extract from album name parenthetical
         let year = ts.album.name.split('(').last()
             .and_then(|s| s.get(..4))
             .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
@@ -309,6 +309,7 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
                 id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw(ts.album.id.get_raw().to_string())),
             })),
             like_status: ts.like_status,
+            is_album_upload: false,
         }
     }).collect();
     LibraryEffect::SongsLoaded(songs)
@@ -332,7 +333,7 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
     let mut set_id_map = HashMap::new();
     let list_songs: Vec<ListSong> = songs.into_iter().map(|s| {
         let vid = s.video_id.get_raw().to_string();
-        // Always use the raw video_id as the setVideoId — the API returns a
+        // Always use the raw video_id as the setVideoId - the API returns a
         // separate setVideoId but removal also works with just the video_id
         set_id_map.insert(vid.clone(), vid);
         let artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist { name: a.name, id: None }).collect());
@@ -362,6 +363,7 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             thumbnails: MaybeRc::Owned(s.thumbnails),
             album,
             like_status: s.like_status,
+            is_album_upload: false,
         }
     }).collect();
     // The effect handler will populate track_set_ids from the songs
@@ -1880,7 +1882,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::RatePlaylist => {
                     // Navigate to album search where RatePlaylist works (audio_playlist_id available)
                     if let Some(album) = self.album_data.get(self.album_selected) {
-                        debug!(album = %album.title, "Library: rate album — navigating to album search");
+                        debug!(album = %album.title, "Library: rate album - navigating to album search");
                         return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::AlbumOpen {
                             artist: album.artist.clone(),
                             album: album.title.clone(),

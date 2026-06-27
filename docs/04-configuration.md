@@ -20,12 +20,12 @@ All fields parsed from TOML into `ConfigIR` (youtui/src/config.rs:106), then con
 
 | Value | Downloader | Status |
 |-------|------------|--------|
-| `native` | rusty_ytdl (Rust native) | Partially broken — 403 errors |
-| `yt-dlp` (default) | yt-dlp external process | Working — recommended |
+| `native` | rusty_ytdl (Rust native) | Partially broken - 403 errors |
+| `yt-dlp` (default) | yt-dlp external process | Working - recommended |
 
 ### yt_dlp_command
 
-Default: `"yt-dlp"` — path to yt-dlp binary.
+Default: `"yt-dlp"` - path to yt-dlp binary.
 
 ### scrobbling
 
@@ -100,10 +100,10 @@ Config::new(debug)
   1. get_config_dir() → ~/.config/youtui/
   2. read config.toml
   3. toml::from_str::<ConfigIR>(content)
-  4. Config::try_from(ir) — converts IR + validates keybinds
+  4. Config::try_from(ir) - converts IR + validates keybinds
   5. Fallback: use defaults if file missing
 ```
 
 ## Hot Reload
 
-`:reload` in command mode re-reads `config.toml` from disk and rebuilds the Config struct. Only keybinds and scrobbling config are reloaded — auth and downloader type require restart.
+`:reload` in command mode re-reads `config.toml` from disk and rebuilds the Config struct. Only keybinds and scrobbling config are reloaded - auth and downloader type require restart.

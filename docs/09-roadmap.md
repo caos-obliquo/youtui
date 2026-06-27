@@ -156,7 +156,7 @@
 
 0 failures, 0 build warnings across 10 workspace crates.
 
-## Completed 2026-06-26 — Scrobbler + Suckless + PR #3 Perf
+## Completed 2026-06-26 - Scrobbler + Suckless + PR #3 Perf
 
 ### Scrobbler Fixes (fix/scrobbler-signature branch)
 | # | Item | Status | Files |
@@ -192,7 +192,7 @@
 | 91 | **15 new unit tests**: PlayDebouncer (5), protocol cache (3), download cancel (3), library lazy (4) | 4 files |
 | 92 | **invalidate_protocol_cache()** method on YoutuiWindow | `ui.rs` |
 
-### PR #7 — Background scrobble retry + rate limit handling
+### PR #7 - Background scrobble retry + rate limit handling
 | # | Feature | Files |
 |---|---------|-------|
 | 92 | ScrobbleResult enum (Success/Failure/RateLimited) | `scrobbler.rs` |
@@ -202,23 +202,23 @@
 | 96 | Max cache size: 200 entries (oldest evicted) | `scrobbler.rs` |
 | 97 | 5 cache unit tests (roundtrip, max size, retry increment, drop expired, legacy default) | `scrobbler.rs` |
 
-### PR #8 — Protocol cache chunk dimension tracking + debug logging
+### PR #8 - Protocol cache chunk dimension tracking + debug logging
 | # | Feature | Files |
 |---|---------|-------|
 | 98 | Chunk dimension tracking prevents 8-bit fallback on terminal resize | `footer.rs`, `ui.rs` |
 | 99 | Debug logging for terminal Picker detection | `ui.rs` |
 
-### PR #9 — o.v zero-pixel image guard
+### PR #9 - o.v zero-pixel image guard
 | # | Feature | Files |
 |---|---------|-------|
 | 100 | Zero-pixel in_mem_image guard shows 'No image data' fallback | `playlist.rs` |
 
-### PR #10 — Doc hygiene (35+ stale refs fixed)
+### PR #10 - Doc hygiene (35+ stale refs fixed)
 | # | Feature | Files |
 |---|---------|-------|
 | 101 | Test counts, line counts, scrobbler doc fixed across 7 files | 7 doc files |
 
-### PR #11 — Album scrobble consistency
+### PR #11 - Album scrobble consistency
 | # | Feature | Files |
 |---|---------|-------|
 | 102 | Album-mode scrobble: hardcoded None → reads current song album | `playlist.rs` |
@@ -227,7 +227,7 @@
 | 105 | 5s album wait before scrobble for async metadata arrival | `playlist.rs` |
 | 106 | submit_now_playing() on song start | `scrobbler.rs`, `playlist.rs` |
 
-### PR #12 — Liked songs column + version bump
+### PR #12 - Liked songs column + version bump
 | # | Feature | Files |
 |---|---------|-------|
 | 107 | LikeStatus in ListSongDisplayableField (new variant) | `structures.rs` |
@@ -235,12 +235,12 @@
 | 109 | Heart column shown in all 5 browser tabs, sortable | 5 browser files |
 | 110 | Version bump 0.0.37 → 1.0.0, CHANGELOG | `main.rs` |
 
-### PR #13 — CLI sort flags
+### PR #13 - CLI sort flags
 | # | Feature | Files |
 |---|---------|-------|
 | 111 | --sort arg for 9 library/upload CLI commands (closes 9 TODOs) | `main.rs`, `cli/` |
 
-### PR #14-#15 — Liked column layout + UTF-8 crash fix + queue liked column
+### PR #14-#15 - Liked column layout + UTF-8 crash fix + queue liked column
 | # | Feature | Files |
 |---|---------|-------|
 | 112 | get_layout() constraint added for Liked column in all browser tabs | 5 browser files |
@@ -248,44 +248,44 @@
 | 114 | UTF-8 crash fix: 6 cursor+=1 bugs fixed with len_utf8() | `vi-text-editor/` |
 | 115 | Full heart icon in liked column | `structures.rs` |
 
-### PR #16 — Audio cache (repeat Enter re-download fix)
+### PR #16 - Audio cache (repeat Enter re-download fix)
 | # | Feature | Files |
 |---|---------|-------|
 | 116 | HashMap<video_id, Arc<InMemSong>> survives reset() | `playlist.rs` |
 | 117 | Max 50 entries, full clear on overflow | `playlist.rs` |
 
-### PR #17 — Batch playlist streaming
+### PR #17 - Batch playlist streaming
 | # | Feature | Files |
 |---|---------|-------|
 | 118 | get_playlist_songs() uses stream_api_with_retry_n instead of single page | `api.rs` |
 | 119 | max_pages from max_results/100 (clamped 1-50) | `api.rs` |
 
-### PR #18 — drawutils cleanup
+### PR #18 - drawutils cleanup
 | # | Feature | Files |
 |---|---------|-------|
 | 120 | bottom_of_rect: saturating arith prevents underflow panic | `drawutils.rs` |
 | 121 | below_left_rect: clamp x/y to max_bounds | `drawutils.rs` |
 | 122 | 3 new tests (basic/narrow/zero-width) | `drawutils.rs` |
 
-### PR #19 — View-indices sort refactor
+### PR #19 - View-indices sort refactor
 | # | Feature | Files |
 |---|---------|-------|
 | 123 | view_indices: Vec<usize> maintains sort order separate from backing list | `songsearch.rs`, `playlistsearch/`, `artistsearch/` |
 | 124 | clear_sort_commands() resets to identity (restores fetch order without re-fetch) | 3 files |
 | 125 | 3 TODO comments removed | 3 files |
 
-### PR #27 — ytmapi-rs regression fix (5 regressions from working tree slimming)
+### PR #27 - ytmapi-rs regression fix (5 regressions from working tree slimming)
 | # | Feature | Files |
 |---|---------|-------|
-| 131 | **Auth fix**: restored `parse_netscape_cookies()` — Netscape cookie format from yt-dlp needs parsing before reqwest Cookie header | `auth/browser.rs` |
-| 132 | **EP/singles fix**: case-insensitive `contains()` matching for carousel section titles — `categorize_top_release()` was deleted, Singles/EPs never processed | `parse/artist.rs` |
+| 131 | **Auth fix**: restored `parse_netscape_cookies()` - Netscape cookie format from yt-dlp needs parsing before reqwest Cookie header | `auth/browser.rs` |
+| 132 | **EP/singles fix**: case-insensitive `contains()` matching for carousel section titles - `categorize_top_release()` was deleted, Singles/EPs never processed | `parse/artist.rs` |
 | 133 | **reqwest 0.13.3 → 0.11**: TLS broken in 0.13.3, reverted | `Cargo.toml` |
-| 134 | **VL prefix stripping restored**: 5 mutation files had stripping removed — all mutation ops on VL playlists would fail 400/404 | 5 query files |
+| 134 | **VL prefix stripping restored**: 5 mutation files had stripping removed - all mutation ops on VL playlists would fail 400/404 | 5 query files |
 | 135 | **RemovePlaylistItems endpoint fixed**: `browse/edit_playlist` → `playlist/edit` | `query/playlist.rs` |
 | 136 | **ytmapi-rs slimming**: +804/-2107 lines across 60 files. ytmapi-cli removed from workspace. Simplified queries reduced. Auth consolidated. Test fixtures regenerated. | ytmapi-rs/ |
 | 137 | **ytmapi-rs lib tests**: 85→82 (3 locale `with_language`/`with_location` tests removed) | test files |
 
-### PR #20 — ytmapi-rs artist categories
+### PR #20 - ytmapi-rs artist categories
 | # | Feature | Files |
 |---|---------|-------|
 | 126 | ArtistTopReleaseCategory made pub enum (was private) | `parse/artist.rs` |
@@ -298,7 +298,7 @@
 
 | # | Feature | Est | Notes |
 |---|---------|-----|-------|
-| 1 | Cross-platform clipboard | med | ✅ DONE — fallback chain + cookie_browser config + Windows block |
+| 1 | Cross-platform clipboard | med | ✅ DONE - fallback chain + cookie_browser config + Windows block |
 | 4 | Batch reorder (not just swap) in ytmapi-rs | large | `ytmapi-rs/` |
 | 5 | View-only struct refactor for browser tabs | low | DONE (PR #19) |
 | 6 | ytmapi-rs artist categories (5 TODOs) | med | DONE (PR #20) |

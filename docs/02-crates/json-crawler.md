@@ -1,14 +1,14 @@
 # Crate: json-crawler
 
-**1,089 LOC, 3 files** — Wrapper for serde_json that provides nice errors when traversing large JSON blobs.
+**1,089 LOC, 3 files** - Wrapper for serde_json that provides nice errors when traversing large JSON blobs.
 
 ## Module Tree
 
 ```
 src/
-├── lib.rs     — Crawlable trait, JsonCrawler struct, From impls
-├── error.rs   — CrawlError with path tracking
-└── iter.rs    — Streaming array iteration
+├── lib.rs     - Crawlable trait, JsonCrawler struct, From impls
+├── error.rs   - CrawlError with path tracking
+└── iter.rs    - Streaming array iteration
 ```
 
 ## Purpose
@@ -64,7 +64,7 @@ pub struct CrawlError {
 pub fn json_array_iter<'a>(value: &'a serde_json::Value) -> impl Iterator<Item = &'a serde_json::Value>;
 ```
 
-Returns items one at a time without materializing the entire array — useful for paginated responses.
+Returns items one at a time without materializing the entire array - useful for paginated responses.
 
 ## Tests
 

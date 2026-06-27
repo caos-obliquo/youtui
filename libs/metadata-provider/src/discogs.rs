@@ -138,7 +138,7 @@ impl MetadataProvider for DiscogsProvider {
                         styles,
                     });
                 } else {
-                    tracing::debug!("Discogs: album has {} tracks but '{}' not found — skipping", tracks.len(), title);
+                    tracing::debug!("Discogs: album has {} tracks but '{}' not found - skipping", tracks.len(), title);
                 }
             }
             None

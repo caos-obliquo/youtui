@@ -1,6 +1,6 @@
 # ytmapi-cli
 
-YouTube Music API debug CLI — search, playlist, album, artist, library, fixture.
+YouTube Music API debug CLI - search, playlist, album, artist, library, fixture.
 
 ## Purpose
 
@@ -11,9 +11,9 @@ YouTube Music API debug CLI — search, playlist, album, artist, library, fixtur
 
 ## Dependencies
 
-- `ytmapi-rs` — core API library (simplified-queries feature)
-- `tokio` — async runtime
-- `serde_json` — JSON handling
+- `ytmapi-rs` - core API library (simplified-queries feature)
+- `tokio` - async runtime
+- `serde_json` - JSON handling
 
 ## Auth Setup
 
@@ -36,7 +36,7 @@ ytmapi-cli search "FIDLAR"
 
 ### How cookies work
 
-The cookie file contains a `SAPISID` value that ytmapi-rs uses to sign API requests via `YtMusic::from_cookie_file()`. This gives `YtMusic<BrowserToken>` which satisfies both `AuthToken` and `LoggedIn` — all YTM API queries work.
+The cookie file contains a `SAPISID` value that ytmapi-rs uses to sign API requests via `YtMusic::from_cookie_file()`. This gives `YtMusic<BrowserToken>` which satisfies both `AuthToken` and `LoggedIn` - all YTM API queries work.
 
 **Cookie expiry**: YouTube Music cookies are long-lived (months). Re-export if you get auth errors.
 
