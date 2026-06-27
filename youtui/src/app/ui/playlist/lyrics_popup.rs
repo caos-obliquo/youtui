@@ -1015,7 +1015,7 @@ impl LyricsPopup {
                         let offset = if self.ann_scroll_offset > ann_center {
                             self.ann_scroll_offset.saturating_sub(ann_center)
                         } else { 0 };
-                        let max_display = self.annotations.len().saturating_sub(ann_visible);
+                        let max_display = self.annotations.len().saturating_sub(1);
                         offset.min(max_display)
                     } else { 0 };
                     let ann_max_digits = self.annotations.len().max(1).to_string().len().max(3);
