@@ -1,4 +1,4 @@
-# ytmapi-cli — YouTube Music API CLI Debug Tool
+# ytmapi-cli - YouTube Music API CLI Debug Tool
 
 ## Overview
 

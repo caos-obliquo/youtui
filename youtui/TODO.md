@@ -2,7 +2,7 @@
 
 ## What's DONE
 
-### 3-Day Sprint (2026-06-19 → 2026-06-22) — 108 commits
+### 3-Day Sprint (2026-06-19 → 2026-06-22) - 108 commits
 
 #### Day 1: Foundation
 - Library browser tab (playlist tracks, context menu, visual mode)

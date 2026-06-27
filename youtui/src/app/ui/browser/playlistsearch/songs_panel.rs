@@ -394,7 +394,7 @@ impl TableView for PlaylistSongsPanel {
 }
 impl AdvancedTableView for PlaylistSongsPanel {
     fn get_filtered_count(&self) -> usize {
-        // Cheaper than get_filtered_items().count() — no field extraction.
+        // Cheaper than get_filtered_items().count() - no field extraction.
         self.get_filtered_list_iter().count()
     }
     // TODO: Consider if perhaps this table should not be sortable or filterable!
@@ -406,7 +406,7 @@ impl AdvancedTableView for PlaylistSongsPanel {
             bail!(format!("Unable to sort column {}", sort_command.column,));
         }
         let field = get_adjusted_list_column(sort_command.column, Self::subcolumns_of_vec())?;
-        // Sort view indices instead of the underlying list — preserves original order.
+        // Sort view indices instead of the underlying list - preserves original order.
         self.view_indices.sort_by(|&a, &b| {
             let a_val = self
                 .list

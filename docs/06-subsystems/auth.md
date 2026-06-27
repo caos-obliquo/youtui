@@ -22,7 +22,7 @@ Extract per platform:
 
 **Flow:**
 1. Parse Netscape-format cookie file
-2. Deduplicate via `BTreeMap` (last-wins) — yt-dlp appends duplicates without removing old entries
+2. Deduplicate via `BTreeMap` (last-wins) - yt-dlp appends duplicates without removing old entries
 3. Extract critical cookies: `OSID`, `__Secure-3PSIDCC`, `__Secure-3PSID`, `LOGIN_INFO`, `SAPISID`
 4. Build request context header with authentication state
 5. All subsequent API calls use this context
@@ -75,8 +75,8 @@ pub async fn refresh_token(&mut self) -> Result<Option<OAuthToken>>
 
 ## Cookie File Location
 
-`~/.config/youtui/cookie.txt` (XDG — works on Linux, macOS, BSD). Path flows from `main.rs → app.rs → YoutuiWindow::new → Playlist → Server`.
+`~/.config/youtui/cookie.txt` (XDG - works on Linux, macOS, BSD). Path flows from `main.rs → app.rs → YoutuiWindow::new → Playlist → Server`.
 
 ## OAuth Token Location
 
-`~/.local/share/youtui/` (XDG — works on all platforms). Token file auto-generated on first OAuth flow.
+`~/.local/share/youtui/` (XDG - works on all platforms). Token file auto-generated on first OAuth flow.

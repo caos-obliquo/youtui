@@ -523,16 +523,6 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
             song.year = Some(Rc::new(y.to_string()));
         }
     }
-    // Fallback: extract year from song title (e.g. "ST LP 2023")
-    if song.year.is_none() {
-        if let Some(y) = song.title.split(|c: char| !c.is_ascii_digit())
-            .find(|p| p.len() == 4)
-            .and_then(|p| p.parse::<u16>().ok())
-            .filter(|y| (1900..2100).contains(y))
-        {
-            song.year = Some(Rc::new(y.to_string()));
-        }
-    }
     if let Some(ref artist) = data.artist {
         let normalized = crate::app::structures::normalize_artist_name(artist);
         song.artists = MaybeRc::Owned(vec![
@@ -562,10 +552,13 @@ fn handle_album_split(
     data: &ValidatedMetadata,
     original_album: &Option<String>,
     original_title: &str,
+    is_album_upload: bool,
 ) -> Option<AsyncTask<Playlist, ArcServer, TaskMetadata>> {
     // Only split when the YouTube title contains album indicator tags
-    // (e.g. "Full Album", "Full EP"). Never split regular YTM tracks.
-    if !has_album_indicator_tags(original_title) {
+    // (e.g. "Full Album", "Full EP"), or the song was identified as a
+    // channel upload with album indicator tags in the original title.
+    // Never split regular YTM tracks.
+    if !has_album_indicator_tags(original_title) && !is_album_upload {
         info!("Album split rejected: title={:?} has no album indicator tags", original_title);
         return None;
     }
@@ -575,7 +568,9 @@ fn handle_album_split(
         return None;
     }
     // Track title must appear in album tracklist
-    if !data.album_tracks.is_empty() {
+    // (skip this check when song is a channel upload album -
+    //  the title IS the album name, not a track name)
+    if !data.album_tracks.is_empty() && !is_album_upload {
         let title_norm: String = original_title.to_lowercase().chars()
             .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
         let title_norm = title_norm.trim();
@@ -638,10 +633,10 @@ fn handle_album_split(
                 );
                 effect = effect.push(art_task);
             } else {
-                debug!("MetadataEffect: skip FetchAlbumArt — empty artist or album");
+                debug!("MetadataEffect: skip FetchAlbumArt - empty artist or album");
             }
         } else {
-            debug!("MetadataEffect: skip FetchAlbumArt — missing artist or album");
+            debug!("MetadataEffect: skip FetchAlbumArt - missing artist or album");
         }
     }
     if let Some(e) = play_effect {
@@ -655,23 +650,24 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
         match self {
             MetadataEffect::Validated(data, song_id) => {
                 // Step 1: Apply metadata fields to song (borrows song, not target)
-                let (original_album, original_title) = if let Some(idx) = target.get_index_from_id(song_id) {
+                let (original_album, original_title, is_album_upload) = if let Some(idx) = target.get_index_from_id(song_id) {
                     if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
                         let orig_album = apply_metadata_fields(song, &data);
                         let title = song.title.clone();
+                        let upload = song.is_album_upload;
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
-                        (orig_album, title)
+                        (orig_album, title, upload)
                     } else {
-                        (None, String::new())
+                        (None, String::new(), false)
                     }
                 } else {
-                    (None, String::new())
+                    (None, String::new(), false)
                 };
                 // Step 2: Album split decision (borrows target, song reference is dropped)
                 if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
                     if let Some(effect) = handle_album_split(
-                        target, song_id, &data, &original_album, &original_title,
+                        target, song_id, &data, &original_album, &original_title, is_album_upload,
                     ) {
                         return effect;
                     }
@@ -749,7 +745,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for FetchAlbumArtEffect {
                                 state.album.as_deref().unwrap_or(""), canonical);
                             state.album = Some(canonical.clone());
                         } else {
-                            debug!("FetchAlbumArtEffect: skip album update — canonical '{:?}' doesn't match current scrobble_state album '{:?}'",
+                            debug!("FetchAlbumArtEffect: skip album update - canonical '{:?}' doesn't match current scrobble_state album '{:?}'",
                                 canonical, state.album);
                         }
                     }
@@ -758,7 +754,16 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for FetchAlbumArtEffect {
                 info!("FetchAlbumArtEffect: applied art");
             }
             FetchAlbumArtEffect::FetchError => {
-                target.album_art_fetching_name.take();
+                let album_name = target.album_art_fetching_name.take();
+                for song in target.list.get_list_iter_mut() {
+                    if matches!(song.album_art, AlbumArtState::None | AlbumArtState::Init)
+                        && album_name.as_deref().map_or(true, |name| {
+                            song.album.as_ref().map(|a| a.name.as_str()) == Some(name)
+                        })
+                    {
+                        song.album_art = AlbumArtState::None;
+                    }
+                }
                 target.album_art_fetching = false;
                 error!("FetchAlbumArtEffect: failed to fetch album art");
             }
@@ -833,6 +838,7 @@ fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
             thumbnails: MaybeRc::Owned(s.thumbnails),
             album: list_album,
             like_status: s.like_status,
+            is_album_upload: false,
         });
     }
     list_songs
@@ -941,7 +947,7 @@ impl_youtui_task_handler!(
     }
 );
 
-// GetRelatedTracks handler — converts WatchPlaylistTrack → ListSong and inserts next
+// GetRelatedTracks handler - converts WatchPlaylistTrack → ListSong and inserts next
 #[derive(Debug, PartialEq)]
 pub struct HandleGetRelatedTracksOk;
 #[derive(Debug, PartialEq)]
@@ -985,6 +991,7 @@ impl_youtui_task_handler!(
                     thumbnails: MaybeRc::Owned(t.thumbnails),
                     album: None,
                     like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+                    is_album_upload: false,
                 }
             }).collect();
             let _task = this.insert_next_song_list(songs);
@@ -1023,7 +1030,7 @@ impl_youtui_task_handler!(
     }
 );
 
-// EnrichRelatedTracks handlers — apply yt-dlp metadata (year, album) to related tracks
+// EnrichRelatedTracks handlers - apply yt-dlp metadata (year, album) to related tracks
 #[derive(Debug, PartialEq)]
 pub struct HandleEnrichRelatedTracksOk;
 #[derive(Debug, PartialEq)]

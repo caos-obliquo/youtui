@@ -11,7 +11,7 @@
 | [x] | Implemented |
 | [~] | Partial |
 | [ ] | Not implemented |
-| SKIP | Intentional — not useful for youtui |
+| SKIP | Intentional - not useful for youtui |
 
 ## Auth
 
@@ -46,7 +46,7 @@
 | GetUserVideos | ✅ | Paginated |
 | GetChannel | ✅ | Podcast channel |
 | GetChannelEpisodes | ✅ | Paginated |
-| GetPodcast | [~] | **NO continuations** — single page only |
+| GetPodcast | [~] | **NO continuations** - single page only |
 | GetEpisode | ✅ | |
 | GetNewEpisodes | ✅ | |
 | GetMoodCategories | ✅ | |
@@ -60,16 +60,16 @@
 | Endpoint | Status | Notes |
 |----------|--------|-------|
 | GetLibraryPlaylists | ✅ | |
-| GetLibrarySongs | ✅ | Liked songs — with continuations |
+| GetLibrarySongs | ✅ | Liked songs - with continuations |
 | GetLibraryAlbums | ✅ | With continuations |
 | GetLibraryArtists | ✅ | With continuations |
 | GetLibraryArtistSubscriptions | ✅ | With continuations |
 | GetLibraryPodcasts | ✅ | With continuations |
 | GetLibraryChannels | ✅ | With continuations |
 | **GetLikedSongs** | [x] | Same as GetLibrarySongs (`FEmusic_liked_videos`) |
-| **GetSavedEpisodes** | [ ] | SKIP — podcasts not wired in UI |
+| **GetSavedEpisodes** | [ ] | SKIP - podcasts not wired in UI |
 | **GetAlbumBrowseId** | [~] | Name→ID resolver added `resolve_album_browse_id()` |
-| **GetAccountInfo** | [ ] | SKIP — no UI use case |
+| **GetAccountInfo** | [ ] | SKIP - no UI use case |
 | **EditSongLibraryStatus** | ✅ | Add/remove from library |
 
 ## Playlist CRUD
@@ -140,12 +140,12 @@
 |------|--------|-------|
 | Clippy warnings | ✅ | **0 across all 10 crates** (ytmapi-cli removed from workspace) |
 | `#[allow(dead_code)]` | [~] | 3 proposital, 0 stale (cleaned in f723535, 206 lines deleted) |
-| `unwrap()` in production | ✅ | **0** — all in doc tests/tests |
+| `unwrap()` in production | ✅ | **0** - all in doc tests/tests |
 | Stale TODOs removed | ✅ | **62 removed**, 37 legitimate remain |
 | Tests | ✅ | ytmapi-rs: 82/82 lib, 28/52 auth (3 locale tests removed in slimming) |
 | ytmapi-cli docs | ✅ | `docs/ytmapi-cli.md` (ytmapi-cli removed from workspace but doc preserved) |
 
-## Remaining ytmapi-rs TODOs (37+ items — LOW priority)
+## Remaining ytmapi-rs TODOs (37+ items - LOW priority)
 
 All remaining TODOs are legitimate feature gaps but LOW value for youtui.
 Note: the working tree slimming (590d336) added/reverted some TODO annotations (e.g., ArtistTopReleaseCategory enum → `Option<String>`).

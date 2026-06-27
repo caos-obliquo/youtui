@@ -1,6 +1,6 @@
 # Crate: vi-text-editor
 
-**2,648 LOC, 1 file** — Standalone vim-mode text editor widget for Ratatui TUI.
+**2,648 LOC, 1 file** - Standalone vim-mode text editor widget for Ratatui TUI.
 
 ## Modes
 
@@ -140,7 +140,7 @@ Single-line mode (`ViTextEditor::new()`, default):
 
 ## UTF-8 Safety
 
-Cursor is a byte index. Before every `handle_key` call, `clamp_cursor()` ensures cursor is on a valid UTF-8 char boundary. Operates on ASCII words (space-delimited) rather than unicode grapheme clusters — intentional suckless design.
+Cursor is a byte index. Before every `handle_key` call, `clamp_cursor()` ensures cursor is on a valid UTF-8 char boundary. Operates on ASCII words (space-delimited) rather than unicode grapheme clusters - intentional suckless design.
 
 ## Tests
 

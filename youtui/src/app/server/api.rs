@@ -320,7 +320,7 @@ async fn add_playlist_items(
     video_ids: Vec<VideoID<'static>>,
 ) -> Result<()> {
     tracing::info!("Adding {} videos to playlist", video_ids.len());
-    // Strip VL prefix — browse format != API format for add endpoint
+    // Strip VL prefix - browse format != API format for add endpoint
     let raw = playlist_id.get_raw();
     let clean_id = if let Some(stripped) = raw.strip_prefix("VL") {
         PlaylistID::from_raw(stripped.to_string())

@@ -201,7 +201,7 @@ pub fn draw_table_impl<'a>(
         .headings_style(Style::default().bold().fg(TABLE_HEADINGS_COLOUR))
         .secondary_row_highlight_style(Style::default().fg(PLAYING_COLOUR).add_modifier(ratatui::style::Modifier::BOLD))
         .visual_range(visual_range)
-        // During visual mode, suppress green playing indicator — all highlighted rows
+        // During visual mode, suppress green playing indicator - all highlighted rows
         // should show uniform cyan bg. The playing song is still visually tracked by
         // the cursor position within the selection.
         .secondary_highlight_row(if visual_range.is_some() { None } else { secondary_highlighted_row })

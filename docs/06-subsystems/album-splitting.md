@@ -15,7 +15,7 @@ individual tracks with metadata, seeking offsets, and gapless playback.
 
 ## Track Creation
 
-File: `youtui/src/app/ui/playlist.rs` — `insert_album_tracks`
+File: `youtui/src/app/ui/playlist.rs` - `insert_album_tracks`
 
 Each track becomes a `ListSong` with:
 
@@ -40,7 +40,7 @@ Track durations accumulate: `offset_1 = 0`, `offset_2 = track_1_duration`,
 
 ## Duration Ratio Gate (Split Decision)
 
-File: `app/ui/playlist/effect_handlers_playlist.rs` — `MetadataEffect::Validated`
+File: `app/ui/playlist/effect_handlers_playlist.rs` - `MetadataEffect::Validated`
 
 Before splitting, checks if the metadata tracklist represents the SAME video:
 
@@ -57,7 +57,7 @@ from MusicBrainz but should NOT be split).
 
 ## Arc Sharing
 
-File: `youtui/src/app/ui/playlist.rs` — `handle_song_downloaded`
+File: `youtui/src/app/ui/playlist.rs` - `handle_song_downloaded`
 
 When the original album entry finishes downloading, its `Arc<InMemSong>` is
 cheaply cloned to all track entries:
@@ -90,7 +90,7 @@ full-album entry is removed from the queue. Two paths:
 
 ## Decode With Offsets
 
-File: `youtui/src/app/server/messages.rs` — `DecodeSong`
+File: `youtui/src/app/server/messages.rs` - `DecodeSong`
 
 When both offset AND actual_duration are `Some`, ffmpeg extracts with:
 
@@ -102,7 +102,7 @@ Each track gets its own decoded file of exact length for seamless seeking.
 
 ## Progress Display
 
-File: `youtui/src/app/ui/playlist.rs` — `handle_set_song_play_progress`
+File: `youtui/src/app/ui/playlist.rs` - `handle_set_song_play_progress`
 
 ```rust
 if song.track_no.is_some() {
@@ -117,7 +117,7 @@ progress = progress.min(song.actual_duration.unwrap_or(progress));
 
 ## Title Cleaning (4 stages)
 
-File: `youtui/src/app/ui/playlist.rs` — `add_yt_video`
+File: `youtui/src/app/ui/playlist.rs` - `add_yt_video`
 
 1. **Artist prefix strip**: If title starts with artist name followed by `-` or
    `--`, remove the prefix. Single-char artist name guard prevents corruption.
@@ -134,7 +134,7 @@ Residual trailing whitespace/punctuation `- ,;:/` cleaned after each stage.
 
 ## Album Name in Metadata Provider Lookup
 
-File: `libs/metadata-provider/src/lib.rs` — `resolve(artist, title, album)`
+File: `libs/metadata-provider/src/lib.rs` - `resolve(artist, title, album)`
 
 `ValidateMetadata` now passes the original album name (from the song's
 `ListSong.album` field) to `MetadataRegistry::resolve()`. All 6 providers
@@ -148,7 +148,7 @@ provider search.
 
 ## Metadata Pipeline (Provider Scoring)
 
-File: `libs/metadata-provider/src/lib.rs` — `resolve()`
+File: `libs/metadata-provider/src/lib.rs` - `resolve()`
 
 All providers tried in priority order. Each result scored:
 
@@ -183,7 +183,7 @@ over metadata provider names.
 
 ## YTM Album Enrichment
 
-File: `youtui/src/app/server/messages.rs` — `ValidateMetadata::into_future()`
+File: `youtui/src/app/server/messages.rs` - `ValidateMetadata::into_future()`
 
 After `MetadataRegistry::resolve()` returns, an additional YTM API call enriches
 the result with artist name, album name, year, thumbnails, and genres from
@@ -205,7 +205,7 @@ the resolved metadata is still returned (log warning, keep original).
 
 ## Force Split (`o.f`)
 
-File: `youtui/src/app/ui/playlist.rs` — `ForceSplitAlbum` handler
+File: `youtui/src/app/ui/playlist.rs` - `ForceSplitAlbum` handler
 
 Manual re-split:
 

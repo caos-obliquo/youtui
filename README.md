@@ -1,14 +1,14 @@
-# youtui — caos-obliquo fork
+# youtui - caos-obliquo fork
 
 Vim-driven TUI for YouTube Music. Fork of [nick42d/youtui](https://github.com/nick42d/youtui) / [Icedwolf/youtui](https://github.com/Icedwolf/youtui) with custom playlist management, yt-dlp audio, zero F-keys.
 
-**Upstream diff**: this fork adds playlist creation/update popups, EP/single labels in artist browser, yt-dlp audio backend by default, vim-only keybinds with minimal header, queue persistence, and effect-driven playlist management. Drifted significantly — we own the feature set now.
+**Upstream diff**: this fork adds playlist creation/update popups, EP/single labels in artist browser, yt-dlp audio backend by default, vim-only keybinds with minimal header, queue persistence, and effect-driven playlist management. Drifted significantly - we own the feature set now.
 
 ## Workspace
 
 | Crate | Description |
 |---|---|
-| `youtui` | TUI binary — ratatui, crossterm, rodio |
+| `youtui` | TUI binary - ratatui, crossterm, rodio |
 | `ytmapi-rs` | Async YouTube Music API (generic over auth) |
 | `json-crawler` | JSON traversal utilities |
 | `async-callback-manager` | Task/effect framework connecting UI to backend |
@@ -25,8 +25,8 @@ No AUR. Local compilation only.
 
 ### Dependencies
 
-- `alsa-lib` (Linux) — audio playback
-- `yt-dlp` — audio download (default backend)
+- `alsa-lib` (Linux) - audio playback
+- `yt-dlp` - audio download (default backend)
 - Font with FontAwesome glyphs
 
 ## Authentication
@@ -73,12 +73,12 @@ Full keybinds at `~/.config/youtui/config.toml`.
 
 ## Features
 
-- **Vim navigation** — j/k/h/l/g/G throughout, no function keys
-- **yt-dlp audio** — streams with `android_vr` extractor-args, no PO token needed
-- **Playlist management** — create from queue, add to existing, unlisted by default
-- **EP / Single labels** — artist browser shows `Album:`, `EP:`, `Single:` prefix on release names
-- **Persistent queue** — survives restarts
-- **Configurable** — keybinds, downloader, auth style via `config.toml`
+- **Vim navigation** - j/k/h/l/g/G throughout, no function keys
+- **yt-dlp audio** - streams with `android_vr` extractor-args, no PO token needed
+- **Playlist management** - create from queue, add to existing, unlisted by default
+- **EP / Single labels** - artist browser shows `Album:`, `EP:`, `Single:` prefix on release names
+- **Persistent queue** - survives restarts
+- **Configurable** - keybinds, downloader, auth style via `config.toml`
 
 ## Config
 
@@ -92,15 +92,15 @@ yt_dlp_command = "yt-dlp"
 
 ## Upcoming
 
-- [ ] Lyrics — native Musixmatch integration (`musixmatch-cli` crate) with dedicated binding
-- [ ] Scrobbling — embed Rescrobbled natively (Rust → ListenBrainz / Maloja)
+- [ ] Lyrics - native Musixmatch integration (`musixmatch-cli` crate) with dedicated binding
+- [ ] Scrobbling - embed Rescrobbled natively (Rust → ListenBrainz / Maloja)
 - [ ] Context menu (`o` key, ncspot-style)
 - [ ] Plain-text config editor
 
 ## Known Issues
 
 - Playlist creation requires a fresh browser cookie (write operations need active session)
-- Client version extracted from YouTube Music page at startup — some endpoints may need updates
+- Client version extracted from YouTube Music page at startup - some endpoints may need updates
 
 ## Build
 
@@ -120,7 +120,7 @@ User KeyEvent → crossterm → Action → Effect (AsyncTask)
 → Response mutation → UI state → Redraw
 ```
 
-API generic over `AuthToken` (Browser / OAuth / NoAuth) — enforced at compile time. Runtime dispatch via `DynamicYtMusic` enum.
+API generic over `AuthToken` (Browser / OAuth / NoAuth) - enforced at compile time. Runtime dispatch via `DynamicYtMusic` enum.
 
 ## License
 

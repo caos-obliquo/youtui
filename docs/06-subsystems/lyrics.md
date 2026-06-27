@@ -12,7 +12,7 @@ Priority 5: Error("No lyrics found from any provider")
 
 ## Implementation
 
-File: `youtui/src/app/server/messages.rs:886-977` — `GetLyrics` backend task.
+File: `youtui/src/app/server/messages.rs:886-977` - `GetLyrics` backend task.
 
 Called from: `effect_handlers_playlist.rs` when `ViewLyrics` callback fires.
 
@@ -55,9 +55,9 @@ struct GetLyrics(String, String, String);
 
 ### Section Markers
 
-`[Verse 1]`, `[Chorus]`, `[Bridge]` are plain text in Genius HTML — preserved automatically.
+`[Verse 1]`, `[Chorus]`, `[Bridge]` are plain text in Genius HTML - preserved automatically.
 
-## LRCLIB (Priority 2 — Live)
+## LRCLIB (Priority 2 - Live)
 
 Wired via `lrclib-rs` crate. Free, open-source, no API key needed.
 Returns plain-text and synced (LRC format) lyrics. Used as first fallback
@@ -77,18 +77,18 @@ Tries these suffixes for the artist slug: `""`, `"-2"`, `"-3"`, `"-4"`, `"-5"`.
 
 External `lyr` command, tries multiple artist/title normalization variants:
 
-- `(artist, title)` — original
-- `(first_artist, title)` — split on comma
-- `(two_artists, title)` — first two split by "and"
-- `(first_artist, norm_title)` — normalized
-- `(norm_artist, title)` — normalized
-- `(norm_artist, norm_title)` — both normalized
+- `(artist, title)` - original
+- `(first_artist, title)` - split on comma
+- `(two_artists, title)` - first two split by "and"
+- `(first_artist, norm_title)` - normalized
+- `(norm_artist, title)` - normalized
+- `(norm_artist, norm_title)` - both normalized
 
 Normalization: lowercase, collapse whitespace.
 
 ## Rendering
 
-File: `app/ui/playlist/lyrics_popup.rs` — `LyricsPopup` struct.
+File: `app/ui/playlist/lyrics_popup.rs` - `LyricsPopup` struct.
 
 ### Layout
 
@@ -131,7 +131,7 @@ Annotations display their index and reference count: `[N annotations for this li
 
 ### Component Isolation (Critical)
 
-Lyrics and annotations are **separate interactive components** that communicate via shared state. `Tab`/`l`/`h` switches scroll/navigation focus between panels. Seek commands `( ) < > [ ]` are global playback controls that work regardless of focus — they always fire.
+Lyrics and annotations are **separate interactive components** that communicate via shared state. `Tab`/`l`/`h` switches scroll/navigation focus between panels. Seek commands `( ) < > [ ]` are global playback controls that work regardless of focus - they always fire.
 
 ### Relative Line Numbers
 

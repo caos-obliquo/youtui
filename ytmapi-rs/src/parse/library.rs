@@ -122,8 +122,11 @@ impl ParseFromContinuable<GetLibraryAlbumsQuery> for Vec<SearchResultAlbum> {
         p: ProcessedResult<GetContinuationsQuery<'_, GetLibraryAlbumsQuery>>,
     ) -> crate::Result<(Self, Option<ContinuationParams<'static>>)> {
         let json_crawler: JsonCrawlerOwned = p.into();
-        let grid_items = json_crawler.navigate_pointer(GRID_CONTINUATION)?;
-        parse_library_albums(grid_items)
+        if let Ok(grid_items) = json_crawler.navigate_pointer(GRID_CONTINUATION) {
+            parse_library_albums(grid_items)
+        } else {
+            Ok((Vec::new(), None))
+        }
     }
 }
 
@@ -186,8 +189,11 @@ impl ParseFromContinuable<GetLibraryPlaylistsQuery> for Vec<LibraryPlaylist> {
         p: ProcessedResult<GetContinuationsQuery<'_, GetLibraryPlaylistsQuery>>,
     ) -> crate::Result<(Self, Option<ContinuationParams<'static>>)> {
         let json_crawler: JsonCrawlerOwned = p.into();
-        let grid_renderer = json_crawler.navigate_pointer(GRID_CONTINUATION)?;
-        parse_library_playlists(grid_renderer)
+        if let Ok(grid_renderer) = json_crawler.navigate_pointer(GRID_CONTINUATION) {
+            parse_library_playlists(grid_renderer)
+        } else {
+            Ok((vec![], None))
+        }
     }
 }
 
@@ -207,8 +213,11 @@ impl ParseFromContinuable<GetLibraryPodcastsQuery> for Vec<LibraryPodcast> {
         p: ProcessedResult<GetContinuationsQuery<'_, GetLibraryPodcastsQuery>>,
     ) -> crate::Result<(Self, Option<ContinuationParams<'static>>)> {
         let json_crawler: JsonCrawlerOwned = p.into();
-        let grid_renderer = json_crawler.navigate_pointer(GRID_CONTINUATION)?;
-        parse_library_podcasts(grid_renderer)
+        if let Ok(grid_renderer) = json_crawler.navigate_pointer(GRID_CONTINUATION) {
+            parse_library_podcasts(grid_renderer)
+        } else {
+            Ok((vec![], None))
+        }
     }
 }
 

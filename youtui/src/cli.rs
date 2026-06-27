@@ -9,7 +9,7 @@ mod querybuilder;
 
 pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
     let config = rt.config;
-    // Handle TestScrobble — not a YTM API command
+    // Handle TestScrobble - not a YTM API command
     match &cli.command {
         Some(crate::Command::TestScrobble { artist, track, album, duration }) => {
             use crate::app::scrobbler::{ScrobbleState, submit_scrobble_inner};
@@ -39,6 +39,41 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 crate::app::scrobbler::ScrobbleResult::Failure => {
                     println!("RESULT=FAILED (check stderr for API response)");
                 }
+            }
+            return Ok(());
+        }
+        Some(crate::Command::TestValidateMetadata { artist, title, album }) => {
+            use crate::app::server::MetadataRegistry;
+            let http_client = reqwest::Client::builder()
+                .user_agent("Youtui/0.1 (metadata-test)")
+                .build()?;
+            let registry = MetadataRegistry::new(
+                http_client,
+                Some(config.scrobbling.api_key.clone()).filter(|s| !s.is_empty()),
+                Some(config.scrobbling.discogs_token.clone()).filter(|s| !s.is_empty()),
+                Some(config.scrobbling.genius_token.clone()).filter(|s| !s.is_empty()),
+                None,
+                None,
+            );
+            println!("Resolving: {} - {}", artist, title);
+            if let Some(a) = album {
+                println!("Album hint: {}", a);
+            }
+            match registry.resolve(artist, title, album.as_deref()).await {
+                Ok(meta) => {
+                    println!("--- RESULT ---");
+                    println!("Artist:    {:?}", meta.artist);
+                    println!("Album:     {:?}", meta.album);
+                    println!("Year:      {:?}", meta.year);
+                    println!("Track no:  {:?}", meta.track_no);
+                    println!("Tracks:    {}", meta.album_tracks.len());
+                    println!("Genres:    {:?}", meta.genres);
+                    println!("Styles:    {:?}", meta.styles);
+                    for (i, t) in meta.album_tracks.iter().enumerate() {
+                        println!("  {}. {} ({:.0}s) {:?}", i + 1, t.title, t.duration_secs, t.artist);
+                    }
+                }
+                Err(e) => println!("ERROR: {}", e),
             }
             return Ok(());
         }

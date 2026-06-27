@@ -94,8 +94,11 @@ impl MetadataProvider for AlbumSearchProvider {
                         all.into_iter().take(5).map(|(n, _)| n).collect()
                     })
                     .unwrap_or_default();
-                // Verify searched track appears in album tracklist
-                if !album_tracks.is_empty() {
+                // When album hint matches the search title, the title IS the album name
+                // (e.g., channel uploads where song title=album name). Skip track-presence check.
+                let searching_by_album = album.is_some() && search_album == util::norm_for_lfm(title);
+                // Verify searched track appears in album tracklist (unless title is album name)
+                if !album_tracks.is_empty() && !searching_by_album {
                     let title_norm: String = crate::util::norm_for_lfm(title).to_lowercase().chars()
                         .filter(|c| c.is_alphanumeric() || c.is_whitespace()).collect();
                     let title_norm = title_norm.trim();
