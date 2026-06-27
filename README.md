@@ -122,6 +122,14 @@ User KeyEvent → crossterm → Action → Effect (AsyncTask)
 
 API generic over `AuthToken` (Browser / OAuth / NoAuth) - enforced at compile time. Runtime dispatch via `DynamicYtMusic` enum.
 
+## Inspirations & Thanks
+
+Youtui stands on the shoulders of these projects:
+
+- **[ncspot](https://github.com/hrkfdn/ncspot)** - ncurses Spotify TUI. Enter = primary action (never sub-menu) design copied directly. Queue-centric playback model.
+- **[kopuz](https://github.com/kopuz-music/kopuz)** - Terminal music player with Last.fm native scrobbling. Inspired the embedded scrobbler architecture.
+- **[youtui](https://github.com/caos-obliquo/youtui)** - This project itself. Special thanks to the contributors and testers who shaped every feature.
+
 ## License
 
 MIT
