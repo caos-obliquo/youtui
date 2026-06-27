@@ -187,13 +187,23 @@ pub fn draw_album_search_browser(
     let title_str = format!(" Albums - {} ", count);
     let left_block = Block::default()
         .title(title_str.as_str())
-        .borders(Borders::ALL)
+        .borders(if browser.search_popped {
+            Borders::LEFT | Borders::RIGHT | Borders::BOTTOM
+        } else {
+            Borders::ALL
+        })
         .border_style(Style::default().fg(if left_selected { SELECTED_BORDER_COLOUR } else { ratatui::style::Color::DarkGray }));
     let left_inner = left_block.inner(left_album_chunk);
     f.render_widget(Clear, left_album_chunk);
     f.render_widget(left_block, left_album_chunk);
 
     if browser.albums.is_empty() {
+        f.render_widget(
+            Paragraph::new("No albums loaded.\nAdd songs to queue and use ValidateMetadata\nor search above with Enter.")
+                .style(Style::default().fg(TEXT_COLOUR))
+                .wrap(Wrap { trim: false }),
+            left_inner,
+        );
     } else {
         let items: Vec<String> = browser.albums.iter().enumerate().map(|(_i, a)| {
             let label = format!("{} - {}", a.album.artist, a.album.title);
