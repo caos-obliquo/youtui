@@ -1,6 +1,6 @@
 # ytmapi-rs Implementation Status
 
-> Last updated: 2026-06-24
+> Last updated: 2026-06-27
 > Compared against: upstream ytmusicapi (Python) feature matrix
 
 ## Legend
@@ -138,16 +138,17 @@
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Clippy warnings | ✅ | **0 across all 11 crates** (fixed 35) |
+| Clippy warnings | ✅ | **0 across all 10 crates** (ytmapi-cli removed from workspace) |
 | `#[allow(dead_code)]` | [~] | 3 proposital, 0 stale (cleaned in f723535, 206 lines deleted) |
 | `unwrap()` in production | ✅ | **0** — all in doc tests/tests |
 | Stale TODOs removed | ✅ | **62 removed**, 37 legitimate remain |
-| Tests | ✅ | ytmapi-rs: 85/85 lib, 28/52 auth |
-| ytmapi-cli docs | ✅ | `docs/ytmapi-cli.md` |
+| Tests | ✅ | ytmapi-rs: 82/82 lib, 28/52 auth (3 locale tests removed in slimming) |
+| ytmapi-cli docs | ✅ | `docs/ytmapi-cli.md` (ytmapi-cli removed from workspace but doc preserved) |
 
-## Remaining ytmapi-rs TODOs (37 items — LOW priority)
+## Remaining ytmapi-rs TODOs (37+ items — LOW priority)
 
-All 37 remaining TODOs are legitimate feature gaps but LOW value for youtui:
+All remaining TODOs are legitimate feature gaps but LOW value for youtui.
+Note: the working tree slimming (590d336) added/reverted some TODO annotations (e.g., ArtistTopReleaseCategory enum → `Option<String>`).
 
 | Category | Count | Examples |
 |----------|-------|---------|

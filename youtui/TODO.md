@@ -97,17 +97,16 @@
 - **Album art popup docs**: Created `docs/subsystems/album_art_popup.md` with full architecture.
 
 ## Test Status
-- youtui: 136/136 pass, 4 ignored, 0 warnings
+- youtui: 172/172 pass, 4 ignored, 0 warnings
 - metadata-provider: 47/47 pass, 0 warnings
-- ytmapi-rs lib: 85/85 pass, 0 warnings
+- ytmapi-rs lib: 82/82 pass, 0 warnings (3 locale tests removed in slimming)
 - ViTextEditor: 65/65 pass, 0 warnings
 - genius-rs: 18/18 pass, 0 warnings
-- ytmapi-cli: 7/7 pass, 0 warnings
 - json-crawler: 2/2 pass
 - async-callback-manager: 14/14 pass
 - lrclib-rs: 4/4 pass
 - rym-genre-data: 10/10 pass
-- **Total: ~388 non-auth pass, 0 fail, 0 warnings across 11 crates**
+- **Total: ~417 non-auth pass, 0 fail, 0 warnings across 10 crates**
 
 ## Remaining (Priority Order)
 

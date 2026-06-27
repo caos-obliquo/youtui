@@ -628,6 +628,7 @@ fn handle_album_split(
                 .and_then(|s| s.album.as_ref().map(|a| a.name.clone())));
         if let (Some(ref aa), Some(ref ab)) = (art_artist, art_album) {
             if !aa.is_empty() && !ab.is_empty() {
+                info!("MetadataEffect: triggering FetchAlbumArt for '{}' - '{}'", aa, ab);
                 use crate::app::server::FetchAlbumArt;
                 let art_task = AsyncTask::new_future_try(
                     FetchAlbumArt(aa.clone(), ab.clone(), api_key.clone()),
@@ -636,7 +637,11 @@ fn handle_album_split(
                     None,
                 );
                 effect = effect.push(art_task);
+            } else {
+                debug!("MetadataEffect: skip FetchAlbumArt — empty artist or album");
             }
+        } else {
+            debug!("MetadataEffect: skip FetchAlbumArt — missing artist or album");
         }
     }
     if let Some(e) = play_effect {
@@ -710,14 +715,14 @@ pub struct HandleFetchAlbumArtErr;
 
 #[derive(Debug, PartialEq)]
 pub enum FetchAlbumArtEffect {
-    Fetched(SongThumbnail),
+    Fetched(SongThumbnail, Option<String>),
     FetchError,
 }
 
 impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for FetchAlbumArtEffect {
     fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
     match self {
-            FetchAlbumArtEffect::Fetched(thumbnail) => {
+            FetchAlbumArtEffect::Fetched(thumbnail, canonical_album) => {
                 let thumb_rc = std::rc::Rc::new(thumbnail);
                 let album_name = target.album_art_fetching_name.take();
                 for song in target.list.get_list_iter_mut() {
@@ -727,6 +732,26 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for FetchAlbumArtEffect {
                         })
                     {
                         song.album_art = AlbumArtState::Downloaded(thumb_rc.clone());
+                    }
+                }
+                // Store canonical album name for ALL scrobble paths.
+                // Last.fm is primary source of truth for album names.
+                if let Some(ref canonical) = canonical_album {
+                    target.canonical_album_name = Some(canonical.clone());
+                    // Also update live scrobble_state if it matches current song.
+                    // Compare canonical vs state.album (both cleaned/canonical),
+                    // NOT album_name (raw YTM) vs state.album (cleaned).
+                    if let Some(ref mut state) = target.scrobble_state {
+                        let matches_current = canonical_album.as_deref().zip(state.album.as_deref())
+                            .map_or(false, |(c, s)| c == s);
+                        if matches_current {
+                            info!("FetchAlbumArtEffect: updating scrobble album '{}' -> canonical '{}'",
+                                state.album.as_deref().unwrap_or(""), canonical);
+                            state.album = Some(canonical.clone());
+                        } else {
+                            debug!("FetchAlbumArtEffect: skip album update — canonical '{:?}' doesn't match current scrobble_state album '{:?}'",
+                                canonical, state.album);
+                        }
                     }
                 }
                 target.album_art_fetching = false;
@@ -744,10 +769,10 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for FetchAlbumArtEffect {
 
 impl_youtui_task_handler!(
     HandleFetchAlbumArtOk,
-    SongThumbnail,
+    (SongThumbnail, Option<String>),
     Playlist,
-    |_, thumbnail: SongThumbnail| {
-        FetchAlbumArtEffect::Fetched(thumbnail)
+    |_, (thumbnail, canonical_album): (SongThumbnail, Option<String>)| {
+        FetchAlbumArtEffect::Fetched(thumbnail, canonical_album)
     }
 );
 

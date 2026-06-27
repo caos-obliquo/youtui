@@ -1105,27 +1105,36 @@ impl BackendTask<ArcServer> for GetAnnotations {
 pub struct FetchAlbumArt(pub String, pub String, pub String);
 
 impl BackendTask<ArcServer> for FetchAlbumArt {
-    type Output = anyhow::Result<SongThumbnail>;
+    type Output = anyhow::Result<(SongThumbnail, Option<String>)>;
     type MetadataType = TaskMetadata;
     fn into_future(
         self,
         backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let artist = self.0;
-        let album = self.1;
+        let raw_album = self.1;
         let api_key = self.2;
         let backend = backend.clone();
         let client = backend.http_client.clone();
         async move {
-            // Query Last.fm album.getInfo for image URL
+            // Clean album name before querying Last.fm: strip edition suffixes
+            // so "Rumours (Deluxe Edition)" matches canonical "Rumours".
+            let album = crate::app::scrobbler::clean_album_for_scrobble(&raw_album);
+            // Query Last.fm album.getInfo for image URL + canonical album name
             let info_url = format!(
                 "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
                 api_key, metadata_provider::util::urlencoding(&artist), metadata_provider::util::urlencoding(&album)
             );
+            let mut canonical_album: Option<String> = None;
             let image_url = if api_key.is_empty() {
                 None
             } else if let Ok(resp) = client.get(&info_url).send().await {
                 if let Ok(data) = resp.json::<serde_json::Value>().await {
+                    // Extract canonical album name from Last.fm response (the name that matches an existing entry with art)
+                    canonical_album = data.get("album")
+                        .and_then(|a| a.get("name"))
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string());
                     data.get("album")
                         .and_then(|a| a.get("image"))
                         .and_then(|imgs| imgs.as_array())
@@ -1159,10 +1168,11 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
                     let thumb_id = SongThumbnailID::Album(ytmapi_rs::common::AlbumID::from_raw(
                         format!("lastfm:{}:{}", artist, album),
                     ));
-                    backend
+                    let thumbnail = backend
                         .song_thumbnail_downloader
                         .download_song_thumbnail(thumb_id, url)
-                        .await
+                        .await?;
+                    Ok((thumbnail, canonical_album))
                 }
                 _ => Err(anyhow::anyhow!("No album art URL found on Last.fm")),
             }

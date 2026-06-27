@@ -97,7 +97,7 @@ target/release/youtui
 # Tests
 cargo test --release -p youtui --bin youtui    # 164 tests
 cargo test --release -p vi-text-editor          # 67 tests
-cargo test --release -p ytmapi-rs --lib         # 85 tests (no auth)
+cargo test --release -p ytmapi-rs --lib         # 82 tests (no auth)
 cargo test --release -p ytmapi-rs              # 29/51 auth (needs cookie)
 ```
 

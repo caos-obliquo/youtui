@@ -133,6 +133,10 @@ pub struct Playlist {
     pub album_art_fetching: bool,
     /// Album name being fetched for album art matching
     pub album_art_fetching_name: Option<String>,
+    /// Last.fm verified canonical album name from album.getInfo (or cleaned fallback).
+    /// Set by FetchAlbumArtEffect::apply(), cleared when song changes.
+    /// Used as primary album name for ALL scrobble submissions.
+    pub canonical_album_name: Option<String>,
     /// Pending count for next vim-style operation (e.g., 5dd → delete 5)
     pub pending_count: usize,
     /// Sort state for queue
@@ -942,6 +946,7 @@ impl Playlist {
             yank_buffer: Vec::new(),
             album_art_fetching: false,
             album_art_fetching_name: None,
+            canonical_album_name: None,
             pending_count: 0,
             search_text: String::new(),
             search_indices: Vec::new(),
@@ -1496,6 +1501,15 @@ impl Playlist {
             self.queue_status = QueueState::NotQueued;
             if self.scrobbling_config.enabled {
                 self.scrobble_pending = false;
+                // Keep canonical name when new song has same album (avoids unnecessary re-fetch).
+                // Clear when album changes to prevent stale canonical leaking into wrong scrobble.
+                let keep_canonical = self.get_song_from_idx(song_index)
+                    .and_then(|s| s.album.as_ref().map(|a| crate::app::scrobbler::clean_album_for_scrobble(&a.name)))
+                    .zip(self.canonical_album_name.as_deref())
+                    .map_or(false, |(new_cleaned, old_canonical)| new_cleaned == old_canonical);
+                if !keep_canonical {
+                    self.canonical_album_name = None;
+                }
                 if let Some(old) = self.scrobble_state.take() {
                     if old.should_scrobble() {
                         let cfg = self.scrobbling_config.clone();
@@ -1531,7 +1545,8 @@ impl Playlist {
                 if self.album_tracks.is_none() || is_track_entry {
                     if let Some(song) = self.get_song_from_idx(song_index) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                        let album = song.album.as_ref().map(|a| a.name.clone());
+                        let album = self.canonical_album_name.clone()
+                            .or_else(|| song.album.as_ref().map(|a| a.name.clone()));
                         let album_artist = song.artists.first().map(|a| a.name.clone());
                         let dur = song.actual_duration.unwrap_or(std::time::Duration::from_secs(240));
                         self.scrobble_state = Some(crate::app::scrobbler::ScrobbleState::new(artist, song.title.clone(), album, album_artist, dur));
@@ -1554,7 +1569,8 @@ impl Playlist {
                         .unwrap_or_default();
                     if let Some(song) = self.get_cur_playing_song() {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                        let album = song.album.as_ref().map(|a| a.name.clone());
+                        let album = self.canonical_album_name.clone()
+                            .or_else(|| song.album.as_ref().map(|a| a.name.clone()));
                         let album_artist = song.artists.first().map(|a| a.name.clone());
                         let state = crate::app::scrobbler::ScrobbleState::new(artist, track_name, album, album_artist, Duration::ZERO);
                         let cfg = self.scrobbling_config.clone();
@@ -2966,11 +2982,13 @@ impl Playlist {
 
         // Persistent scrobble: check on every progress update regardless of context
         if self.scrobbling_config.enabled && !self.scrobble_pending {
-            // Refresh album from current song: metadata may have arrived since play start
-            let fresh_album = self.get_cur_playing_song()
-                .and_then(|s| s.album.as_ref().map(|a| a.name.clone()));
+            // Refresh album: canonical Last.fm name first (verified with art),
+            // then metadata pipeline result, then raw YTM name.
+            let fresh_album = self.canonical_album_name.clone()
+                .or_else(|| self.get_cur_playing_song()
+                    .and_then(|s| s.album.as_ref().map(|a| a.name.clone())));
             if let Some(ref mut state) = self.scrobble_state {
-                state.album = fresh_album;
+                state.album = fresh_album.map(|a| crate::app::scrobbler::clean_album_for_scrobble(&a));
             }
             if let Some(ref state) = self.scrobble_state.clone() {
                 if state.should_scrobble() {
@@ -3026,8 +3044,10 @@ impl Playlist {
                                     let artist = self.get_cur_playing_song()
                                         .map(|s| s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "))
                                         .unwrap_or_default();
-                                    let album = self.get_cur_playing_song()
-                                        .and_then(|s| s.album.as_ref().map(|a| a.name.clone()));
+                                    // Use canonical Last.fm name first (verified with art), fall back to raw YTM.
+                                    let album = self.canonical_album_name.clone()
+                                        .or_else(|| self.get_cur_playing_song()
+                                            .and_then(|s| s.album.as_ref().map(|a| a.name.clone())));
                                     let album_artist = self.get_cur_playing_song()
                                         .and_then(|s| s.artists.first().map(|a| a.name.clone()));
                                     let state = crate::app::scrobbler::ScrobbleState::new(

@@ -119,5 +119,5 @@ LibraryArtist { artist, channel_id, ... }
 
 ```bash
 cargo test --release -p ytmapi-rs
-# 85 lib tests + 29 pass, 51 fail integration (requires browser auth)
+# 82 lib tests + 29 pass, 51 fail integration (requires browser auth)
 ```

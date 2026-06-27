@@ -35,11 +35,21 @@ impl ScrobbleState {
 }
 
 /// Strip common album-name suffixes that prevent Last.fm art matching.
+/// Also strips YTM format prefixes (EP:, Album:, Single:, LP:).
 /// Last.fm creates new empty album entries when the name differs even slightly.
 /// Safe patterns — clearly not canonical title (format markers, edition labels).
 /// Does NOT strip year-parentheticals like "(2007 Remaster)" — those ARE canonical.
-fn clean_album_for_scrobble(album: &str) -> String {
+pub(crate) fn clean_album_for_scrobble(album: &str) -> String {
     let mut s = album.to_string();
+    // YTM prefixes: format descriptors before canonical title
+    let fmt_prefixes = ["EP:", "Album:", "Single:", "LP:", "Demo:", "Live:"];
+    for prefix in &fmt_prefixes {
+        let lower_s = s.to_lowercase();
+        if lower_s.starts_with(&prefix.to_lowercase()) {
+            s = s[prefix.len()..].trim().to_string();
+            break;
+        }
+    }
     let paren_suffixes = [
         " (EP)", " (Single)", " (Bonus Track)", " (Bonus Track Version)",
         " (Deluxe)", " (Deluxe Edition)", " (Deluxe Version)",
@@ -562,5 +572,48 @@ mod tests {
         let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         let _fut = submit_scrobble(&config, &state);
         // Should return immediately, no HTTP call
+    }
+
+    /// Test clean_album_for_scrobble prefix stripping
+    #[test]
+    fn test_clean_ep_prefix() {
+        assert_eq!(clean_album_for_scrobble("EP: Split with X"), "Split with X");
+    }
+
+    #[test]
+    fn test_clean_album_prefix() {
+        assert_eq!(clean_album_for_scrobble("Album: Almost Free"), "Almost Free");
+    }
+
+    #[test]
+    fn test_clean_single_prefix() {
+        assert_eq!(clean_album_for_scrobble("Single: Don't Fuck With Vol. 02"), "Don't Fuck With Vol. 02");
+    }
+
+    #[test]
+    fn test_clean_lp_prefix() {
+        assert_eq!(clean_album_for_scrobble("LP: The Dark Side of the Moon"), "The Dark Side of the Moon");
+    }
+
+    #[test]
+    fn test_clean_case_insensitive_prefix() {
+        assert_eq!(clean_album_for_scrobble("ep: lowercase"), "lowercase");
+        assert_eq!(clean_album_for_scrobble("eP: mixed"), "mixed");
+    }
+
+    #[test]
+    fn test_clean_prefix_also_strips_suffix() {
+        // Both prefix and suffix stripping applied to same name
+        assert_eq!(clean_album_for_scrobble("EP: Rumours (Deluxe Edition)"), "Rumours");
+    }
+
+    #[test]
+    fn test_clean_no_prefix() {
+        assert_eq!(clean_album_for_scrobble("Rumours"), "Rumours");
+    }
+
+    #[test]
+    fn test_clean_empty() {
+        assert_eq!(clean_album_for_scrobble(""), "");
     }
 }
