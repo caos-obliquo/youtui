@@ -2988,7 +2988,7 @@ impl Playlist {
                 .or_else(|| self.get_cur_playing_song()
                     .and_then(|s| s.album.as_ref().map(|a| a.name.clone())));
             if let Some(ref mut state) = self.scrobble_state {
-                state.album = fresh_album;
+                state.album = fresh_album.map(|a| crate::app::scrobbler::clean_album_for_scrobble(&a));
             }
             if let Some(ref state) = self.scrobble_state.clone() {
                 if state.should_scrobble() {

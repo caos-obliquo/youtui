@@ -628,6 +628,7 @@ fn handle_album_split(
                 .and_then(|s| s.album.as_ref().map(|a| a.name.clone())));
         if let (Some(ref aa), Some(ref ab)) = (art_artist, art_album) {
             if !aa.is_empty() && !ab.is_empty() {
+                info!("MetadataEffect: triggering FetchAlbumArt for '{}' - '{}'", aa, ab);
                 use crate::app::server::FetchAlbumArt;
                 let art_task = AsyncTask::new_future_try(
                     FetchAlbumArt(aa.clone(), ab.clone(), api_key.clone()),
@@ -636,7 +637,11 @@ fn handle_album_split(
                     None,
                 );
                 effect = effect.push(art_task);
+            } else {
+                debug!("MetadataEffect: skip FetchAlbumArt — empty artist or album");
             }
+        } else {
+            debug!("MetadataEffect: skip FetchAlbumArt — missing artist or album");
         }
     }
     if let Some(e) = play_effect {
