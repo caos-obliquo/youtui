@@ -212,6 +212,8 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         f.render_widget(prompt, chunks[2]);
     }
     if w.quit_confirm {
+        // Clear sixel album art from terminal graphics layer.
+        w.sixel_data = Some(String::new());
         use ratatui::style::{Color, Modifier, Style};
         use ratatui::widgets::{Clear, Paragraph};
         use ratatui::layout::{Alignment, Constraint, Direction, Layout};

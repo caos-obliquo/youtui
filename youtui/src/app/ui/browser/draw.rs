@@ -167,7 +167,7 @@ pub fn draw_album_search_browser(
             .areas(left_chunk);
         let search_block = Block::default()
             .title(" Search Albums ")
-            .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+            .borders(Borders::ALL)
             .border_style(Style::default().fg(SELECTED_BORDER_COLOUR));
         let text_chunk = search_block.inner(search_box_chunk);
         let display = browser.search.search_contents.render_simple("");
