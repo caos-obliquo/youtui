@@ -20,6 +20,7 @@ pub struct ScrobbleState {
 
 impl ScrobbleState {
     pub fn new(artist: String, track: String, album: Option<String>, duration: Duration) -> Self {
+        let album = album.map(|a| clean_album_for_scrobble(&a));
         Self { artist, track, album, duration, start_time: SystemTime::now(), scrobbled: false }
     }
 
@@ -30,6 +31,22 @@ impl ScrobbleState {
         tracing::info!("Scrobble check: elapsed={:?}, duration={:?}, should={}", elapsed, self.duration, result);
         result
     }
+}
+
+/// Strip common album-name suffixes that prevent Last.fm art matching.
+/// Last.fm creates new empty album entries when the name differs even slightly.
+/// Only strips EP suffixes — LP (Long Play) is a proper album, not stripped.
+fn clean_album_for_scrobble(album: &str) -> String {
+    let mut s = album.to_string();
+    let suffixes = [" (EP)", " - EP"];
+    for suffix in &suffixes {
+        if s.ends_with(suffix) {
+            s.truncate(s.len() - suffix.len());
+            s = s.trim().to_string();
+            break;
+        }
+    }
+    s
 }
 
 const MAX_CACHE_ENTRIES: usize = 200;
