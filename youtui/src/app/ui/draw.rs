@@ -235,6 +235,10 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             .alignment(Alignment::Center);
         f.render_widget(prompt, chunks[2]);
     } else if w.command_mode {
+        // Clear sixel album art from terminal graphics layer.
+        // flush_sixel reads sixel_data after frame flush; setting it to
+        // empty triggers DCS clear (\x1bP0p\x1b\\) which erases the image.
+        w.sixel_data = Some(String::new());
         use ratatui::style::{Color, Style};
         use ratatui::widgets::{Clear, Paragraph};
         use ratatui::layout::{Alignment, Constraint, Direction, Layout};
