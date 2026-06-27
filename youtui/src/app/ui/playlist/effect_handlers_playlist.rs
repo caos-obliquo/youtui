@@ -221,7 +221,7 @@ impl_youtui_task_handler!(
     |this: HandleOverwriteGetTracks, songs: Vec<PlaylistSong>| {
         move |_target: &mut Playlist| {
             let set_ids: Vec<SetVideoID<'static>> = songs.iter()
-                .map(|s| s.set_video_id.clone())
+                .map(|s| SetVideoID::from_raw(s.video_id.get_raw().to_string()))
                 .collect();
             if set_ids.is_empty() {
                 info!("Overwrite: no tracks to remove, adding directly");
@@ -786,11 +786,9 @@ fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
             name: album_name.clone(),
             id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
         }));
-        let year = s.year.clone().or_else(|| {
-            album_name.split('(').last().and_then(|s| s.get(..4))
-                .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-                .map(|y| y.to_string())
-        });
+        let year = album_name.split('(').last().and_then(|s| s.get(..4))
+            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+            .map(|y| y.to_string());
         list_songs.push(ListSong {
             video_id: s.video_id,
             track_no: None,

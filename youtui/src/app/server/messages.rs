@@ -1049,16 +1049,19 @@ impl BackendTask<ArcServer> for SearchSongs {
                     let vid: VideoID<'static> = VideoID::from_raw(id.to_string());
                     let album_id: AlbumID<'static> = AlbumID::from_raw(id.to_string());
                     let artist_name = artist.clone();
-                    Some(ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
-                        title.to_string(),
+                    Some(ytmapi_rs::parse::SearchResultSong {
+                        title: title.to_string(),
                         artist,
-                        vid,
-                        Some(ytmapi_rs::parse::ParsedSongAlbum {
+                        album: Some(ytmapi_rs::parse::ParsedSongAlbum {
                             name: format!("YouTube: {}", artist_name),
                             id: album_id,
                         }),
                         duration,
-                    ))
+                        plays: String::new(),
+                        explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                        video_id: vid,
+                        thumbnails: vec![],
+                    })
                 })
                 .collect();
             Ok(results)
@@ -1296,11 +1299,15 @@ impl BackendTask<ArcServer> for SearchAlbums {
                                     let secs = (duration % 60.0) as u64;
                                     let duration_str = format!("{}:{:02}", mins, secs);
                                     items.push(AlbumSearchItem {
-                                        album: SearchResultAlbum::new(
-                                            title.to_string(),
-                                            uploader.to_string(),
-                                            AlbumID::from_raw(video_id_str.to_string()),
-                                        ),
+                                        album: SearchResultAlbum {
+                                            title: title.to_string(),
+                                            artist: uploader.to_string(),
+                                            year: String::new(),
+                                            explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                                            album_id: AlbumID::from_raw(video_id_str.to_string()),
+                                            album_type: ytmapi_rs::common::AlbumType::Album,
+                                            thumbnails: vec![],
+                                        },
                                         is_youtube: true,
                                         youtube_video_id: Some(VideoID::from_raw(video_id_str.to_string())),
                                         youtube_duration: Some(duration_str),

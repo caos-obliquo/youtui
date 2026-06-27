@@ -25,7 +25,7 @@ pub async fn main() -> Result<(), ytmapi_rs::Error> {
 )]
 use crate::{
     Result, YtMusic,
-    auth::BrowserToken,
+    auth::{BrowserToken, OAuthToken},
     client::Client,
 };
 use std::path::Path;
@@ -85,7 +85,7 @@ impl<T> YtMusicBuilder<T> {
             token,
         }
     }
-    // TODO: Refactor to pass client_options directly instead of extracting + reconstructing.
+    // TODO: Improve how this handles building client.
     pub fn with_browser_token_cookie(self, cookie: String) -> YtMusicBuilder<FromCookie> {
         let YtMusicBuilder {
             client_options,
@@ -97,7 +97,7 @@ impl<T> YtMusicBuilder<T> {
             token,
         }
     }
-    // TODO: Refactor to pass client_options directly instead of extracting + reconstructing.
+    // TODO: Improve how this handles building client.
     pub fn with_browser_token_cookie_file<P: AsRef<Path>>(
         self,
         cookie_file: P,
@@ -107,6 +107,28 @@ impl<T> YtMusicBuilder<T> {
             token: _,
         } = self;
         let token = FromCookieFile(cookie_file);
+        YtMusicBuilder {
+            client_options,
+            token,
+        }
+    }
+    #[deprecated = "Use generic `with_auth_token` instead"]
+    pub fn with_browser_token(self, token: BrowserToken) -> YtMusicBuilder<BrowserToken> {
+        let YtMusicBuilder {
+            client_options,
+            token: _,
+        } = self;
+        YtMusicBuilder {
+            client_options,
+            token,
+        }
+    }
+    #[deprecated = "Use generic `with_auth_token` instead"]
+    pub fn with_oauth_token(self, token: OAuthToken) -> YtMusicBuilder<OAuthToken> {
+        let YtMusicBuilder {
+            client_options,
+            token: _,
+        } = self;
         YtMusicBuilder {
             client_options,
             token,
@@ -191,9 +213,9 @@ fn build_client(client_options: ClientOptions) -> Result<Client> {
     match client_options {
         ClientOptions::Default => Client::new(),
         #[cfg(feature = "rustls")]
-        ClientOptions::Rustls => Client::new(),
+        ClientOptions::Rustls => Client::new_rustls_tls(),
         #[cfg(feature = "native-tls")]
-        ClientOptions::NativeTls => Client::new(),
+        ClientOptions::NativeTls => Client::new_native_tls(),
         ClientOptions::Existing(client) => Ok(client),
     }
 }

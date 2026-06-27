@@ -43,8 +43,10 @@ pub use playlist::*;
 mod podcasts;
 pub use podcasts::*;
 mod rate;
-// Rate module provides ParseFrom impls (available through crate system).
-// No explicit re-export needed.
+// Whilst rate doesn't define anything - for consistency we still write the `pub
+// use` statement.
+#[allow(unused_imports)]
+pub use rate::*;
 mod recommendations;
 pub use recommendations::*;
 mod search;

@@ -129,6 +129,8 @@ pub mod simplified_queries;
 /// constructors. When using in a real environment, you will need to construct
 /// using a real token or cookie.
 pub struct YtMusic<A: AuthToken> {
+    // TODO: add language
+    // TODO: add location
     client: Client,
     token: A,
 }
@@ -145,6 +147,15 @@ impl YtMusic<NoAuthToken> {
     }
 }
 impl YtMusic<BrowserToken> {
+    /// Create a new API handle using a BrowserToken.
+    /// Utilises the default TLS option for the enabled features.
+    /// # Panics
+    /// This will panic in some situations - see <https://docs.rs/reqwest/latest/reqwest/struct.Client.html#panics>
+    #[deprecated = "Use generic `from_auth_token` instead"]
+    pub fn from_browser_token(token: BrowserToken) -> YtMusic<BrowserToken> {
+        let client = Client::new().expect("Expected Client build to succeed");
+        YtMusic { client, token }
+    }
     /// Create a new API handle using a real browser authentication cookie saved
     /// to a file on disk.
     /// Utilises the default TLS option for the enabled features.
@@ -177,6 +188,15 @@ impl YtMusic<BrowserToken> {
     }
 }
 impl YtMusic<OAuthToken> {
+    /// Create a new API handle using an OAuthToken.
+    /// Utilises the default TLS option for the enabled features.
+    /// # Panics
+    /// This will panic in some situations - see <https://docs.rs/reqwest/latest/reqwest/struct.Client.html#panics>
+    #[deprecated = "Use generic `from_auth_token` instead"]
+    pub fn from_oauth_token(token: OAuthToken) -> YtMusic<OAuthToken> {
+        let client = Client::new().expect("Expected Client build to succeed");
+        YtMusic { client, token }
+    }
     /// Refresh the internal oauth token, and return a clone of it (for user to
     /// store locally, e.g).
     pub async fn refresh_token(&mut self) -> Result<OAuthToken> {
@@ -209,7 +229,8 @@ impl<A: AuthToken> YtMusic<A> {
     ///
     /// # async {
     /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE").await?;
-    /// let query = ytmapi_rs::query::SearchQuery::new_filtered("Beatles", ytmapi_rs::query::search::ArtistsFilter);
+    /// let query = ytmapi_rs::query::SearchQuery::new("Beatles")
+    ///     .with_filter(ytmapi_rs::query::search::ArtistsFilter);
     /// let result = yt.raw_json_query(query).await?;
     /// assert!(result.len() != 0);
     /// # Ok::<(), ytmapi_rs::Error>(())
@@ -230,7 +251,8 @@ impl<A: AuthToken> YtMusic<A> {
     ///
     /// # async {
     /// let yt = ytmapi_rs::YtMusic::from_cookie("FAKE COOKIE").await?;
-    /// let query = ytmapi_rs::query::SearchQuery::new_filtered("Beatles", ytmapi_rs::query::search::ArtistsFilter);
+    /// let query = ytmapi_rs::query::SearchQuery::new("Beatles")
+    ///     .with_filter(ytmapi_rs::query::search::ArtistsFilter);
     /// let result = yt.json_query(query).await?;
     /// println!("{:?}", result);
     /// # Ok::<(), ytmapi_rs::Error>(())
@@ -242,22 +264,13 @@ impl<A: AuthToken> YtMusic<A> {
             .process()
             .map(|processed| processed.json)
     }
-    /// Set the UI language (hl parameter, e.g. "en", "de", "ja").
-    pub fn with_language(mut self, lang: impl Into<String>) -> Self {
-        self.client.language = lang.into();
-        self
-    }
-    /// Set the geo location (gl parameter, e.g. "US", "DE", "JP").
-    pub fn with_location(mut self, loc: impl Into<String>) -> Self {
-        self.client.location = loc.into();
-        self
-    }
     /// Run a Query on the API returning its output.
     /// # Usage
     /// ```no_run
     /// # async {
     /// let yt = ytmapi_rs::YtMusic::from_cookie("").await?;
-    /// let query = ytmapi_rs::query::SearchQuery::new_filtered("Beatles", ytmapi_rs::query::search::ArtistsFilter);
+    /// let query = ytmapi_rs::query::SearchQuery::new("Beatles")
+    ///     .with_filter(ytmapi_rs::query::search::ArtistsFilter);
     /// let result = yt.query(query).await?;
     /// assert_eq!(result[0].artist, "The Beatles");
     /// # Ok::<(), ytmapi_rs::Error>(())
@@ -404,7 +417,8 @@ pub async fn generate_browser_token<S: AsRef<str>>(
 /// # Usage
 /// ```
 /// let json = r#"{ "test" : true }"#.to_string();
-/// let query = ytmapi_rs::query::SearchQuery::new_filtered("Beatles", ytmapi_rs::query::search::ArtistsFilter);
+/// let query = ytmapi_rs::query::SearchQuery::new("Beatles")
+///     .with_filter(ytmapi_rs::query::search::ArtistsFilter);
 /// let result = ytmapi_rs::process_json::<_, ytmapi_rs::auth::BrowserToken>(json, query);
 /// assert!(result.is_err());
 /// ```
@@ -413,33 +427,4 @@ pub fn process_json<Q: Query<A>, A: AuthToken>(
     query: impl Borrow<Q>,
 ) -> Result<Q::Output> {
     Q::Output::parse_from(RawResult::<Q, A>::from_raw(json, query.borrow()).process()?)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_client_default_locale() {
-        let client = Client::new().unwrap();
-        assert_eq!(client.language, "en");
-        assert_eq!(client.location, "US");
-    }
-
-    #[test]
-    fn test_client_with_language() {
-        let client = Client::new().unwrap().with_language("de").with_location("DE");
-        assert_eq!(client.language, "de");
-        assert_eq!(client.location, "DE");
-    }
-
-    #[test]
-    fn test_ytmusic_with_language() {
-        // NoAuthToken doesn't need auth, can test builder methods
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let yt = rt.block_on(YtMusic::<NoAuthToken>::new_unauthenticated()).unwrap();
-        let yt = yt.with_language("ja").with_location("JP");
-        assert_eq!(yt.client.language, "ja");
-        assert_eq!(yt.client.location, "JP");
-    }
 }

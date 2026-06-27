@@ -17,9 +17,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/z8KZsHNKS-O1qYVyKlSErT_RLMSMwVht89USvSdFAd0EoRlBOppi9DOdRkv609Ye_tfq_Wp8WwhVJbw=w120-h120-p-l90-rj",
                 },
             ],
-            artist: Some(
-                "The Beatles",
-            ),
+            artist: None,
             album: None,
             duration: None,
             year: None,
@@ -122,9 +120,7 @@ SearchResults {
             artist: Some(
                 "The Beatles",
             ),
-            album: Some(
-                "Now And Then",
-            ),
+            album: None,
             duration: None,
             year: Some(
                 "2023",
@@ -473,8 +469,6 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/O0BM0qveWB40423x8L9AdJxuMcBhFg0x_UtCbFQ_pRwbF412bmnlKj420gEPx1wwwAVpyXHpHp35cAU=w120-h120-l90-rj",
                 },
             ],
-            year: None,
-            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Here Comes The Sun (Remastered 2009)",
@@ -505,8 +499,6 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/bmG1q9eu3ub2CtYcgArvzpiehqUpZGuLsOa_B0Bxkwxdfsk9r7nRzAQy1P5dTjqerODLxq3LycWGWW5m=w120-h120-l90-rj",
                 },
             ],
-            year: None,
-            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Come Together (Remastered 2009)",
@@ -537,8 +529,6 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/bmG1q9eu3ub2CtYcgArvzpiehqUpZGuLsOa_B0Bxkwxdfsk9r7nRzAQy1P5dTjqerODLxq3LycWGWW5m=w120-h120-l90-rj",
                 },
             ],
-            year: None,
-            like_status: Indifferent,
         },
     ],
     videos: [

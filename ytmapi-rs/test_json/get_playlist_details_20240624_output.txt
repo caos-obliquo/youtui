@@ -30,5 +30,4 @@ GetPlaylistDetails {
             url: "https://yt3.googleusercontent.com/sQWZSioe_6_Rs90cxkmfGtWi1Ml8TJSx80XGJFugXrAMXVO17sF_MJ9NtNba3njOaUpbs549f_U=s1200",
         },
     ],
-    like_status: None,
 }

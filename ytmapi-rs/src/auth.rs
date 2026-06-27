@@ -65,21 +65,22 @@ pub(crate) async fn raw_query_post<'a, A: AuthToken, Q: PostQuery>(
     c: &Client,
 ) -> Result<RawResult<'a, Q, A>> {
     let url = format!("{YTM_API_URL}{}{YTM_PARAMS}{YTM_PARAMS_KEY}", q.path());
-    let mut body = q.header();
-    body.insert(
-        "context".to_string(),
-        json!({
+    let mut body = json!({
+        "context" : {
             "client" : {
                 "clientName" : "WEB_REMIX",
                 "clientVersion" : tok.client_version(),
-                "hl" : c.language,
-                "gl" : c.location,
+                "user" : {},
             },
-            "user" : {},
-        }),
-    );
+        },
+    });
+    if let Some(body) = body.as_object_mut() {
+        body.append(&mut q.header());
+    } else {
+        unreachable!("Body created in this function as an object")
+    };
     let QueryResponse { text, .. } = c
-        .post_json_query(&url, tok.headers()?, &body, &q.params())
+        .post_json_query(url, tok.headers()?, &body, &q.params())
         .await?;
     Ok(RawResult::from_raw(text, q))
 }

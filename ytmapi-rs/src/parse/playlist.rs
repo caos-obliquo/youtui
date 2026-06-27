@@ -6,7 +6,7 @@ use super::{
 };
 use crate::common::{
     ApiOutcome, ArtistChannelID, ContinuationParams, EpisodeID, Explicit, LibraryManager,
-    LikeStatus, PlaylistID, SetVideoID, Thumbnail, UploadEntityID, VideoID, YoutubeID,
+    LikeStatus, PlaylistID, SetVideoID, Thumbnail, UploadEntityID, VideoID,
 };
 use crate::continuations::ParseFromContinuable;
 use crate::nav_consts::{
@@ -49,7 +49,6 @@ pub struct GetPlaylistDetails {
     // NOTE: Seem to be unable to distinguish when views is optional.
     pub views: Option<String>,
     pub thumbnails: Vec<Thumbnail>,
-    pub like_status: Option<LikeStatus>,
 }
 #[derive(PartialEq, Debug, Clone, Deserialize, Serialize)]
 /// Provides a SetVideoID and VideoID for each video added to the playlist.
@@ -74,7 +73,6 @@ pub struct WatchPlaylistTrack {
 // May need to be enum to track 'Not Available' case.
 pub struct PlaylistSong {
     pub video_id: VideoID<'static>,
-    pub set_video_id: SetVideoID<'static>,
     pub track_no: usize,
     pub album: ParsedSongAlbum,
     pub duration: String,
@@ -83,13 +81,13 @@ pub struct PlaylistSong {
     pub library_management: Option<LibraryManager>,
     pub title: String,
     pub artists: Vec<super::ParsedSongArtist>,
+    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub explicit: Explicit,
     pub is_available: bool,
-    /// Id of the playlist that will get created when starting 'Start Radio'.
+    /// Id of the playlist that will get created when pressing 'Start Radio'.
     pub playlist_id: PlaylistID<'static>,
-    pub year: Option<String>,
 }
 
 #[derive(PartialEq, Debug, Clone, Deserialize, Serialize)]
@@ -104,13 +102,13 @@ pub enum PlaylistItem {
 #[non_exhaustive]
 pub struct PlaylistVideo {
     pub video_id: VideoID<'static>,
-    pub set_video_id: SetVideoID<'static>,
     pub track_no: usize,
     pub duration: String,
     pub title: String,
     // Could be 'ParsedVideoChannel'
     pub channel_name: String,
     pub channel_id: ArtistChannelID<'static>,
+    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub is_available: bool,
@@ -128,6 +126,7 @@ pub struct PlaylistEpisode {
     pub title: String,
     pub podcast_name: String,
     pub podcast_id: PlaylistID<'static>,
+    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
     pub is_available: bool,
@@ -145,6 +144,7 @@ pub struct PlaylistUploadSong {
     pub title: String,
     // An UploadSong may not have an album, in that case empty vec returned.
     pub artists: Vec<ParsedUploadArtist>,
+    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<Thumbnail>,
 }
@@ -301,25 +301,14 @@ pub(crate) fn parse_playlist_song(
         "/playNavigationEndpoint",
         WATCH_VIDEO_ID
     ))?;
-    let set_video_id: SetVideoID = data
-        .take_value_pointer("/playlistItemData/playlistSetVideoId")
-        .unwrap_or_else(|_| SetVideoID::from_raw(""));
     let library_management =
         parse_library_management_items_from_menu(data.borrow_pointer(MENU_ITEMS)?)?;
     let like_status = data.take_value_pointer(MENU_LIKE_STATUS)?;
     let artists = super::parse_song_artists(&mut data, 1)?;
-    // Extract year from subtitle runs (first 4-digit number found in column 1 text)
-    let year = data
-        .borrow_pointer(super::fixed_column_item_pointer(1))
-        .ok()
-        .and_then(|mut c| {
-            let full_text: Vec<String> = c
-                .take_value_pointers(&["/text/runs/0/text", "/text/runs/1/text", "/text/runs/2/text"])
-                .ok().unwrap_or_default();
-            full_text.iter().find_map(|t| super::song::find_year_in_runs(t))
-        });
-    // Featured Playlists have a 'Plays' field between Artist and Album
-    // (4th flex column). Detect by presence of flexColumns/3.
+    // Some playlist types (Potentially just Featured Playlists) have a 'Plays'
+    // field between Artist and Album.
+    // TODO: Find a more efficient way, and potentially parse Featured Playlists
+    // differently.
     let album_col_idx = if data.path_exists("/flexColumns/3") {
         3
     } else {
@@ -347,7 +336,6 @@ pub(crate) fn parse_playlist_song(
     ))?;
     Ok(PlaylistSong {
         video_id,
-        set_video_id,
         track_no,
         duration,
         library_management,
@@ -359,7 +347,6 @@ pub(crate) fn parse_playlist_song(
         album,
         playlist_id,
         is_available,
-        year,
     })
 }
 pub(crate) fn parse_playlist_upload_song(
@@ -458,9 +445,6 @@ pub(crate) fn parse_playlist_video(
         "/playNavigationEndpoint",
         WATCH_VIDEO_ID
     ))?;
-    let set_video_id: SetVideoID = data
-        .take_value_pointer("/playlistItemData/playlistSetVideoId")
-        .unwrap_or_else(|_| SetVideoID::from_raw(""));
     let like_status = data.take_value_pointer(MENU_LIKE_STATUS)?;
     let channel_name = parse_flex_column_item(&mut data, 1, 0)?;
     let channel_id = data
@@ -482,7 +466,6 @@ pub(crate) fn parse_playlist_video(
     ))?;
     Ok(PlaylistVideo {
         video_id,
-        set_video_id,
         track_no,
         duration,
         title,
@@ -625,26 +608,6 @@ fn get_playlist_details(json_crawler: JsonCrawlerOwned) -> Result<GetPlaylistDet
         .nth(4)
         .map(|mut item| item.take_value_pointer("/text"))
         .transpose()?;
-    let like_status: Option<LikeStatus> = header
-        .borrow_pointer("/buttons")
-        .ok()
-        .and_then(|b| b.try_into_iter().ok())
-        .and_then(|iter| {
-            iter.filter_map(|mut btn| {
-                let is_toggled: bool = btn
-                    .take_value_pointer("/toggleButtonRenderer/isToggled")
-                    .ok()?;
-                Some(is_toggled)
-            })
-            .next()
-        })
-        .map(|toggled| {
-            if toggled {
-                LikeStatus::Liked
-            } else {
-                LikeStatus::Indifferent
-            }
-        });
     let id = header
         .navigate_pointer("/buttons")?
         .try_into_iter()?
@@ -662,7 +625,6 @@ fn get_playlist_details(json_crawler: JsonCrawlerOwned) -> Result<GetPlaylistDet
         thumbnails,
         views,
         author_avatar_url,
-        like_status,
     })
 }
 

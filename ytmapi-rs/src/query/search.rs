@@ -11,6 +11,8 @@ const SPECIALIZED_PLAYLIST_WITH_SUGGESTIONS_PARAMS: &str = "BQgIIAWoMEA4QChADEAQ
 const SPECIALIZED_PLAYLIST_PREFIX_PARAMS: &str = "EgeKAQQoA";
 const SEARCH_QUERY_PATH: &str = "search";
 
+// TODO Seal
+// TODO: Add relevant parameters.
 // Implements Default to allow simple implementation of Into<SearchQuery<S>>
 pub trait SearchType: Default {
     fn specialised_params(&self, spelling_mode: &SpellingMode) -> Option<Cow<'_, str>>;
@@ -29,7 +31,8 @@ pub struct SearchQuery<'a, S: SearchType> {
 }
 
 /// Whether or not to allow Google to attempt to auto correct spelling as part
-/// of the results. Has no affect on Uploads or Library (ExactMatch default is fine).
+/// of the results. Has no affect on Uploads or Library.
+// XXX: May actually affect Library. To confirm.
 #[derive(PartialEq, Debug, Clone, Default)]
 pub enum SpellingMode {
     // My personal preference is to use ExactMatch by default, so that's what I've set.
@@ -59,12 +62,14 @@ impl SearchType for BasicSearch {
 }
 impl SearchType for UploadSearch {
     fn specialised_params(&self, _: &SpellingMode) -> Option<Cow<'_, str>> {
+        // TODO: Investigate if spelling suggestions take affect here.
         Some("agIYAw%3D%3D".into())
     }
 }
 impl SearchType for LibrarySearch {
     fn specialised_params(&self, _: &SpellingMode) -> Option<Cow<'_, str>> {
-        // XXX: It may be possible to actually filter these, see sigma67/ytmusicapi for details.
+        // XXX: It may be possible to actually filter these, see sigma67/ytmusicapi for
+        // details. TODO: Investigate if spelling suggestions take affect here.
         Some("agIYBA%3D%3D".into())
     }
 }
@@ -101,6 +106,18 @@ impl<'a, Q: Into<Cow<'a, str>>, S: SearchType> From<Q> for SearchQuery<'a, S> {
     }
 }
 
+// By default, uses SpellingMode exactmatch.
+impl<'a> SearchQuery<'a, BasicSearch> {
+    #[deprecated = "To be removed in future release - see issue #353"]
+    pub fn new<Q: Into<Cow<'a, str>>>(q: Q) -> SearchQuery<'a, BasicSearch> {
+        SearchQuery {
+            query: q.into(),
+            spelling_mode: SpellingMode::default(),
+            search_type: BasicSearch {},
+        }
+    }
+}
+
 impl<'a, S: SearchType> SearchQuery<'a, S> {
     /// Set spelling mode.
     pub fn with_spelling_mode(mut self, spelling_mode: SpellingMode) -> Self {
@@ -114,7 +131,38 @@ impl<'a, S: SearchType> SearchQuery<'a, S> {
     }
 }
 
-
+impl<'a> SearchQuery<'a, BasicSearch> {
+    /// Apply a filter to the search. May change type of results returned.
+    #[deprecated = "To be removed in future release - see issue #353"]
+    pub fn with_filter<F: FilteredSearchType>(
+        self,
+        filter: F,
+    ) -> SearchQuery<'a, FilteredSearch<F>> {
+        SearchQuery {
+            query: self.query,
+            spelling_mode: self.spelling_mode,
+            search_type: FilteredSearch { filter },
+        }
+    }
+    /// Search only uploads.
+    #[deprecated = "To be removed in future release - see issue #353"]
+    pub fn uploads(self) -> SearchQuery<'a, UploadSearch> {
+        SearchQuery {
+            query: self.query,
+            spelling_mode: self.spelling_mode,
+            search_type: UploadSearch,
+        }
+    }
+    /// Search only library.
+    #[deprecated = "To be removed in future release - see issue #353"]
+    pub fn library(self) -> SearchQuery<'a, LibrarySearch> {
+        SearchQuery {
+            query: self.query,
+            spelling_mode: self.spelling_mode,
+            search_type: LibrarySearch,
+        }
+    }
+}
 
 impl<'a, F: FilteredSearchType> SearchQuery<'a, FilteredSearch<F>> {
     pub fn new_filtered<Q: Into<Cow<'a, str>>>(
@@ -136,6 +184,15 @@ impl<'a, F: FilteredSearchType> SearchQuery<'a, FilteredSearch<F>> {
             query: self.query,
             spelling_mode: self.spelling_mode,
             search_type: FilteredSearch { filter },
+        }
+    }
+    /// Remove filter from the query.
+    #[deprecated = "To be removed in future release - see issue #353"]
+    pub fn unfiltered(self) -> SearchQuery<'a, BasicSearch> {
+        SearchQuery {
+            query: self.query,
+            spelling_mode: self.spelling_mode,
+            search_type: BasicSearch,
         }
     }
 }

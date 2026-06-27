@@ -180,8 +180,15 @@ impl PostQuery for EditPlaylistQuery<'_> {
                 "addToTop" : add_to_top
             }))
         };
+        if let Some(new_privacy_status) = &self.new_privacy_status {
+            actions.push(json!({
+                "action" : "ACTION_SET_PLAYLIST_PRIVACY",
+                "playlistPrivacy" : new_privacy_status
+            }))
+        };
         let raw = self.id.get_raw();
         let clean_id = raw.strip_prefix("VL").unwrap_or(raw);
+        // Confirmed!
         let serde_json::Value::Object(map) = json!({
             "playlistId" : clean_id,
             "actions" : actions,

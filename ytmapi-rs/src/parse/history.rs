@@ -48,6 +48,7 @@ pub struct HistoryItemSong {
     pub library_management: Option<LibraryManager>,
     pub title: String,
     pub artists: Vec<super::ParsedSongArtist>,
+    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<super::Thumbnail>,
     pub explicit: Explicit,
@@ -66,6 +67,7 @@ pub struct HistoryItemVideo {
     // Could be 'ParsedVideoChannel'
     pub channel_name: String,
     pub channel_id: ArtistChannelID<'static>,
+    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<super::Thumbnail>,
     pub is_available: bool,
@@ -84,6 +86,7 @@ pub struct HistoryItemEpisode {
     pub title: String,
     pub podcast_name: String,
     pub podcast_id: PlaylistID<'static>,
+    // TODO: Song like feedback tokens.
     pub like_status: LikeStatus,
     pub thumbnails: Vec<super::Thumbnail>,
     pub is_available: bool,
@@ -92,8 +95,8 @@ pub struct HistoryItemEpisode {
 
 #[derive(PartialEq, Debug, Clone, Deserialize, Serialize)]
 #[non_exhaustive]
-/// HistoryItemUploadSong is used only in history parsing. If it gains
-/// cross-module usage, move to `common.rs`.
+// May need to be enum to track 'Not Available' case.
+// TODO: Move to common
 pub struct HistoryItemUploadSong {
     pub entity_id: UploadEntityID<'static>,
     pub video_id: VideoID<'static>,

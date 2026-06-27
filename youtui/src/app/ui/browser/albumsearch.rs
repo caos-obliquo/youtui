@@ -106,13 +106,16 @@ impl AlbumSearchBrowser {
         let Some(album_item) = self.get_selected_album().cloned() else { return (AsyncTask::new_no_op(), None); };
         if album_item.is_youtube {
             // YouTube full-album video: play directly
-            let song = SearchResultSong::from_yt_dlp(
-                album_item.album.title.clone(),
-                album_item.album.artist.clone(),
-                album_item.youtube_video_id.unwrap(),
-                None,
-                album_item.youtube_duration.unwrap_or_else(|| "0:00".to_string()),
-            );
+            let song = SearchResultSong {
+                title: album_item.album.title.clone(),
+                artist: album_item.album.artist.clone(),
+                album: None,
+                duration: album_item.youtube_duration.unwrap_or_else(|| "0:00".to_string()),
+                plays: String::new(),
+                explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                video_id: album_item.youtube_video_id.unwrap(),
+                thumbnails: vec![],
+            };
             let mut temp_list = BrowserSongsList::default();
             temp_list.add_raw_search_result_song(song);
             if let Some(list_song) = temp_list.get_song_from_idx(0) {
@@ -132,7 +135,15 @@ impl AlbumSearchBrowser {
 
     pub fn open_album_direct(&mut self, artist: String, album: String, album_id: AlbumID<'static>) -> (ComponentEffect<Self>, Option<AppCallback>) {
         self.albums = vec![AlbumSearchItem {
-            album: SearchResultAlbum::new(album, artist, album_id.clone()),
+            album: SearchResultAlbum {
+                title: album,
+                artist,
+                year: String::new(),
+                explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                album_id: album_id.clone(),
+                album_type: ytmapi_rs::common::AlbumType::Album,
+                thumbnails: vec![],
+            },
             is_youtube: false,
             youtube_video_id: None,
             youtube_duration: None,

@@ -18,6 +18,7 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 artist.clone(),
                 track.clone(),
                 album.clone(),
+                None,
                 Duration::from_secs(*duration),
             );
             println!("ARTIST={}", state.artist);

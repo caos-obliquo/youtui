@@ -27,6 +27,7 @@ pub enum ErrorKind {
         message: String,
     },
     /// General io error.
+    // TODO: improve
     Io(io::Error),
     /// Received a response from InnerTube that was not in the expected (JSON)
     /// format.
@@ -45,12 +46,15 @@ pub enum ErrorKind {
     },
     /// ytcfg didn't include visitor data.
     NoVisitorData,
+    /// InnerTube rejected the User Agent we are using.
+    InvalidUserAgent(String),
     /// OAuthToken has expired.
     /// Returns a hash of the expired token generated using the default hasher.
     OAuthTokenExpired {
         token_hash: u64,
     },
     // This is a u64 not a usize as that is what serde_json will deserialize to.
+    // TODO: Could use a library to handle these.
     /// Recieved an error code in the Json reply from InnerTube.
     OtherErrorCodeInResponse {
         code: u64,
@@ -79,6 +83,11 @@ impl Error {
     /// Extract the inner kind from the error for pattern matching.
     pub fn into_kind(self) -> ErrorKind {
         *self.inner
+    }
+    pub(crate) fn invalid_user_agent<S: Into<String>>(user_agent: S) -> Self {
+        Self {
+            inner: Box::new(ErrorKind::InvalidUserAgent(user_agent.into())),
+        }
     }
     pub(crate) fn oauth_token_expired(token: &crate::auth::OAuthToken) -> Self {
         let mut h = std::hash::DefaultHasher::new();
@@ -170,6 +179,7 @@ impl Display for ErrorKind {
             }
             ErrorKind::ApiStatusFailed => write!(f, "Api returned STATUS_FAILED for the query"),
             ErrorKind::OAuthTokenExpired { token_hash: _ } => write!(f, "OAuth token has expired"),
+            ErrorKind::InvalidUserAgent(u) => write!(f, "InnerTube rejected User Agent {u}"),
             ErrorKind::UnableToSerializeGoogleOAuthToken { response, err } => write!(
                 f,
                 "Unable to serialize Google auth token {response}, received error {err}"
@@ -201,6 +211,7 @@ impl Display for ErrorKind {
 // entire format of this struct (potentially including entire source json file).
 impl Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO: Improve implementation
         Display::fmt(&*self.inner, f)
     }
 }

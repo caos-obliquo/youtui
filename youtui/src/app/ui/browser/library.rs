@@ -31,7 +31,7 @@ use std::rc::Rc;
 use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus, ArtistChannelID};
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
-use ytmapi_rs::query::GetLibrarySortOrder;
+use ytmapi_rs::query::library::GetLibrarySortOrder;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum LibraryCategory {
@@ -340,11 +340,9 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             name: s.album.name.clone(),
             id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
         }));
-        let year = s.year.or_else(|| {
-            s.album.name.split('(').last().and_then(|s| s.get(..4))
-                .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-                .map(|y| y.to_string())
-        });
+        let year = s.album.name.split('(').last().and_then(|s| s.get(..4))
+            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+            .map(|y| y.to_string());
         ListSong {
             video_id: s.video_id,
             track_no: None,
@@ -2049,22 +2047,22 @@ mod tests {
         let mut lib = LibraryBrowser::new();
         lib.category = LibraryCategory::Playlists;
         lib.playlist_data = vec![
-            LibraryPlaylist::new(
-                PlaylistID::from_raw("PL1"),
-                "My Favorites".into(),
-                vec![],
-                "42 songs".into(),
-                None,
-                "Author1".into(),
-            ),
-            LibraryPlaylist::new(
-                PlaylistID::from_raw("PL2"),
-                "Chill Vibes".into(),
-                vec![],
-                "15 songs".into(),
-                None,
-                "Author2".into(),
-            ),
+            LibraryPlaylist {
+                playlist_id: PlaylistID::from_raw("PL1"),
+                title: "My Favorites".into(),
+                thumbnails: vec![],
+                tracks: "42 songs".into(),
+                author: "Author1".into(),
+                author_id: None,
+            },
+            LibraryPlaylist {
+                playlist_id: PlaylistID::from_raw("PL2"),
+                title: "Chill Vibes".into(),
+                thumbnails: vec![],
+                tracks: "15 songs".into(),
+                author: "Author2".into(),
+                author_id: None,
+            },
         ];
 
         let items: Vec<Vec<Cow<'_, str>>> = lib.get_filtered_items()
@@ -2116,22 +2114,22 @@ mod tests {
         let mut lib = LibraryBrowser::new();
         lib.category = LibraryCategory::Playlists;
         lib.playlist_data = vec![
-            LibraryPlaylist::new(
-                PlaylistID::from_raw("PL1"),
-                "My Favorites".into(),
-                vec![],
-                "42 songs".into(),
-                None,
-                "Author1".into(),
-            ),
-            LibraryPlaylist::new(
-                PlaylistID::from_raw("PL2"),
-                "Chill Vibes".into(),
-                vec![],
-                "15 songs".into(),
-                None,
-                "Author2".into(),
-            ),
+            LibraryPlaylist {
+                playlist_id: PlaylistID::from_raw("PL1"),
+                title: "My Favorites".into(),
+                thumbnails: vec![],
+                tracks: "42 songs".into(),
+                author: "Author1".into(),
+                author_id: None,
+            },
+            LibraryPlaylist {
+                playlist_id: PlaylistID::from_raw("PL2"),
+                title: "Chill Vibes".into(),
+                thumbnails: vec![],
+                tracks: "15 songs".into(),
+                author: "Author2".into(),
+                author_id: None,
+            },
         ];
         lib.local_filter_text = "chill".into();
 

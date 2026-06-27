@@ -50,13 +50,6 @@ impl<'a> ParseFrom<GetLyricsQuery<'a>> for Lyrics {
     }
 }
 
-/// Extract first 4-digit number (year) from flex column text runs
-pub fn find_year_in_runs(text: &str) -> Option<String> {
-    text.split(|c: char| !c.is_ascii_digit())
-        .find(|part| part.len() == 4)
-        .map(|s| s.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use crate::auth::BrowserToken;
