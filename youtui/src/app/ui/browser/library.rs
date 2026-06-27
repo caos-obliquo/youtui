@@ -1166,9 +1166,13 @@ impl AdvancedTableView for LibraryBrowser {
             match self.category {
                 LibraryCategory::LikedSongs => {
                     let fields = Self::liked_songs_subcolumns_of_vec();
-                    Box::new(self.get_liked_songs_filtered_iter().map(move |ls| {
+                    Box::new(self.get_liked_songs_filtered_iter().enumerate().map(move |(i, ls)| {
+                        let mut row: Vec<Cow<'_, str>> = ls.get_fields(fields).to_vec();
+                        if let Some(col) = row.get_mut(0) {
+                            *col = Cow::Owned((i + 1).to_string());
+                        }
                         let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
-                            Box::new(ls.get_fields(fields).into_iter());
+                            Box::new(row.into_iter());
                         v
                     }))
                 }
