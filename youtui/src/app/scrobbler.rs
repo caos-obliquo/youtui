@@ -13,14 +13,16 @@ pub struct ScrobbleState {
     pub artist: String,
     pub track: String,
     pub album: Option<String>,
+    pub album_artist: Option<String>,
     pub duration: Duration,
     pub start_time: SystemTime,
     pub scrobbled: bool,
 }
 
 impl ScrobbleState {
-    pub fn new(artist: String, track: String, album: Option<String>, duration: Duration) -> Self {
-        Self { artist, track, album, duration, start_time: SystemTime::now(), scrobbled: false }
+    pub fn new(artist: String, track: String, album: Option<String>, album_artist: Option<String>, duration: Duration) -> Self {
+        let album = album.map(|a| clean_album_for_scrobble(&a));
+        Self { artist, track, album, album_artist, duration, start_time: SystemTime::now(), scrobbled: false }
     }
 
     pub fn should_scrobble(&self) -> bool {
@@ -30,6 +32,36 @@ impl ScrobbleState {
         tracing::info!("Scrobble check: elapsed={:?}, duration={:?}, should={}", elapsed, self.duration, result);
         result
     }
+}
+
+/// Strip common album-name suffixes that prevent Last.fm art matching.
+/// Last.fm creates new empty album entries when the name differs even slightly.
+/// Safe patterns — clearly not canonical title (format markers, edition labels).
+/// Does NOT strip year-parentheticals like "(2007 Remaster)" — those ARE canonical.
+fn clean_album_for_scrobble(album: &str) -> String {
+    let mut s = album.to_string();
+    let paren_suffixes = [
+        " (EP)", " (Single)", " (Bonus Track)", " (Bonus Track Version)",
+        " (Deluxe)", " (Deluxe Edition)", " (Deluxe Version)",
+        " (Expanded Edition)", " (Special Edition)", " (Limited Edition)",
+        " (LP)", " - EP", " - Single",
+    ];
+    for suffix in &paren_suffixes {
+        if s.ends_with(suffix) {
+            s.truncate(s.len() - suffix.len());
+            s = s.trim().to_string();
+            break;
+        }
+    }
+    let fmt_markers = [" [CD]", " [Vinyl]", " [Digital]", " [Cassette]", " [Box Set]"];
+    for marker in &fmt_markers {
+        if s.ends_with(marker) {
+            s.truncate(s.len() - marker.len());
+            s = s.trim().to_string();
+            break;
+        }
+    }
+    s
 }
 
 const MAX_CACHE_ENTRIES: usize = 200;
@@ -97,6 +129,7 @@ pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
             artist,
             track,
             album,
+            album_artist: None,
             duration: Duration::from_secs(duration_secs),
             start_time: UNIX_EPOCH + Duration::from_secs(ts),
             scrobbled: false,
@@ -165,6 +198,9 @@ pub(crate) async fn submit_scrobble_inner(
     ];
     if let Some(ref album) = state.album {
         params.push(("album".into(), album.clone()));
+    }
+    if let Some(ref album_artist) = state.album_artist {
+        params.push(("albumArtist".into(), album_artist.clone()));
     }
     params.push(("duration".into(), state.duration.as_secs().to_string()));
     params.sort_by(|a, b| a.0.cmp(&b.0));
@@ -245,6 +281,9 @@ pub async fn submit_now_playing(config: &crate::config::ScrobblingConfig, state:
     if let Some(ref album) = state.album {
         params.push(("album".into(), album.clone()));
     }
+    if let Some(ref album_artist) = state.album_artist {
+        params.push(("albumArtist".into(), album_artist.clone()));
+    }
     params.sort_by(|a, b| a.0.cmp(&b.0));
     let sig_string: String = params.iter()
         .map(|(k, v)| format!("{}{}", k, v))
@@ -280,7 +319,7 @@ mod tests {
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("scrobble_cache.json");
         // Override scrobble_cache_path for tests by writing directly
-        let state = ScrobbleState::new("TestArtist".into(), "TestTrack".into(), Some("TestAlbum".into()), Duration::from_secs(240));
+        let state = ScrobbleState::new("TestArtist".into(), "TestTrack".into(), Some("TestAlbum".into()), None, Duration::from_secs(240));
         (path, state)
     }
 
@@ -415,6 +454,7 @@ mod tests {
             "Test Artist".into(),
             "Test Track".into(),
             Some("Test Album".into()),
+            None,
             Duration::from_secs(240),
         );
         state.start_time = UNIX_EPOCH + Duration::from_secs(1000);
@@ -477,7 +517,7 @@ mod tests {
     /// Verify that should_scrobble returns false when scrobbled=true
     #[test]
     fn test_should_scrobble_already_scrobbled() {
-        let mut state = ScrobbleState::new("A".into(), "B".into(), None, Duration::from_secs(240));
+        let mut state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         state.scrobbled = true;
         assert!(!state.should_scrobble());
     }
@@ -485,7 +525,7 @@ mod tests {
     /// Verify that should_scrobble returns false when insufficient time elapsed
     #[test]
     fn test_should_scrobble_too_soon() {
-        let state = ScrobbleState::new("A".into(), "B".into(), None, Duration::from_secs(240));
+        let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         // start_time is now, so elapsed ≈ 0
         assert!(!state.should_scrobble());
     }
@@ -501,7 +541,7 @@ mod tests {
             genius_token: String::new(),
             discogs_token: String::new(),
         };
-        let state = ScrobbleState::new("A".into(), "B".into(), None, Duration::from_secs(240));
+        let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         // This should not panic — just return immediately
         let _fut = submit_scrobble(&config, &state);
         // We can't easily block on async in non-async test,
@@ -519,7 +559,7 @@ mod tests {
             genius_token: String::new(),
             discogs_token: String::new(),
         };
-        let state = ScrobbleState::new("A".into(), "B".into(), None, Duration::from_secs(240));
+        let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         let _fut = submit_scrobble(&config, &state);
         // Should return immediately, no HTTP call
     }

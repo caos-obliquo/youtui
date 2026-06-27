@@ -1405,9 +1405,16 @@ impl Playlist {
         let year = year.or(title_year);
 
         let clean_title = Self::clean_title_for_metadata(&artist, &title);
-        let song = ytmapi_rs::parse::SearchResultSong::from_yt_dlp(
-            clean_title.clone(), artist.clone(), video_id, None, format!("{}", duration),
-        );
+        let song = ytmapi_rs::parse::SearchResultSong {
+            title: clean_title.clone(),
+            artist: artist.clone(),
+            album: None,
+            duration: format!("{}", duration),
+            plays: String::new(),
+            explicit: ytmapi_rs::common::Explicit::NotExplicit,
+            video_id,
+            thumbnails: vec![],
+        };
         let old_count = self.list.get_list_iter().count();
         let id = self.list.append_raw_search_result_songs(vec![song]);
         if self.list.get_list_iter().count() > old_count {
@@ -1525,8 +1532,9 @@ impl Playlist {
                     if let Some(song) = self.get_song_from_idx(song_index) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                         let album = song.album.as_ref().map(|a| a.name.clone());
+                        let album_artist = song.artists.first().map(|a| a.name.clone());
                         let dur = song.actual_duration.unwrap_or(std::time::Duration::from_secs(240));
-                        self.scrobble_state = Some(crate::app::scrobbler::ScrobbleState::new(artist, song.title.clone(), album, dur));
+                        self.scrobble_state = Some(crate::app::scrobbler::ScrobbleState::new(artist, song.title.clone(), album, album_artist, dur));
                         // Send now-playing notification to Last.fm
                         if let Some(ref state) = self.scrobble_state {
                             let cfg = self.scrobbling_config.clone();
@@ -1547,7 +1555,8 @@ impl Playlist {
                     if let Some(song) = self.get_cur_playing_song() {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                         let album = song.album.as_ref().map(|a| a.name.clone());
-                        let state = crate::app::scrobbler::ScrobbleState::new(artist, track_name, album, Duration::ZERO);
+                        let album_artist = song.artists.first().map(|a| a.name.clone());
+                        let state = crate::app::scrobbler::ScrobbleState::new(artist, track_name, album, album_artist, Duration::ZERO);
                         let cfg = self.scrobbling_config.clone();
                         tokio::spawn(async move {
                             crate::app::scrobbler::submit_now_playing(&cfg, &state).await;
@@ -3019,10 +3028,13 @@ impl Playlist {
                                         .unwrap_or_default();
                                     let album = self.get_cur_playing_song()
                                         .and_then(|s| s.album.as_ref().map(|a| a.name.clone()));
+                                    let album_artist = self.get_cur_playing_song()
+                                        .and_then(|s| s.artists.first().map(|a| a.name.clone()));
                                     let state = crate::app::scrobbler::ScrobbleState::new(
                                         artist,
                                         track.title.clone(),
                                         album,
+                                        album_artist,
                                         Duration::from_secs_f64(track.duration_secs),
                                     );
                                     let cfg2 = cfg.clone();

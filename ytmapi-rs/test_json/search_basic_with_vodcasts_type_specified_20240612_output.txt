@@ -17,9 +17,7 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/z8KZsHNKS-O1qYVyKlSErT_RLMSMwVht89USvSdFAd0EoRlBOppi9DOdRkv609Ye_tfq_Wp8WwhVJbw=w120-h120-p-l90-rj",
                 },
             ],
-            artist: Some(
-                "The Beatles",
-            ),
+            artist: None,
             album: None,
             duration: None,
             year: None,
@@ -126,9 +124,7 @@ SearchResults {
             artist: Some(
                 "The Beatles",
             ),
-            album: Some(
-                "Get Back (Rooftop Performance)",
-            ),
+            album: None,
             duration: None,
             year: Some(
                 "2022",
@@ -507,8 +503,6 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/8MFj-k2DNUXPKOw8BawKI291ty1Wh8V4M3J6fiq4itWkjw34ncAem60h80eMzsD2XjczahdZEF69CQ8=w120-h120-l90-rj",
                 },
             ],
-            year: None,
-            like_status: Indifferent,
         },
         SearchResultSong {
             title: "The Long And Winding Road (Remastered 2009)",
@@ -539,8 +533,6 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/octdAIhLRBSYd5JKOeTsF5zNhQ4C0L3JtOnjUYPvHLtJaxXr68NVW8gUfsE05aarfaDmZe_ibrVMxo-y4g=w120-h120-l90-rj",
                 },
             ],
-            year: None,
-            like_status: Indifferent,
         },
         SearchResultSong {
             title: "Let It Be (Remastered 2009)",
@@ -571,8 +563,6 @@ SearchResults {
                     url: "https://lh3.googleusercontent.com/octdAIhLRBSYd5JKOeTsF5zNhQ4C0L3JtOnjUYPvHLtJaxXr68NVW8gUfsE05aarfaDmZe_ibrVMxo-y4g=w120-h120-l90-rj",
                 },
             ],
-            year: None,
-            like_status: Indifferent,
         },
     ],
     videos: [

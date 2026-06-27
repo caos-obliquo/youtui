@@ -129,6 +129,7 @@ impl AuthToken for OAuthToken {
     ) -> Result<crate::parse::ProcessedResult<Q>> {
         let processed = ProcessedResult::try_from(raw)?;
         // Guard against error codes in json response.
+        // TODO: Add a test for this
         if let Some(error) = processed.get_json().pointer("/error") {
             let Some(code) = error.pointer("/code").and_then(|v| v.as_u64()) else {
                 return Err(Error::response("API reported an error but no code"));
@@ -150,6 +151,7 @@ impl AuthToken for OAuthToken {
             return Err(Error::oauth_token_expired(self));
         }
         Ok([
+            // TODO: Confirm if parsing for expired user agent also relevant here.
             ("User-Agent", USER_AGENT.into()),
             ("X-Origin", YTM_URL.into()),
             ("Content-Type", "application/json".into()),
@@ -234,6 +236,7 @@ impl OAuthTokenGenerator {
 }
 // Don't use default Debug implementation for OAuthToken - contents are
 // private
+// TODO: Display some fields, such as time.
 impl std::fmt::Debug for OAuthToken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Private OAuthToken")
