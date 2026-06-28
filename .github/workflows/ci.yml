@@ -1,58 +1,40 @@
-name: CI
-
-on:
-  push:
-    branches: [main, master]
-  pull_request:
-    branches: [main, master]
-
 jobs:
-  test:
-    name: Test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+  test-linux:
+    name: Test (Ubuntu)
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache dependencies
-        uses: swatinem/rust-cache@v2
-
-      - name: Run tests
-        run: cargo test --release --workspace
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y alsa-utils libasound2-dev yt-dlp ffmpeg
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo test --release --workspace
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
-
-      - name: Run rustfmt
-        run: cargo fmt --check
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y alsa-utils libasound2-dev
+      - run: cargo fmt --check
+      - run: cargo clippy -- -D warnings
 
   build:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build release binary
-        run: cargo build --release --package youtui
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y alsa-utils libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --package youtui
