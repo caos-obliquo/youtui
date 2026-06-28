@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install system dependencies
         run: |
-          brew install alsa-utils yt-dlp ffmpeg pkg-config
+          brew install alsa-lib yt-dlp ffmpeg pkg-config  # Changed alsa-utils to alsa-lib
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - run: cargo test --release --workspace
@@ -69,7 +69,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - run: cargo fmt --check
+      - name: Install nightly for rustfmt
+        run: rustup toolchain install nightly --component rustfmt
+      - name: Run rustfmt with nightly
+        run: cargo +nightly fmt --check
       - run: cargo clippy -- -D warnings
 
   build:
