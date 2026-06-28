@@ -1,3 +1,11 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
 jobs:
   test-linux:
     name: Test (Ubuntu)
@@ -7,23 +15,60 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y alsa-utils libasound2-dev yt-dlp ffmpeg
+          sudo apt-get install -y alsa-utils libasound2-dev yt-dlp ffmpeg pkg-config
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - run: cargo test --release --workspace
+
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          brew install alsa-utils yt-dlp ffmpeg pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo test --release --workspace
+
+  test-freebsd:
+    name: Test (FreeBSD)
+    runs-on: macos-13
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg install -y rust cargo yt-dlp ffmpeg
+          run: cargo test --release --workspace
+
+  test-openbsd:
+    name: Test (OpenBSD)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test in OpenBSD VM
+        uses: vmactions/openbsd-vm@v1
+        with:
+          prepare: pkg_add rust yt-dlp ffmpeg
+          run: cargo test --release --workspace
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y alsa-utils libasound2-dev
+          sudo apt-get install -y alsa-utils libasound2-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
 
@@ -35,6 +80,6 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y alsa-utils libasound2-dev
+          sudo apt-get install -y alsa-utils libasound2-dev pkg-config
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release --package youtui
