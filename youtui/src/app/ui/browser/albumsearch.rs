@@ -1,34 +1,39 @@
+use super::shared_components::{
+    BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager,
+    get_adjusted_list_column,
+};
+use super::songsearch::BrowserSongsAction;
 use crate::app::AppCallback;
 use crate::app::component::actionhandler::{
-    ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
+    ActionHandler, ComponentEffect, KeyRouter, Scrollable, Suggestable, TextHandler, YoutuiEffect,
 };
-use crate::app::server::{SearchAlbums, AlbumSearchItem};
-use crate::app::component::actionhandler::Suggestable;
+use crate::app::server::{AlbumSearchItem, SearchAlbums};
 use crate::app::structures::{
     BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, fuzzy_match,
 };
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{
-    AdvancedTableView, BasicConstraint, HasTitle, Loadable,
-    TableFilterCommand, TableSortCommand, TableView,
+    AdvancedTableView, BasicConstraint, HasTitle, Loadable, TableFilterCommand, TableSortCommand,
+    TableView,
 };
 use crate::config::Config;
 use crate::config::keymap::Keymap;
 use crate::widgets::{ScrollingListState, ScrollingTableState};
-use super::shared_components::{
-    BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager, get_adjusted_list_column,
-};
-use super::songsearch::BrowserSongsAction;
 use anyhow::{Result, bail};
 use async_callback_manager::{AsyncTask, BackendTask};
 use lru::LruCache;
 use std::borrow::Cow;
-use std::num::NonZeroUsize;
 use std::collections::HashSet;
+use std::num::NonZeroUsize;
 use tracing::{debug, info, warn};
 use vi_text_editor::ViTextEditor;
-use ytmapi_rs::parse::{SearchResultAlbum, SearchResultSong, AlbumSong, ParsedSongAlbum, ParsedSongArtist};
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, YoutubeID, LikeStatus, LibraryStatus};
+use ytmapi_rs::common::{
+    AlbumID, ArtistChannelID, LibraryStatus, LikeStatus, PlaylistID, SearchSuggestion, Thumbnail,
+    YoutubeID,
+};
+use ytmapi_rs::parse::{
+    AlbumSong, ParsedSongAlbum, ParsedSongArtist, SearchResultAlbum, SearchResultSong,
+};
 
 #[derive(Default)]
 pub enum InputRouting {
@@ -101,16 +106,18 @@ impl AlbumSearchBrowser {
     }
 
     pub fn play_selected_album(&mut self) -> (ComponentEffect<Self>, Option<AppCallback>) {
-        
-        
-        let Some(album_item) = self.get_selected_album().cloned() else { return (AsyncTask::new_no_op(), None); };
+        let Some(album_item) = self.get_selected_album().cloned() else {
+            return (AsyncTask::new_no_op(), None);
+        };
         if album_item.is_youtube {
             // YouTube full-album video: play directly
             let song = SearchResultSong {
                 title: album_item.album.title.clone(),
                 artist: album_item.album.artist.clone(),
                 album: None,
-                duration: album_item.youtube_duration.unwrap_or_else(|| "0:00".to_string()),
+                duration: album_item
+                    .youtube_duration
+                    .unwrap_or_else(|| "0:00".to_string()),
                 plays: String::new(),
                 explicit: ytmapi_rs::common::Explicit::NotExplicit,
                 video_id: album_item.youtube_video_id.unwrap(),
@@ -119,7 +126,12 @@ impl AlbumSearchBrowser {
             let mut temp_list = BrowserSongsList::default();
             temp_list.add_raw_search_result_song(song);
             if let Some(list_song) = temp_list.get_song_from_idx(0) {
-                return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![list_song.clone()])));
+                return (
+                    AsyncTask::new_no_op(),
+                    Some(AppCallback::AddSongsToPlaylistAndPlay(vec![
+                        list_song.clone(),
+                    ])),
+                );
             }
             return (AsyncTask::new_no_op(), None);
         }
@@ -129,11 +141,17 @@ impl AlbumSearchBrowser {
             HandleFetchAlbumTracksOk,
             HandleFetchAlbumTracksError,
             None,
-        ).map_frontend(|this: &mut Self| &mut *this);
+        )
+        .map_frontend(|this: &mut Self| &mut *this);
         (task, None)
     }
 
-    pub fn open_album_direct(&mut self, artist: String, album: String, album_id: AlbumID<'static>) -> (ComponentEffect<Self>, Option<AppCallback>) {
+    pub fn open_album_direct(
+        &mut self,
+        artist: String,
+        album: String,
+        album_id: AlbumID<'static>,
+    ) -> (ComponentEffect<Self>, Option<AppCallback>) {
         self.albums = vec![AlbumSearchItem {
             album: SearchResultAlbum {
                 title: album,
@@ -156,7 +174,8 @@ impl AlbumSearchBrowser {
             HandleFetchAlbumTracksOk,
             HandleFetchAlbumTracksError,
             None,
-        ).map_frontend(|this: &mut Self| &mut *this);
+        )
+        .map_frontend(|this: &mut Self| &mut *this);
         (task, None)
     }
 
@@ -208,7 +227,10 @@ impl AlbumSearchBrowser {
         self.search.has_search_suggestions()
     }
 
-    pub fn search_albums_query(&mut self, query: String) -> (ComponentEffect<Self>, Option<AppCallback>) {
+    pub fn search_albums_query(
+        &mut self,
+        query: String,
+    ) -> (ComponentEffect<Self>, Option<AppCallback>) {
         if let Some(cached) = self.search_cache.get(&query) {
             self.albums = cached.clone();
             self.album_selected = 0;
@@ -221,15 +243,24 @@ impl AlbumSearchBrowser {
             HandleSearchAlbumsOk,
             HandleSearchAlbumsError,
             None,
-        ).map_frontend(|this: &mut Self| &mut *this);
+        )
+        .map_frontend(|this: &mut Self| &mut *this);
         (task, None)
     }
 
-    pub fn text_editor_mode(&self) -> Option<String> { None }
-    pub fn go_to_first(&mut self) { self.album_selected = 0; self.track_selected = 0; }
+    pub fn text_editor_mode(&self) -> Option<String> {
+        None
+    }
+    pub fn go_to_first(&mut self) {
+        self.album_selected = 0;
+        self.track_selected = 0;
+    }
     pub fn go_to_last(&mut self) {
-        if self.show_tracks { self.track_selected = self.track_list.get_list_iter().count().saturating_sub(1); }
-        else { self.album_selected = self.albums.len().saturating_sub(1); }
+        if self.show_tracks {
+            self.track_selected = self.track_list.get_list_iter().count().saturating_sub(1);
+        } else {
+            self.album_selected = self.albums.len().saturating_sub(1);
+        }
     }
     fn subcolumns_of_vec() -> [ListSongDisplayableField; 5] {
         [
@@ -246,14 +277,28 @@ impl AlbumSearchBrowser {
             let fuzzy_pass = if filter_text.is_empty() {
                 true
             } else {
-                let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
-                let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
-                let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
-                fuzzy_match(&filter_text, &title).is_some()
-                    || fuzzy_match(&filter_text, &album).is_some()
-                    || fuzzy_match(&filter_text, &artist).is_some()
+                let title = ls
+                    .get_fields([ListSongDisplayableField::Song])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let album = ls
+                    .get_fields([ListSongDisplayableField::Album])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let artist = ls
+                    .get_fields([ListSongDisplayableField::Artists])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                fuzzy_match(filter_text, &title).is_some()
+                    || fuzzy_match(filter_text, &album).is_some()
+                    || fuzzy_match(filter_text, &artist).is_some()
             };
-            if !fuzzy_pass { return false; }
+            if !fuzzy_pass {
+                return false;
+            }
             self.get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
@@ -291,12 +336,20 @@ impl Loadable for AlbumSearchBrowser {
 }
 impl HasTitle for AlbumSearchBrowser {
     fn get_title(&self) -> Cow<'_, str> {
-        let msg = self.last_message.as_ref().map(|m| format!(" [{}]", m)).unwrap_or_default();
+        let msg = self
+            .last_message
+            .as_ref()
+            .map(|m| format!(" [{}]", m))
+            .unwrap_or_default();
         if self.show_tracks {
             let album = self.albums.get(self.album_selected);
             let name = album.map_or("", |a| a.album.title.as_str());
             let count = self.track_list.get_list_iter().count();
-            format!(" {} - {} ({} tracks){} ", self.album_artist, name, count, msg).into()
+            format!(
+                " {} - {} ({} tracks){} ",
+                self.album_artist, name, count, msg
+            )
+            .into()
         } else {
             format!(" Album Tracks{} ", msg).into()
         }
@@ -323,7 +376,9 @@ impl TableView for AlbumSearchBrowser {
     }
     fn get_highlighted_row(&self) -> Option<usize> {
         self.cur_playing_video_id.as_ref().and_then(|vid| {
-            self.track_list.get_list_iter().position(|s| s.video_id == *vid)
+            self.track_list
+                .get_list_iter()
+                .position(|s| s.video_id == *vid)
         })
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
@@ -353,7 +408,9 @@ impl AdvancedTableView for AlbumSearchBrowser {
             get_adjusted_list_column(sort_command.column, Self::subcolumns_of_vec())?,
             sort_command.direction,
         );
-        self.sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+        self.sort
+            .sort_commands
+            .retain(|cmd| cmd.column != sort_command.column);
         self.sort.sort_commands.push(sort_command);
         Ok(())
     }
@@ -400,33 +457,52 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
         match action {
             BrowserSongsAction::PlaySong => {
                 if !self.show_tracks {
-                    return self.play_selected_album().into();
+                    return self.play_selected_album();
                 }
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])));
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])),
+                    );
                 }
             }
             BrowserSongsAction::PlaySongs => {
                 let songs: Vec<_> = self.track_list.get_list_iter().cloned().collect();
                 if !songs.is_empty() {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(songs)));
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::AddSongsToPlaylistAndPlay(songs)),
+                    );
                 }
             }
             BrowserSongsAction::AddSongToPlaylist => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(vec![song.clone()])));
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::AddSongsToPlaylist(vec![song.clone()])),
+                    );
                 }
             }
             BrowserSongsAction::AddSongsToPlaylist => {
                 let songs: Vec<_> = self.track_list.get_list_iter().cloned().collect();
                 if !songs.is_empty() {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(songs)));
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::AddSongsToPlaylist(songs)),
+                    );
                 }
             }
             BrowserSongsAction::SaveToExistingPlaylist => {
-                let video_ids: Vec<_> = self.track_list.get_list_iter().map(|s| s.video_id.clone()).collect();
+                let video_ids: Vec<_> = self
+                    .track_list
+                    .get_list_iter()
+                    .map(|s| s.video_id.clone())
+                    .collect();
                 if !video_ids.is_empty() {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)));
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
+                    );
                 }
             }
             BrowserSongsAction::InsertNext => {
@@ -437,28 +513,45 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
             }
             BrowserSongsAction::QueueSong => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song.clone()])));
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::QueueSong(vec![song.clone()])),
+                    );
                 }
             }
             BrowserSongsAction::ViewLyrics => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                    return (AsyncTask::new_no_op(), Some(AppCallback::ViewLyrics { artist, title: song.title.clone() }));
+                    let artist = song
+                        .artists
+                        .iter()
+                        .map(|a| a.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::ViewLyrics {
+                            artist,
+                            title: song.title.clone(),
+                        }),
+                    );
                 }
             }
             BrowserSongsAction::CopySongUrl => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    let url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                    let url = format!(
+                        "https://music.youtube.com/watch?v={}",
+                        song.video_id.get_raw()
+                    );
                     crate::app::structures::copy_to_clipboard(&url);
                     info!("Copied URL: {url}");
                 }
                 return (AsyncTask::new_no_op(), None);
             }
             BrowserSongsAction::GoToArtist => {
-                if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    if let Some(cb) = super::shared_components::navigate_to_artist(song) {
-                        return (AsyncTask::new_no_op(), Some(cb));
-                    }
+                if let Some(song) = self.track_list.get_list_iter().nth(cur)
+                    && let Some(cb) = super::shared_components::navigate_to_artist(song)
+                {
+                    return (AsyncTask::new_no_op(), Some(cb));
                 }
             }
             BrowserSongsAction::GoToAlbum => {
@@ -471,7 +564,10 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
             }
             BrowserSongsAction::GetRelatedTracks => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::GetRelatedTracks(song.video_id.clone())),
+                    );
                 }
             }
             BrowserSongsAction::RatePlaylist => {
@@ -480,50 +576,82 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
                         if self.liked_playlists.contains(pl_id) {
                             self.liked_playlists.remove(pl_id);
                             debug!("Album: toggle unlike");
-                            return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(pl_id.clone(), LikeStatus::Indifferent)));
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::RatePlaylistFromLibrary(
+                                    pl_id.clone(),
+                                    LikeStatus::Indifferent,
+                                )),
+                            );
                         } else {
                             self.liked_playlists.insert(pl_id.clone());
                             debug!("Album: toggle like");
-                            return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(pl_id.clone(), LikeStatus::Liked)));
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::RatePlaylistFromLibrary(
+                                    pl_id.clone(),
+                                    LikeStatus::Liked,
+                                )),
+                            );
                         }
                     }
-                    warn!("RatePlaylist skipped: album has no audio_playlist_id (singles/EPs not supported)");
-                    self.last_message = Some("Album not liked: singles/EPs not supported".to_string());
+                    warn!(
+                        "RatePlaylist skipped: album has no audio_playlist_id (singles/EPs not supported)"
+                    );
+                    self.last_message =
+                        Some("Album not liked: singles/EPs not supported".to_string());
                 }
             }
             BrowserSongsAction::SubscribeToArtist => {
-                if self.show_tracks {
-                    if let Some(artist) = self.album_artists.first() {
-                        if let Some(channel_id) = &artist.id {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(channel_id.clone())));
-                        }
-                    }
+                if self.show_tracks
+                    && let Some(artist) = self.album_artists.first()
+                    && let Some(channel_id) = &artist.id
+                {
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::SubscribeToArtistFromLibrary(
+                            channel_id.clone(),
+                        )),
+                    );
                 }
             }
             BrowserSongsAction::UnsubscribeFromArtist => {
-                if self.show_tracks {
-                    if let Some(artist) = self.album_artists.first() {
-                        if let Some(channel_id) = &artist.id {
-                            self.subscribed_artists.remove(channel_id);
-                            return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![channel_id.clone()])));
-                        }
-                    }
+                if self.show_tracks
+                    && let Some(artist) = self.album_artists.first()
+                    && let Some(channel_id) = &artist.id
+                {
+                    self.subscribed_artists.remove(channel_id);
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![
+                            channel_id.clone(),
+                        ])),
+                    );
                 }
             }
             BrowserSongsAction::ToggleSubscribeArtist => {
-                if self.show_tracks {
-                    if let Some(artist) = self.album_artists.first() {
-                        if let Some(channel_id) = &artist.id {
-                            if self.subscribed_artists.contains(channel_id) {
-                                self.subscribed_artists.remove(channel_id);
-                                debug!("Album: toggle unsubscribe artist");
-                                return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![channel_id.clone()])));
-                            } else {
-                                self.subscribed_artists.insert(channel_id.clone());
-                                debug!("Album: toggle subscribe artist");
-                                return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(channel_id.clone())));
-                            }
-                        }
+                if self.show_tracks
+                    && let Some(artist) = self.album_artists.first()
+                    && let Some(channel_id) = &artist.id
+                {
+                    if self.subscribed_artists.contains(channel_id) {
+                        self.subscribed_artists.remove(channel_id);
+                        debug!("Album: toggle unsubscribe artist");
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![
+                                channel_id.clone(),
+                            ])),
+                        );
+                    } else {
+                        self.subscribed_artists.insert(channel_id.clone());
+                        debug!("Album: toggle subscribe artist");
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::SubscribeToArtistFromLibrary(
+                                channel_id.clone(),
+                            )),
+                        );
                     }
                 }
             }
@@ -540,10 +668,16 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
 }
 
 impl KeyRouter<AppAction> for AlbumSearchBrowser {
-    fn get_all_keybinds<'a>(&self, config: &'a Config) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
+    fn get_all_keybinds<'a>(
+        &self,
+        config: &'a Config,
+    ) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
         [&config.keybinds.browser_songs, &config.keybinds.list].into_iter()
     }
-    fn get_active_keybinds<'a>(&self, config: &'a Config) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
+    fn get_active_keybinds<'a>(
+        &self,
+        config: &'a Config,
+    ) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
         [&config.keybinds.browser_songs, &config.keybinds.list].into_iter()
     }
 }
@@ -558,9 +692,11 @@ impl Scrollable for AlbumSearchBrowser {
                     self.albums.len().saturating_sub(1)
                 };
                 if self.show_tracks {
-                    self.track_selected = self.track_selected.saturating_add_signed(amount).min(max);
+                    self.track_selected =
+                        self.track_selected.saturating_add_signed(amount).min(max);
                 } else {
-                    self.album_selected = self.album_selected.saturating_add_signed(amount).min(max);
+                    self.album_selected =
+                        self.album_selected.saturating_add_signed(amount).min(max);
                 }
             }
             InputRouting::Sort => {
@@ -603,12 +739,18 @@ impl TextHandler for AlbumSearchBrowser {
     fn is_text_handling(&self) -> bool {
         self.search_popped || matches!(self.input_routing, InputRouting::Filter)
     }
-    fn handle_text_event_impl(&mut self, event: &crossterm::event::Event) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> {
+    fn handle_text_event_impl(
+        &mut self,
+        event: &crossterm::event::Event,
+    ) -> Option<AsyncTask<Self, Self::Bkend, Self::Md>> {
         if self.search_popped {
-            return self.search.handle_text_event_impl(event)
-                .map(|t| t.map_frontend(|this: &mut Self| &mut this.search));
+            self.search
+                .handle_text_event_impl(event)
+                .map(|t| t.map_frontend(|this: &mut Self| &mut this.search))
         } else if matches!(self.input_routing, InputRouting::Filter) {
-            self.filter.handle_text_event_impl(event).map(|t| t.map_frontend(|this: &mut Self| &mut this.filter))
+            self.filter
+                .handle_text_event_impl(event)
+                .map(|t| t.map_frontend(|this: &mut Self| &mut this.filter))
         } else {
             None
         }
@@ -664,7 +806,10 @@ pub struct FetchAlbumTracks {
 impl BackendTask<crate::app::server::ArcServer> for FetchAlbumTracks {
     type Output = std::result::Result<AlbumFetchResult, anyhow::Error>;
     type MetadataType = crate::app::server::TaskMetadata;
-    fn into_future(self, backend: &crate::app::server::ArcServer) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
+    fn into_future(
+        self,
+        backend: &crate::app::server::ArcServer,
+    ) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
             use crate::app::server::api;
@@ -701,50 +846,80 @@ pub struct HandleFetchAlbumTracksOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleFetchAlbumTracksError;
 
-impl_youtui_task_handler!(HandleFetchAlbumTracksOk, AlbumFetchResult, AlbumSearchBrowser, |_, result: AlbumFetchResult| {
-    move |target: &mut AlbumSearchBrowser| {
-        target.track_list.clear();
-        target.track_selected = 0;
-        target.show_tracks = true;
-        target.album_year = result.year.clone();
-        target.album_artist = result.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-        target.album_playlist_id = result.audio_playlist_id;
-        target.album_artists = result.artists.clone();
-        // Pre-populate liked_playlists from API library_status
-        if let Some(ref pl_id) = target.album_playlist_id {
-            if result.library_status == LibraryStatus::InLibrary {
-                target.liked_playlists.insert(pl_id.clone());
-            } else {
-                target.liked_playlists.remove(pl_id);
+impl_youtui_task_handler!(
+    HandleFetchAlbumTracksOk,
+    AlbumFetchResult,
+    AlbumSearchBrowser,
+    |_, result: AlbumFetchResult| {
+        move |target: &mut AlbumSearchBrowser| {
+            target.track_list.clear();
+            target.track_selected = 0;
+            target.show_tracks = true;
+            target.album_year = result.year.clone();
+            target.album_artist = result
+                .artists
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            target.album_playlist_id = result.audio_playlist_id;
+            target.album_artists = result.artists.clone();
+            // Pre-populate liked_playlists from API library_status
+            if let Some(ref pl_id) = target.album_playlist_id {
+                if result.library_status == LibraryStatus::InLibrary {
+                    target.liked_playlists.insert(pl_id.clone());
+                } else {
+                    target.liked_playlists.remove(pl_id);
+                }
             }
+            let album = ParsedSongAlbum {
+                name: result.title,
+                id: result.album_id,
+            };
+            target.track_list.append_raw_album_songs(
+                result.tracks,
+                album,
+                result.year,
+                result.artists,
+                result.thumbnails,
+            );
+            AsyncTask::new_no_op()
         }
-        let album = ParsedSongAlbum { name: result.title, id: result.album_id };
-        target.track_list.append_raw_album_songs(result.tracks, album, result.year, result.artists, result.thumbnails);
-        AsyncTask::new_no_op()
     }
-});
+);
 
-impl_youtui_task_handler!(HandleFetchAlbumTracksError, anyhow::Error, AlbumSearchBrowser, |_, _err: anyhow::Error| {
-    |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op()
-});
+impl_youtui_task_handler!(
+    HandleFetchAlbumTracksError,
+    anyhow::Error,
+    AlbumSearchBrowser,
+    |_, _err: anyhow::Error| { |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op() }
+);
 
 #[derive(Debug, PartialEq)]
 pub struct HandleSearchAlbumsOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleSearchAlbumsError;
 
-impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<AlbumSearchItem>, AlbumSearchBrowser, |_, a: Vec<AlbumSearchItem>| {
-    move |target: &mut AlbumSearchBrowser| {
-        target.albums = a.clone();
-        target.album_selected = 0;
-        target.show_tracks = false;
-        if let Some(query) = target.last_search_query.take() {
-            target.search_cache.put(query, a);
+impl_youtui_task_handler!(
+    HandleSearchAlbumsOk,
+    Vec<AlbumSearchItem>,
+    AlbumSearchBrowser,
+    |_, a: Vec<AlbumSearchItem>| {
+        move |target: &mut AlbumSearchBrowser| {
+            target.albums = a.clone();
+            target.album_selected = 0;
+            target.show_tracks = false;
+            if let Some(query) = target.last_search_query.take() {
+                target.search_cache.put(query, a);
+            }
+            AsyncTask::new_no_op()
         }
-        AsyncTask::new_no_op()
     }
-});
+);
 
-impl_youtui_task_handler!(HandleSearchAlbumsError, anyhow::Error, AlbumSearchBrowser, |_, _err: anyhow::Error| {
-    |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op()
-});
+impl_youtui_task_handler!(
+    HandleSearchAlbumsError,
+    anyhow::Error,
+    AlbumSearchBrowser,
+    |_, _err: anyhow::Error| { |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op() }
+);

@@ -2,10 +2,10 @@ use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffec
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use ytmapi_rs::common::PlaylistID;
@@ -47,14 +47,15 @@ impl ActionHandler<RenameAction> for PlaylistRenamePopup {
                     return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
                 }
                 let pid = self.playlist_id.clone();
-                (AsyncTask::new_no_op(), Some(AppCallback::RenamePlaylistFromLibrary {
-                    playlist_id: pid,
-                    new_title,
-                }))
+                (
+                    AsyncTask::new_no_op(),
+                    Some(AppCallback::RenamePlaylistFromLibrary {
+                        playlist_id: pid,
+                        new_title,
+                    }),
+                )
             }
-            RenameAction::Cancel => {
-                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
-            }
+            RenameAction::Cancel => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
         }
     }
 }
@@ -71,11 +72,13 @@ impl PlaylistRenamePopup {
     pub fn handle_key(&mut self, event: KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
         match event.code {
             KeyCode::Esc => {
-                let YoutuiEffect { effect, callback } = self.apply_action(RenameAction::Cancel).into();
+                let YoutuiEffect { effect, callback } =
+                    self.apply_action(RenameAction::Cancel).into();
                 return (effect, callback);
             }
             KeyCode::Enter => {
-                let YoutuiEffect { effect, callback } = self.apply_action(RenameAction::Confirm).into();
+                let YoutuiEffect { effect, callback } =
+                    self.apply_action(RenameAction::Confirm).into();
                 return (effect, callback);
             }
             KeyCode::Char(c) if !event.modifiers.contains(KeyModifiers::CONTROL) => {

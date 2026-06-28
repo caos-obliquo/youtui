@@ -62,30 +62,28 @@ impl LrcLibClient {
 
         tracing::info!("LRCLIB: trying exact match {}", url);
         match self.client.get(&url).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<LrcLibResponse>().await {
-                    Ok(data) => {
-                        if data.instrumental {
-                            tracing::info!("LRCLIB: track is instrumental, no lyrics");
-                            return Err("Instrumental track".to_string());
-                        }
-                        if let Some(ref lyrics) = data.plain_lyrics {
-                            if !lyrics.trim().is_empty() {
-                                tracing::info!("LRCLIB: found lyrics ({} chars)", lyrics.len());
-                                return Ok(lyrics.clone());
-                            }
-                        }
-                        tracing::info!("LRCLIB: empty plain_lyrics, trying synced");
-                        if let Some(ref lyrics) = data.synced_lyrics {
-                            if !lyrics.trim().is_empty() {
-                                tracing::info!("LRCLIB: found synced lyrics ({} chars)", lyrics.len());
-                                return Ok(lyrics.clone());
-                            }
+            Ok(resp) if resp.status().is_success() => match resp.json::<LrcLibResponse>().await {
+                Ok(data) => {
+                    if data.instrumental {
+                        tracing::info!("LRCLIB: track is instrumental, no lyrics");
+                        return Err("Instrumental track".to_string());
+                    }
+                    if let Some(ref lyrics) = data.plain_lyrics {
+                        if !lyrics.trim().is_empty() {
+                            tracing::info!("LRCLIB: found lyrics ({} chars)", lyrics.len());
+                            return Ok(lyrics.clone());
                         }
                     }
-                    Err(e) => tracing::warn!("LRCLIB: JSON parse error: {}", e),
+                    tracing::info!("LRCLIB: empty plain_lyrics, trying synced");
+                    if let Some(ref lyrics) = data.synced_lyrics {
+                        if !lyrics.trim().is_empty() {
+                            tracing::info!("LRCLIB: found synced lyrics ({} chars)", lyrics.len());
+                            return Ok(lyrics.clone());
+                        }
+                    }
                 }
-            }
+                Err(e) => tracing::warn!("LRCLIB: JSON parse error: {}", e),
+            },
             Ok(resp) => {
                 let status = resp.status();
                 tracing::info!("LRCLIB: exact match returned {}", status);
@@ -95,11 +93,7 @@ impl LrcLibClient {
 
         // Fallback: search API
         let query = format!("{} {}", artist, title);
-        let search_url = format!(
-            "{}/api/search?q={}",
-            self.base_url,
-            urlenc(&query),
-        );
+        let search_url = format!("{}/api/search?q={}", self.base_url, urlenc(&query),);
         tracing::info!("LRCLIB: trying search {}", search_url);
         match self.client.get(&search_url).send().await {
             Ok(resp) if resp.status().is_success() => {
@@ -113,18 +107,27 @@ impl LrcLibClient {
                             }
                             if let Some(ref lyrics) = data.plain_lyrics {
                                 if !lyrics.trim().is_empty() {
-                                    tracing::info!("LRCLIB: found lyrics via search ({} chars)", lyrics.len());
+                                    tracing::info!(
+                                        "LRCLIB: found lyrics via search ({} chars)",
+                                        lyrics.len()
+                                    );
                                     return Ok(lyrics.clone());
                                 }
                             }
                             if let Some(ref lyrics) = data.synced_lyrics {
                                 if !lyrics.trim().is_empty() {
-                                    tracing::info!("LRCLIB: found synced lyrics via search ({} chars)", lyrics.len());
+                                    tracing::info!(
+                                        "LRCLIB: found synced lyrics via search ({} chars)",
+                                        lyrics.len()
+                                    );
                                     return Ok(lyrics.clone());
                                 }
                             }
                         }
-                        tracing::info!("LRCLIB: search returned {} results, none match", results.len());
+                        tracing::info!(
+                            "LRCLIB: search returned {} results, none match",
+                            results.len()
+                        );
                     }
                     Err(e) => tracing::warn!("LRCLIB: search JSON parse error: {}", e),
                 }
@@ -137,41 +140,54 @@ impl LrcLibClient {
     }
 
     /// Find best matching result from search results.
-    fn best_match<'a>(results: &'a [LrcLibResponse], artist: &str, title: &str) -> Option<&'a LrcLibResponse> {
+    fn best_match<'a>(
+        results: &'a [LrcLibResponse],
+        artist: &str,
+        title: &str,
+    ) -> Option<&'a LrcLibResponse> {
         let artist_lower = artist.to_lowercase();
         let title_lower = title.to_lowercase();
-        let artist_norm: String = artist_lower.chars().filter(|c| c.is_alphanumeric()).collect();
-        let title_norm: String = title_lower.chars().filter(|c| c.is_alphanumeric()).collect();
+        let artist_norm: String = artist_lower
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect();
+        let title_norm: String = title_lower
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .collect();
 
         // Score each result
-        let mut scored: Vec<(&LrcLibResponse, i32)> = results.iter().map(|r| {
-            let mut score = 0;
-            let ra = r.artist_name.to_lowercase();
-            let rt = r.track_name.to_lowercase();
-            let ra_norm: String = ra.chars().filter(|c| c.is_alphanumeric()).collect();
-            let rt_norm: String = rt.chars().filter(|c| c.is_alphanumeric()).collect();
+        let mut scored: Vec<(&LrcLibResponse, i32)> = results
+            .iter()
+            .map(|r| {
+                let mut score = 0;
+                let ra = r.artist_name.to_lowercase();
+                let rt = r.track_name.to_lowercase();
+                let ra_norm: String = ra.chars().filter(|c| c.is_alphanumeric()).collect();
+                let rt_norm: String = rt.chars().filter(|c| c.is_alphanumeric()).collect();
 
-            // Exact artist match = big bonus
-            if ra_norm == artist_norm {
-                score += 50;
-            } else if ra.contains(&artist_lower) || artist_lower.contains(&ra) {
-                score += 30;
-            }
+                // Exact artist match = big bonus
+                if ra_norm == artist_norm {
+                    score += 50;
+                } else if ra.contains(&artist_lower) || artist_lower.contains(&ra) {
+                    score += 30;
+                }
 
-            // Exact title match = big bonus
-            if rt_norm == title_norm {
-                score += 50;
-            } else if rt.contains(&title_lower) || title_lower.contains(&rt) {
-                score += 30;
-            }
+                // Exact title match = big bonus
+                if rt_norm == title_norm {
+                    score += 50;
+                } else if rt.contains(&title_lower) || title_lower.contains(&rt) {
+                    score += 30;
+                }
 
-            // Both match = highest confidence
-            if ra_norm == artist_norm && rt_norm == title_norm {
-                score += 100;
-            }
+                // Both match = highest confidence
+                if ra_norm == artist_norm && rt_norm == title_norm {
+                    score += 100;
+                }
 
-            (r, score)
-        }).collect();
+                (r, score)
+            })
+            .collect();
 
         scored.sort_by(|a, b| b.1.cmp(&a.1));
         let (best, score) = scored.first()?;
@@ -222,18 +238,16 @@ mod tests {
 
     #[test]
     fn test_best_match_exact() {
-        let results = vec![
-            LrcLibResponse {
-                id: 1,
-                track_name: "Wasted".to_string(),
-                artist_name: "FIDLAR".to_string(),
-                album_name: None,
-                duration: 180.0,
-                instrumental: false,
-                plain_lyrics: Some("lyrics".to_string()),
-                synced_lyrics: None,
-            },
-        ];
+        let results = vec![LrcLibResponse {
+            id: 1,
+            track_name: "Wasted".to_string(),
+            artist_name: "FIDLAR".to_string(),
+            album_name: None,
+            duration: 180.0,
+            instrumental: false,
+            plain_lyrics: Some("lyrics".to_string()),
+            synced_lyrics: None,
+        }];
         let best = LrcLibClient::best_match(&results, "FIDLAR", "Wasted");
         assert!(best.is_some());
         assert_eq!(best.unwrap().id, 1);
@@ -241,36 +255,32 @@ mod tests {
 
     #[test]
     fn test_best_match_no_match() {
-        let results = vec![
-            LrcLibResponse {
-                id: 1,
-                track_name: "Song A".to_string(),
-                artist_name: "Artist A".to_string(),
-                album_name: None,
-                duration: 180.0,
-                instrumental: false,
-                plain_lyrics: Some("lyrics".to_string()),
-                synced_lyrics: None,
-            },
-        ];
+        let results = vec![LrcLibResponse {
+            id: 1,
+            track_name: "Song A".to_string(),
+            artist_name: "Artist A".to_string(),
+            album_name: None,
+            duration: 180.0,
+            instrumental: false,
+            plain_lyrics: Some("lyrics".to_string()),
+            synced_lyrics: None,
+        }];
         let best = LrcLibClient::best_match(&results, "FIDLAR", "Wasted");
         assert!(best.is_none());
     }
 
     #[test]
     fn test_best_match_case_insensitive() {
-        let results = vec![
-            LrcLibResponse {
-                id: 1,
-                track_name: "wasted".to_string(),
-                artist_name: "fidlar".to_string(),
-                album_name: None,
-                duration: 180.0,
-                instrumental: false,
-                plain_lyrics: Some("lyrics".to_string()),
-                synced_lyrics: None,
-            },
-        ];
+        let results = vec![LrcLibResponse {
+            id: 1,
+            track_name: "wasted".to_string(),
+            artist_name: "fidlar".to_string(),
+            album_name: None,
+            duration: 180.0,
+            instrumental: false,
+            plain_lyrics: Some("lyrics".to_string()),
+            synced_lyrics: None,
+        }];
         let best = LrcLibClient::best_match(&results, "FIDLAR", "Wasted");
         assert!(best.is_some());
         assert_eq!(best.unwrap().id, 1);

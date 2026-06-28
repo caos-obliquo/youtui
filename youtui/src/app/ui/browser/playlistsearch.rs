@@ -7,7 +7,6 @@ use crate::app::server::api::GetPlaylistSongsProgressUpdate;
 use crate::app::server::{GetPlaylistSongs, HandleApiError, SearchPlaylists};
 use crate::app::structures::ListStatus;
 use crate::app::ui::action::{AppAction, TextEntryAction};
-use ytmapi_rs::common::YoutubeID;
 use crate::app::ui::browser::playlistsearch::search_panel::{
     BrowserPlaylistsAction, NonPodcastSearchResultPlaylist, PlaylistSearchPanel,
 };
@@ -21,7 +20,7 @@ use async_callback_manager::{AsyncTask, Constraint, NoOpHandler};
 use itertools::Either;
 use std::mem;
 use tracing::{error, warn};
-use ytmapi_rs::common::PlaylistID;
+use ytmapi_rs::common::{PlaylistID, YoutubeID};
 use ytmapi_rs::parse::{PlaylistItem, SearchResultPlaylist};
 
 /// Maximum number of playlist songs to download / stream in a single viewing.
@@ -180,7 +179,9 @@ impl ActionHandler<BrowserPlaylistSongsAction> for PlaylistSearchBrowser {
             BrowserPlaylistSongsAction::CopySongUrl => return self.copy_song_url().into(),
             BrowserPlaylistSongsAction::GoToArtist => return self.go_to_artist().into(),
             BrowserPlaylistSongsAction::GoToAlbum => return self.go_to_album().into(),
-            BrowserPlaylistSongsAction::GetRelatedTracks => return self.get_related_tracks().into(),
+            BrowserPlaylistSongsAction::GetRelatedTracks => {
+                return self.get_related_tracks().into();
+            }
         }
         YoutuiEffect::new_no_op()
     }
@@ -213,7 +214,13 @@ impl PlaylistSearchBrowser {
     pub fn text_editor_mode(&self) -> Option<String> {
         match self.playlist_search_panel.route {
             crate::app::ui::browser::playlistsearch::search_panel::PlaylistInputRouting::Search => {
-                Some(self.playlist_search_panel.search.search_contents.mode_char().to_string())
+                Some(
+                    self.playlist_search_panel
+                        .search
+                        .search_contents
+                        .mode_char()
+                        .to_string(),
+                )
             }
             _ => None,
         }
@@ -369,7 +376,9 @@ impl PlaylistSearchBrowser {
     pub fn view_lyrics(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.playlist_songs_panel.get_selected_item();
         if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
-            let artist = song.artists.iter()
+            let artist = song
+                .artists
+                .iter()
                 .map(|a| a.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -386,7 +395,10 @@ impl PlaylistSearchBrowser {
     pub fn copy_song_url(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.playlist_songs_panel.get_selected_item();
         if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
-            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+            let raw_url = format!(
+                "https://music.youtube.com/watch?v={}",
+                song.video_id.get_raw()
+            );
             crate::app::structures::copy_to_clipboard(&raw_url);
             tracing::info!("Copied URL: {}", raw_url);
         }
@@ -394,10 +406,10 @@ impl PlaylistSearchBrowser {
     }
     pub fn go_to_artist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.playlist_songs_panel.get_selected_item();
-        if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
-            if let Some(cb) = crate::app::ui::browser::shared_components::navigate_to_artist(song) {
-                return (AsyncTask::new_no_op(), Some(cb));
-            }
+        if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx)
+            && let Some(cb) = crate::app::ui::browser::shared_components::navigate_to_artist(song)
+        {
+            return (AsyncTask::new_no_op(), Some(cb));
         }
         (AsyncTask::new_no_op(), None)
     }
@@ -414,7 +426,10 @@ impl PlaylistSearchBrowser {
     pub fn get_related_tracks(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.playlist_songs_panel.get_selected_item();
         if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
-            return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::GetRelatedTracks(song.video_id.clone())),
+            );
         }
         (AsyncTask::new_no_op(), None)
     }
@@ -474,7 +489,6 @@ impl PlaylistSearchBrowser {
     pub fn change_routing(&mut self, input_routing: InputRouting) {
         self.prev_input_routing = mem::replace(&mut self.input_routing, input_routing);
     }
-
 }
 
 #[derive(Debug, PartialEq)]
@@ -544,10 +558,18 @@ mod tests {
             .search
             .search_contents
             .set_text("Search!");
-        let browser_text = browser.playlist_search_panel.search.search_contents.get_text();
+        let browser_text = browser
+            .playlist_search_panel
+            .search
+            .search_contents
+            .get_text();
         assert!(!browser_text.is_empty());
         let _ = browser.handle_text_entry_action(crate::app::ui::action::TextEntryAction::Submit);
-        let browser_text = browser.playlist_search_panel.search.search_contents.get_text();
+        let browser_text = browser
+            .playlist_search_panel
+            .search
+            .search_contents
+            .get_text();
         assert!(browser_text.is_empty());
     }
     #[test]

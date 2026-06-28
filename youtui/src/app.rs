@@ -1,11 +1,18 @@
 use super::appevent::{AppEvent, EventHandler};
+use crate::app::ui::playlist::effect_handlers_playlist::{
+    HandleAddPlaylistToPlaylistError, HandleAddPlaylistToPlaylistOk, HandleDeletePlaylistError,
+    HandleDeletePlaylistOk, HandleEditPlaylistDetailsError, HandleEditPlaylistDetailsOk,
+    HandleOverwriteGetTracks, HandleOverwriteGetTracksErr, HandleRatePlaylistError,
+    HandleRatePlaylistOk, HandleRenamePlaylistError, HandleRenamePlaylistOk,
+    HandleSubscribeToArtistError, HandleSubscribeToArtistOk, HandleUnsubscribeFromArtistsError,
+    HandleUnsubscribeFromArtistsOk,
+};
 use crate::config::{ApiKey, Config};
 use crate::core::get_limited_sequential_file;
 use crate::{RuntimeInfo, get_data_dir};
 use anyhow::{Context, Result, bail};
 use async_callback_manager::{AsyncCallbackManager, AsyncTask, TaskOutcome};
 use component::actionhandler::YoutuiEffect;
-use tracing::warn;
 use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -15,22 +22,15 @@ use media_controls::MediaController;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui_image::picker::Picker;
-use server::{ArcServer, Server, TaskMetadata, AddSongsToPlaylist, GetPlaylistTracks, RenamePlaylist, DeletePlaylist, EditPlaylistDetails, RatePlaylistMessage};
-use crate::app::ui::playlist::effect_handlers_playlist::{
-    HandleRenamePlaylistOk, HandleRenamePlaylistError,
-    HandleDeletePlaylistOk, HandleDeletePlaylistError,
-    HandleEditPlaylistDetailsOk, HandleEditPlaylistDetailsError,
-    HandleRatePlaylistOk, HandleRatePlaylistError,
-    HandleSubscribeToArtistOk, HandleSubscribeToArtistError,
-    HandleUnsubscribeFromArtistsOk, HandleUnsubscribeFromArtistsError,
-    HandleAddPlaylistToPlaylistOk, HandleAddPlaylistToPlaylistError,
-    HandleOverwriteGetTracks, HandleOverwriteGetTracksErr,
+use server::{
+    AddSongsToPlaylist, ArcServer, DeletePlaylist, EditPlaylistDetails, GetPlaylistTracks,
+    RatePlaylistMessage, RenamePlaylist, Server, TaskMetadata,
 };
 use std::borrow::Cow;
 use std::rc::Rc;
-use std::time::Duration;
-use std::time::Instant;
-use ytmapi_rs::common::{PlaylistID, VideoID, ArtistChannelID, AlbumID};
+use std::time::{Duration, Instant};
+use tracing::warn;
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, VideoID};
 
 /// Debounce guard for rapid play-actions (Enter-spam).
 /// Allows one play action per cooldown window.
@@ -42,7 +42,10 @@ pub(crate) struct PlayDebouncer {
 
 impl PlayDebouncer {
     pub fn new(cooldown: Duration) -> Self {
-        Self { last_play_time: None, cooldown }
+        Self {
+            last_play_time: None,
+            cooldown,
+        }
     }
     /// Returns `true` if the action should proceed (not debounced).
     pub fn try_play(&mut self) -> bool {
@@ -65,8 +68,15 @@ impl PlayDebouncer {
 pub enum NavTarget {
     Artist(String),
     ArtistChannel(ArtistChannelID<'static>),
-    Album { artist: String, album: String },
-    AlbumOpen { artist: String, album: String, album_id: AlbumID<'static> },
+    Album {
+        artist: String,
+        album: String,
+    },
+    AlbumOpen {
+        artist: String,
+        album: String,
+        album_id: AlbumID<'static>,
+    },
     SongSearch(String),
 }
 use std::fmt::Display;
@@ -76,21 +86,19 @@ pub use structures::AudioQuality;
 use structures::{ListSong, ListSongID};
 use tracing::{error, info};
 use tracing_subscriber::prelude::*;
-use ui::{
-    WindowContext, YoutuiWindow,
-    playlist::effect_handlers_playlist::{
-        HandleAddSongsOk, HandleAddSongsError,
-        HandleGetPlaylistTracksAppendOk, HandleGetPlaylistTracksOk, HandleGetPlaylistTracksErr,
-    },
+use ui::playlist::effect_handlers_playlist::{
+    HandleAddSongsError, HandleAddSongsOk, HandleGetPlaylistTracksAppendOk,
+    HandleGetPlaylistTracksErr, HandleGetPlaylistTracksOk,
 };
+use ui::{WindowContext, YoutuiWindow};
 
 #[macro_use]
 pub mod component;
 mod media_controls;
-pub mod server;
-mod structures;
 pub mod queue_persistence;
 pub mod scrobbler;
+pub mod server;
+mod structures;
 pub mod ui;
 pub mod view;
 
@@ -212,7 +220,10 @@ pub enum AppCallback {
     },
     RatePlaylistFromLibrary(PlaylistID<'static>, ytmapi_rs::common::LikeStatus),
 
-    RemovePlaylistItemsFromLibrary(PlaylistID<'static>, Vec<ytmapi_rs::common::SetVideoID<'static>>),
+    RemovePlaylistItemsFromLibrary(
+        PlaylistID<'static>,
+        Vec<ytmapi_rs::common::SetVideoID<'static>>,
+    ),
     ReorderPlaylistItemFromLibrary(PlaylistID<'static>, VideoID<'static>, VideoID<'static>),
     SubscribeToArtistFromLibrary(ArtistChannelID<'static>),
     UnsubscribeFromArtistFromLibrary(Vec<ArtistChannelID<'static>>),
@@ -274,7 +285,16 @@ impl Youtui {
                     task.type_debug, task.type_id, task.constraint
                 )
             });
-        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config, crate::get_config_dir().ok().map(|d| d.join("metadata_overrides.json")), crate::get_data_dir().ok().map(|d| d.to_path_buf())));
+        let server = Arc::new(server::Server::new(
+            api_key,
+            po_token,
+            cookie_path.clone(),
+            &config,
+            crate::get_config_dir()
+                .ok()
+                .map(|d| d.join("metadata_overrides.json")),
+            crate::get_data_dir().ok().map(|d| d.to_path_buf()),
+        ));
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
         // The docs for this function state that it must be run after entering alternate
@@ -314,17 +334,13 @@ impl Youtui {
     pub async fn run(&mut self) -> Result<()> {
         // Initial draw before first event
         self.terminal.draw(|f| {
-            ui::draw::draw_app(
-                f,
-                &mut self.window_state,
-                &self.terminal_image_capabilities,
-            );
+            ui::draw::draw_app(f, &mut self.window_state, &self.terminal_image_capabilities);
         })?;
         self.flush_sixel()?;
         if let Some(media_controls) = &mut self.media_controls {
-            media_controls.update_controls(
-                ui::draw_media_controls::draw_app_media_controls(&self.window_state),
-            )?;
+            media_controls.update_controls(ui::draw_media_controls::draw_app_media_controls(
+                &self.window_state,
+            ))?;
         }
         loop {
             match &self.status {
@@ -413,7 +429,10 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, next_task);
                 if self.window_state.playlist.library_playlist_mutated {
                     self.window_state.playlist.library_playlist_mutated = false;
-                    let refresh = self.window_state.browser.library_browser
+                    let refresh = self
+                        .window_state
+                        .browser
+                        .library_browser
                         .reload_category()
                         .map_frontend(|w: &mut YoutuiWindow| &mut w.browser.library_browser);
                     self.task_manager.spawn_task(&self.server, refresh);
@@ -465,23 +484,23 @@ impl Youtui {
                 &self.server,
                 self.window_state.handle_insert_next(song_list),
             ),
-            AppCallback::QueueSong(song_list) => self.task_manager.spawn_task(
-                &self.server,
-                self.window_state.handle_queue_song(song_list),
-            ),
+            AppCallback::QueueSong(song_list) => self
+                .task_manager
+                .spawn_task(&self.server, self.window_state.handle_queue_song(song_list)),
             AppCallback::GetRelatedTracks(video_id) => {
                 use crate::app::server::GetRelatedTracks;
                 use crate::app::ui::playlist::effect_handlers_playlist::{
-                    HandleGetRelatedTracksOk, HandleGetRelatedTracksErr,
+                    HandleGetRelatedTracksErr, HandleGetRelatedTracksOk,
                 };
-                let task: crate::app::component::actionhandler::ComponentEffect<crate::app::ui::YoutuiWindow> =
-                    AsyncTask::new_future_try(
-                        GetRelatedTracks(video_id),
-                        HandleGetRelatedTracksOk,
-                        HandleGetRelatedTracksErr,
-                        None,
-                    )
-                    .map_frontend(|this: &mut crate::app::ui::YoutuiWindow| &mut this.playlist);
+                let task: crate::app::component::actionhandler::ComponentEffect<
+                    crate::app::ui::YoutuiWindow,
+                > = AsyncTask::new_future_try(
+                    GetRelatedTracks(video_id),
+                    HandleGetRelatedTracksOk,
+                    HandleGetRelatedTracksErr,
+                    None,
+                )
+                .map_frontend(|this: &mut crate::app::ui::YoutuiWindow| &mut this.playlist);
                 self.task_manager.spawn_task(&self.server, task);
             }
             AppCallback::OpenPlaylistSavePopup(video_ids) => {
@@ -492,7 +511,9 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::OpenPlaylistMergePopup(source_playlist_id) => {
-                let effect = self.window_state.open_playlist_merge_popup(source_playlist_id);
+                let effect = self
+                    .window_state
+                    .open_playlist_merge_popup(source_playlist_id);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::AddVideosToPlaylistFromPopup {
@@ -517,9 +538,12 @@ impl Youtui {
 
                 if overwrite {
                     // Overwrite: remove existing tracks first, then add new ones
-                    // TODO: Fetch current playlist tracks via GetPlaylistTracks + RemovePlaylistItems
-                    // For now, append-only (overwrite flag tracked for future implementation)
-                    info!("Overwrite mode selected - will replace playlist tracks in future implementation");
+                    // TODO: Fetch current playlist tracks via GetPlaylistTracks +
+                    // RemovePlaylistItems For now, append-only (overwrite flag
+                    // tracked for future implementation)
+                    info!(
+                        "Overwrite mode selected - will replace playlist tracks in future implementation"
+                    );
                 }
 
                 self.task_manager.spawn_task(&self.server, effect);
@@ -575,7 +599,10 @@ impl Youtui {
             }
             AppCallback::AddPlaylistToPlaylistFromLibrary(source_id, target_id) => {
                 let effect = AsyncTask::new_future_try(
-                    server::AddPlaylistToPlaylist { source_id, target_id },
+                    server::AddPlaylistToPlaylist {
+                        source_id,
+                        target_id,
+                    },
                     HandleAddPlaylistToPlaylistOk,
                     HandleAddPlaylistToPlaylistError,
                     None,
@@ -592,9 +619,13 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ViewAlbumCover => {
-                use crate::app::structures::{PlayState, AlbumArtState};
+                use crate::app::structures::{AlbumArtState, PlayState};
                 // Collect all downloaded album arts from the queue
-                let thumbs: Vec<_> = self.window_state.playlist.list.get_list_iter()
+                let thumbs: Vec<_> = self
+                    .window_state
+                    .playlist
+                    .list
+                    .get_list_iter()
                     .filter_map(|s| match &s.album_art {
                         AlbumArtState::Downloaded(t) => Some(t.clone()),
                         _ => None,
@@ -603,32 +634,42 @@ impl Youtui {
                 if !thumbs.is_empty() {
                     // Find index of selected/playing song's album art
                     let sel_song = self.window_state.playlist.get_selected_album_art();
-                    let start_idx = sel_song.and_then(|sel| {
-                        thumbs.iter().position(|t| Rc::ptr_eq(t, &sel))
-                    }).unwrap_or(0);
-                    self.window_state.album_art_popup =
-                        Some(ui::playlist::album_art_popup::AlbumArtPopup::new(thumbs, start_idx));
+                    let start_idx = sel_song
+                        .and_then(|sel| thumbs.iter().position(|t| Rc::ptr_eq(t, &sel)))
+                        .unwrap_or(0);
+                    self.window_state.album_art_popup = Some(
+                        ui::playlist::album_art_popup::AlbumArtPopup::new(thumbs, start_idx),
+                    );
                 } else {
                     // Fallback: single thumbnail from playing song or last art
                     let thumb = match &self.window_state.playlist.play_status {
-                        PlayState::Playing(id) | PlayState::Paused(id) |
-                        PlayState::Buffering(id) => {
-                            self.window_state.playlist.get_song_from_id(*id)
-                                .and_then(|s| match &s.album_art {
-                                    AlbumArtState::Downloaded(t) => Some(t.clone()),
-                                    _ => None,
-                                })
-                        }
+                        PlayState::Playing(id)
+                        | PlayState::Paused(id)
+                        | PlayState::Buffering(id) => self
+                            .window_state
+                            .playlist
+                            .get_song_from_id(*id)
+                            .and_then(|s| match &s.album_art {
+                                AlbumArtState::Downloaded(t) => Some(t.clone()),
+                                _ => None,
+                            }),
                         _ => None,
-                    }.or_else(|| self.window_state.last_album_art.clone());
+                    }
+                    .or_else(|| self.window_state.last_album_art.clone());
                     if let Some(t) = thumb {
-                        self.window_state.album_art_popup =
-                            Some(ui::playlist::album_art_popup::AlbumArtPopup::new(vec![t], 0));
+                        self.window_state.album_art_popup = Some(
+                            ui::playlist::album_art_popup::AlbumArtPopup::new(vec![t], 0),
+                        );
                     }
                 }
             }
             AppCallback::UpdateSongInfo { id, song } => {
-                let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                let artist = song
+                    .artists
+                    .iter()
+                    .map(|a| a.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 let meta = crate::app::server::ValidatedMetadata {
                     artist: Some(artist.clone()),
                     album: song.album.as_ref().map(|a| a.name.clone()),
@@ -638,7 +679,9 @@ impl Youtui {
                     genres: song.genres.clone(),
                     styles: song.styles.clone(),
                 };
-                self.server.metadata_registry.save_override(&artist, &song.title, &meta);
+                self.server
+                    .metadata_registry
+                    .save_override(&artist, &song.title, &meta);
                 self.window_state.playlist.update_song_info(id, song);
                 self.window_state.close_popup();
             }
@@ -667,13 +710,17 @@ impl Youtui {
                 self.window_state.delete_confirm = Some((playlist_id, title));
             }
             AppCallback::OpenRenamePopup(playlist_id, title) => {
-                self.window_state.open_playlist_rename_popup(playlist_id, title);
+                self.window_state
+                    .open_playlist_rename_popup(playlist_id, title);
             }
             AppCallback::OpenEditPopup(playlist_id, title) => {
-                self.window_state.open_playlist_edit_popup(playlist_id, title);
+                self.window_state
+                    .open_playlist_edit_popup(playlist_id, title);
             }
             AppCallback::OpenDetailsPopup(playlist_id, title) => {
-                let effect = self.window_state.open_playlist_details_popup(playlist_id, title);
+                let effect = self
+                    .window_state
+                    .open_playlist_details_popup(playlist_id, title);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::DeletePlaylistFromLibrary(playlist_id) => {
@@ -688,11 +735,17 @@ impl Youtui {
                 .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
             }
-            AppCallback::RenamePlaylistFromLibrary { playlist_id, new_title } => {
+            AppCallback::RenamePlaylistFromLibrary {
+                playlist_id,
+                new_title,
+            } => {
                 self.window_state.close_popup();
                 self.window_state.browser.library_browser.playlists_fetched = false;
                 let effect = AsyncTask::new_future_try(
-                    RenamePlaylist { playlist_id, new_title },
+                    RenamePlaylist {
+                        playlist_id,
+                        new_title,
+                    },
                     HandleRenamePlaylistOk,
                     HandleRenamePlaylistError,
                     None,
@@ -700,11 +753,21 @@ impl Youtui {
                 .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
             }
-            AppCallback::EditPlaylistDetailsFromLibrary { playlist_id, title, description, privacy } => {
+            AppCallback::EditPlaylistDetailsFromLibrary {
+                playlist_id,
+                title,
+                description,
+                privacy,
+            } => {
                 self.window_state.close_popup();
                 self.window_state.browser.library_browser.playlists_fetched = false;
                 let effect = AsyncTask::new_future_try(
-                    EditPlaylistDetails { playlist_id, title, description, privacy },
+                    EditPlaylistDetails {
+                        playlist_id,
+                        title,
+                        description,
+                        privacy,
+                    },
                     HandleEditPlaylistDetailsOk,
                     HandleEditPlaylistDetailsError,
                     None,
@@ -733,24 +796,24 @@ impl Youtui {
                     let sixel_rect = self.window_state.sixel_rect;
                     if let Some(rect) = sixel_rect {
                         let blank = image::DynamicImage::from(image::RgbaImage::from_pixel(
-                            1, 1,
+                            1,
+                            1,
                             image::Rgba([0, 0, 0, 255]),
                         ));
                         if let Ok(protocol) = self.terminal_image_capabilities.new_protocol(
                             blank,
                             rect,
                             ratatui_image::Resize::Scale(None),
-                        ) {
-                            if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
-                                use std::io::Write;
-                                let mut stdout = std::io::stdout();
-                                let _ = crossterm::execute!(
-                                    &mut stdout,
-                                    crossterm::cursor::MoveTo(rect.x, rect.y),
-                                );
-                                let _ = stdout.write_all(sixel.data.as_bytes());
-                                let _ = stdout.flush();
-                            }
+                        ) && let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol
+                        {
+                            use std::io::Write;
+                            let mut stdout = std::io::stdout();
+                            let _ = crossterm::execute!(
+                                &mut stdout,
+                                crossterm::cursor::MoveTo(rect.x, rect.y),
+                            );
+                            let _ = stdout.write_all(sixel.data.as_bytes());
+                            let _ = stdout.flush();
                         }
                     }
                     // Belt-and-suspenders: also send DCS clear + ANSI clear
@@ -793,18 +856,20 @@ impl Youtui {
             }
             AppCallback::SeekBack => {
                 use audio_player::SeekDirection;
-                let effect = self.window_state.playlist.handle_seek(
-                    Duration::from_secs(5),
-                    SeekDirection::Back,
-                ).map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                let effect = self
+                    .window_state
+                    .playlist
+                    .handle_seek(Duration::from_secs(5), SeekDirection::Back)
+                    .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::SeekForward => {
                 use audio_player::SeekDirection;
-                let effect = self.window_state.playlist.handle_seek(
-                    Duration::from_secs(5),
-                    SeekDirection::Forward,
-                ).map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
+                let effect = self
+                    .window_state
+                    .playlist
+                    .handle_seek(Duration::from_secs(5), SeekDirection::Forward)
+                    .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::Navigate(target) => {
@@ -815,60 +880,86 @@ impl Youtui {
                 }
             }
             AppCallback::SeekTo(pos) => {
-                let effect = self.window_state.playlist.handle_seek_to(pos)
+                let effect = self
+                    .window_state
+                    .playlist
+                    .handle_seek_to(pos)
                     .map_frontend(|window: &mut YoutuiWindow| &mut window.playlist);
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::ViewNextInQueue => {
                 let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
-                let start_idx = self.window_state.lyrics_viewing_idx
-                    .or_else(|| {
-                        use crate::app::structures::PlayState;
-                        match &self.window_state.playlist.play_status {
-                            PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => {
-                                songs.iter().position(|s| s.id == *id)
-                            }
-                            _ => None,
-                        }
-                    });
+                let start_idx = self.window_state.lyrics_viewing_idx.or_else(|| {
+                    use crate::app::structures::PlayState;
+                    match &self.window_state.playlist.play_status {
+                        PlayState::Playing(id)
+                        | PlayState::Paused(id)
+                        | PlayState::Buffering(id) => songs.iter().position(|s| s.id == *id),
+                        _ => None,
+                    }
+                });
                 if let Some(pos) = start_idx {
                     let target_idx = pos.saturating_add(1).min(songs.len().saturating_sub(1));
                     if let Some(song) = songs.get(target_idx) {
-                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        let artist = song
+                            .artists
+                            .iter()
+                            .map(|a| a.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         self.window_state.lyrics_viewing_idx = Some(target_idx);
-                        let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                        let effect = self
+                            .window_state
+                            .open_lyrics_popup(artist, song.title.clone());
                         self.task_manager.spawn_task(&self.server, effect);
                     }
                 }
             }
             AppCallback::ViewPrevInQueue => {
                 let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
-                let start_idx = self.window_state.lyrics_viewing_idx
-                    .or_else(|| {
-                        use crate::app::structures::PlayState;
-                        match &self.window_state.playlist.play_status {
-                            PlayState::Playing(id) | PlayState::Paused(id) | PlayState::Buffering(id) => {
-                                songs.iter().position(|s| s.id == *id)
-                            }
-                            _ => None,
-                        }
-                    });
+                let start_idx = self.window_state.lyrics_viewing_idx.or_else(|| {
+                    use crate::app::structures::PlayState;
+                    match &self.window_state.playlist.play_status {
+                        PlayState::Playing(id)
+                        | PlayState::Paused(id)
+                        | PlayState::Buffering(id) => songs.iter().position(|s| s.id == *id),
+                        _ => None,
+                    }
+                });
                 if let Some(pos) = start_idx {
                     let target_idx = pos.saturating_sub(1);
                     if let Some(song) = songs.get(target_idx) {
-                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        let artist = song
+                            .artists
+                            .iter()
+                            .map(|a| a.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
                         self.window_state.lyrics_viewing_idx = Some(target_idx);
-                        let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                        let effect = self
+                            .window_state
+                            .open_lyrics_popup(artist, song.title.clone());
                         self.task_manager.spawn_task(&self.server, effect);
                     }
                 }
             }
-            AppCallback::OpenPlaylistEditor { playlist_id, playlist_title, tracks } => {
+            AppCallback::OpenPlaylistEditor {
+                playlist_id,
+                playlist_title,
+                tracks,
+            } => {
                 use crate::app::ui::playlist::playlist_editor_popup::PlaylistEditorPopup;
-                self.window_state.playlist_editor_popup = Some(PlaylistEditorPopup::new(playlist_id, playlist_title, tracks));
+                self.window_state.playlist_editor_popup = Some(PlaylistEditorPopup::new(
+                    playlist_id,
+                    playlist_title,
+                    tracks,
+                ));
                 self.window_state.context = WindowContext::PlaylistEditor;
             }
-            AppCallback::OverwritePlaylistTracks { playlist_id, new_ids } => {
+            AppCallback::OverwritePlaylistTracks {
+                playlist_id,
+                new_ids,
+            } => {
                 self.window_state.close_popup();
                 self.window_state.browser.library_browser.playlists_fetched = false;
                 let effect = AsyncTask::new_future_try(
@@ -882,22 +973,20 @@ impl Youtui {
             }
             AppCallback::ReloadConfig => {
                 let config_dir = crate::get_config_dir().ok();
-                let config_path = config_dir.map(|d| d.join("config.toml")).unwrap_or_else(|| std::path::PathBuf::from("config.toml"));
+                let config_path = config_dir
+                    .map(|d| d.join("config.toml"))
+                    .unwrap_or_else(|| std::path::PathBuf::from("config.toml"));
                 match std::fs::read_to_string(&config_path) {
-                    Ok(content) => {
-                        match toml::from_str::<crate::config::ConfigIR>(&content) {
-                            Ok(ir) => {
-                                match Config::try_from(ir) {
-                                    Ok(new_config) => {
-                                        info!("Config reloaded from {:?}", config_path);
-                                        self.window_state.config = new_config;
-                                    }
-                                    Err(e) => warn!("Failed to build config: {}", e),
-                                }
+                    Ok(content) => match toml::from_str::<crate::config::ConfigIR>(&content) {
+                        Ok(ir) => match Config::try_from(ir) {
+                            Ok(new_config) => {
+                                info!("Config reloaded from {:?}", config_path);
+                                self.window_state.config = new_config;
                             }
-                            Err(e) => warn!("Failed to parse config: {}", e),
-                        }
-                    }
+                            Err(e) => warn!("Failed to build config: {}", e),
+                        },
+                        Err(e) => warn!("Failed to parse config: {}", e),
+                    },
                     Err(e) => warn!("Failed to read config: {}", e),
                 }
             }

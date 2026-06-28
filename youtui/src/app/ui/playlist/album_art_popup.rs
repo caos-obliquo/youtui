@@ -23,11 +23,16 @@ impl AlbumArtPopup {
         self.thumbnails.len()
     }
 
-    pub fn current_thumbnail(&self) -> Option<&Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>> {
+    pub fn current_thumbnail(
+        &self,
+    ) -> Option<&Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>> {
         self.thumbnails.get(self.index)
     }
 
-    pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+    pub fn handle_key(
+        &mut self,
+        event: crossterm::event::KeyEvent,
+    ) -> (ComponentEffect<Self>, Option<AppCallback>) {
         match event.code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))

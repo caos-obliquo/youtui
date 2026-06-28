@@ -1,8 +1,7 @@
 use super::{AUDIO_QUALITY, DL_CALLBACK_CHUNK_SIZE};
-use crate::app::CALLBACK_CHANNEL_SIZE;
 use crate::app::server::MAX_RETRIES;
-use crate::app::AudioQuality;
 use crate::app::structures::{ListSongID, Percentage};
+use crate::app::{AudioQuality, CALLBACK_CHANNEL_SIZE};
 use crate::config::{Config, DownloaderType};
 use crate::core::send_or_error;
 use crate::youtube_downloader::native::NativeYoutubeDownloader;
@@ -56,8 +55,7 @@ impl DownloadStats {
 }
 
 fn get_download_stats() -> &'static std::sync::Mutex<DownloadStats> {
-    DOWNLOAD_STATS
-        .get_or_init(|| std::sync::Mutex::new(DownloadStats::default()))
+    DOWNLOAD_STATS.get_or_init(|| std::sync::Mutex::new(DownloadStats::default()))
 }
 
 fn get_download_semaphore() -> Arc<Semaphore> {
@@ -65,9 +63,10 @@ fn get_download_semaphore() -> Arc<Semaphore> {
         .lock()
         .map(|s| s.average_time())
         .unwrap_or(0);
-    
-    // Dynamic concurrency: faster downloads = more concurrent, slower = less concurrent
-    // When stats are empty (0), use default for initial warm-up period
+
+    // Dynamic concurrency: faster downloads = more concurrent, slower = less
+    // concurrent When stats are empty (0), use default for initial warm-up
+    // period
     let target_permits = if avg_time == 0 || avg_time < 4000 {
         // Very fast downloads or uninitialized - can handle more concurrent
         MAX_CONCURRENT_DOWNLOADS
@@ -78,7 +77,7 @@ fn get_download_semaphore() -> Arc<Semaphore> {
         // Slow downloads - reduce concurrency to avoid network saturation
         1
     };
-    
+
     DOWNLOAD_SEMAPHORE
         .get_or_init(|| Arc::new(Semaphore::new(target_permits)))
         .clone()
@@ -109,7 +108,12 @@ pub enum SongDownloader {
 }
 
 impl SongDownloader {
-    pub fn new(po_token: Option<String>, client: reqwest::Client, cookie_path: Option<String>, config: &Config) -> Self {
+    pub fn new(
+        po_token: Option<String>,
+        client: reqwest::Client,
+        cookie_path: Option<String>,
+        config: &Config,
+    ) -> Self {
         match config.downloader_type {
             DownloaderType::Native => {
                 info!(
@@ -128,8 +132,20 @@ impl SongDownloader {
                     "Initiating yt-dlp downloader using yt-dlp path `{}`",
                     config.yt_dlp_command
                 );
-                let downloader = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone(), AudioQuality::default());
-                let downloader_clone = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone(), AudioQuality::default());
+                let downloader = YtDlpDownloader::new(
+                    config.yt_dlp_command.clone(),
+                    po_token.clone(),
+                    cookie_path.clone(),
+                    config.cookie_browser.clone(),
+                    AudioQuality::default(),
+                );
+                let downloader_clone = YtDlpDownloader::new(
+                    config.yt_dlp_command.clone(),
+                    po_token.clone(),
+                    cookie_path.clone(),
+                    config.cookie_browser.clone(),
+                    AudioQuality::default(),
+                );
                 tokio::task::spawn(async {
                     let output = downloader_clone.get_version().await;
                     match output {
@@ -196,11 +212,15 @@ where
         };
         // Check if already cancelled before starting
         if let Some(ref token) = cancel_token
-            && token.is_cancelled() {
-            info!("Download cancelled before starting for song {:?}", song_playlist_id);
+            && token.is_cancelled()
+        {
+            info!(
+                "Download cancelled before starting for song {:?}",
+                song_playlist_id
+            );
             return;
         }
-        
+
         info!("Running download");
         send_or_error(
             &tx.clone(),
@@ -210,10 +230,10 @@ where
             },
         )
         .await;
-        
+
         let song_download = || {
             let _tx = tx.clone();
-        let audio_quality = audio_quality;
+            let audio_quality = audio_quality;
             // No progress callback - icons handle the status entirely
             download_song_with_progress_update_callback(
                 &downloader,
@@ -332,7 +352,7 @@ where
     // No progress reporting - UI uses icons only (↓ downloading, ✓ downloaded)
     // Just stream the audio data directly without callback overhead
     let start_time = std::time::Instant::now();
-    
+
     // Collect all chunks
     let mut song_data = Vec::new();
     let mut stream = Box::pin(stream);
@@ -345,7 +365,7 @@ where
             }
         }
     }
-    
+
     let song = song_data;
     let download_time = start_time.elapsed().as_millis();
     info!(
@@ -354,50 +374,60 @@ where
         song.len(),
         download_time
     );
-    
+
     // Record download statistics for dynamic concurrency adjustment
     if let Ok(mut stats) = get_download_stats().lock() {
         stats.record_download(download_time as u64);
     }
-    
+
     Ok(InMemSong(song))
 }
-
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     #[ignore = "Unreliable with dynamic concurrency - permits may be held by other tests"]
     async fn test_semaphore_limiting() {
         // Reset global state for test to ensure consistent behavior
         let semaphore = get_download_semaphore();
-        
+
         // With default uninitialized stats, should allow MAX_CONCURRENT_DOWNLOADS
-        let max_expected = if get_download_stats().lock().map(|s| s.average_time()).unwrap_or(0) == 0 {
+        let max_expected = if get_download_stats()
+            .lock()
+            .map(|s| s.average_time())
+            .unwrap_or(0)
+            == 0
+        {
             MAX_CONCURRENT_DOWNLOADS
         } else {
             // Could be dynamically adjusted
             1.max(MAX_CONCURRENT_DOWNLOADS)
         };
-        
+
         let mut permits = Vec::new();
-        
+
         // Acquire all available permits
         for _ in 0..max_expected {
             let p = semaphore.try_acquire();
             assert!(p.is_ok(), "Should be able to acquire permit");
             permits.push(p.unwrap());
         }
-        
+
         // Next acquisition should fail (semaphore exhausted)
-        assert!(semaphore.try_acquire().is_err(), "Should not be able to acquire more permits");
-        
+        assert!(
+            semaphore.try_acquire().is_err(),
+            "Should not be able to acquire more permits"
+        );
+
         // Release one permit
         drop(permits.pop());
-        
+
         // Next acquisition should succeed
-        assert!(semaphore.try_acquire().is_ok(), "Should be able to acquire permit after releasing one");
+        assert!(
+            semaphore.try_acquire().is_ok(),
+            "Should be able to acquire permit after releasing one"
+        );
     }
 }

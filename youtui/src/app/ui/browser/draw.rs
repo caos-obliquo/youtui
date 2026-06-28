@@ -1,26 +1,25 @@
-use super::library::{InputRouting, LibraryBrowser, LibraryCategory};
 use super::Browser;
 use super::artistsearch::search_panel::ArtistInputRouting;
 use super::artistsearch::songs_panel::AlbumSongsInputRouting;
 use super::artistsearch::{self, ArtistSearchBrowser};
+use super::library::{InputRouting, LibraryBrowser, LibraryCategory};
 use super::playlistsearch::PlaylistSearchBrowser;
 use super::shared_components::SearchBlock;
 use super::songsearch::SongSearchBrowser;
 use crate::app::component::actionhandler::Suggestable;
-use crate::app::view::HasTitle;
 use crate::app::ui::browser::albumsearch::AlbumSearchBrowser;
+use crate::app::view::HasTitle;
 use crate::app::view::draw::{draw_advanced_table, draw_list, draw_loadable, draw_panel_mut};
 use crate::drawutils::{
     ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TEXT_COLOUR, below_left_rect, bottom_of_rect,
 };
 use crate::widgets::ScrollingList;
-use vi_text_editor::ViTextEditor;
-
 use ratatui::Frame;
 use ratatui::prelude::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use vi_text_editor::ViTextEditor;
 use ytmapi_rs::common::{SuggestionType, TextRun};
 
 pub fn draw_browser(
@@ -52,13 +51,9 @@ pub fn draw_browser(
             selected,
             cur_tick,
         ),
-        super::BrowserVariant::LibraryPlaylist => draw_library_browser(
-            f,
-            &mut browser.library_browser,
-            chunk,
-            selected,
-            cur_tick,
-        ),
+        super::BrowserVariant::LibraryPlaylist => {
+            draw_library_browser(f, &mut browser.library_browser, chunk, selected, cur_tick)
+        }
         super::BrowserVariant::PlaylistSearch => draw_playlist_search_browser(
             f,
             &mut browser.playlist_search_browser,
@@ -154,12 +149,14 @@ pub fn draw_album_search_browser(
     let [left_chunk, right_chunk] = Layout::new(
         Direction::Horizontal,
         [Constraint::Percentage(30), Constraint::Percentage(70)],
-    ).areas(chunk);
+    )
+    .areas(chunk);
     let show_tracks = browser.show_tracks;
     let left_selected = selected && !show_tracks;
     let right_selected = selected && show_tracks;
 
-    // Left panel: search box + album list below (when searching), or just album list
+    // Left panel: search box + album list below (when searching), or just album
+    // list
     let left_album_chunk = if browser.search_popped {
         let [search_box_chunk, rest_chunk] = Layout::default()
             .direction(Direction::Vertical)
@@ -173,7 +170,10 @@ pub fn draw_album_search_browser(
         let display = browser.search.search_contents.render_simple("");
         f.render_widget(Clear, search_box_chunk);
         f.render_widget(search_block, search_box_chunk);
-        f.render_widget(Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR)), text_chunk);
+        f.render_widget(
+            Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR)),
+            text_chunk,
+        );
         if browser.has_search_suggestions() {
             draw_search_suggestions(f, &browser.search, search_box_chunk, left_chunk);
         }
@@ -188,26 +188,32 @@ pub fn draw_album_search_browser(
     let left_block = Block::default()
         .title(title_str.as_str())
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(if left_selected { SELECTED_BORDER_COLOUR } else { ratatui::style::Color::DarkGray }));
+        .border_style(Style::default().fg(if left_selected {
+            SELECTED_BORDER_COLOUR
+        } else {
+            ratatui::style::Color::DarkGray
+        }));
     let left_inner = left_block.inner(left_album_chunk);
     f.render_widget(Clear, left_album_chunk);
     f.render_widget(left_block, left_album_chunk);
 
     if browser.albums.is_empty() {
     } else {
-        let items: Vec<String> = browser.albums.iter().enumerate().map(|(_i, a)| {
-            let label = format!("{} - {}", a.album.artist, a.album.title);
-            label
-        }).collect();
-        browser.album_list_state.select(Some(browser.album_selected), cur_tick);
+        let items: Vec<String> = browser
+            .albums
+            .iter()
+            .map(|a| {
+                let label = format!("{} - {}", a.album.artist, a.album.title);
+                label
+            })
+            .collect();
+        browser
+            .album_list_state
+            .select(Some(browser.album_selected), cur_tick);
         let scrolling_list = ScrollingList::new(items, cur_tick)
             .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
             .max_times_to_scroll(Some(2));
-        f.render_stateful_widget(
-            scrolling_list,
-            left_inner,
-            &mut browser.album_list_state,
-        );
+        f.render_stateful_widget(scrolling_list, left_inner, &mut browser.album_list_state);
     }
 
     // Right panel: tracks via advanced table, even when no album selected
@@ -327,7 +333,12 @@ pub fn draw_library_browser(
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
             .areas(right_chunk);
-        draw_text_box(f, "Search", &mut browser.search.search_contents, search_chunk);
+        draw_text_box(
+            f,
+            "Search",
+            &mut browser.search.search_contents,
+            search_chunk,
+        );
         rest
     } else {
         right_chunk
@@ -394,8 +405,7 @@ pub fn draw_text_box(
         .title(title.as_ref());
     let text_chunk = block_widget.inner(chunk);
     let display = contents.render_simple("");
-    let text_widget = Paragraph::new(display)
-        .style(Style::default().fg(TEXT_COLOUR));
+    let text_widget = Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR));
     f.render_widget(block_widget, chunk);
     f.render_widget(text_widget, text_chunk);
 }
@@ -412,13 +422,15 @@ pub fn draw_playlist_search_browser(
     let [left_chunk, right_chunk] = Layout::new(
         Direction::Horizontal,
         [Constraint::Percentage(30), Constraint::Percentage(70)],
-    ).areas(chunk);
+    )
+    .areas(chunk);
 
     let left_selected = selected && browser.input_routing == InputRouting::Playlist;
     let right_selected = selected && browser.input_routing == InputRouting::Song;
 
     // Left panel: playlist search list with optional search box
-    let left_playlist_chunk = if browser.playlist_search_panel.route == PlaylistInputRouting::Search {
+    let left_playlist_chunk = if browser.playlist_search_panel.route == PlaylistInputRouting::Search
+    {
         let [search_box_chunk, rest_chunk] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
@@ -428,10 +440,17 @@ pub fn draw_playlist_search_browser(
             .borders(Borders::ALL)
             .border_style(Style::default().fg(SELECTED_BORDER_COLOUR));
         let text_chunk = search_block.inner(search_box_chunk);
-        let display = browser.playlist_search_panel.search.search_contents.render_simple("");
+        let display = browser
+            .playlist_search_panel
+            .search
+            .search_contents
+            .render_simple("");
         f.render_widget(Clear, search_box_chunk);
         f.render_widget(search_block, search_box_chunk);
-        f.render_widget(Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR)), text_chunk);
+        f.render_widget(
+            Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR)),
+            text_chunk,
+        );
         rest_chunk
     } else {
         left_chunk
@@ -452,14 +471,12 @@ pub fn draw_playlist_search_browser(
     );
 
     // Right panel: songs table (always show headers)
-    let _ = draw_panel_mut(
+    draw_panel_mut(
         f,
         &mut browser.playlist_songs_panel,
         right_chunk,
         right_selected,
-        |t, f, chunk| {
-            Some(draw_advanced_table(f, t, chunk, _cur_tick))
-        },
+        |t, f, chunk| Some(draw_advanced_table(f, t, chunk, _cur_tick)),
     );
 }
 

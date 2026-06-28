@@ -34,7 +34,8 @@ impl GeniusClient {
     pub async fn find_song(&self, artist: &str, title: &str) -> Result<Option<SongHit>, String> {
         // Bearer search first - gives real song ID for annotations API
         if self.token.as_deref().is_some_and(|t| !t.is_empty()) {
-            let hits = search::search(&self.client, artist, title, self.token.as_deref()).await
+            let hits = search::search(&self.client, artist, title, self.token.as_deref())
+                .await
                 .unwrap_or_default();
             if let Some(hit) = hits.into_iter().next() {
                 tracing::info!("Genius: found via Bearer search (id={})", hit.id);
@@ -66,7 +67,8 @@ impl GeniusClient {
         Ok(hit)
     }
 
-    /// Fetch lyrics for a song given its Genius path (e.g., "/Fidlar-wasted-lyrics").
+    /// Fetch lyrics for a song given its Genius path (e.g.,
+    /// "/Fidlar-wasted-lyrics").
     pub async fn fetch_lyrics(&self, song_path: &str) -> Result<(String, String), String> {
         scrape::fetch_lyrics(&self.client, song_path).await
     }
@@ -79,7 +81,8 @@ impl GeniusClient {
     /// Search and fetch lyrics in one call.
     /// Tries slug URL first (with and without parenthetical extras),
     /// then search API + bearer search, then public search.
-    /// Returns (hit, lyrics). Validates hit matches query for search API results.
+    /// Returns (hit, lyrics). Validates hit matches query for search API
+    /// results.
     pub async fn find_and_fetch(
         &self,
         artist: &str,
@@ -108,13 +111,22 @@ impl GeniusClient {
             .await?
             .ok_or_else(|| format!("No Genius result for '{} - {}'", artist, title))?;
         if !search::hit_matches_query(&hit, artist, title) {
-            tracing::warn!("Genius: hit '{} - {}' rejected (query mismatch)", hit.artist, hit.title);
+            tracing::warn!(
+                "Genius: hit '{} - {}' rejected (query mismatch)",
+                hit.artist,
+                hit.title
+            );
             return Err(format!(
                 "Genius hit '{} - {}' does not match query '{} - {}'",
                 hit.artist, hit.title, artist, title
             ));
         }
-        tracing::info!("Genius: search hit '{} - {}' path={}", hit.artist, hit.title, hit.path);
+        tracing::info!(
+            "Genius: search hit '{} - {}' path={}",
+            hit.artist,
+            hit.title,
+            hit.path
+        );
         let (lyrics, _) = self.fetch_lyrics(&hit.path).await?;
         Ok((hit, lyrics))
     }
@@ -141,7 +153,8 @@ impl GeniusClient {
 
     /// Search and fetch both lyrics and annotations in one call.
     /// Tries full slug, simplified slug, Bearer search, then public search.
-    /// Uses API for annotations when token is available, falls back to page scrape.
+    /// Uses API for annotations when token is available, falls back to page
+    /// scrape.
     pub async fn find_fetch_all(
         &self,
         artist: &str,
@@ -161,20 +174,29 @@ impl GeniusClient {
                     if simple_title != title {
                         let simple_hit = search::hit_from_path(artist, simple_title);
                         if let Ok((l, _)) = self.fetch_lyrics(&simple_hit.path).await {
-                            let real_hit = self.find_song(artist, title).await?.unwrap_or(simple_hit);
-                            let annotations = self.fetch_annotations_with_token(&real_hit.path, real_hit.id).await.unwrap_or_default();
+                            let real_hit =
+                                self.find_song(artist, title).await?.unwrap_or(simple_hit);
+                            let annotations = self
+                                .fetch_annotations_with_token(&real_hit.path, real_hit.id)
+                                .await
+                                .unwrap_or_default();
                             return Ok((real_hit, l, annotations));
                         }
                     }
                     // Fallback to search API
-                    let h = self.find_song(artist, title).await?
+                    let h = self
+                        .find_song(artist, title)
+                        .await?
                         .ok_or_else(|| format!("No Genius result for '{} - {}'", artist, title))?;
                     let (l, _) = self.fetch_lyrics(&h.path).await?;
                     (l, h)
                 }
             }
         };
-        let annotations = self.fetch_annotations_with_token(&hit.path, hit.id).await.unwrap_or_default();
+        let annotations = self
+            .fetch_annotations_with_token(&hit.path, hit.id)
+            .await
+            .unwrap_or_default();
         Ok((hit, lyrics, annotations))
     }
 }

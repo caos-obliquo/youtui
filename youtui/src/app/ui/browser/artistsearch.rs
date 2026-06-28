@@ -136,13 +136,25 @@ impl ActionHandler<BrowserArtistsAction> for ArtistSearchBrowser {
             BrowserArtistsAction::SubscribeToArtist => {
                 let selected = self.artist_search_panel.get_selected_item();
                 if let Some(artist) = self.artist_search_panel.list.get(selected) {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(artist.browse_id.clone()))).into();
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::SubscribeToArtistFromLibrary(
+                            artist.browse_id.clone(),
+                        )),
+                    )
+                        .into();
                 }
             }
             BrowserArtistsAction::UnsubscribeFromArtist => {
                 let selected = self.artist_search_panel.get_selected_item();
                 if let Some(artist) = self.artist_search_panel.list.get(selected) {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![artist.browse_id.clone()]))).into();
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![
+                            artist.browse_id.clone(),
+                        ])),
+                    )
+                        .into();
                 }
             }
         }
@@ -222,7 +234,13 @@ impl ArtistSearchBrowser {
         if self.artist_search_panel.route == search_panel::ArtistInputRouting::Search
             && self.artist_search_panel.search_popped
         {
-            Some(self.artist_search_panel.search.search_contents.mode_char().to_string())
+            Some(
+                self.artist_search_panel
+                    .search
+                    .search_contents
+                    .mode_char()
+                    .to_string(),
+            )
         } else {
             None
         }
@@ -317,7 +335,10 @@ impl ArtistSearchBrowser {
             Some(Constraint::new_kill_same_type()),
         )
     }
-    pub fn load_artist_by_id(&mut self, channel_id: ArtistChannelID<'static>) -> ComponentEffect<Self> {
+    pub fn load_artist_by_id(
+        &mut self,
+        channel_id: ArtistChannelID<'static>,
+    ) -> ComponentEffect<Self> {
         self.change_routing(InputRouting::Song);
         self.artist_search_panel.search_popped = false;
         self.album_songs_panel.clear_songs();
@@ -384,7 +405,9 @@ impl ArtistSearchBrowser {
     pub fn view_lyrics(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.album_songs_panel.get_selected_item();
         if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
-            let artist = song.artists.iter()
+            let artist = song
+                .artists
+                .iter()
                 .map(|a| a.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -401,7 +424,10 @@ impl ArtistSearchBrowser {
     pub fn copy_song_url(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.album_songs_panel.get_selected_item();
         if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
-            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+            let raw_url = format!(
+                "https://music.youtube.com/watch?v={}",
+                song.video_id.get_raw()
+            );
             crate::app::structures::copy_to_clipboard(&raw_url);
             tracing::info!("Copied URL: {}", raw_url);
         }
@@ -409,10 +435,10 @@ impl ArtistSearchBrowser {
     }
     pub fn go_to_artist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.album_songs_panel.get_selected_item();
-        if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
-            if let Some(cb) = crate::app::ui::browser::shared_components::navigate_to_artist(song) {
-                return (AsyncTask::new_no_op(), Some(cb));
-            }
+        if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx)
+            && let Some(cb) = crate::app::ui::browser::shared_components::navigate_to_artist(song)
+        {
+            return (AsyncTask::new_no_op(), Some(cb));
         }
         (AsyncTask::new_no_op(), None)
     }
@@ -429,7 +455,10 @@ impl ArtistSearchBrowser {
     pub fn get_related_tracks(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.album_songs_panel.get_selected_item();
         if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
-            return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::GetRelatedTracks(song.video_id.clone())),
+            );
         }
         (AsyncTask::new_no_op(), None)
     }
@@ -680,10 +709,18 @@ mod tests {
             .search
             .search_contents
             .set_text("Search!");
-        let browser_text = browser.artist_search_panel.search.search_contents.get_text();
+        let browser_text = browser
+            .artist_search_panel
+            .search
+            .search_contents
+            .get_text();
         assert!(!browser_text.is_empty());
         let _ = browser.handle_text_entry_action(crate::app::ui::action::TextEntryAction::Submit);
-        let browser_text = browser.artist_search_panel.search.search_contents.get_text();
+        let browser_text = browser
+            .artist_search_panel
+            .search
+            .search_contents
+            .get_text();
         assert!(browser_text.is_empty());
     }
     #[test]

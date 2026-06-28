@@ -1,11 +1,11 @@
 /// Traits related to viewable application components.
 use super::structures::{ListSong, ListSongDisplayableField, Percentage};
 use crate::widgets::{ScrollingListState, ScrollingTableState};
-use vi_text_editor::ViTextEditor;
 use ratatui::Frame;
 use ratatui::prelude::{Constraint, Rect};
 use ratatui::widgets::ListState;
 use std::borrow::Cow;
+use vi_text_editor::ViTextEditor;
 
 pub mod draw;
 
@@ -32,7 +32,10 @@ pub enum Filter {
 }
 #[derive(Clone, Debug)]
 pub enum FilterString {
-    CaseInsensitive { original: String, lowercased: String },
+    CaseInsensitive {
+        original: String,
+        lowercased: String,
+    },
 }
 
 impl TableFilterCommand {
@@ -129,9 +132,11 @@ pub trait TableView {
     fn get_highlighted_row(&self) -> Option<usize>;
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_>;
     fn get_headings(&self) -> impl Iterator<Item = &'static str>;
-    /// Visual selection range for vim-style visual mode: (start, end) inclusive.
-    /// Rows in this range get visual_range_style applied.
-    fn get_visual_range(&self) -> Option<(usize, usize)> { None }
+    /// Visual selection range for vim-style visual mode: (start, end)
+    /// inclusive. Rows in this range get visual_range_style applied.
+    fn get_visual_range(&self) -> Option<(usize, usize)> {
+        None
+    }
 }
 /// TableView with built in filtering and sorting.
 pub trait AdvancedTableView: TableView {

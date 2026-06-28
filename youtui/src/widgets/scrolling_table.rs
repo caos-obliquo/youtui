@@ -55,7 +55,8 @@ pub struct ScrollingTable<I, H> {
     secondary_highlight_row: Option<usize>,
     /// Style used to render secondary highlighted row
     secondary_row_highlight_style: Style,
-    /// Visual selection range: all rows from start to end inclusive get highlighted
+    /// Visual selection range: all rows from start to end inclusive get
+    /// highlighted
     visual_range: Option<(usize, usize)>,
     /// Style used to render visual range rows
     visual_range_style: Style,
@@ -254,9 +255,9 @@ where
             // widget, so it's handled manually here.
             let window_abs = offset + idx;
             let row_style = if secondary_highlight_row == Some(window_abs) {
-                secondary_row_highlight_style.clone()
-            } else if visual_range.map_or(false, |(start, end)| window_abs >= start && window_abs <= end) {
-                visual_range_style.clone()
+                secondary_row_highlight_style
+            } else if visual_range.is_some_and(|(start, end)| window_abs >= start && window_abs <= end) {
+                visual_range_style
             } else {
                 Default::default()
             };

@@ -5,7 +5,10 @@
 use std::borrow::Cow;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-pub enum FindDir { Forward, Backward }
+pub enum FindDir {
+    Forward,
+    Backward,
+}
 
 #[derive(Clone)]
 enum LastChange {
@@ -51,8 +54,8 @@ pub enum ViMode {
     Search(FindDir, String), // (direction, query)
     OperatorPending(char),
     TextObjectPending(char, char), // (i/a, operator)
-    SurroundAddPending(char), // (operator) - awaiting motion/text-object + char
-    SurroundTargetChar(char), // (operator) - awaiting the target surround char (for cs)
+    SurroundAddPending(char),      // (operator) - awaiting motion/text-object + char
+    SurroundTargetChar(char),      // (operator) - awaiting the target surround char (for cs)
 }
 
 impl Default for ViTextEditor {
@@ -92,13 +95,18 @@ impl ViTextEditor {
         }
     }
 
-    /// Get the visual selection line range (start, end), or None if not in visual line/block mode
+    /// Get the visual selection line range (start, end), or None if not in
+    /// visual line/block mode
     pub fn visual_line_range(&self) -> Option<(usize, usize)> {
         match self.mode {
             ViMode::VisualLine => {
                 let start = self.buffer[..self.visual_start].matches('\n').count();
                 let end = self.cursor_line();
-                if start <= end { Some((start, end)) } else { Some((end, start)) }
+                if start <= end {
+                    Some((start, end))
+                } else {
+                    Some((end, start))
+                }
             }
             ViMode::VisualBlock => {
                 let s = self.block_start_line();
@@ -109,7 +117,8 @@ impl ViTextEditor {
         }
     }
 
-    /// Get block selection range: (top, left, bottom, right) in visual block mode
+    /// Get block selection range: (top, left, bottom, right) in visual block
+    /// mode
     pub fn visual_block_range(&self) -> Option<(usize, usize, usize, usize)> {
         match self.mode {
             ViMode::VisualBlock => {
@@ -125,16 +134,23 @@ impl ViTextEditor {
     }
 
     pub fn cursor_col(&self) -> usize {
-        let last_nl = self.buffer[..self.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let last_nl = self.buffer[..self.cursor]
+            .rfind('\n')
+            .map(|i| i + 1)
+            .unwrap_or(0);
         self.cursor - last_nl
     }
 
     fn line_start(&self) -> usize {
-        self.buffer[..self.cursor].rfind('\n').map(|i| i + 1).unwrap_or(0)
+        self.buffer[..self.cursor]
+            .rfind('\n')
+            .map(|i| i + 1)
+            .unwrap_or(0)
     }
 
     fn line_end(&self) -> usize {
-        self.buffer[self.cursor..].find('\n')
+        self.buffer[self.cursor..]
+            .find('\n')
             .map(|i| self.cursor + i)
             .unwrap_or(self.buffer.len())
     }
@@ -143,7 +159,10 @@ impl ViTextEditor {
         let start = self.line_start();
         let end = self.line_end();
         let rest = &self.buffer[start..end];
-        let ws_count = rest.bytes().position(|b| b != b' ' && b != b'\t').unwrap_or(0);
+        let ws_count = rest
+            .bytes()
+            .position(|b| b != b' ' && b != b'\t')
+            .unwrap_or(0);
         start + ws_count
     }
 
@@ -186,7 +205,8 @@ impl ViTextEditor {
         }
     }
 
-    /// Render with cursor block. Single-line: inline cursor. Multiline: per-line.
+    /// Render with cursor block. Single-line: inline cursor. Multiline:
+    /// per-line.
     pub fn render_simple(&self, prefix: &str) -> String {
         if !self.multiline {
             let mark = self.cursor_marker();
@@ -208,7 +228,9 @@ impl ViTextEditor {
         let cur_col = self.cursor_col();
         let mut result = String::new();
         for (i, line_text) in self.buffer.split('\n').enumerate() {
-            if i > 0 { result.push('\n'); }
+            if i > 0 {
+                result.push('\n');
+            }
             if i == cur_line {
                 if cur_col < line_text.len() {
                     result.push_str(&line_text[..cur_col]);
@@ -240,7 +262,10 @@ impl ViTextEditor {
             ViMode::VisualChar => "[v]".into(),
             ViMode::VisualBlock => "[VB]".into(),
             ViMode::Search(dir, query) => {
-                let prefix = match dir { FindDir::Forward => '/', FindDir::Backward => '?' };
+                let prefix = match dir {
+                    FindDir::Forward => '/',
+                    FindDir::Backward => '?',
+                };
                 format!("[{}{}]", prefix, query).into()
             }
             ViMode::OperatorPending(_) => "[OP]".into(),
@@ -252,7 +277,9 @@ impl ViTextEditor {
 
     fn clamp_cursor(&mut self) {
         let len = self.buffer.len();
-        if self.cursor > len { self.cursor = len; }
+        if self.cursor > len {
+            self.cursor = len;
+        }
         while self.cursor > 0 && !self.buffer.is_char_boundary(self.cursor) {
             self.cursor -= 1;
         }
@@ -319,28 +346,37 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Char('h')
             | crossterm::event::KeyCode::Char('H')
             | crossterm::event::KeyCode::Left => {
-                if self.cursor > 0 { self.cursor -= 1; }
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                }
             }
             crossterm::event::KeyCode::Char('l')
             | crossterm::event::KeyCode::Char('L')
             | crossterm::event::KeyCode::Right => {
-                if self.cursor < self.buffer.len() { self.cursor += 1; }
+                if self.cursor < self.buffer.len() {
+                    self.cursor += 1;
+                }
             }
             crossterm::event::KeyCode::Char('j')
             | crossterm::event::KeyCode::Char('J')
-            | crossterm::event::KeyCode::Down if self.multiline => {
+            | crossterm::event::KeyCode::Down
+                if self.multiline =>
+            {
                 let col = self.cursor_col();
                 let after = &self.buffer[self.cursor..];
                 if let Some(nl) = after.find('\n') {
                     self.cursor += nl + 1;
-                    let line_len = self.buffer[self.cursor..].find('\n')
+                    let line_len = self.buffer[self.cursor..]
+                        .find('\n')
                         .unwrap_or(self.buffer.len() - self.cursor);
                     self.cursor += col.min(line_len);
                 }
             }
             crossterm::event::KeyCode::Char('k')
             | crossterm::event::KeyCode::Char('K')
-            | crossterm::event::KeyCode::Up if self.multiline => {
+            | crossterm::event::KeyCode::Up
+                if self.multiline =>
+            {
                 let col = self.cursor_col();
                 let line_start_pos = self.cursor - self.cursor_col();
                 if line_start_pos > 0 {
@@ -353,7 +389,8 @@ impl ViTextEditor {
                 } else {
                     self.cursor = 0;
                 }
-                let line_len = self.buffer[self.cursor..].find('\n')
+                let line_len = self.buffer[self.cursor..]
+                    .find('\n')
                     .unwrap_or(self.buffer.len() - self.cursor);
                 self.cursor += col.min(line_len);
             }
@@ -394,32 +431,50 @@ impl ViTextEditor {
         }
         false
     }
-    
+
     fn handle_visual_block(&mut self, key: crossterm::event::KeyCode) -> bool {
         match key {
             crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('v') => {
                 self.mode = ViMode::Normal;
             }
-            crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Char('J') | crossterm::event::KeyCode::Down if self.multiline => {
+            crossterm::event::KeyCode::Char('j')
+            | crossterm::event::KeyCode::Char('J')
+            | crossterm::event::KeyCode::Down
+                if self.multiline =>
+            {
                 let max = self.buffer.matches('\n').count();
                 let cur = self.cursor_line();
                 if cur < max {
                     let col = self.cursor_col();
-                    self.cursor = line_start_to(&self.buffer, cur + 1) + col.min(line_len(&self.buffer, cur + 1));
+                    self.cursor = line_start_to(&self.buffer, cur + 1)
+                        + col.min(line_len(&self.buffer, cur + 1));
                 }
             }
-            crossterm::event::KeyCode::Char('k') | crossterm::event::KeyCode::Char('K') | crossterm::event::KeyCode::Up if self.multiline => {
+            crossterm::event::KeyCode::Char('k')
+            | crossterm::event::KeyCode::Char('K')
+            | crossterm::event::KeyCode::Up
+                if self.multiline =>
+            {
                 let cur = self.cursor_line();
                 if cur > 0 {
                     let col = self.cursor_col();
-                    self.cursor = line_start_to(&self.buffer, cur - 1) + col.min(line_len(&self.buffer, cur - 1));
+                    self.cursor = line_start_to(&self.buffer, cur - 1)
+                        + col.min(line_len(&self.buffer, cur - 1));
                 }
             }
-            crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Char('H') | crossterm::event::KeyCode::Left => {
-                if self.cursor > 0 { self.cursor -= 1; }
+            crossterm::event::KeyCode::Char('h')
+            | crossterm::event::KeyCode::Char('H')
+            | crossterm::event::KeyCode::Left => {
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                }
             }
-            crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Char('L') | crossterm::event::KeyCode::Right => {
-                if self.cursor < self.buffer.len() { self.cursor += 1; }
+            crossterm::event::KeyCode::Char('l')
+            | crossterm::event::KeyCode::Char('L')
+            | crossterm::event::KeyCode::Right => {
+                if self.cursor < self.buffer.len() {
+                    self.cursor += 1;
+                }
             }
             crossterm::event::KeyCode::Char('y') => {
                 self.clipboard = self.collect_block_text();
@@ -435,7 +490,10 @@ impl ViTextEditor {
     }
 
     fn block_start_col(&self) -> usize {
-        let last_nl = self.buffer[..self.visual_start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let last_nl = self.buffer[..self.visual_start]
+            .rfind('\n')
+            .map(|i| i + 1)
+            .unwrap_or(0);
         self.visual_start - last_nl
     }
 
@@ -460,7 +518,9 @@ impl ViTextEditor {
             let line_str = &self.buffer[start..end];
             let cols = right.min(line_str.len());
             if cols > left {
-                if !result.is_empty() { result.push('\n'); }
+                if !result.is_empty() {
+                    result.push('\n');
+                }
                 result.push_str(&line_str[left..cols]);
             }
         }
@@ -474,8 +534,15 @@ impl ViTextEditor {
             (self.visual_start, self.cursor)
         };
         let lstart = self.buffer[..lo].rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let lend = self.buffer[hi..].find('\n').map(|i| hi + i).unwrap_or(self.buffer.len());
-        let after_nl = if lend < self.buffer.len() { lend + 1 } else { lend };
+        let lend = self.buffer[hi..]
+            .find('\n')
+            .map(|i| hi + i)
+            .unwrap_or(self.buffer.len());
+        let after_nl = if lend < self.buffer.len() {
+            lend + 1
+        } else {
+            lend
+        };
         match key {
             crossterm::event::KeyCode::Esc | crossterm::event::KeyCode::Char('V') => {
                 self.mode = ViMode::Normal;
@@ -507,28 +574,37 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Char('h')
             | crossterm::event::KeyCode::Char('H')
             | crossterm::event::KeyCode::Left => {
-                if self.cursor > 0 { self.cursor -= 1; }
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                }
             }
             crossterm::event::KeyCode::Char('l')
             | crossterm::event::KeyCode::Char('L')
             | crossterm::event::KeyCode::Right => {
-                if self.cursor < self.buffer.len() { self.cursor += 1; }
+                if self.cursor < self.buffer.len() {
+                    self.cursor += 1;
+                }
             }
             crossterm::event::KeyCode::Char('j')
             | crossterm::event::KeyCode::Char('J')
-            | crossterm::event::KeyCode::Down if self.multiline => {
+            | crossterm::event::KeyCode::Down
+                if self.multiline =>
+            {
                 let col = self.cursor_col();
                 let after = &self.buffer[self.cursor..];
                 if let Some(nl) = after.find('\n') {
                     self.cursor += nl + 1;
-                    let line_len = self.buffer[self.cursor..].find('\n')
+                    let line_len = self.buffer[self.cursor..]
+                        .find('\n')
                         .unwrap_or(self.buffer.len() - self.cursor);
                     self.cursor += col.min(line_len);
                 }
             }
             crossterm::event::KeyCode::Char('k')
             | crossterm::event::KeyCode::Char('K')
-            | crossterm::event::KeyCode::Up if self.multiline => {
+            | crossterm::event::KeyCode::Up
+                if self.multiline =>
+            {
                 let col = self.cursor_col();
                 let line_start_pos = self.cursor - self.cursor_col();
                 if line_start_pos > 0 {
@@ -541,7 +617,8 @@ impl ViTextEditor {
                 } else {
                     self.cursor = 0;
                 }
-                let line_len = self.buffer[self.cursor..].find('\n')
+                let line_len = self.buffer[self.cursor..]
+                    .find('\n')
                     .unwrap_or(self.buffer.len() - self.cursor);
                 self.cursor += col.min(line_len);
             }
@@ -605,7 +682,10 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Backspace if self.cursor > 0 => {
                 self.save_undo();
                 let prev_len = self.buffer[..self.cursor]
-                    .chars().last().map(|c| c.len_utf8()).unwrap_or(1);
+                    .chars()
+                    .last()
+                    .map(|c| c.len_utf8())
+                    .unwrap_or(1);
                 self.cursor -= prev_len;
                 self.buffer.remove(self.cursor);
                 self.insert_buffer.pop();
@@ -618,7 +698,10 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Left if self.cursor > 0 => {
                 let prev_len = self.buffer[..self.cursor]
-                    .chars().last().map(|c| c.len_utf8()).unwrap_or(1);
+                    .chars()
+                    .last()
+                    .map(|c| c.len_utf8())
+                    .unwrap_or(1);
                 self.cursor -= prev_len;
             }
             crossterm::event::KeyCode::Right if self.cursor < self.buffer.len() => {
@@ -669,7 +752,9 @@ impl ViTextEditor {
     }
 
     fn find_next(&self, query: &str, from: usize, forward: bool) -> Option<usize> {
-        if query.is_empty() { return None; }
+        if query.is_empty() {
+            return None;
+        }
         let buf = &self.buffer;
         if forward {
             if let Some(pos) = buf[from..].find(query) {
@@ -700,12 +785,18 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Char('a') => {
                 self.insert_buffer.clear();
-                if self.cursor < self.buffer.len() { self.cursor += 1; }
+                if self.cursor < self.buffer.len() {
+                    self.cursor += 1;
+                }
                 self.mode = ViMode::Insert;
             }
             crossterm::event::KeyCode::Char('I') => {
                 self.insert_buffer.clear();
-                self.cursor = if self.multiline { self.line_first_non_whitespace() } else { 0 };
+                self.cursor = if self.multiline {
+                    self.line_first_non_whitespace()
+                } else {
+                    0
+                };
                 self.mode = ViMode::Insert;
             }
             crossterm::event::KeyCode::Char('A') => {
@@ -715,7 +806,11 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Char('o') if self.multiline => {
                 let pos = self.cursor;
-                let nl_pos = if pos < self.buffer.len() { pos + 1 } else { pos };
+                let nl_pos = if pos < self.buffer.len() {
+                    pos + 1
+                } else {
+                    pos
+                };
                 self.save_undo();
                 self.buffer.insert(nl_pos, '\n');
                 self.cursor = nl_pos + 1;
@@ -741,7 +836,11 @@ impl ViTextEditor {
                 if self.multiline {
                     let start = self.line_start();
                     let end = self.line_end();
-                    let after_nl = if end < self.buffer.len() { end + 1 } else { end };
+                    let after_nl = if end < self.buffer.len() {
+                        end + 1
+                    } else {
+                        end
+                    };
                     self.clipboard = self.buffer[start..end].to_string();
                     self.buffer.drain(start..after_nl);
                     self.cursor = start.min(self.buffer.len());
@@ -755,11 +854,15 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Char('h') | crossterm::event::KeyCode::Left => {
                 self.want_col = None;
-                if self.cursor > 0 { self.cursor -= 1; }
+                if self.cursor > 0 {
+                    self.cursor -= 1;
+                }
             }
             crossterm::event::KeyCode::Char('l') | crossterm::event::KeyCode::Right => {
                 self.want_col = None;
-                if self.cursor < self.buffer.len() { self.cursor += 1; }
+                if self.cursor < self.buffer.len() {
+                    self.cursor += 1;
+                }
             }
             crossterm::event::KeyCode::Char('b') => {
                 self.want_col = None;
@@ -826,7 +929,9 @@ impl ViTextEditor {
                     self.cursor = start;
                 }
             }
-            crossterm::event::KeyCode::Char('x') if !self.buffer.is_empty() && self.cursor < self.buffer.len() => {
+            crossterm::event::KeyCode::Char('x')
+                if !self.buffer.is_empty() && self.cursor < self.buffer.len() =>
+            {
                 self.save_undo();
                 self.buffer.remove(self.cursor);
                 self.last_change = LastChange::DeleteChar;
@@ -837,14 +942,21 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Char(';') => {
                 if let Some((ch, dir, till)) = self.last_find {
                     let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
-                    if pos < self.buffer.len() { self.cursor = pos; }
+                    if pos < self.buffer.len() {
+                        self.cursor = pos;
+                    }
                 }
             }
             crossterm::event::KeyCode::Char(',') => {
                 if let Some((ch, dir, till)) = self.last_find {
-                    let rev = match dir { FindDir::Forward => FindDir::Backward, FindDir::Backward => FindDir::Forward };
+                    let rev = match dir {
+                        FindDir::Forward => FindDir::Backward,
+                        FindDir::Backward => FindDir::Forward,
+                    };
                     let pos = find_char(&self.buffer, self.cursor, ch, rev, till);
-                    if pos < self.buffer.len() { self.cursor = pos; }
+                    if pos < self.buffer.len() {
+                        self.cursor = pos;
+                    }
                 }
             }
             crossterm::event::KeyCode::Char('/') => {
@@ -862,7 +974,10 @@ impl ViTextEditor {
             }
             crossterm::event::KeyCode::Char('N') => {
                 if let Some((ref query, dir)) = self.last_search.clone() {
-                    let rev = match dir { FindDir::Forward => FindDir::Backward, FindDir::Backward => FindDir::Forward };
+                    let rev = match dir {
+                        FindDir::Forward => FindDir::Backward,
+                        FindDir::Backward => FindDir::Forward,
+                    };
                     if let Some(pos) = self.find_next(query, self.cursor, rev == FindDir::Forward) {
                         self.cursor = pos;
                     }
@@ -954,7 +1069,8 @@ impl ViTextEditor {
                     let after = &self.buffer[self.cursor..];
                     if let Some(nl) = after.find('\n') {
                         self.cursor += nl + 1;
-                        let line_len = self.buffer[self.cursor..].find('\n')
+                        let line_len = self.buffer[self.cursor..]
+                            .find('\n')
                             .unwrap_or(self.buffer.len() - self.cursor);
                         self.cursor += col.min(line_len);
                     }
@@ -983,7 +1099,8 @@ impl ViTextEditor {
                     } else {
                         self.cursor = 0;
                     }
-                    let line_len = self.buffer[self.cursor..].find('\n')
+                    let line_len = self.buffer[self.cursor..]
+                        .find('\n')
                         .unwrap_or(self.buffer.len() - self.cursor);
                     self.cursor += col.min(line_len);
                 } else if self.history_pos > 0 {
@@ -1056,8 +1173,15 @@ impl ViTextEditor {
         // If surround_range is set (from cs), await replacement char
         if let Some(range) = self.surround_range {
             let ch = match key {
-                crossterm::event::KeyCode::Char(c) => { self.surround_range = None; c }
-                _ => { self.surround_range = None; self.mode = ViMode::Normal; return false; }
+                crossterm::event::KeyCode::Char(c) => {
+                    self.surround_range = None;
+                    c
+                }
+                _ => {
+                    self.surround_range = None;
+                    self.mode = ViMode::Normal;
+                    return false;
+                }
             };
             self.surround_wrap_range(ch, range.0, range.1);
             return false;
@@ -1095,7 +1219,11 @@ impl ViTextEditor {
             crossterm::event::KeyCode::Char('s') => {
                 // yss - wrap entire line
                 let start = if self.multiline { self.line_start() } else { 0 };
-                let end = if self.multiline { self.line_end() } else { self.buffer.len() };
+                let end = if self.multiline {
+                    self.line_end()
+                } else {
+                    self.buffer.len()
+                };
                 self.surround_range = Some((start, end));
                 return false;
             }
@@ -1112,24 +1240,38 @@ impl ViTextEditor {
     fn handle_surround_target(&mut self, key: crossterm::event::KeyCode, op: char) -> bool {
         let ch = match key {
             crossterm::event::KeyCode::Char(c) => c,
-            _ => { self.mode = ViMode::Normal; return false; }
+            _ => {
+                self.mode = ViMode::Normal;
+                return false;
+            }
         };
         let (open, close) = self.find_surround_pair(ch);
         let (open, close) = match (open, close) {
             (Some(o), Some(c)) if o < c && o < self.cursor && c > self.cursor => (o, c),
-            _ => { self.mode = ViMode::Normal; return false; }
+            _ => {
+                self.mode = ViMode::Normal;
+                return false;
+            }
         };
         self.save_undo();
         if op == 'd' {
             // ds{ch}: delete both delimiters
-            let close_adj = if close < self.buffer.len() { close + 1 } else { close };
+            let close_adj = if close < self.buffer.len() {
+                close + 1
+            } else {
+                close
+            };
             self.buffer.remove(close_adj - 1);
             self.buffer.remove(open);
             self.cursor = open.min(self.buffer.len());
             self.mode = ViMode::Normal;
         } else if op == 'c' {
             // cs{ch}: waiting for replacement char - enter surround-add with range set
-            let close_adj = if close < self.buffer.len() { close + 1 } else { close };
+            let close_adj = if close < self.buffer.len() {
+                close + 1
+            } else {
+                close
+            };
             self.buffer.remove(close_adj - 1);
             self.buffer.remove(open);
             self.surround_range = Some((open, close_adj - 2));
@@ -1146,9 +1288,11 @@ impl ViTextEditor {
             '<' | '>' => (b'<', b'>'),
             _ => (ch as u8, ch as u8),
         };
-        let open_pos = self.buffer[..self.cursor].rfind(open as char)
+        let open_pos = self.buffer[..self.cursor]
+            .rfind(open as char)
             .or_else(|| self.buffer[..self.cursor].rfind(close as char));
-        let close_pos = self.buffer[self.cursor..].find(close as char)
+        let close_pos = self.buffer[self.cursor..]
+            .find(close as char)
             .or_else(|| self.buffer[self.cursor..].find(open as char));
         (open_pos, close_pos.map(|i| i + self.cursor))
     }
@@ -1161,7 +1305,11 @@ impl ViTextEditor {
                 if self.multiline {
                     let start = self.line_start();
                     let end = self.line_end();
-                    let after_nl = if end < self.buffer.len() { end + 1 } else { end };
+                    let after_nl = if end < self.buffer.len() {
+                        end + 1
+                    } else {
+                        end
+                    };
                     self.clipboard = self.buffer[start..end].to_string();
                     self.buffer.drain(start..after_nl);
                     self.cursor = start.min(self.buffer.len());
@@ -1173,20 +1321,24 @@ impl ViTextEditor {
                 self.last_change = LastChange::DeleteLine;
                 self.mode = ViMode::Normal;
             }
-            (crossterm::event::KeyCode::Char('h'), _) | (crossterm::event::KeyCode::Left, _) if op == 'd' => {
+            (crossterm::event::KeyCode::Char('h'), _) | (crossterm::event::KeyCode::Left, _)
+                if op == 'd' =>
+            {
                 if self.cursor > 0 {
                     self.save_undo();
-                    self.clipboard = self.buffer[self.cursor-1..self.cursor].to_string();
+                    self.clipboard = self.buffer[self.cursor - 1..self.cursor].to_string();
                     self.buffer.remove(self.cursor - 1);
                     self.cursor -= 1;
                     self.last_change = LastChange::DeleteLeft;
                 }
                 self.mode = ViMode::Normal;
             }
-            (crossterm::event::KeyCode::Char('l'), _) | (crossterm::event::KeyCode::Right, _) if op == 'd' => {
+            (crossterm::event::KeyCode::Char('l'), _) | (crossterm::event::KeyCode::Right, _)
+                if op == 'd' =>
+            {
                 if self.cursor < self.buffer.len() {
                     self.save_undo();
-                    self.clipboard = self.buffer[self.cursor..self.cursor+1].to_string();
+                    self.clipboard = self.buffer[self.cursor..self.cursor + 1].to_string();
                     self.buffer.remove(self.cursor);
                     self.last_change = LastChange::DeleteChar;
                 }
@@ -1229,7 +1381,11 @@ impl ViTextEditor {
                 if self.multiline {
                     let start = self.line_start();
                     let end = self.line_end();
-                    let after_nl = if end < self.buffer.len() { end + 1 } else { end };
+                    let after_nl = if end < self.buffer.len() {
+                        end + 1
+                    } else {
+                        end
+                    };
                     self.clipboard = self.buffer[start..end].to_string();
                     self.buffer.drain(start..after_nl);
                     self.cursor = start.min(self.buffer.len());
@@ -1288,7 +1444,9 @@ impl ViTextEditor {
                 let dir = FindDir::Forward;
                 let till = false;
                 let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
-                if pos < self.buffer.len() { self.cursor = pos; }
+                if pos < self.buffer.len() {
+                    self.cursor = pos;
+                }
                 self.last_find = Some((ch, dir, till));
                 self.mode = ViMode::Normal;
             }
@@ -1296,7 +1454,9 @@ impl ViTextEditor {
                 let dir = FindDir::Backward;
                 let till = false;
                 let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
-                if pos < self.buffer.len() { self.cursor = pos; }
+                if pos < self.buffer.len() {
+                    self.cursor = pos;
+                }
                 self.last_find = Some((ch, dir, till));
                 self.mode = ViMode::Normal;
             }
@@ -1304,7 +1464,9 @@ impl ViTextEditor {
                 let dir = FindDir::Forward;
                 let till = true;
                 let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
-                if pos < self.buffer.len() { self.cursor = pos; }
+                if pos < self.buffer.len() {
+                    self.cursor = pos;
+                }
                 self.last_find = Some((ch, dir, till));
                 self.mode = ViMode::Normal;
             }
@@ -1312,7 +1474,9 @@ impl ViTextEditor {
                 let dir = FindDir::Backward;
                 let till = true;
                 let pos = find_char(&self.buffer, self.cursor, ch, dir, till);
-                if pos < self.buffer.len() { self.cursor = pos; }
+                if pos < self.buffer.len() {
+                    self.cursor = pos;
+                }
                 self.last_find = Some((ch, dir, till));
                 self.mode = ViMode::Normal;
             }
@@ -1326,12 +1490,13 @@ impl ViTextEditor {
     fn handle_text_object(&mut self, key: crossterm::event::KeyCode, kind: char, op: char) -> bool {
         let obj_char = match key {
             crossterm::event::KeyCode::Char(c) => c,
-            _ => { self.mode = ViMode::Normal; return false; }
+            _ => {
+                self.mode = ViMode::Normal;
+                return false;
+            }
         };
         let (start, end) = match obj_char {
-            'w' => {
-                current_word_range(&self.buffer, self.cursor)
-            }
+            'w' => current_word_range(&self.buffer, self.cursor),
             '(' | ')' => {
                 if let Some(range) = find_enclosing_pair(&self.buffer, self.cursor, b'(', b')') {
                     range
@@ -1342,29 +1507,47 @@ impl ViTextEditor {
             }
             '"' => {
                 let open = self.buffer[..self.cursor].rfind('"');
-                let close = self.buffer[self.cursor..].find('"').map(|i| self.cursor + i + 1);
+                let close = self.buffer[self.cursor..]
+                    .find('"')
+                    .map(|i| self.cursor + i + 1);
                 match (open, close) {
                     (Some(s), Some(e)) if s < e => (s, e),
-                    _ => { self.mode = ViMode::Normal; return false; }
+                    _ => {
+                        self.mode = ViMode::Normal;
+                        return false;
+                    }
                 }
             }
             '\'' => {
                 let open = self.buffer[..self.cursor].rfind('\'');
-                let close = self.buffer[self.cursor..].find('\'').map(|i| self.cursor + i + 1);
+                let close = self.buffer[self.cursor..]
+                    .find('\'')
+                    .map(|i| self.cursor + i + 1);
                 match (open, close) {
                     (Some(s), Some(e)) if s < e => (s, e),
-                    _ => { self.mode = ViMode::Normal; return false; }
+                    _ => {
+                        self.mode = ViMode::Normal;
+                        return false;
+                    }
                 }
             }
             '`' => {
                 let open = self.buffer[..self.cursor].rfind('`');
-                let close = self.buffer[self.cursor..].find('`').map(|i| self.cursor + i + 1);
+                let close = self.buffer[self.cursor..]
+                    .find('`')
+                    .map(|i| self.cursor + i + 1);
                 match (open, close) {
                     (Some(s), Some(e)) if s < e => (s, e),
-                    _ => { self.mode = ViMode::Normal; return false; }
+                    _ => {
+                        self.mode = ViMode::Normal;
+                        return false;
+                    }
                 }
             }
-            _ => { self.mode = ViMode::Normal; return false; }
+            _ => {
+                self.mode = ViMode::Normal;
+                return false;
+            }
         };
         let (del_start, del_end) = if kind == 'a' {
             let s = match obj_char {
@@ -1382,7 +1565,9 @@ impl ViTextEditor {
                 'w' => {
                     let bytes = self.buffer.as_bytes();
                     let mut e = end;
-                    while e < bytes.len() && bytes[e] == b' ' { e += 1; }
+                    while e < bytes.len() && bytes[e] == b' ' {
+                        e += 1;
+                    }
                     e
                 }
                 _ => end,
@@ -1438,7 +1623,9 @@ impl ViTextEditor {
     }
 
     fn save_undo(&mut self) {
-        if self.undo_stack.is_empty() || self.undo_stack.last().map(|(_, s)| s) != Some(&self.buffer) {
+        if self.undo_stack.is_empty()
+            || self.undo_stack.last().map(|(_, s)| s) != Some(&self.buffer)
+        {
             self.undo_stack.push((self.cursor, self.buffer.clone()));
             if self.undo_stack.len() > 50 {
                 self.undo_stack.remove(0);
@@ -1479,7 +1666,11 @@ impl ViTextEditor {
                 if self.multiline {
                     let start = self.line_start();
                     let end = self.line_end();
-                    let after_nl = if end < self.buffer.len() { end + 1 } else { end };
+                    let after_nl = if end < self.buffer.len() {
+                        end + 1
+                    } else {
+                        end
+                    };
                     self.clipboard = self.buffer[start..end].to_string();
                     self.buffer.drain(start..after_nl);
                     self.cursor = start.min(self.buffer.len());
@@ -1530,7 +1721,7 @@ impl ViTextEditor {
             LastChange::DeleteLeft => {
                 if self.cursor > 0 {
                     self.save_undo();
-                    self.clipboard = self.buffer[self.cursor-1..self.cursor].to_string();
+                    self.clipboard = self.buffer[self.cursor - 1..self.cursor].to_string();
                     self.buffer.remove(self.cursor - 1);
                     self.cursor -= 1;
                 }
@@ -1546,30 +1737,44 @@ fn is_word_char(c: u8) -> bool {
 fn end_of_word(text: &str, cursor: usize) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
-    if cursor >= len { return len; }
+    if cursor >= len {
+        return len;
+    }
     let mut pos = cursor;
     // Skip spaces to next word
-    while pos < len && bytes[pos] == b' ' { pos += 1; }
-    if pos >= len { return len; }
+    while pos < len && bytes[pos] == b' ' {
+        pos += 1;
+    }
+    if pos >= len {
+        return len;
+    }
     // Determine type at this position
     let is_word = is_word_char(bytes[pos]);
     // Move to end of this group
-    while pos < len && is_word_char(bytes[pos]) == is_word { pos += 1; }
+    while pos < len && is_word_char(bytes[pos]) == is_word {
+        pos += 1;
+    }
     (pos - 1).max(cursor)
 }
 
 fn prev_word_boundary(text: &str, cursor: usize) -> usize {
-    if cursor == 0 { return 0; }
+    if cursor == 0 {
+        return 0;
+    }
     let bytes = text.as_bytes();
     let mut pos = cursor.saturating_sub(1);
     // Skip spaces
-    while pos > 0 && bytes[pos] == b' ' { pos -= 1; }
+    while pos > 0 && bytes[pos] == b' ' {
+        pos -= 1;
+    }
     // Determine type at this position
     let is_word = is_word_char(bytes[pos]);
     // Skip backward through this group
     while pos > 0 {
         let next = pos - 1;
-        if bytes[next] == b' ' || is_word_char(bytes[next]) != is_word { break; }
+        if bytes[next] == b' ' || is_word_char(bytes[next]) != is_word {
+            break;
+        }
         pos = next;
     }
     pos
@@ -1578,19 +1783,27 @@ fn prev_word_boundary(text: &str, cursor: usize) -> usize {
 fn next_word_boundary(text: &str, cursor: usize) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
-    if cursor >= len { return len; }
+    if cursor >= len {
+        return len;
+    }
     let mut pos = cursor;
     // If at space, skip to next non-space
     if bytes[pos] == b' ' {
-        while pos < len && bytes[pos] == b' ' { pos += 1; }
+        while pos < len && bytes[pos] == b' ' {
+            pos += 1;
+        }
         return pos;
     }
     // Determine current type
     let is_word = is_word_char(bytes[pos]);
     // Skip through this group
-    while pos < len && is_word_char(bytes[pos]) == is_word { pos += 1; }
+    while pos < len && is_word_char(bytes[pos]) == is_word {
+        pos += 1;
+    }
     // Skip spaces
-    while pos < len && bytes[pos] == b' ' { pos += 1; }
+    while pos < len && bytes[pos] == b' ' {
+        pos += 1;
+    }
     pos
 }
 
@@ -1603,9 +1816,13 @@ fn current_word_range(text: &str, cursor: usize) -> (usize, usize) {
     // If at space, find surrounding space range
     if bytes[cursor] == b' ' {
         let mut start = cursor;
-        while start > 0 && bytes[start - 1] == b' ' { start -= 1; }
+        while start > 0 && bytes[start - 1] == b' ' {
+            start -= 1;
+        }
         let mut end = cursor + 1;
-        while end < len && bytes[end] == b' ' { end += 1; }
+        while end < len && bytes[end] == b' ' {
+            end += 1;
+        }
         return (start, end);
     }
     // Determine type at cursor
@@ -1614,19 +1831,25 @@ fn current_word_range(text: &str, cursor: usize) -> (usize, usize) {
     let mut start = cursor;
     while start > 0 {
         let prev = start - 1;
-        if bytes[prev] == b' ' || is_word_char(bytes[prev]) != is_word { break; }
+        if bytes[prev] == b' ' || is_word_char(bytes[prev]) != is_word {
+            break;
+        }
         start = prev;
     }
     // Find end of current group
     let mut end = cursor + 1;
-    while end < len && is_word_char(bytes[end]) == is_word { end += 1; }
+    while end < len && is_word_char(bytes[end]) == is_word {
+        end += 1;
+    }
     (start, end)
 }
 
 fn next_big_word_boundary(text: &str, cursor: usize) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
-    if cursor >= len { return len; }
+    if cursor >= len {
+        return len;
+    }
     let mut pos = cursor;
     while pos < len && bytes[pos] != b' ' {
         pos += 1;
@@ -1638,7 +1861,9 @@ fn next_big_word_boundary(text: &str, cursor: usize) -> usize {
 }
 
 fn prev_big_word_boundary(text: &str, cursor: usize) -> usize {
-    if cursor == 0 { return 0; }
+    if cursor == 0 {
+        return 0;
+    }
     let bytes = text.as_bytes();
     let mut pos = cursor.saturating_sub(1);
     while pos > 0 && bytes[pos] != b' ' {
@@ -1656,28 +1881,42 @@ fn prev_big_word_boundary(text: &str, cursor: usize) -> usize {
 fn end_of_big_word(text: &str, cursor: usize) -> usize {
     let bytes = text.as_bytes();
     let len = bytes.len();
-    if cursor >= len { return len; }
+    if cursor >= len {
+        return len;
+    }
     let mut pos = cursor;
     if pos < len && bytes[pos] == b' ' {
-        while pos < len && bytes[pos] == b' ' { pos += 1; }
+        while pos < len && bytes[pos] == b' ' {
+            pos += 1;
+        }
     }
     while pos < len && bytes[pos] != b' ' {
         pos += 1;
     }
-    if pos > cursor { pos - 1 } else { cursor }
+    if pos > cursor {
+        pos - 1
+    } else {
+        cursor
+    }
 }
 
 fn find_enclosing_pair(text: &str, cursor: usize, open: u8, close: u8) -> Option<(usize, usize)> {
     let bytes = text.as_bytes();
     let len = bytes.len();
-    if cursor >= len { return None; }
+    if cursor >= len {
+        return None;
+    }
     let mut depth = 0;
     let open_pos = {
         let mut found = None;
         for (i, &b) in bytes[..cursor].iter().enumerate().rev() {
-            if b == close { depth += 1; }
-            else if b == open {
-                if depth == 0 { found = Some(i); break; }
+            if b == close {
+                depth += 1;
+            } else if b == open {
+                if depth == 0 {
+                    found = Some(i);
+                    break;
+                }
                 depth -= 1;
             }
         }
@@ -1688,9 +1927,13 @@ fn find_enclosing_pair(text: &str, cursor: usize, open: u8, close: u8) -> Option
     let close_pos = {
         let mut found = None;
         for (i, &b) in bytes.iter().enumerate().skip(open_pos + 1) {
-            if b == open { depth += 1; }
-            else if b == close {
-                if depth == 0 { found = Some(i); break; }
+            if b == open {
+                depth += 1;
+            } else if b == close {
+                if depth == 0 {
+                    found = Some(i);
+                    break;
+                }
                 depth -= 1;
             }
         }
@@ -1716,23 +1959,32 @@ fn switch_number(text: &str, cursor: usize, delta: i64) -> Option<(usize, usize,
     let num_str = &text[start..end];
     let num: i64 = num_str.parse().ok()?;
     let new_num = num + delta;
-    let new_str = if new_num < 0 { 0i64.to_string() } else { new_num.to_string() };
+    let new_str = if new_num < 0 {
+        0i64.to_string()
+    } else {
+        new_num.to_string()
+    };
     Some((start, end, new_str))
 }
 
 fn find_matching_bracket(text: &str, cursor: usize) -> Option<usize> {
     let bytes = text.as_bytes();
     let len = bytes.len();
-    if cursor >= len { return None; }
+    if cursor >= len {
+        return None;
+    }
     let open_close: &[(u8, u8)] = &[(b'(', b')'), (b'[', b']'), (b'{', b'}')];
     // Check if cursor is on an opening bracket
     for &(open, close) in open_close {
         if bytes[cursor] == open {
             let mut depth = 0;
             for (i, &b) in bytes.iter().enumerate().skip(cursor + 1) {
-                if b == open { depth += 1; }
-                else if b == close {
-                    if depth == 0 { return Some(i); }
+                if b == open {
+                    depth += 1;
+                } else if b == close {
+                    if depth == 0 {
+                        return Some(i);
+                    }
                     depth -= 1;
                 }
             }
@@ -1744,9 +1996,12 @@ fn find_matching_bracket(text: &str, cursor: usize) -> Option<usize> {
         if bytes[cursor] == close {
             let mut depth = 0;
             for (i, &b) in bytes[..cursor].iter().enumerate().rev() {
-                if b == close { depth += 1; }
-                else if b == open {
-                    if depth == 0 { return Some(i); }
+                if b == close {
+                    depth += 1;
+                } else if b == open {
+                    if depth == 0 {
+                        return Some(i);
+                    }
                     depth -= 1;
                 }
             }
@@ -1762,7 +2017,11 @@ fn find_char(text: &str, cursor: usize, ch: char, dir: FindDir, till: bool) -> u
     let target = ch as u8;
     match dir {
         FindDir::Forward => {
-            let start = if cursor + 1 < len { cursor + 1 } else { return len; };
+            let start = if cursor + 1 < len {
+                cursor + 1
+            } else {
+                return len;
+            };
             for (i, &b) in bytes.iter().enumerate().skip(start) {
                 if b == target {
                     return if till { i.saturating_sub(1) } else { i };
@@ -1771,7 +2030,9 @@ fn find_char(text: &str, cursor: usize, ch: char, dir: FindDir, till: bool) -> u
             len
         }
         FindDir::Backward => {
-            if cursor == 0 { return 0; }
+            if cursor == 0 {
+                return 0;
+            }
             let end = cursor;
             for (i, &b) in bytes[..end].iter().enumerate().rev() {
                 if b == target {
@@ -2377,9 +2638,16 @@ mod tests {
         e.handle_key(crossterm::event::KeyCode::Char('0'), false, false);
         assert_eq!(e.cursor_line(), 3, "still on last line");
         assert!(e.cursor > 0, "cursor should NOT be at buffer start (0)");
-        assert!(e.cursor > e.buffer.rfind('\n').unwrap(), "cursor should be past last newline");
+        assert!(
+            e.cursor > e.buffer.rfind('\n').unwrap(),
+            "cursor should be past last newline"
+        );
         // cursor should be on 'line three'
-        assert_eq!(&e.buffer[e.cursor..], "line three", "cursor at start of 'line three'");
+        assert_eq!(
+            &e.buffer[e.cursor..],
+            "line three",
+            "cursor at start of 'line three'"
+        );
     }
 
     #[test]
@@ -2608,11 +2876,30 @@ mod tests {
         use proptest::prelude::*;
 
         fn assert_invariants(e: &ViTextEditor) {
-            assert!(e.cursor <= e.buffer.len(), "cursor {} > len {}", e.cursor, e.buffer.len());
-            assert!(e.undo_stack.len() <= 50, "undo_stack too large: {}", e.undo_stack.len());
-            assert!(e.redo_stack.len() <= 50, "redo_stack too large: {}", e.redo_stack.len());
+            assert!(
+                e.cursor <= e.buffer.len(),
+                "cursor {} > len {}",
+                e.cursor,
+                e.buffer.len()
+            );
+            assert!(
+                e.undo_stack.len() <= 50,
+                "undo_stack too large: {}",
+                e.undo_stack.len()
+            );
+            assert!(
+                e.redo_stack.len() <= 50,
+                "redo_stack too large: {}",
+                e.redo_stack.len()
+            );
             if let Some((s, e_)) = e.surround_range {
-                assert!(s <= e_ && e_ <= e.buffer.len(), "surround_range {}..{} out of bounds for len {}", s, e_, e.buffer.len());
+                assert!(
+                    s <= e_ && e_ <= e.buffer.len(),
+                    "surround_range {}..{} out of bounds for len {}",
+                    s,
+                    e_,
+                    e.buffer.len()
+                );
             }
         }
 

@@ -1,10 +1,10 @@
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 use ytmapi_rs::common::PlaylistID;
 use ytmapi_rs::query::playlist::PrivacyStatus;
 
@@ -46,7 +46,17 @@ impl PlaylistEditPopup {
         }
     }
 
-    pub fn handle_key(&mut self, event: KeyEvent) -> (async_callback_manager::AsyncTask<Self, crate::app::server::ArcServer, crate::app::server::TaskMetadata>, Option<AppCallback>) {
+    pub fn handle_key(
+        &mut self,
+        event: KeyEvent,
+    ) -> (
+        async_callback_manager::AsyncTask<
+            Self,
+            crate::app::server::ArcServer,
+            crate::app::server::TaskMetadata,
+        >,
+        Option<AppCallback>,
+    ) {
         match self.edit_mode {
             EditMode::EditingTitle | EditMode::EditingDescription => {
                 match event.code {
@@ -83,42 +93,43 @@ impl PlaylistEditPopup {
             KeyCode::Esc => {
                 return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
             }
-            KeyCode::Enter => {
-                match self.focused_field {
-                    FocusedField::Title => {
-                        self.edit_mode = EditMode::EditingTitle;
-                    }
-                    FocusedField::Description => {
-                        self.edit_mode = EditMode::EditingDescription;
-                    }
-                    FocusedField::Privacy => {
-                        self.privacy = match self.privacy {
-                            PrivacyStatus::Private => PrivacyStatus::Public,
-                            PrivacyStatus::Public => PrivacyStatus::Unlisted,
-                            PrivacyStatus::Unlisted => PrivacyStatus::Private,
-                        };
-                    }
-                    FocusedField::SaveButton => {
-                        let pid = self.playlist_id.clone();
-                        let title = if self.title.trim().is_empty() {
-                            None
-                        } else {
-                            Some(self.title.trim().to_string())
-                        };
-                        let description = if self.description.trim().is_empty() {
-                            None
-                        } else {
-                            Some(self.description.trim().to_string())
-                        };
-                        return (AsyncTask::new_no_op(), Some(AppCallback::EditPlaylistDetailsFromLibrary {
+            KeyCode::Enter => match self.focused_field {
+                FocusedField::Title => {
+                    self.edit_mode = EditMode::EditingTitle;
+                }
+                FocusedField::Description => {
+                    self.edit_mode = EditMode::EditingDescription;
+                }
+                FocusedField::Privacy => {
+                    self.privacy = match self.privacy {
+                        PrivacyStatus::Private => PrivacyStatus::Public,
+                        PrivacyStatus::Public => PrivacyStatus::Unlisted,
+                        PrivacyStatus::Unlisted => PrivacyStatus::Private,
+                    };
+                }
+                FocusedField::SaveButton => {
+                    let pid = self.playlist_id.clone();
+                    let title = if self.title.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.title.trim().to_string())
+                    };
+                    let description = if self.description.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.description.trim().to_string())
+                    };
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::EditPlaylistDetailsFromLibrary {
                             playlist_id: pid,
                             title,
                             description,
                             privacy: Some(self.privacy.clone()),
-                        }));
-                    }
+                        }),
+                    );
                 }
-            }
+            },
             KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => {
                 self.focused_field = match self.focused_field {
                     FocusedField::Title => FocusedField::Description,
@@ -135,13 +146,11 @@ impl PlaylistEditPopup {
                     FocusedField::SaveButton => FocusedField::Privacy,
                 };
             }
-            KeyCode::Char('i') => {
-                match self.focused_field {
-                    FocusedField::Title => self.edit_mode = EditMode::EditingTitle,
-                    FocusedField::Description => self.edit_mode = EditMode::EditingDescription,
-                    _ => {}
-                }
-            }
+            KeyCode::Char('i') => match self.focused_field {
+                FocusedField::Title => self.edit_mode = EditMode::EditingTitle,
+                FocusedField::Description => self.edit_mode = EditMode::EditingDescription,
+                _ => {}
+            },
             _ => {}
         }
         (AsyncTask::new_no_op(), None)
@@ -235,9 +244,7 @@ impl PlaylistEditPopup {
             EditMode::EditingTitle | EditMode::EditingDescription => {
                 "Type to edit | Enter: Done | Esc: Cancel"
             }
-            EditMode::Idle => {
-                "j/k: Navigate | i: Edit | Enter: Toggle/Confirm | Esc: Cancel"
-            }
+            EditMode::Idle => "j/k: Navigate | i: Edit | Enter: Toggle/Confirm | Esc: Cancel",
         };
         let instructions_widget = Paragraph::new(instructions)
             .alignment(Alignment::Center)

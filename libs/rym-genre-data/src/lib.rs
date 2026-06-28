@@ -54,9 +54,7 @@ pub fn all_descriptors() -> &'static [Descriptor] {
 pub fn find_genre(name: &str) -> Option<&'static Genre> {
     let key = name.to_lowercase();
     let data = get_data();
-    data.genres_by_name
-        .get(&key)
-        .map(|&i| &data.genres[i])
+    data.genres_by_name.get(&key).map(|&i| &data.genres[i])
 }
 
 /// Normalize a free-text style/genre string to the canonical RYM name.
@@ -85,19 +83,17 @@ pub fn normalize_style(style: &str) -> Option<&'static str> {
         let gname = genre.name.to_lowercase();
         // Direct substring
         if gname.contains(trimmed) || trimmed.contains(&gname) {
-            let score = trimmed.len().min(gname.len()) as f64
-                / trimmed.len().max(gname.len()) as f64;
-            if best.as_ref().map_or(true, |(_, s)| score > *s) {
+            let score =
+                trimmed.len().min(gname.len()) as f64 / trimmed.len().max(gname.len()) as f64;
+            if best.as_ref().is_none_or(|(_, s)| score > *s) {
                 best = Some((genre, score));
             }
             continue;
         }
         // Trigram overlap
         let overlap = trigram_overlap(trimmed, &gname);
-        if overlap >= 0.6 {
-            if best.as_ref().map_or(true, |(_, s)| overlap > *s) {
-                best = Some((genre, overlap));
-            }
+        if overlap >= 0.6 && best.as_ref().is_none_or(|(_, s)| overlap > *s) {
+            best = Some((genre, overlap));
         }
     }
 
@@ -141,10 +137,7 @@ fn load_descriptions() -> std::collections::HashMap<String, String> {
 
 // ─── Hierarchy Parser ───
 
-fn parse_hierarchy(
-    raw: &str,
-    descriptions: &std::collections::HashMap<String, String>,
-) -> RymData {
+fn parse_hierarchy(raw: &str, descriptions: &std::collections::HashMap<String, String>) -> RymData {
     let mut genres = Vec::new();
     let mut descriptors = Vec::new();
     let mut path_stack: Vec<(usize, String)> = Vec::new(); // (level, name)
@@ -181,10 +174,7 @@ fn parse_hierarchy(
             .unwrap_or("");
 
         // Maintain the path stack for this level
-        while path_stack
-            .last()
-            .map_or(false, |(l, _)| *l >= level)
-        {
+        while path_stack.last().is_some_and(|(l, _)| *l >= level) {
             path_stack.pop();
         }
 
@@ -215,8 +205,7 @@ fn parse_hierarchy(
                 if !suffix.is_empty() {
                     // Skip section root (index 0 = "Descriptors"), get first real category
                     let category = path_stack
-                        .iter()
-                        .nth(1)
+                        .get(1)
                         .map(|(_, n)| n.clone())
                         .unwrap_or_default();
                     descriptors.push(Descriptor {
@@ -296,7 +285,11 @@ mod tests {
     #[test]
     fn test_descriptors_loaded() {
         let all = all_descriptors();
-        assert!(all.len() > 200, "Expected 200+ descriptors, got {}", all.len());
+        assert!(
+            all.len() > 200,
+            "Expected 200+ descriptors, got {}",
+            all.len()
+        );
         assert!(find_descriptor("Apocalyptic").is_some());
         assert!(find_descriptor("Dark").is_some());
     }
@@ -322,7 +315,10 @@ mod tests {
     fn test_normalize_trigram() {
         // "neoclassic metal" → "Neoclassical Metal" via trigram overlap
         let result = normalize_style("neoclassic metal");
-        assert!(result.is_some(), "neoclassic metal should match via trigram");
+        assert!(
+            result.is_some(),
+            "neoclassic metal should match via trigram"
+        );
     }
 
     #[test]
@@ -354,14 +350,33 @@ mod tests {
     #[test]
     fn test_scenes_and_movements_included() {
         // Scenes & Movements section should be parsed as genres
-        assert!(find_genre("Riot Grrrl").is_some(), "Riot Grrrl (scene) should be present");
-        assert!(find_genre("Visual kei").is_some(), "Visual kei (scene) should be present");
-        assert!(find_genre("Straight Edge").is_some(), "Straight Edge (movement) should be present");
+        assert!(
+            find_genre("Riot Grrrl").is_some(),
+            "Riot Grrrl (scene) should be present"
+        );
+        assert!(
+            find_genre("Visual kei").is_some(),
+            "Visual kei (scene) should be present"
+        );
+        assert!(
+            find_genre("Straight Edge").is_some(),
+            "Straight Edge (movement) should be present"
+        );
         // Verify total includes scenes
         let total = all_genres().len();
-        let scene_genres = all_genres().iter()
-            .filter(|g| g.path.first().map(|p| p == "Scenes & Movements").unwrap_or(false))
+        let scene_genres = all_genres()
+            .iter()
+            .filter(|g| {
+                g.path
+                    .first()
+                    .map(|p| p == "Scenes & Movements")
+                    .unwrap_or(false)
+            })
             .count();
-        assert!(scene_genres > 100, "Expected 100+ scenes/movements, got {}", scene_genres);
+        assert!(
+            scene_genres > 100,
+            "Expected 100+ scenes/movements, got {}",
+            scene_genres
+        );
     }
 }

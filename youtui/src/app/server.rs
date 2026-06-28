@@ -1,6 +1,6 @@
 use crate::config::{ApiKey, Config};
 pub use messages::*;
-pub use metadata_provider::{MetadataRegistry, ValidatedMetadata, AlbumTrack};
+pub use metadata_provider::{AlbumTrack, MetadataRegistry, ValidatedMetadata};
 use rusty_ytdl::reqwest;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,7 +13,8 @@ pub mod api_error_handler;
 pub mod player;
 pub mod song_downloader;
 pub mod song_thumbnail_downloader;
-// pub mod metallum; // TODO: Metal Archives CLI integration (blocked by Cloudflare)
+// pub mod metallum; // TODO: Metal Archives CLI integration (blocked by
+// Cloudflare)
 
 const DL_CALLBACK_CHUNK_SIZE: u64 = 100000; // How often song download will pause to execute code.
 const MAX_RETRIES: usize = 5;
@@ -34,7 +35,14 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(api_key: ApiKey, po_token: Option<String>, cookie_path: Option<String>, config: &Config, overrides_path: Option<PathBuf>, cache_path: Option<PathBuf>) -> Server {
+    pub fn new(
+        api_key: ApiKey,
+        po_token: Option<String>,
+        cookie_path: Option<String>,
+        config: &Config,
+        overrides_path: Option<PathBuf>,
+        cache_path: Option<PathBuf>,
+    ) -> Server {
         let client = reqwest::Client::builder()
             .use_rustls_tls()
             .pool_max_idle_per_host(8)

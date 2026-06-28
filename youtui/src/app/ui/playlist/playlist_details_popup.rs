@@ -2,10 +2,10 @@ use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffec
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::KeyCode;
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use ytmapi_rs::parse::GetPlaylistDetails;
@@ -40,9 +40,7 @@ impl_youtui_component!(PlaylistDetailsPopup);
 impl ActionHandler<DetailsAction> for PlaylistDetailsPopup {
     fn apply_action(&mut self, action: DetailsAction) -> impl Into<YoutuiEffect<Self>> {
         match action {
-            DetailsAction::Close => {
-                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
-            }
+            DetailsAction::Close => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
         }
     }
 }
@@ -57,7 +55,10 @@ impl PlaylistDetailsPopup {
         }
     }
 
-    pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+    pub fn handle_key(
+        &mut self,
+        event: crossterm::event::KeyEvent,
+    ) -> (ComponentEffect<Self>, Option<AppCallback>) {
         match event.code {
             KeyCode::Esc | KeyCode::Char('q') => {
                 (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
@@ -85,7 +86,8 @@ impl PlaylistDetailsPopup {
         let display = if let Some(err) = &self.error {
             format!("Error: {}", err)
         } else if let Some(ref details) = self.details {
-            let privacy_str = details.privacy
+            let privacy_str = details
+                .privacy
                 .as_ref()
                 .map(|p| format!("{:?}", p))
                 .unwrap_or_else(|| "Unknown".to_string());

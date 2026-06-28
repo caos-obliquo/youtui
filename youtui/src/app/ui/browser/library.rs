@@ -1,36 +1,37 @@
+use super::shared_components::{
+    BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager,
+};
 use super::songsearch::BrowserSongsAction;
-use super::shared_components::{BrowserSearchAction, FilterAction, FilterManager, SearchBlock, SortAction, SortManager};
-use crate::app::{AppCallback, NavTarget};
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
-use crate::app::structures::{AlbumOrUploadAlbumID, ListSongAlbum};
-
 use crate::app::server::{
-    GetAllLibrarySongs, GetAllLibraryPlaylists, GetAllLibraryArtists, GetAllLibraryAlbums,
-    GetPlaylistTracks, EnrichFromMetadataCache,
+    EnrichFromMetadataCache, GetAllLibraryAlbums, GetAllLibraryArtists, GetAllLibraryPlaylists,
+    GetAllLibrarySongs, GetPlaylistTracks,
 };
 use crate::app::structures::{
-    BrowserSongsList, ListSong, ListSongArtist, ListSongDisplayableField, ListStatus, MaybeRc,
-    DownloadStatus, AlbumArtState, fuzzy_match, Percentage,
+    AlbumArtState, AlbumOrUploadAlbumID, BrowserSongsList, DownloadStatus, ListSong, ListSongAlbum,
+    ListSongArtist, ListSongDisplayableField, ListStatus, MaybeRc, Percentage, fuzzy_match,
 };
+use crate::app::ui::action::AppAction;
+use crate::app::ui::browser::shared_components::get_adjusted_list_column;
 use crate::app::view::{
     AdvancedTableView, BasicConstraint, HasTitle, TableFilterCommand, TableSortCommand, TableView,
 };
-use crate::app::ui::browser::shared_components::get_adjusted_list_column;
-use crate::app::ui::action::AppAction;
+use crate::app::{AppCallback, NavTarget};
 use crate::config::Config;
 use crate::config::keymap::Keymap;
 use crate::widgets::ScrollingTableState;
 use async_callback_manager::{AsyncTask, FrontendEffect};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, warn};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
-use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus, ArtistChannelID};
-use ytmapi_rs::parse::PlaylistSong;
-use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
+use tracing::{debug, error, info, warn};
+use ytmapi_rs::common::{ArtistChannelID, LikeStatus, PlaylistID, YoutubeID};
+use ytmapi_rs::parse::{
+    LibraryArtist, LibraryPlaylist, PlaylistSong, SearchResultAlbum, TableListSong,
+};
 use ytmapi_rs::query::library::GetLibrarySortOrder;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -138,22 +139,27 @@ pub enum LibraryEffect {
 impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::TaskMetadata>
     for LibraryEffect
 {
-    fn apply(
-        self,
-        target: &mut LibraryBrowser,
-    ) -> impl Into<ComponentEffect<LibraryBrowser>> {
+    fn apply(self, target: &mut LibraryBrowser) -> impl Into<ComponentEffect<LibraryBrowser>> {
         match self {
             LibraryEffect::SongsLoaded(songs) => {
                 info!(count = %songs.len(), "Liked songs loaded");
                 // Build enrichment data BEFORE consuming songs
-                let enrich_data: Vec<(usize, String, String, Option<String>)> = songs.iter().enumerate()
+                let enrich_data: Vec<(usize, String, String, Option<String>)> = songs
+                    .iter()
+                    .enumerate()
                     .filter_map(|(i, s)| {
-                        let artist: String = s.artists.iter()
+                        let artist: String = s
+                            .artists
+                            .iter()
                             .map(|a| a.name.as_str())
                             .collect::<Vec<_>>()
                             .join(", ");
                         let album = s.album.as_ref().map(|a| a.as_ref().name.clone());
-                        if artist.is_empty() { None } else { Some((i, artist, s.title.clone(), album)) }
+                        if artist.is_empty() {
+                            None
+                        } else {
+                            Some((i, artist, s.title.clone(), album))
+                        }
                     })
                     .collect();
                 let has_enrich = !enrich_data.is_empty();
@@ -181,7 +187,9 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 let count = results.len();
                 for (idx, year, genres, styles) in results {
                     let year_rc = year.map(Rc::new);
-                    target.song_list.update_song_at(idx, year_rc, genres, styles);
+                    target
+                        .song_list
+                        .update_song_at(idx, year_rc, genres, styles);
                 }
                 info!(count = %count, "Library songs enriched from cache");
             }
@@ -273,149 +281,240 @@ pub struct HandleEnrichFromCacheOk;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandleEnrichFromCacheErr;
 
-impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrowser, |_, raw: Vec<TableListSong>| {
-    let songs: Vec<ListSong> = raw.into_iter().map(|ts| {
-        use crate::app::structures::ListSongID;
-        use crate::app::structures::ListSongArtist;
-        use crate::app::structures::ArtistOrUploadArtistID;
-        use ytmapi_rs::common::AlbumID;
-        // YTM library song has no year field - extract from album name parenthetical
-        let year = ts.album.name.split('(').last()
-            .and_then(|s| s.get(..4))
-            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-            .map(|y| std::rc::Rc::new(y.to_string()));
-        ListSong {
-            video_id: ts.video_id,
-            track_no: None,
-            plays: String::new(),
-            title: ts.title,
-            explicit: Some(ts.explicit),
-            download_status: DownloadStatus::None,
-            id: ListSongID(0),
-            duration_string: ts.duration,
-            actual_duration: None,
-            start_offset: None,
-            year,
-            genres: Vec::new(),
-            styles: Vec::new(),
-            album_art: AlbumArtState::None,
-            artists: MaybeRc::Owned(ts.artists.into_iter().map(|a| ListSongArtist {
-                name: a.name,
-                id: a.id.map(ArtistOrUploadArtistID::Artist),
-            }).collect()),
-            thumbnails: MaybeRc::Owned(ts.thumbnails),
-            album: Some(MaybeRc::Owned(ListSongAlbum {
-                name: ts.album.name,
-                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw(ts.album.id.get_raw().to_string())),
-            })),
-            like_status: ts.like_status,
-            is_album_upload: false,
-        }
-    }).collect();
-    LibraryEffect::SongsLoaded(songs)
-});
-impl_youtui_task_handler!(HandleLibrarySongsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
-    LibraryEffect::LoadError(err.to_string())
-});
-impl_youtui_task_handler!(HandleLibraryPlaylistsOk, Vec<LibraryPlaylist>, LibraryBrowser, |_, pl: Vec<LibraryPlaylist>| {
-    LibraryEffect::PlaylistsLoaded(pl)
-});
-impl_youtui_task_handler!(HandleLibraryPlaylistsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
-    LibraryEffect::LoadError(err.to_string())
-});
+impl_youtui_task_handler!(
+    HandleLibrarySongsOk,
+    Vec<TableListSong>,
+    LibraryBrowser,
+    |_, raw: Vec<TableListSong>| {
+        let songs: Vec<ListSong> = raw
+            .into_iter()
+            .map(|ts| {
+                use crate::app::structures::{ArtistOrUploadArtistID, ListSongArtist, ListSongID};
+                use ytmapi_rs::common::AlbumID;
+                // YTM library song has no year field - extract from album name parenthetical
+                let year = ts
+                    .album
+                    .name
+                    .split('(')
+                    .next_back()
+                    .and_then(|s| s.get(..4))
+                    .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                    .map(|y| std::rc::Rc::new(y.to_string()));
+                ListSong {
+                    video_id: ts.video_id,
+                    track_no: None,
+                    plays: String::new(),
+                    title: ts.title,
+                    explicit: Some(ts.explicit),
+                    download_status: DownloadStatus::None,
+                    id: ListSongID(0),
+                    duration_string: ts.duration,
+                    actual_duration: None,
+                    start_offset: None,
+                    year,
+                    genres: Vec::new(),
+                    styles: Vec::new(),
+                    album_art: AlbumArtState::None,
+                    artists: MaybeRc::Owned(
+                        ts.artists
+                            .into_iter()
+                            .map(|a| ListSongArtist {
+                                name: a.name,
+                                id: a.id.map(ArtistOrUploadArtistID::Artist),
+                            })
+                            .collect(),
+                    ),
+                    thumbnails: MaybeRc::Owned(ts.thumbnails),
+                    album: Some(MaybeRc::Owned(ListSongAlbum {
+                        name: ts.album.name,
+                        id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw(
+                            ts.album.id.get_raw().to_string(),
+                        )),
+                    })),
+                    like_status: ts.like_status,
+                    is_album_upload: false,
+                }
+            })
+            .collect();
+        LibraryEffect::SongsLoaded(songs)
+    }
+);
+impl_youtui_task_handler!(
+    HandleLibrarySongsErr,
+    anyhow::Error,
+    LibraryBrowser,
+    |_, err: anyhow::Error| { LibraryEffect::LoadError(err.to_string()) }
+);
+impl_youtui_task_handler!(
+    HandleLibraryPlaylistsOk,
+    Vec<LibraryPlaylist>,
+    LibraryBrowser,
+    |_, pl: Vec<LibraryPlaylist>| { LibraryEffect::PlaylistsLoaded(pl) }
+);
+impl_youtui_task_handler!(
+    HandleLibraryPlaylistsErr,
+    anyhow::Error,
+    LibraryBrowser,
+    |_, err: anyhow::Error| { LibraryEffect::LoadError(err.to_string()) }
+);
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct HandleLibraryPlaylistTracksOk;
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct HandleLibraryPlaylistTracksErr;
-impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, LibraryBrowser, |_, songs: Vec<PlaylistSong>| {
-    use std::rc::Rc;
-    use crate::app::structures::ListSongID;
-    let mut set_id_map = HashMap::new();
-    let list_songs: Vec<ListSong> = songs.into_iter().map(|s| {
-        let vid = s.video_id.get_raw().to_string();
-        // Always use the raw video_id as the setVideoId - the API returns a
-        // separate setVideoId but removal also works with just the video_id
-        set_id_map.insert(vid.clone(), vid);
-        let artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist { name: a.name, id: None }).collect());
-        let album = Some(MaybeRc::Owned(ListSongAlbum {
-            name: s.album.name.clone(),
-            id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
-        }));
-        let year = s.album.name.split('(').last().and_then(|s| s.get(..4))
-            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-            .map(|y| y.to_string());
-        ListSong {
-            video_id: s.video_id,
-            track_no: None,
-            plays: String::new(),
-            title: s.title,
-            explicit: Some(s.explicit),
-            download_status: DownloadStatus::None,
-            id: ListSongID(0),
-            duration_string: s.duration,
-            actual_duration: None,
-            start_offset: None,
-            year: year.map(Rc::new),
-            album_art: AlbumArtState::None,
-            genres: Vec::new(),
-            styles: Vec::new(),
-            artists,
-            thumbnails: MaybeRc::Owned(s.thumbnails),
-            album,
-            like_status: s.like_status,
-            is_album_upload: false,
+impl_youtui_task_handler!(
+    HandleLibraryPlaylistTracksOk,
+    Vec<PlaylistSong>,
+    LibraryBrowser,
+    |_, songs: Vec<PlaylistSong>| {
+        use crate::app::structures::ListSongID;
+        use std::rc::Rc;
+        let mut set_id_map = HashMap::new();
+        let list_songs: Vec<ListSong> = songs
+            .into_iter()
+            .map(|s| {
+                let vid = s.video_id.get_raw().to_string();
+                // Always use the raw video_id as the setVideoId - the API returns a
+                // separate setVideoId but removal also works with just the video_id
+                set_id_map.insert(vid.clone(), vid);
+                let artists = MaybeRc::Owned(
+                    s.artists
+                        .into_iter()
+                        .map(|a| ListSongArtist {
+                            name: a.name,
+                            id: None,
+                        })
+                        .collect(),
+                );
+                let album = Some(MaybeRc::Owned(ListSongAlbum {
+                    name: s.album.name.clone(),
+                    id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+                }));
+                let year = s
+                    .album
+                    .name
+                    .split('(')
+                    .next_back()
+                    .and_then(|s| s.get(..4))
+                    .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                    .map(|y| y.to_string());
+                ListSong {
+                    video_id: s.video_id,
+                    track_no: None,
+                    plays: String::new(),
+                    title: s.title,
+                    explicit: Some(s.explicit),
+                    download_status: DownloadStatus::None,
+                    id: ListSongID(0),
+                    duration_string: s.duration,
+                    actual_duration: None,
+                    start_offset: None,
+                    year: year.map(Rc::new),
+                    album_art: AlbumArtState::None,
+                    genres: Vec::new(),
+                    styles: Vec::new(),
+                    artists,
+                    thumbnails: MaybeRc::Owned(s.thumbnails),
+                    album,
+                    like_status: s.like_status,
+                    is_album_upload: false,
+                }
+            })
+            .collect();
+        // The effect handler will populate track_set_ids from the songs
+        // We chain it via the effect
+        struct PopulateSetIds(Vec<ListSong>, HashMap<String, String>);
+        impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::TaskMetadata>
+            for PopulateSetIds
+        {
+            fn apply(
+                self,
+                target: &mut LibraryBrowser,
+            ) -> impl Into<ComponentEffect<LibraryBrowser>> {
+                target.playlist_tracks = self.0;
+                target.playlist_tracks_selected = 0;
+                target.show_playlist_tracks = true;
+                target.input_routing = InputRouting::Content;
+                target.track_set_ids = self.1;
+                AsyncTask::new_no_op()
+            }
         }
-    }).collect();
-    // The effect handler will populate track_set_ids from the songs
-    // We chain it via the effect
-    struct PopulateSetIds(Vec<ListSong>, HashMap<String, String>);
-    impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::TaskMetadata> for PopulateSetIds {
-        fn apply(self, target: &mut LibraryBrowser) -> impl Into<ComponentEffect<LibraryBrowser>> {
-            target.playlist_tracks = self.0;
-            target.playlist_tracks_selected = 0;
-            target.show_playlist_tracks = true;
-            target.input_routing = InputRouting::Content;
-            target.track_set_ids = self.1;
-            AsyncTask::new_no_op()
-        }
+        PopulateSetIds(list_songs, set_id_map)
     }
-    PopulateSetIds(list_songs, set_id_map)
-});
-impl_youtui_task_handler!(HandleLibraryPlaylistTracksErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
-    tracing::error!("Error loading playlist tracks: {}", err);
-    LibraryEffect::LoadError(err.to_string())
-});
-impl_youtui_task_handler!(HandleLibraryArtistsOk, Vec<LibraryArtist>, LibraryBrowser, |_, a: Vec<LibraryArtist>| {
-    LibraryEffect::ArtistsLoaded(a)
-});
-impl_youtui_task_handler!(HandleLibraryArtistsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
-    LibraryEffect::LoadError(err.to_string())
-});
-impl_youtui_task_handler!(HandleLibraryAlbumsOk, Vec<SearchResultAlbum>, LibraryBrowser, |_, a: Vec<SearchResultAlbum>| {
-    LibraryEffect::AlbumsLoaded(a)
-});
-impl_youtui_task_handler!(HandleLibraryAlbumsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
-    LibraryEffect::LoadError(err.to_string())
-});
-impl_youtui_task_handler!(HandleLibraryRemoveItemsOk, (), LibraryBrowser, |_, _: ()| {
-    LibraryEffect::RemoveItemsSuccess
-});
-impl_youtui_task_handler!(HandleLibraryRemoveItemsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
-    LibraryEffect::RemoveItemsError(err.to_string())
-});
-impl_youtui_task_handler!(HandleLibraryReorderItemsOk, (), LibraryBrowser, |_, _: ()| {
-    LibraryEffect::ReorderItemsSuccess
-});
-impl_youtui_task_handler!(HandleLibraryReorderItemsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
-    LibraryEffect::ReorderItemsError(err.to_string())
-});
-impl_youtui_task_handler!(HandleEnrichFromCacheOk, Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, LibraryBrowser, |_, results: Vec<(usize, Option<String>, Vec<String>, Vec<String>)>| {
-    LibraryEffect::SongsEnriched(results)
-});
-impl_youtui_task_handler!(HandleEnrichFromCacheErr, anyhow::Error, LibraryBrowser, |_, _: anyhow::Error| {
-    info!("Cache enrichment failed (non-critical): no metadata will be shown in library");
-    LibraryEffect::LoadError(String::new()) // silent, no UI error
-});
+);
+impl_youtui_task_handler!(
+    HandleLibraryPlaylistTracksErr,
+    anyhow::Error,
+    LibraryBrowser,
+    |_, err: anyhow::Error| {
+        tracing::error!("Error loading playlist tracks: {}", err);
+        LibraryEffect::LoadError(err.to_string())
+    }
+);
+impl_youtui_task_handler!(
+    HandleLibraryArtistsOk,
+    Vec<LibraryArtist>,
+    LibraryBrowser,
+    |_, a: Vec<LibraryArtist>| { LibraryEffect::ArtistsLoaded(a) }
+);
+impl_youtui_task_handler!(
+    HandleLibraryArtistsErr,
+    anyhow::Error,
+    LibraryBrowser,
+    |_, err: anyhow::Error| { LibraryEffect::LoadError(err.to_string()) }
+);
+impl_youtui_task_handler!(
+    HandleLibraryAlbumsOk,
+    Vec<SearchResultAlbum>,
+    LibraryBrowser,
+    |_, a: Vec<SearchResultAlbum>| { LibraryEffect::AlbumsLoaded(a) }
+);
+impl_youtui_task_handler!(
+    HandleLibraryAlbumsErr,
+    anyhow::Error,
+    LibraryBrowser,
+    |_, err: anyhow::Error| { LibraryEffect::LoadError(err.to_string()) }
+);
+impl_youtui_task_handler!(
+    HandleLibraryRemoveItemsOk,
+    (),
+    LibraryBrowser,
+    |_, _: ()| { LibraryEffect::RemoveItemsSuccess }
+);
+impl_youtui_task_handler!(
+    HandleLibraryRemoveItemsErr,
+    anyhow::Error,
+    LibraryBrowser,
+    |_, err: anyhow::Error| { LibraryEffect::RemoveItemsError(err.to_string()) }
+);
+impl_youtui_task_handler!(
+    HandleLibraryReorderItemsOk,
+    (),
+    LibraryBrowser,
+    |_, _: ()| { LibraryEffect::ReorderItemsSuccess }
+);
+impl_youtui_task_handler!(
+    HandleLibraryReorderItemsErr,
+    anyhow::Error,
+    LibraryBrowser,
+    |_, err: anyhow::Error| { LibraryEffect::ReorderItemsError(err.to_string()) }
+);
+impl_youtui_task_handler!(
+    HandleEnrichFromCacheOk,
+    Vec<(usize, Option<String>, Vec<String>, Vec<String>)>,
+    LibraryBrowser,
+    |_, results: Vec<(usize, Option<String>, Vec<String>, Vec<String>)>| {
+        LibraryEffect::SongsEnriched(results)
+    }
+);
+impl_youtui_task_handler!(
+    HandleEnrichFromCacheErr,
+    anyhow::Error,
+    LibraryBrowser,
+    |_, _: anyhow::Error| {
+        info!("Cache enrichment failed (non-critical): no metadata will be shown in library");
+        LibraryEffect::LoadError(String::new()) // silent, no UI error
+    }
+);
 
 pub struct LibraryBrowser {
     pub input_routing: InputRouting,
@@ -522,7 +621,9 @@ impl LibraryBrowser {
         }
     }
 
-    pub fn fetch_current_category(&mut self) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
+    pub fn fetch_current_category(
+        &mut self,
+    ) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
         if self.loading {
             return AsyncTask::new_no_op();
         }
@@ -532,14 +633,16 @@ impl LibraryBrowser {
                     return AsyncTask::new_no_op();
                 }
                 self.loading = true;
-                let task = AsyncTask::new_future_try(
-                    GetAllLibrarySongs { sort_order: self.sort_order.clone() },
+
+                AsyncTask::new_future_try(
+                    GetAllLibrarySongs {
+                        sort_order: self.sort_order.clone(),
+                    },
                     HandleLibrarySongsOk,
                     HandleLibrarySongsErr,
                     None,
                 )
-                .map_frontend(|this: &mut Self| this);
-                task
+                .map_frontend(|this: &mut Self| this)
             }
             LibraryCategory::Playlists => {
                 if self.playlists_fetched {
@@ -560,7 +663,9 @@ impl LibraryBrowser {
                 }
                 self.loading = true;
                 AsyncTask::new_future_try(
-                    GetAllLibraryArtists { sort_order: self.sort_order.clone() },
+                    GetAllLibraryArtists {
+                        sort_order: self.sort_order.clone(),
+                    },
                     HandleLibraryArtistsOk,
                     HandleLibraryArtistsErr,
                     None,
@@ -573,7 +678,9 @@ impl LibraryBrowser {
                 }
                 self.loading = true;
                 AsyncTask::new_future_try(
-                    GetAllLibraryAlbums { sort_order: self.sort_order.clone() },
+                    GetAllLibraryAlbums {
+                        sort_order: self.sort_order.clone(),
+                    },
                     HandleLibraryAlbumsOk,
                     HandleLibraryAlbumsErr,
                     None,
@@ -583,21 +690,35 @@ impl LibraryBrowser {
         }
     }
 
-    pub fn switch_to_next_category(&mut self) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
-        debug!("Library category: {} → {}", self.category.label(), self.category.next().label());
+    pub fn switch_to_next_category(
+        &mut self,
+    ) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
+        debug!(
+            "Library category: {} → {}",
+            self.category.label(),
+            self.category.next().label()
+        );
         self.category = self.category.next();
         self.input_routing = InputRouting::Category;
         self.fetch_current_category()
     }
 
-    pub fn switch_to_prev_category(&mut self) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
-        debug!("Library category: {} → {}", self.category.label(), self.category.prev().label());
+    pub fn switch_to_prev_category(
+        &mut self,
+    ) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
+        debug!(
+            "Library category: {} → {}",
+            self.category.label(),
+            self.category.prev().label()
+        );
         self.category = self.category.prev();
         self.input_routing = InputRouting::Category;
         self.fetch_current_category()
     }
 
-    pub fn focus_content(&mut self) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
+    pub fn focus_content(
+        &mut self,
+    ) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
         debug!("Library focus: content panel");
         self.input_routing = InputRouting::Content;
         self.fetch_current_category()
@@ -608,7 +729,9 @@ impl LibraryBrowser {
         self.input_routing = InputRouting::Category;
     }
 
-    pub fn reload_category(&mut self) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
+    pub fn reload_category(
+        &mut self,
+    ) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
         info!(category = %self.category.label(), "Reloading library category");
         match self.category {
             LibraryCategory::LikedSongs => self.songs_fetched = false,
@@ -621,7 +744,12 @@ impl LibraryBrowser {
         self.fetch_current_category()
     }
 
-    pub fn play_selected_song(&self) -> (AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>, Option<AppCallback>) {
+    pub fn play_selected_song(
+        &self,
+    ) -> (
+        AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>,
+        Option<AppCallback>,
+    ) {
         if self.category != LibraryCategory::LikedSongs {
             return (AsyncTask::new_no_op(), None);
         }
@@ -630,19 +758,32 @@ impl LibraryBrowser {
             return (AsyncTask::new_no_op(), None);
         };
         debug!(title = %song.title, "Library: play selected song");
-        (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])))
+        (
+            AsyncTask::new_no_op(),
+            Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])),
+        )
     }
 
-    pub fn play_all_songs(&self) -> (AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>, Option<AppCallback>) {
+    pub fn play_all_songs(
+        &self,
+    ) -> (
+        AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>,
+        Option<AppCallback>,
+    ) {
         if self.category != LibraryCategory::LikedSongs {
             return (AsyncTask::new_no_op(), None);
         }
         let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
         debug!(count = %songs.len(), "Library: play all songs");
-        (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(songs)))
+        (
+            AsyncTask::new_no_op(),
+            Some(AppCallback::AddSongsToPlaylistAndPlay(songs)),
+        )
     }
 
-    pub fn fetch_playlist_tracks(&mut self) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
+    pub fn fetch_playlist_tracks(
+        &mut self,
+    ) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
         let Some(pl) = self.playlist_data.get(self.playlist_selected).cloned() else {
             return AsyncTask::new_no_op();
         };
@@ -653,10 +794,16 @@ impl LibraryBrowser {
             HandleLibraryPlaylistTracksOk,
             HandleLibraryPlaylistTracksErr,
             None,
-        ).map_frontend(|this: &mut Self| this)
+        )
+        .map_frontend(|this: &mut Self| this)
     }
 
-    pub fn view_selected_lyrics(&self) -> (AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>, Option<AppCallback>) {
+    pub fn view_selected_lyrics(
+        &self,
+    ) -> (
+        AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>,
+        Option<AppCallback>,
+    ) {
         if self.category != LibraryCategory::LikedSongs {
             return (AsyncTask::new_no_op(), None);
         }
@@ -664,10 +811,18 @@ impl LibraryBrowser {
         let Some(song) = songs.get(self.cur_selected) else {
             return (AsyncTask::new_no_op(), None);
         };
-        let artist = song.artists.iter().map(|a| a.name.clone()).collect::<Vec<_>>().join(", ");
+        let artist = song
+            .artists
+            .iter()
+            .map(|a| a.name.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
         let title = song.title.clone();
         debug!(title = %title, artist = %artist, "Library: view lyrics");
-        (AsyncTask::new_no_op(), Some(AppCallback::ViewLyrics { artist, title }))
+        (
+            AsyncTask::new_no_op(),
+            Some(AppCallback::ViewLyrics { artist, title }),
+        )
     }
 
     pub fn handle_toggle_search(&mut self) {
@@ -681,20 +836,25 @@ impl LibraryBrowser {
         }
     }
 
-    pub fn handle_text_entry_action(&mut self, action: crate::app::ui::action::TextEntryAction) -> async_callback_manager::AsyncTask<Self, crate::app::server::ArcServer, crate::app::server::TaskMetadata> {
-        if self.search_active {
-            if action == crate::app::ui::action::TextEntryAction::Submit {
-                let text = self.search.search_contents.get_text().to_string();
-                self.search.clear_text();
-                self.search_active = false;
-                self.input_routing = InputRouting::Content;
-                // Apply filter using the search text
-                let lower = text.to_lowercase();
-                if !lower.is_empty() {
-                    self.local_filter_text = text.clone();
-                } else {
-                    self.local_filter_text.clear();
-                }
+    pub fn handle_text_entry_action(
+        &mut self,
+        action: crate::app::ui::action::TextEntryAction,
+    ) -> async_callback_manager::AsyncTask<
+        Self,
+        crate::app::server::ArcServer,
+        crate::app::server::TaskMetadata,
+    > {
+        if self.search_active && action == crate::app::ui::action::TextEntryAction::Submit {
+            let text = self.search.search_contents.get_text().to_string();
+            self.search.clear_text();
+            self.search_active = false;
+            self.input_routing = InputRouting::Content;
+            // Apply filter using the search text
+            let lower = text.to_lowercase();
+            if !lower.is_empty() {
+                self.local_filter_text = text.clone();
+            } else {
+                self.local_filter_text.clear();
             }
         }
         AsyncTask::new_no_op()
@@ -707,7 +867,6 @@ impl LibraryBrowser {
             None
         }
     }
-
 }
 
 // -- Table view helpers for all categories --
@@ -728,7 +887,8 @@ impl LibraryBrowser {
         Self::liked_songs_subcolumns_of_vec()
     }
 
-    /// Returns the currently active sort/filter manager for the active category.
+    /// Returns the currently active sort/filter manager for the active
+    /// category.
     fn active_sort(&self) -> &SortManager {
         if self.show_playlist_tracks {
             &self.tracks_sort
@@ -784,40 +944,68 @@ impl LibraryBrowser {
             if filter_text.is_empty() {
                 return true;
             }
-            let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
-            let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
-            let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
-            fuzzy_match(&filter_text, &title).is_some()
-                || fuzzy_match(&filter_text, &album).is_some()
-                || fuzzy_match(&filter_text, &artist).is_some()
+            let title = ls
+                .get_fields([ListSongDisplayableField::Song])
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            let album = ls
+                .get_fields([ListSongDisplayableField::Album])
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            let artist = ls
+                .get_fields([ListSongDisplayableField::Artists])
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            fuzzy_match(filter_text, &title).is_some()
+                || fuzzy_match(filter_text, &album).is_some()
+                || fuzzy_match(filter_text, &artist).is_some()
         })
     }
 
     fn get_liked_songs_filtered_iter(&self) -> impl Iterator<Item = &ListSong> {
         let ft = &self.local_filter_text;
         self.song_list.get_list_iter().filter(move |ls| {
-            if ft.is_empty() { return true; }
-            let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
-            let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
-            let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
-            fuzzy_match(&ft, &title).is_some()
-                || fuzzy_match(&ft, &album).is_some()
-                || fuzzy_match(&ft, &artist).is_some()
+            if ft.is_empty() {
+                return true;
+            }
+            let title = ls
+                .get_fields([ListSongDisplayableField::Song])
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            let album = ls
+                .get_fields([ListSongDisplayableField::Album])
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            let artist = ls
+                .get_fields([ListSongDisplayableField::Artists])
+                .into_iter()
+                .next()
+                .unwrap_or_default();
+            fuzzy_match(ft, &title).is_some()
+                || fuzzy_match(ft, &album).is_some()
+                || fuzzy_match(ft, &artist).is_some()
         })
     }
 
     fn get_playlists_filtered_iter(&self) -> impl Iterator<Item = (usize, &LibraryPlaylist)> {
         let ft = self.local_filter_text.to_lowercase();
-        self.playlist_data.iter().enumerate().filter(move |(_, pl)| {
-            ft.is_empty() || pl.title.to_lowercase().contains(&ft)
-        })
+        self.playlist_data
+            .iter()
+            .enumerate()
+            .filter(move |(_, pl)| ft.is_empty() || pl.title.to_lowercase().contains(&ft))
     }
 
     fn get_artists_filtered_iter(&self) -> impl Iterator<Item = (usize, &LibraryArtist)> {
         let ft = self.local_filter_text.to_lowercase();
-        self.artist_data.iter().enumerate().filter(move |(_, a)| {
-            ft.is_empty() || a.artist.to_lowercase().contains(&ft)
-        })
+        self.artist_data
+            .iter()
+            .enumerate()
+            .filter(move |(_, a)| ft.is_empty() || a.artist.to_lowercase().contains(&ft))
     }
 
     fn get_albums_filtered_iter(&self) -> impl Iterator<Item = (usize, &SearchResultAlbum)> {
@@ -829,11 +1017,13 @@ impl LibraryBrowser {
         })
     }
 
-    // -- Column builders (allocates per frame; acceptable for library dataset sizes) --
+    // -- Column builders (allocates per frame; acceptable for library dataset
+    // sizes) --
 
     fn build_liked_songs_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
         let fields = Self::liked_songs_subcolumns_of_vec();
-        self.song_list.get_list_iter()
+        self.song_list
+            .get_list_iter()
             .enumerate()
             .map(|(i, ls)| {
                 let mut row = ls.get_fields(fields).to_vec();
@@ -847,36 +1037,48 @@ impl LibraryBrowser {
     }
 
     fn build_playlist_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
-        self.playlist_data.iter().enumerate().map(|(i, pl)| {
-            vec![
-                Cow::<'_, str>::Owned((i + 1).to_string()),
-                Cow::Borrowed(pl.title.as_str()),
-                Cow::Borrowed(pl.tracks.as_str()),
-                Cow::Borrowed(pl.author.as_str()),
-            ]
-        }).collect()
+        self.playlist_data
+            .iter()
+            .enumerate()
+            .map(|(i, pl)| {
+                vec![
+                    Cow::<'_, str>::Owned((i + 1).to_string()),
+                    Cow::Borrowed(pl.title.as_str()),
+                    Cow::Borrowed(pl.tracks.as_str()),
+                    Cow::Borrowed(pl.author.as_str()),
+                ]
+            })
+            .collect()
     }
 
     fn build_artist_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
-        self.artist_data.iter().enumerate().map(|(i, a)| {
-            vec![
-                Cow::<'_, str>::Owned((i + 1).to_string()),
-                Cow::Borrowed(a.artist.as_str()),
-                Cow::Borrowed(a.byline.as_str()),
-            ]
-        }).collect()
+        self.artist_data
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                vec![
+                    Cow::<'_, str>::Owned((i + 1).to_string()),
+                    Cow::Borrowed(a.artist.as_str()),
+                    Cow::Borrowed(a.byline.as_str()),
+                ]
+            })
+            .collect()
     }
 
     fn build_album_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
-        self.album_data.iter().enumerate().map(|(i, a)| {
-            vec![
-                Cow::<'_, str>::Owned((i + 1).to_string()),
-                Cow::Borrowed(a.artist.as_str()),
-                Cow::Borrowed(a.title.as_str()),
-                Cow::Borrowed(a.year.as_str()),
-                Cow::<'_, str>::Owned(format!("{:?}", a.album_type)),
-            ]
-        }).collect()
+        self.album_data
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                vec![
+                    Cow::<'_, str>::Owned((i + 1).to_string()),
+                    Cow::Borrowed(a.artist.as_str()),
+                    Cow::Borrowed(a.title.as_str()),
+                    Cow::Borrowed(a.year.as_str()),
+                    Cow::<'_, str>::Owned(format!("{:?}", a.album_type)),
+                ]
+            })
+            .collect()
     }
 }
 
@@ -900,40 +1102,50 @@ impl TableView for LibraryBrowser {
             };
             (raw, filtered)
         };
-        if !has_filter { return raw_idx; }
+        if !has_filter {
+            return raw_idx;
+        }
 
         if self.show_playlist_tracks {
-            let selected_vid = self.playlist_tracks.get(raw_idx).map(|s| s.video_id.clone());
+            let selected_vid = self
+                .playlist_tracks
+                .get(raw_idx)
+                .map(|s| s.video_id.clone());
             if let Some(ref vid) = selected_vid {
                 self.get_tracks_filtered_list_iter()
                     .position(|s| s.video_id == *vid)
                     .unwrap_or(0)
-            } else { 0 }
+            } else {
+                0
+            }
         } else {
             match self.category {
                 LibraryCategory::LikedSongs => {
-                    let selected_vid = self.song_list.get_list_iter().nth(raw_idx).map(|s| s.video_id.clone());
+                    let selected_vid = self
+                        .song_list
+                        .get_list_iter()
+                        .nth(raw_idx)
+                        .map(|s| s.video_id.clone());
                     if let Some(ref vid) = selected_vid {
                         self.get_liked_songs_filtered_iter()
                             .position(|s| s.video_id == *vid)
                             .unwrap_or(0)
-                    } else { 0 }
+                    } else {
+                        0
+                    }
                 }
-                LibraryCategory::Playlists => {
-                    self.get_playlists_filtered_iter()
-                        .position(|(i, _)| i == raw_idx)
-                        .unwrap_or(0)
-                }
-                LibraryCategory::Artists => {
-                    self.get_artists_filtered_iter()
-                        .position(|(i, _)| i == raw_idx)
-                        .unwrap_or(0)
-                }
-                LibraryCategory::Albums => {
-                    self.get_albums_filtered_iter()
-                        .position(|(i, _)| i == raw_idx)
-                        .unwrap_or(0)
-                }
+                LibraryCategory::Playlists => self
+                    .get_playlists_filtered_iter()
+                    .position(|(i, _)| i == raw_idx)
+                    .unwrap_or(0),
+                LibraryCategory::Artists => self
+                    .get_artists_filtered_iter()
+                    .position(|(i, _)| i == raw_idx)
+                    .unwrap_or(0),
+                LibraryCategory::Albums => self
+                    .get_albums_filtered_iter()
+                    .position(|(i, _)| i == raw_idx)
+                    .unwrap_or(0),
             }
         }
     }
@@ -1048,7 +1260,9 @@ impl TableView for LibraryBrowser {
             &["#", "Artist", "Album", "Song", "Duration", "Year", "Liked"]
         } else {
             match self.category {
-                LibraryCategory::LikedSongs => &["#", "Artist", "Album", "Song", "Duration", "Year", "Liked"],
+                LibraryCategory::LikedSongs => {
+                    &["#", "Artist", "Album", "Song", "Duration", "Year", "Liked"]
+                }
                 LibraryCategory::Playlists => &["#", "Title", "Tracks", "Author"],
                 LibraryCategory::Artists => &["#", "Artist", "Byline"],
                 LibraryCategory::Albums => &["#", "Artist", "Album", "Year", "Type"],
@@ -1058,7 +1272,8 @@ impl TableView for LibraryBrowser {
     }
 }
 
-// -- Unified AdvancedTableView (dispatches on show_playlist_tracks + category) --
+// -- Unified AdvancedTableView (dispatches on show_playlist_tracks + category)
+// --
 impl AdvancedTableView for LibraryBrowser {
     fn get_filtered_count(&self) -> usize {
         if self.show_playlist_tracks {
@@ -1089,59 +1304,90 @@ impl AdvancedTableView for LibraryBrowser {
             anyhow::bail!("Unable to sort column {}", sort_command.column);
         }
         let cmp = |asc: bool, a: &str, b: &str| -> std::cmp::Ordering {
-            if asc { a.to_lowercase().cmp(&b.to_lowercase()) }
-            else { b.to_lowercase().cmp(&a.to_lowercase()) }
+            if asc {
+                a.to_lowercase().cmp(&b.to_lowercase())
+            } else {
+                b.to_lowercase().cmp(&a.to_lowercase())
+            }
         };
 
         if self.show_playlist_tracks {
-            let field = get_adjusted_list_column(sort_command.column, Self::tracks_subcolumns_of_vec())?;
+            let field =
+                get_adjusted_list_column(sort_command.column, Self::tracks_subcolumns_of_vec())?;
             let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
-            self.playlist_tracks.sort_by(|a, b| a.get_field(field).partial_cmp(&b.get_field(field)).unwrap_or(std::cmp::Ordering::Equal));
+            self.playlist_tracks.sort_by(|a, b| {
+                a.get_field(field)
+                    .partial_cmp(&b.get_field(field))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             _ = asc;
-            self.tracks_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+            self.tracks_sort
+                .sort_commands
+                .retain(|cmd| cmd.column != sort_command.column);
             self.tracks_sort.sort_commands.push(sort_command);
         } else {
             match self.category {
                 LibraryCategory::LikedSongs => {
-                    let field = get_adjusted_list_column(sort_command.column, Self::liked_songs_subcolumns_of_vec())?;
+                    let field = get_adjusted_list_column(
+                        sort_command.column,
+                        Self::liked_songs_subcolumns_of_vec(),
+                    )?;
                     let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
                     self.song_list.sort_list_by(|a, b| {
-                        if asc { a.get_field(field).partial_cmp(&b.get_field(field)) }
-                        else { b.get_field(field).partial_cmp(&a.get_field(field)) }
+                        if asc {
+                            a.get_field(field).partial_cmp(&b.get_field(field))
+                        } else {
+                            b.get_field(field).partial_cmp(&a.get_field(field))
+                        }
                         .unwrap_or(std::cmp::Ordering::Equal)
                     });
-                    self.sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+                    self.sort
+                        .sort_commands
+                        .retain(|cmd| cmd.column != sort_command.column);
                     self.sort.sort_commands.push(sort_command);
                 }
                 LibraryCategory::Playlists => {
                     let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
                     match sort_command.column {
-                        1 => self.playlist_data.sort_by(|a, b| cmp(asc, &a.title, &b.title)),
-                        3 => self.playlist_data.sort_by(|a, b| cmp(asc, &a.author, &b.author)),
-                        _ => {},
+                        1 => self
+                            .playlist_data
+                            .sort_by(|a, b| cmp(asc, &a.title, &b.title)),
+                        3 => self
+                            .playlist_data
+                            .sort_by(|a, b| cmp(asc, &a.author, &b.author)),
+                        _ => {}
                     }
-                    self.playlists_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+                    self.playlists_sort
+                        .sort_commands
+                        .retain(|cmd| cmd.column != sort_command.column);
                     self.playlists_sort.sort_commands.push(sort_command);
                 }
                 LibraryCategory::Artists => {
                     let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
-                    self.artist_data.sort_by(|a, b| cmp(asc, &a.artist, &b.artist));
-                    self.artists_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+                    self.artist_data
+                        .sort_by(|a, b| cmp(asc, &a.artist, &b.artist));
+                    self.artists_sort
+                        .sort_commands
+                        .retain(|cmd| cmd.column != sort_command.column);
                     self.artists_sort.sort_commands.push(sort_command);
                 }
                 LibraryCategory::Albums => {
                     let asc = sort_command.direction == crate::app::view::SortDirection::Asc;
                     match sort_command.column {
-                        1 => self.album_data.sort_by(|a, b| cmp(asc, &a.artist, &b.artist)),
+                        1 => self
+                            .album_data
+                            .sort_by(|a, b| cmp(asc, &a.artist, &b.artist)),
                         2 => self.album_data.sort_by(|a, b| cmp(asc, &a.title, &b.title)),
                         3 => self.album_data.sort_by(|a, b| {
                             let ya = a.year.parse::<u16>().unwrap_or(0);
                             let yb = b.year.parse::<u16>().unwrap_or(0);
                             if asc { ya.cmp(&yb) } else { yb.cmp(&ya) }
                         }),
-                        _ => {},
+                        _ => {}
                     }
-                    self.albums_sort.sort_commands.retain(|cmd| cmd.column != sort_command.column);
+                    self.albums_sort
+                        .sort_commands
+                        .retain(|cmd| cmd.column != sort_command.column);
                     self.albums_sort.sort_commands.push(sort_command);
                 }
             }
@@ -1156,60 +1402,67 @@ impl AdvancedTableView for LibraryBrowser {
     }
     fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
         let fields = Self::tracks_subcolumns_of_vec();
-        let iter: Box<dyn Iterator<Item = Box<dyn Iterator<Item = Cow<'_, str>> + '_>> + '_> = if self.show_playlist_tracks {
-            Box::new(self.get_tracks_filtered_list_iter().map(move |ls| {
-                let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
-                    Box::new(ls.get_fields(fields).into_iter());
-                v
-            }))
-        } else {
-            match self.category {
-                LibraryCategory::LikedSongs => {
-                    let fields = Self::liked_songs_subcolumns_of_vec();
-                    Box::new(self.get_liked_songs_filtered_iter().map(move |ls| {
-                        let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
-                            Box::new(ls.get_fields(fields).into_iter());
-                        v
-                    }))
+        let iter: Box<dyn Iterator<Item = Box<dyn Iterator<Item = Cow<'_, str>> + '_>> + '_> =
+            if self.show_playlist_tracks {
+                Box::new(self.get_tracks_filtered_list_iter().map(move |ls| {
+                    let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
+                        Box::new(ls.get_fields(fields).into_iter());
+                    v
+                }))
+            } else {
+                match self.category {
+                    LibraryCategory::LikedSongs => {
+                        let fields = Self::liked_songs_subcolumns_of_vec();
+                        Box::new(self.get_liked_songs_filtered_iter().map(move |ls| {
+                            let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
+                                Box::new(ls.get_fields(fields).into_iter());
+                            v
+                        }))
+                    }
+                    LibraryCategory::Playlists => {
+                        Box::new(self.get_playlists_filtered_iter().map(|(i, pl)| {
+                            let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(
+                                [
+                                    Cow::Owned((i + 1).to_string()),
+                                    Cow::Borrowed(pl.title.as_str()),
+                                    Cow::Borrowed(pl.tracks.as_str()),
+                                    Cow::Borrowed(pl.author.as_str()),
+                                ]
+                                .into_iter(),
+                            );
+                            v
+                        }))
+                    }
+                    LibraryCategory::Artists => {
+                        Box::new(self.get_artists_filtered_iter().map(|(i, a)| {
+                            let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(
+                                [
+                                    Cow::Owned((i + 1).to_string()),
+                                    Cow::Borrowed(a.artist.as_str()),
+                                    Cow::Borrowed(a.byline.as_str()),
+                                ]
+                                .into_iter(),
+                            );
+                            v
+                        }))
+                    }
+                    LibraryCategory::Albums => {
+                        Box::new(self.get_albums_filtered_iter().map(|(i, a)| {
+                            let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(
+                                [
+                                    Cow::Owned((i + 1).to_string()),
+                                    Cow::Borrowed(a.artist.as_str()),
+                                    Cow::Borrowed(a.title.as_str()),
+                                    Cow::Borrowed(a.year.as_str()),
+                                    Cow::Owned(format!("{:?}", a.album_type)),
+                                ]
+                                .into_iter(),
+                            );
+                            v
+                        }))
+                    }
                 }
-                LibraryCategory::Playlists => Box::new(self.get_playlists_filtered_iter().map(|(i, pl)| {
-                    let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(
-                        [
-                            Cow::Owned((i + 1).to_string()),
-                            Cow::Borrowed(pl.title.as_str()),
-                            Cow::Borrowed(pl.tracks.as_str()),
-                            Cow::Borrowed(pl.author.as_str()),
-                        ]
-                        .into_iter(),
-                    );
-                    v
-                })),
-                LibraryCategory::Artists => Box::new(self.get_artists_filtered_iter().map(|(i, a)| {
-                    let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(
-                        [
-                            Cow::Owned((i + 1).to_string()),
-                            Cow::Borrowed(a.artist.as_str()),
-                            Cow::Borrowed(a.byline.as_str()),
-                        ]
-                        .into_iter(),
-                    );
-                    v
-                })),
-                LibraryCategory::Albums => Box::new(self.get_albums_filtered_iter().map(|(i, a)| {
-                    let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(
-                        [
-                            Cow::Owned((i + 1).to_string()),
-                            Cow::Borrowed(a.artist.as_str()),
-                            Cow::Borrowed(a.title.as_str()),
-                            Cow::Borrowed(a.year.as_str()),
-                            Cow::Owned(format!("{:?}", a.album_type)),
-                        ]
-                        .into_iter(),
-                    );
-                    v
-                })),
-            }
-        };
+            };
         iter
     }
     fn get_filterable_columns(&self) -> &[usize] {
@@ -1256,7 +1509,10 @@ impl HasTitle for LibraryBrowser {
             let total = self.playlist_tracks.len();
             let search_tag = if !self.local_filter_text.is_empty() {
                 let count = self.get_tracks_filtered_list_iter().count();
-                format!(" [SEARCH: {} ({}/{})]", self.local_filter_text, count, total)
+                format!(
+                    " [SEARCH: {} ({}/{})]",
+                    self.local_filter_text, count, total
+                )
             } else {
                 String::new()
             };
@@ -1281,11 +1537,20 @@ impl HasTitle for LibraryBrowser {
                 LibraryCategory::Albums => self.get_albums_filtered_iter().count(),
             };
             let search_tag = if !self.local_filter_text.is_empty() {
-                format!(" [SEARCH: {} ({}/{})]", self.local_filter_text, filtered_count, total)
+                format!(
+                    " [SEARCH: {} ({}/{})]",
+                    self.local_filter_text, filtered_count, total
+                )
             } else {
                 String::new()
             };
-            format!("Library - {}{}{}", self.category.label(), sort_label, search_tag).into()
+            format!(
+                "Library - {}{}{}",
+                self.category.label(),
+                sort_label,
+                search_tag
+            )
+            .into()
         }
     }
 }
@@ -1297,22 +1562,25 @@ impl Scrollable for LibraryBrowser {
             InputRouting::Search => {} // no scrolling in search mode
             InputRouting::Category => {
                 let idx = self.category as isize;
-                let new_idx = (idx + amount).rem_euclid(LibraryCategory::ALL.len() as isize) as usize;
+                let new_idx =
+                    (idx + amount).rem_euclid(LibraryCategory::ALL.len() as isize) as usize;
                 let new_cat = LibraryCategory::ALL[new_idx];
                 self.category = new_cat;
             }
             InputRouting::Content => match self.category {
                 LibraryCategory::LikedSongs => {
                     let max = self.song_list.get_list_iter().count().saturating_sub(1);
-                    self.cur_selected = self
-                        .cur_selected
-                        .saturating_add_signed(amount)
-                        .min(max);
+                    self.cur_selected = self.cur_selected.saturating_add_signed(amount).min(max);
                 }
                 LibraryCategory::Playlists => {
                     if self.show_playlist_tracks {
-                        let max = if !self.local_filter_text.is_empty() || !self.tracks_filter.filter_commands.is_empty() || !self.tracks_sort.sort_commands.is_empty() {
-                            self.get_tracks_filtered_list_iter().count().saturating_sub(1)
+                        let max = if !self.local_filter_text.is_empty()
+                            || !self.tracks_filter.filter_commands.is_empty()
+                            || !self.tracks_sort.sort_commands.is_empty()
+                        {
+                            self.get_tracks_filtered_list_iter()
+                                .count()
+                                .saturating_sub(1)
                         } else {
                             self.playlist_tracks.len().saturating_sub(1)
                         };
@@ -1330,17 +1598,13 @@ impl Scrollable for LibraryBrowser {
                 }
                 LibraryCategory::Artists => {
                     let max = self.artist_data.len().saturating_sub(1);
-                    self.artist_selected = self
-                        .artist_selected
-                        .saturating_add_signed(amount)
-                        .min(max);
+                    self.artist_selected =
+                        self.artist_selected.saturating_add_signed(amount).min(max);
                 }
                 LibraryCategory::Albums => {
                     let max = self.album_data.len().saturating_sub(1);
-                    self.album_selected = self
-                        .album_selected
-                        .saturating_add_signed(amount)
-                        .min(max);
+                    self.album_selected =
+                        self.album_selected.saturating_add_signed(amount).min(max);
                 }
             },
         }
@@ -1358,7 +1622,9 @@ impl ActionHandler<FilterAction> for LibraryBrowser {
         } else {
             match self.category {
                 LibraryCategory::LikedSongs => self.filter.shown = !self.filter.shown,
-                LibraryCategory::Playlists => self.playlists_filter.shown = !self.playlists_filter.shown,
+                LibraryCategory::Playlists => {
+                    self.playlists_filter.shown = !self.playlists_filter.shown
+                }
                 LibraryCategory::Artists => self.artists_filter.shown = !self.artists_filter.shown,
                 LibraryCategory::Albums => self.albums_filter.shown = !self.albums_filter.shown,
             }
@@ -1374,7 +1640,9 @@ impl ActionHandler<SortAction> for LibraryBrowser {
         } else {
             match self.category {
                 LibraryCategory::LikedSongs => self.sort.shown = !self.sort.shown,
-                LibraryCategory::Playlists => self.playlists_sort.shown = !self.playlists_sort.shown,
+                LibraryCategory::Playlists => {
+                    self.playlists_sort.shown = !self.playlists_sort.shown
+                }
                 LibraryCategory::Artists => self.artists_sort.shown = !self.artists_sort.shown,
                 LibraryCategory::Albums => self.albums_sort.shown = !self.albums_sort.shown,
             }
@@ -1385,7 +1653,8 @@ impl ActionHandler<SortAction> for LibraryBrowser {
 
 impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
     fn apply_action(&mut self, action: BrowserSongsAction) -> impl Into<YoutuiEffect<Self>> {
-        // If category panel is focused, redirect Enter to focus content (triggers fetch)
+        // If category panel is focused, redirect Enter to focus content (triggers
+        // fetch)
         if self.input_routing != InputRouting::Content && action == BrowserSongsAction::PlaySong {
             return (self.focus_content(), None);
         }
@@ -1403,7 +1672,10 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::CopySongUrl => {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
-                        let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                        let raw_url = format!(
+                            "https://music.youtube.com/watch?v={}",
+                            song.video_id.get_raw()
+                        );
                         crate::app::structures::copy_to_clipboard(&raw_url);
                         info!("Copied URL: {raw_url}");
                     }
@@ -1413,13 +1685,19 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
                         debug!(title = %song.title, "Library: add song to playlist");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(vec![song.clone()])));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::AddSongsToPlaylist(vec![song.clone()])),
+                        );
                     }
                 }
                 BrowserSongsAction::AddSongsToPlaylist => {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     debug!(count = %songs.len(), "Library: add all songs to playlist");
-                    return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(songs)));
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::AddSongsToPlaylist(songs)),
+                    );
                 }
                 BrowserSongsAction::Filter => {
                     self.filter.shown = !self.filter.shown;
@@ -1431,10 +1709,10 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 }
                 BrowserSongsAction::GoToArtist => {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
-                    if let Some(song) = songs.get(self.cur_selected) {
-                        if let Some(cb) = super::shared_components::navigate_to_artist(song) {
-                            return (AsyncTask::new_no_op(), Some(cb));
-                        }
+                    if let Some(song) = songs.get(self.cur_selected)
+                        && let Some(cb) = super::shared_components::navigate_to_artist(song)
+                    {
+                        return (AsyncTask::new_no_op(), Some(cb));
                     }
                 }
                 BrowserSongsAction::GoToAlbum => {
@@ -1447,28 +1725,44 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     }
                 }
                 BrowserSongsAction::SaveToExistingPlaylist => {
-                    let video_ids: Vec<_> = self.song_list.get_list_iter()
+                    let video_ids: Vec<_> = self
+                        .song_list
+                        .get_list_iter()
                         .map(|s| s.video_id.clone())
                         .collect();
                     if !video_ids.is_empty() {
-                        return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
+                        );
                     }
                 }
                 BrowserSongsAction::InsertNext => {
-                    let songs: Vec<_> = self.song_list.get_list_iter().skip(self.cur_selected).cloned().collect();
+                    let songs: Vec<_> = self
+                        .song_list
+                        .get_list_iter()
+                        .skip(self.cur_selected)
+                        .cloned()
+                        .collect();
                     if !songs.is_empty() {
                         return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
                     }
                 }
                 BrowserSongsAction::QueueSong => {
                     if let Some(song) = self.song_list.get_list_iter().nth(self.cur_selected) {
-                        return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song.clone()])));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::QueueSong(vec![song.clone()])),
+                        );
                     }
                 }
                 BrowserSongsAction::GetRelatedTracks => {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
-                        return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::GetRelatedTracks(song.video_id.clone())),
+                        );
                     }
                 }
                 _ => warn!("Unsupported song action for liked songs: {:?}", action),
@@ -1478,8 +1772,12 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::PlaySong => {
                     if self.show_playlist_tracks {
                         // Playing a track from the tracks view
-                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])));
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected)
+                        {
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])),
+                            );
                         }
                     } else {
                         // Show tracks in-browser
@@ -1489,73 +1787,109 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::PlaySongs => {
                     if self.show_playlist_tracks {
                         let songs: Vec<_> = self.playlist_tracks.clone();
-                        return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(songs)));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::AddSongsToPlaylistAndPlay(songs)),
+                        );
                     }
                     if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
                         debug!(playlist = %pl.title, "Library: appending playlist to queue");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::AppendPlaylistFromPopup(pl.playlist_id.clone())));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::AppendPlaylistFromPopup(pl.playlist_id.clone())),
+                        );
                     }
                 }
                 BrowserSongsAction::CopySongUrl => {
                     if self.show_playlist_tracks {
-                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected)
+                        {
+                            let raw_url = format!(
+                                "https://music.youtube.com/watch?v={}",
+                                song.video_id.get_raw()
+                            );
                             crate::app::structures::copy_to_clipboard(&raw_url);
                             info!("Copied URL: {raw_url}");
                         }
                     } else if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                        let raw_url = format!("https://music.youtube.com/playlist?list={}", pl.playlist_id.get_raw().strip_prefix("VL").unwrap_or(pl.playlist_id.get_raw()));
+                        let raw_url = format!(
+                            "https://music.youtube.com/playlist?list={}",
+                            pl.playlist_id
+                                .get_raw()
+                                .strip_prefix("VL")
+                                .unwrap_or(pl.playlist_id.get_raw())
+                        );
                         crate::app::structures::copy_to_clipboard(&raw_url);
                         info!("Copied URL: {raw_url}");
                     }
                     return (AsyncTask::new_no_op(), None);
                 }
                 BrowserSongsAction::ViewLyrics => {
-                    if self.show_playlist_tracks {
-                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                            return (AsyncTask::new_no_op(), Some(AppCallback::ViewLyrics { artist, title: song.title.clone() }));
-                        }
+                    if self.show_playlist_tracks
+                        && let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected)
+                    {
+                        let artist = song
+                            .artists
+                            .iter()
+                            .map(|a| a.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::ViewLyrics {
+                                artist,
+                                title: song.title.clone(),
+                            }),
+                        );
                     }
                 }
                 BrowserSongsAction::GoToArtist => {
-                    if self.show_playlist_tracks {
-                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            if let Some(cb) = super::shared_components::navigate_to_artist(song) {
-                                return (AsyncTask::new_no_op(), Some(cb));
-                            }
-                        }
+                    if self.show_playlist_tracks
+                        && let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected)
+                        && let Some(cb) = super::shared_components::navigate_to_artist(song)
+                    {
+                        return (AsyncTask::new_no_op(), Some(cb));
                     }
                 }
                 BrowserSongsAction::GoToAlbum => {
-                    if self.show_playlist_tracks {
-                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            if let Some(cb) = super::shared_components::navigate_to_album(song) {
-                                return (AsyncTask::new_no_op(), Some(cb));
-                            }
-                        }
+                    if self.show_playlist_tracks
+                        && let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected)
+                        && let Some(cb) = super::shared_components::navigate_to_album(song)
+                    {
+                        return (AsyncTask::new_no_op(), Some(cb));
                     }
                 }
                 BrowserSongsAction::AddSongToPlaylist => {
-                    if self.show_playlist_tracks {
-                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(vec![song.clone()])));
-                        }
+                    if self.show_playlist_tracks
+                        && let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected)
+                    {
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::AddSongsToPlaylist(vec![song.clone()])),
+                        );
                     }
                 }
                 BrowserSongsAction::AddSongsToPlaylist => {
                     if self.show_playlist_tracks {
                         let songs: Vec<_> = self.playlist_tracks.clone();
-                        return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(songs)));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::AddSongsToPlaylist(songs)),
+                        );
                     }
                 }
                 BrowserSongsAction::SaveToExistingPlaylist => {
                     if self.show_playlist_tracks {
-                        let video_ids: Vec<_> = self.playlist_tracks.iter()
+                        let video_ids: Vec<_> = self
+                            .playlist_tracks
+                            .iter()
                             .map(|s| s.video_id.clone())
                             .collect();
                         if !video_ids.is_empty() {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)));
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
+                            );
                         }
                     }
                 }
@@ -1568,17 +1902,23 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     }
                 }
                 BrowserSongsAction::QueueSong => {
-                    if self.show_playlist_tracks {
-                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song.clone()])));
-                        }
+                    if self.show_playlist_tracks
+                        && let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected)
+                    {
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::QueueSong(vec![song.clone()])),
+                        );
                     }
                 }
                 BrowserSongsAction::GetRelatedTracks => {
-                    if self.show_playlist_tracks {
-                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
-                        }
+                    if self.show_playlist_tracks
+                        && let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected)
+                    {
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::GetRelatedTracks(song.video_id.clone())),
+                        );
                     }
                 }
                 BrowserSongsAction::Filter => {
@@ -1594,149 +1934,221 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     return (AsyncTask::new_no_op(), None);
                 }
                 BrowserSongsAction::DeletePlaylist => {
-                    if !self.show_playlist_tracks {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::ShowDeleteConfirm(pl.playlist_id.clone(), pl.title.clone())));
-                        }
+                    if !self.show_playlist_tracks
+                        && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                    {
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::ShowDeleteConfirm(
+                                pl.playlist_id.clone(),
+                                pl.title.clone(),
+                            )),
+                        );
                     }
                 }
                 BrowserSongsAction::RenamePlaylist => {
-                    if !self.show_playlist_tracks {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenRenamePopup(pl.playlist_id.clone(), pl.title.clone())));
-                        }
+                    if !self.show_playlist_tracks
+                        && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                    {
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::OpenRenamePopup(
+                                pl.playlist_id.clone(),
+                                pl.title.clone(),
+                            )),
+                        );
                     }
                 }
                 BrowserSongsAction::EditPlaylistDetails => {
-                    if !self.show_playlist_tracks {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenEditPopup(pl.playlist_id.clone(), pl.title.clone())));
-                        }
+                    if !self.show_playlist_tracks
+                        && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                    {
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::OpenEditPopup(
+                                pl.playlist_id.clone(),
+                                pl.title.clone(),
+                            )),
+                        );
                     }
                 }
                 BrowserSongsAction::OpenPlaylistEditor => {
                     if self.show_playlist_tracks {
                         if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
                             let tracks = self.playlist_tracks.clone();
-                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistEditor {
-                                playlist_id: pl.playlist_id.clone(),
-                                playlist_title: pl.title.clone(),
-                                tracks,
-                            }));
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::OpenPlaylistEditor {
+                                    playlist_id: pl.playlist_id.clone(),
+                                    playlist_title: pl.title.clone(),
+                                    tracks,
+                                }),
+                            );
                         }
                     } else {
                         self.error = Some("Open a playlist first (Enter)".into());
                     }
                 }
                 BrowserSongsAction::RatePlaylist => {
-                    if !self.show_playlist_tracks {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            if self.liked_playlists.contains(&pl.playlist_id) {
-                                self.liked_playlists.remove(&pl.playlist_id);
-                                debug!("Library: toggle unlike playlist");
-                                return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(
+                    if !self.show_playlist_tracks
+                        && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                    {
+                        if self.liked_playlists.contains(&pl.playlist_id) {
+                            self.liked_playlists.remove(&pl.playlist_id);
+                            debug!("Library: toggle unlike playlist");
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::RatePlaylistFromLibrary(
                                     pl.playlist_id.clone(),
                                     LikeStatus::Indifferent,
-                                )));
-                            } else {
-                                self.liked_playlists.insert(pl.playlist_id.clone());
-                                debug!("Library: toggle like playlist");
-                                return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(
+                                )),
+                            );
+                        } else {
+                            self.liked_playlists.insert(pl.playlist_id.clone());
+                            debug!("Library: toggle like playlist");
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::RatePlaylistFromLibrary(
                                     pl.playlist_id.clone(),
                                     LikeStatus::Liked,
-                                )));
-                            }
+                                )),
+                            );
                         }
                     }
                 }
                 BrowserSongsAction::GetPlaylistDetails => {
-                    if !self.show_playlist_tracks {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenDetailsPopup(pl.playlist_id.clone(), pl.title.clone())));
-                        }
+                    if !self.show_playlist_tracks
+                        && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                    {
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::OpenDetailsPopup(
+                                pl.playlist_id.clone(),
+                                pl.title.clone(),
+                            )),
+                        );
                     }
                 }
                 BrowserSongsAction::RemoveTrackFromPlaylist => {
                     if self.show_playlist_tracks {
                         // Use filtered list to find correct track by visual position
-                        let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
-                        if let Some(song) = filtered.get(self.playlist_tracks_selected) {
-                            if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                                let raw = self.track_set_ids.get(song.video_id.get_raw())
-                                    .cloned()
-                                    .unwrap_or_else(|| song.video_id.get_raw().to_string());
-                                let set_id = ytmapi_rs::common::SetVideoID::from_raw(raw);
-                                // Remove from local list by video_id match
-                                let vid = song.video_id.get_raw().to_string();
-                                self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
-                                self.playlist_tracks_selected = self.playlist_tracks_selected
-                                    .min(self.playlist_tracks.len().saturating_sub(1));
-                                return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(
+                        let filtered: Vec<&ListSong> =
+                            self.get_tracks_filtered_list_iter().collect();
+                        if let Some(song) = filtered.get(self.playlist_tracks_selected)
+                            && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                        {
+                            let raw = self
+                                .track_set_ids
+                                .get(song.video_id.get_raw())
+                                .cloned()
+                                .unwrap_or_else(|| song.video_id.get_raw().to_string());
+                            let set_id = ytmapi_rs::common::SetVideoID::from_raw(raw);
+                            // Remove from local list by video_id match
+                            let vid = song.video_id.get_raw().to_string();
+                            self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
+                            self.playlist_tracks_selected = self
+                                .playlist_tracks_selected
+                                .min(self.playlist_tracks.len().saturating_sub(1));
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::RemovePlaylistItemsFromLibrary(
                                     pl.playlist_id.clone(),
                                     vec![set_id],
-                                )));
-                            }
+                                )),
+                            );
                         }
                     }
                 }
                 BrowserSongsAction::MoveTrackUp => {
                     if self.show_playlist_tracks && self.playlist_tracks_selected > 0 {
                         let cur = self.playlist_tracks_selected;
-                        let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
+                        let filtered: Vec<&ListSong> =
+                            self.get_tracks_filtered_list_iter().collect();
                         let song_vid = filtered.get(cur).map(|s| s.video_id.get_raw().to_string());
-                        let above_vid = filtered.get(cur - 1).map(|s| s.video_id.get_raw().to_string());
-                        if let (Some(ref sv), Some(ref av)) = (song_vid, above_vid) {
-                            if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                                let cur_idx = self.playlist_tracks.iter().position(|t| t.video_id.get_raw() == sv);
-                                let above_idx = self.playlist_tracks.iter().position(|t| t.video_id.get_raw() == av);
-                                if let (Some(ci), Some(ai)) = (cur_idx, above_idx) {
-                                    self.playlist_tracks.swap(ci, ai);
-                                    self.playlist_tracks_selected = self.playlist_tracks_selected.saturating_sub(1);
-                                }
-                                return (AsyncTask::new_no_op(), Some(AppCallback::ReorderPlaylistItemFromLibrary(
+                        let above_vid = filtered
+                            .get(cur - 1)
+                            .map(|s| s.video_id.get_raw().to_string());
+                        if let (Some(ref sv), Some(ref av)) = (song_vid, above_vid)
+                            && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                        {
+                            let cur_idx = self
+                                .playlist_tracks
+                                .iter()
+                                .position(|t| t.video_id.get_raw() == sv);
+                            let above_idx = self
+                                .playlist_tracks
+                                .iter()
+                                .position(|t| t.video_id.get_raw() == av);
+                            if let (Some(ci), Some(ai)) = (cur_idx, above_idx) {
+                                self.playlist_tracks.swap(ci, ai);
+                                self.playlist_tracks_selected =
+                                    self.playlist_tracks_selected.saturating_sub(1);
+                            }
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::ReorderPlaylistItemFromLibrary(
                                     pl.playlist_id.clone(),
                                     ytmapi_rs::common::VideoID::from_raw(sv.clone()),
                                     ytmapi_rs::common::VideoID::from_raw(av.clone()),
-                                )));
-                            }
+                                )),
+                            );
                         }
                     }
                 }
                 BrowserSongsAction::MoveTrackDown => {
                     if self.show_playlist_tracks {
                         let cur = self.playlist_tracks_selected;
-                        let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
+                        let filtered: Vec<&ListSong> =
+                            self.get_tracks_filtered_list_iter().collect();
                         if cur + 1 < filtered.len() {
-                            let song_vid = filtered.get(cur).map(|s| s.video_id.get_raw().to_string());
-                            let below_vid = filtered.get(cur + 1).map(|s| s.video_id.get_raw().to_string());
-                            if let (Some(ref sv), Some(ref bv)) = (song_vid, below_vid) {
-                                if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                                    let cur_idx = self.playlist_tracks.iter().position(|t| t.video_id.get_raw() == sv);
-                                    let below_idx = self.playlist_tracks.iter().position(|t| t.video_id.get_raw() == bv);
-                                    if let (Some(ci), Some(bi)) = (cur_idx, below_idx) {
-                                        self.playlist_tracks.swap(ci, bi);
-                                        self.playlist_tracks_selected += 1;
-                                    }
-                                    return (AsyncTask::new_no_op(), Some(AppCallback::ReorderPlaylistItemFromLibrary(
+                            let song_vid =
+                                filtered.get(cur).map(|s| s.video_id.get_raw().to_string());
+                            let below_vid = filtered
+                                .get(cur + 1)
+                                .map(|s| s.video_id.get_raw().to_string());
+                            if let (Some(ref sv), Some(ref bv)) = (song_vid, below_vid)
+                                && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                            {
+                                let cur_idx = self
+                                    .playlist_tracks
+                                    .iter()
+                                    .position(|t| t.video_id.get_raw() == sv);
+                                let below_idx = self
+                                    .playlist_tracks
+                                    .iter()
+                                    .position(|t| t.video_id.get_raw() == bv);
+                                if let (Some(ci), Some(bi)) = (cur_idx, below_idx) {
+                                    self.playlist_tracks.swap(ci, bi);
+                                    self.playlist_tracks_selected += 1;
+                                }
+                                return (
+                                    AsyncTask::new_no_op(),
+                                    Some(AppCallback::ReorderPlaylistItemFromLibrary(
                                         pl.playlist_id.clone(),
                                         ytmapi_rs::common::VideoID::from_raw(sv.clone()),
                                         ytmapi_rs::common::VideoID::from_raw(bv.clone()),
-                                    )));
-                                }
+                                    )),
+                                );
                             }
                         }
                     }
                 }
                 BrowserSongsAction::MergePlaylist => {
-                    if !self.show_playlist_tracks {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistMergePopup(pl.playlist_id.clone())));
-                        }
+                    if !self.show_playlist_tracks
+                        && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                    {
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::OpenPlaylistMergePopup(pl.playlist_id.clone())),
+                        );
                     }
                 }
                 BrowserSongsAction::ToggleVisualMode => {
                     if self.show_playlist_tracks {
-                        info!("Toggling visual mode: {} -> {}", self.tracks_visual_mode, !self.tracks_visual_mode);
+                        info!(
+                            "Toggling visual mode: {} -> {}",
+                            self.tracks_visual_mode, !self.tracks_visual_mode
+                        );
                         self.tracks_visual_mode = !self.tracks_visual_mode;
                         if self.tracks_visual_mode {
                             self.tracks_visual_start = self.playlist_tracks_selected;
@@ -1744,73 +2156,132 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     }
                 }
                 BrowserSongsAction::DeleteSelected => {
-                    if self.show_playlist_tracks {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
-                            let (ids, to_remove): (Vec<_>, Vec<_>) = if self.tracks_visual_mode {
-                                let start = self.tracks_visual_start.min(self.playlist_tracks_selected);
-                                let end = self.tracks_visual_start.max(self.playlist_tracks_selected);
-                                filtered[start..=end].iter().map(|s| {
-                                    let raw = self.track_set_ids.get(s.video_id.get_raw())
-                                        .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
-                                    (ytmapi_rs::common::SetVideoID::from_raw(raw), s.video_id.get_raw().to_string())
-                                }).unzip()
-                            } else {
-                                filtered.get(self.playlist_tracks_selected).map(|s| {
-                                    let raw = self.track_set_ids.get(s.video_id.get_raw())
-                                        .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
-                                    (vec![ytmapi_rs::common::SetVideoID::from_raw(raw)], vec![s.video_id.get_raw().to_string()])
-                                }).unwrap_or_default()
-                            };
-                            self.tracks_visual_mode = false;
-                            // Remove from local list by video_id
-                            for vid in &to_remove {
-                                self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
-                            }
-                            self.playlist_tracks_selected = self.playlist_tracks_selected
-                                .min(self.playlist_tracks.len().saturating_sub(1));
-                            if !ids.is_empty() {
-                                return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
-                            }
+                    if self.show_playlist_tracks
+                        && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                    {
+                        let filtered: Vec<&ListSong> =
+                            self.get_tracks_filtered_list_iter().collect();
+                        let (ids, to_remove): (Vec<_>, Vec<_>) = if self.tracks_visual_mode {
+                            let start = self.tracks_visual_start.min(self.playlist_tracks_selected);
+                            let end = self.tracks_visual_start.max(self.playlist_tracks_selected);
+                            filtered[start..=end]
+                                .iter()
+                                .map(|s| {
+                                    let raw = self
+                                        .track_set_ids
+                                        .get(s.video_id.get_raw())
+                                        .cloned()
+                                        .unwrap_or_else(|| s.video_id.get_raw().to_string());
+                                    (
+                                        ytmapi_rs::common::SetVideoID::from_raw(raw),
+                                        s.video_id.get_raw().to_string(),
+                                    )
+                                })
+                                .unzip()
+                        } else {
+                            filtered
+                                .get(self.playlist_tracks_selected)
+                                .map(|s| {
+                                    let raw = self
+                                        .track_set_ids
+                                        .get(s.video_id.get_raw())
+                                        .cloned()
+                                        .unwrap_or_else(|| s.video_id.get_raw().to_string());
+                                    (
+                                        vec![ytmapi_rs::common::SetVideoID::from_raw(raw)],
+                                        vec![s.video_id.get_raw().to_string()],
+                                    )
+                                })
+                                .unwrap_or_default()
+                        };
+                        self.tracks_visual_mode = false;
+                        // Remove from local list by video_id
+                        for vid in &to_remove {
+                            self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
+                        }
+                        self.playlist_tracks_selected = self
+                            .playlist_tracks_selected
+                            .min(self.playlist_tracks.len().saturating_sub(1));
+                        if !ids.is_empty() {
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::RemovePlaylistItemsFromLibrary(
+                                    pl.playlist_id.clone(),
+                                    ids,
+                                )),
+                            );
                         }
                     }
                 }
                 BrowserSongsAction::DeleteToTop => {
-                    if self.show_playlist_tracks {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
-                            let (ids, to_remove): (Vec<_>, Vec<_>) = filtered[..self.playlist_tracks_selected].iter().map(|s| {
-                                let raw = self.track_set_ids.get(s.video_id.get_raw())
-                                    .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
-                                (ytmapi_rs::common::SetVideoID::from_raw(raw), s.video_id.get_raw().to_string())
-                            }).unzip();
-                            for vid in &to_remove {
-                                self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
-                            }
-                            self.playlist_tracks_selected = 0;
-                            if !ids.is_empty() {
-                                return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
-                            }
+                    if self.show_playlist_tracks
+                        && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                    {
+                        let filtered: Vec<&ListSong> =
+                            self.get_tracks_filtered_list_iter().collect();
+                        let (ids, to_remove): (Vec<_>, Vec<_>) = filtered
+                            [..self.playlist_tracks_selected]
+                            .iter()
+                            .map(|s| {
+                                let raw = self
+                                    .track_set_ids
+                                    .get(s.video_id.get_raw())
+                                    .cloned()
+                                    .unwrap_or_else(|| s.video_id.get_raw().to_string());
+                                (
+                                    ytmapi_rs::common::SetVideoID::from_raw(raw),
+                                    s.video_id.get_raw().to_string(),
+                                )
+                            })
+                            .unzip();
+                        for vid in &to_remove {
+                            self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
+                        }
+                        self.playlist_tracks_selected = 0;
+                        if !ids.is_empty() {
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::RemovePlaylistItemsFromLibrary(
+                                    pl.playlist_id.clone(),
+                                    ids,
+                                )),
+                            );
                         }
                     }
                 }
                 BrowserSongsAction::DeleteToBottom => {
-                    if self.show_playlist_tracks {
-                        if let Some(pl) = self.playlist_data.get(self.playlist_selected) {
-                            let filtered: Vec<&ListSong> = self.get_tracks_filtered_list_iter().collect();
-                            let start = self.playlist_tracks_selected + 1;
-                            if start < filtered.len() {
-                                let (ids, to_remove): (Vec<_>, Vec<_>) = filtered[start..].iter().map(|s| {
-                                    let raw = self.track_set_ids.get(s.video_id.get_raw())
-                                        .cloned().unwrap_or_else(|| s.video_id.get_raw().to_string());
-                                    (ytmapi_rs::common::SetVideoID::from_raw(raw), s.video_id.get_raw().to_string())
-                                }).unzip();
-                                for vid in &to_remove {
-                                    self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
-                                }
-                                if !ids.is_empty() {
-                                    return (AsyncTask::new_no_op(), Some(AppCallback::RemovePlaylistItemsFromLibrary(pl.playlist_id.clone(), ids)));
-                                }
+                    if self.show_playlist_tracks
+                        && let Some(pl) = self.playlist_data.get(self.playlist_selected)
+                    {
+                        let filtered: Vec<&ListSong> =
+                            self.get_tracks_filtered_list_iter().collect();
+                        let start = self.playlist_tracks_selected + 1;
+                        if start < filtered.len() {
+                            let (ids, to_remove): (Vec<_>, Vec<_>) = filtered[start..]
+                                .iter()
+                                .map(|s| {
+                                    let raw = self
+                                        .track_set_ids
+                                        .get(s.video_id.get_raw())
+                                        .cloned()
+                                        .unwrap_or_else(|| s.video_id.get_raw().to_string());
+                                    (
+                                        ytmapi_rs::common::SetVideoID::from_raw(raw),
+                                        s.video_id.get_raw().to_string(),
+                                    )
+                                })
+                                .unzip();
+                            for vid in &to_remove {
+                                self.playlist_tracks.retain(|t| t.video_id.get_raw() != vid);
+                            }
+                            if !ids.is_empty() {
+                                return (
+                                    AsyncTask::new_no_op(),
+                                    Some(AppCallback::RemovePlaylistItemsFromLibrary(
+                                        pl.playlist_id.clone(),
+                                        ids,
+                                    )),
+                                );
                             }
                         }
                     }
@@ -1821,23 +2292,43 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::PlaySong => {
                     if let Some(artist) = self.artist_data.get(self.artist_selected) {
                         debug!(name = %artist.artist, "Library: opening artist page");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::ArtistChannel(artist.channel_id.clone()))));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::Navigate(NavTarget::ArtistChannel(
+                                artist.channel_id.clone(),
+                            ))),
+                        );
                     }
                 }
                 BrowserSongsAction::GoToArtist => {
                     if let Some(artist) = self.artist_data.get(self.artist_selected) {
                         debug!(name = %artist.artist, "Library: go to artist via menu");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::ArtistChannel(artist.channel_id.clone()))));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::Navigate(NavTarget::ArtistChannel(
+                                artist.channel_id.clone(),
+                            ))),
+                        );
                     }
                 }
                 BrowserSongsAction::SubscribeToArtist => {
                     if let Some(artist) = self.artist_data.get(self.artist_selected) {
-                        return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(artist.channel_id.clone())));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::SubscribeToArtistFromLibrary(
+                                artist.channel_id.clone(),
+                            )),
+                        );
                     }
                 }
                 BrowserSongsAction::UnsubscribeFromArtist => {
                     if let Some(artist) = self.artist_data.get(self.artist_selected) {
-                        return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![artist.channel_id.clone()])));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![
+                                artist.channel_id.clone(),
+                            ])),
+                        );
                     }
                 }
                 BrowserSongsAction::ToggleSubscribeArtist => {
@@ -1846,11 +2337,17 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         if self.subscribed_artists.contains(&cid) {
                             debug!(name = %artist.artist, "Library: toggle unsubscribe artist");
                             self.subscribed_artists.remove(&cid);
-                            return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![cid])));
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![cid])),
+                            );
                         } else {
                             debug!(name = %artist.artist, "Library: toggle subscribe artist");
                             self.subscribed_artists.insert(cid.clone());
-                            return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(cid)));
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::SubscribeToArtistFromLibrary(cid)),
+                            );
                         }
                     }
                 }
@@ -1860,34 +2357,47 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::PlaySong => {
                     if let Some(album) = self.album_data.get(self.album_selected) {
                         let query = format!("{} {}", album.artist, album.title);
-                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::SongSearch(query))));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::Navigate(NavTarget::SongSearch(query))),
+                        );
                     }
                 }
                 BrowserSongsAction::GoToArtist => {
                     if let Some(album) = self.album_data.get(self.album_selected) {
                         let artist = album.artist.clone();
-                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::Artist(artist))));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::Navigate(NavTarget::Artist(artist))),
+                        );
                     }
                 }
                 BrowserSongsAction::GoToAlbum => {
                     if let Some(album) = self.album_data.get(self.album_selected) {
                         debug!(album = %album.title, artist = %album.artist, "Library albums: open album direct");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::AlbumOpen {
-                            artist: album.artist.clone(),
-                            album: album.title.clone(),
-                            album_id: album.album_id.clone(),
-                        })));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::Navigate(NavTarget::AlbumOpen {
+                                artist: album.artist.clone(),
+                                album: album.title.clone(),
+                                album_id: album.album_id.clone(),
+                            })),
+                        );
                     }
                 }
                 BrowserSongsAction::RatePlaylist => {
-                    // Navigate to album search where RatePlaylist works (audio_playlist_id available)
+                    // Navigate to album search where RatePlaylist works (audio_playlist_id
+                    // available)
                     if let Some(album) = self.album_data.get(self.album_selected) {
                         debug!(album = %album.title, "Library: rate album - navigating to album search");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::AlbumOpen {
-                            artist: album.artist.clone(),
-                            album: album.title.clone(),
-                            album_id: album.album_id.clone(),
-                        })));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::Navigate(NavTarget::AlbumOpen {
+                                artist: album.artist.clone(),
+                                album: album.title.clone(),
+                                album_id: album.album_id.clone(),
+                            })),
+                        );
                     }
                 }
                 _ => warn!("Unsupported song action for albums: {:?}", action),
@@ -1956,8 +2466,15 @@ impl ActionHandler<BrowserLibraryAction> for LibraryBrowser {
                     }
                     LibraryCategory::Playlists => {
                         if self.show_playlist_tracks {
-                            if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                                return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])));
+                            if let Some(song) =
+                                self.playlist_tracks.get(self.playlist_tracks_selected)
+                            {
+                                return (
+                                    AsyncTask::new_no_op(),
+                                    Some(AppCallback::AddSongsToPlaylistAndPlay(vec![
+                                        song.clone(),
+                                    ])),
+                                );
                             }
                         } else {
                             return (self.fetch_playlist_tracks(), None);
@@ -1966,17 +2483,25 @@ impl ActionHandler<BrowserLibraryAction> for LibraryBrowser {
                     LibraryCategory::Artists => {
                         if let Some(artist) = self.artist_data.get(self.artist_selected) {
                             debug!(name = %artist.artist, "Library: activate artist via Enter");
-                            return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::ArtistChannel(artist.channel_id.clone()))));
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::Navigate(NavTarget::ArtistChannel(
+                                    artist.channel_id.clone(),
+                                ))),
+                            );
                         }
                     }
                     LibraryCategory::Albums => {
                         if let Some(album) = self.album_data.get(self.album_selected) {
                             debug!(album = %album.title, artist = %album.artist, "Library: activate album via Enter (direct open)");
-                            return (AsyncTask::new_no_op(), Some(AppCallback::Navigate(NavTarget::AlbumOpen {
-                                artist: album.artist.clone(),
-                                album: album.title.clone(),
-                                album_id: album.album_id.clone(),
-                            })));
+                            return (
+                                AsyncTask::new_no_op(),
+                                Some(AppCallback::Navigate(NavTarget::AlbumOpen {
+                                    artist: album.artist.clone(),
+                                    album: album.title.clone(),
+                                    album_id: album.album_id.clone(),
+                                })),
+                            );
                         }
                     }
                 }
@@ -2010,8 +2535,13 @@ impl KeyRouter<AppAction> for LibraryBrowser {
         &self,
         config: &'a Config,
     ) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
-        [&config.keybinds.browser_library, &config.keybinds.filter, &config.keybinds.sort, &config.keybinds.list]
-            .into_iter()
+        [
+            &config.keybinds.browser_library,
+            &config.keybinds.filter,
+            &config.keybinds.sort,
+            &config.keybinds.list,
+        ]
+        .into_iter()
     }
 
     fn get_active_keybinds<'a>(
@@ -2067,9 +2597,8 @@ mod tests {
             },
         ];
 
-        let items: Vec<Vec<Cow<'_, str>>> = lib.get_filtered_items()
-            .map(|row| row.collect())
-            .collect();
+        let items: Vec<Vec<Cow<'_, str>>> =
+            lib.get_filtered_items().map(|row| row.collect()).collect();
 
         assert_eq!(items.len(), 2);
         assert_eq!(items[0][1], "My Favorites");
@@ -2084,16 +2613,16 @@ mod tests {
         lib.category = LibraryCategory::Artists;
         // Use serde_json to construct non-exhaustive struct from external crate
         let radiohead: LibraryArtist = serde_json::from_str(
-            r#"{"channel_id":"CH1","artist":"Radiohead","byline":"12 songs"}"#
-        ).unwrap();
-        let nirvana: LibraryArtist = serde_json::from_str(
-            r#"{"channel_id":"CH2","artist":"Nirvana","byline":"8 songs"}"#
-        ).unwrap();
+            r#"{"channel_id":"CH1","artist":"Radiohead","byline":"12 songs"}"#,
+        )
+        .unwrap();
+        let nirvana: LibraryArtist =
+            serde_json::from_str(r#"{"channel_id":"CH2","artist":"Nirvana","byline":"8 songs"}"#)
+                .unwrap();
         lib.artist_data = vec![radiohead, nirvana];
 
-        let items: Vec<Vec<Cow<'_, str>>> = lib.get_filtered_items()
-            .map(|row| row.collect())
-            .collect();
+        let items: Vec<Vec<Cow<'_, str>>> =
+            lib.get_filtered_items().map(|row| row.collect()).collect();
 
         assert_eq!(items.len(), 2);
         assert_eq!(items[0][1], "Radiohead");
@@ -2105,9 +2634,8 @@ mod tests {
         let lib = LibraryBrowser::new();
         assert_eq!(lib.playlist_data.len(), 0);
         // Default category is LikedSongs, which has no songs
-        let items: Vec<Vec<Cow<'_, str>>> = lib.get_filtered_items()
-            .map(|row| row.collect())
-            .collect();
+        let items: Vec<Vec<Cow<'_, str>>> =
+            lib.get_filtered_items().map(|row| row.collect()).collect();
         assert_eq!(items.len(), 0);
     }
 
@@ -2135,9 +2663,8 @@ mod tests {
         ];
         lib.local_filter_text = "chill".into();
 
-        let items: Vec<Vec<Cow<'_, str>>> = lib.get_filtered_items()
-            .map(|row| row.collect())
-            .collect();
+        let items: Vec<Vec<Cow<'_, str>>> =
+            lib.get_filtered_items().map(|row| row.collect()).collect();
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0][1], "Chill Vibes");

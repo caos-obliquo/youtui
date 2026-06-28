@@ -1,20 +1,19 @@
-mod lastfm_album;
-mod lastfm_track;
 mod discogs;
 mod genius;
-mod musicbrainz;
-mod metal_api;
 pub mod genre_map;
-pub mod util;
+mod lastfm_album;
+mod lastfm_track;
+mod metal_api;
+mod musicbrainz;
 pub mod overrides;
+pub mod util;
 
-pub use lastfm_album::AlbumSearchProvider;
-pub use lastfm_track::TrackSearchProvider;
 pub use discogs::DiscogsProvider;
 pub use genius::GeniusProvider;
-pub use musicbrainz::MusicBrainzProvider;
+pub use lastfm_album::AlbumSearchProvider;
+pub use lastfm_track::TrackSearchProvider;
 pub use metal_api::MetalApiProvider;
-
+pub use musicbrainz::MusicBrainzProvider;
 pub use validated_metadata::{AlbumTrack, ValidatedMetadata};
 mod validated_metadata;
 
@@ -82,29 +81,45 @@ impl MetadataRegistry {
         if let Some(ref a) = meta.artist {
             let a_low = util::norm_for_lfm(a).to_lowercase();
             let art_low = util::norm_for_lfm(artist).to_lowercase();
-            if a_low == art_low { score += 50; artist_ok = true; }
-            else if a_low.contains(&art_low) || art_low.contains(&a_low) { score += 10; }
+            if a_low == art_low {
+                score += 50;
+                artist_ok = true;
+            } else if a_low.contains(&art_low) || art_low.contains(&a_low) {
+                score += 10;
+            }
         }
         // album_tracks present: +100 if artist matches (enables splitting),
         // +30 otherwise (tracklist without correct artist is low-confidence)
         if !meta.album_tracks.is_empty() {
-            if artist_ok { score += 100; }
-            else { score += 30; }
+            if artist_ok {
+                score += 100;
+            } else {
+                score += 30;
+            }
         }
         // album name present: +10
-        if meta.album.is_some() { score += 10; }
+        if meta.album.is_some() {
+            score += 10;
+        }
         // year present: +5
-        if meta.year.is_some() { score += 5; }
+        if meta.year.is_some() {
+            score += 5;
+        }
         // Album name matches or contains search title: +15 (strong signal)
         if let Some(ref a) = meta.album {
             let a_low = a.to_lowercase();
             let t_low = title.to_lowercase();
-            if a_low == t_low { score += 15; }
-            else if a_low.contains(&t_low) || t_low.contains(&a_low) { score += 7; }
+            if a_low == t_low {
+                score += 15;
+            } else if a_low.contains(&t_low) || t_low.contains(&a_low) {
+                score += 7;
+            }
             // Fuzzy: & vs "and" normalization
             let a_norm = a_low.replace(" & ", " and ").replace("&", "and");
             let t_norm = t_low.replace(" & ", " and ").replace("&", "and");
-            if a_norm == t_norm { score += 10; }
+            if a_norm == t_norm {
+                score += 10;
+            }
         }
         // More tracks = more complete: +2 per track (up to +30)
         score += (meta.album_tracks.len() as i32).min(15) * 2;
@@ -127,13 +142,18 @@ impl MetadataRegistry {
         title: &str,
         album: Option<&str>,
     ) -> Result<ValidatedMetadata, anyhow::Error> {
-        let cache_key = format!("{}::{}",
+        let cache_key = format!(
+            "{}::{}",
             util::norm_for_lfm(&artist.to_lowercase()),
             util::norm_for_lfm(&title.to_lowercase()),
         );
         // Check user overrides first (persisted edits take priority)
         if let Some(overridden) = self.overrides.lock().unwrap().resolve(artist, title) {
-            tracing::info!("Metadata resolved by user override for {} - {}", artist, title);
+            tracing::info!(
+                "Metadata resolved by user override for {} - {}",
+                artist,
+                title
+            );
             return Ok(overridden);
         }
         if let Some(cached) = self.cache.lock().unwrap().get(&cache_key) {
@@ -145,11 +165,17 @@ impl MetadataRegistry {
         // Try ALL providers, collect results, pick the best-scoring one
         let mut best: Option<(i32, ValidatedMetadata, u8)> = None;
         for provider in &self.providers {
-            if let Some(meta) = provider.lookup(artist, title, album, &self.http_client).await {
+            if let Some(meta) = provider
+                .lookup(artist, title, album, &self.http_client)
+                .await
+            {
                 let score = Self::score_result(&meta, artist, title);
                 tracing::debug!(
                     "Provider priority {} scored {} for {} - {} (album: {:?}, tracks: {})",
-                    provider.priority(), score, artist, title,
+                    provider.priority(),
+                    score,
+                    artist,
+                    title,
                     meta.album.as_deref().unwrap_or("none"),
                     meta.album_tracks.len(),
                 );
@@ -168,7 +194,10 @@ impl MetadataRegistry {
         if let Some((score, mut meta, priority)) = best {
             tracing::info!(
                 "Metadata resolved by provider priority {} (score {}) for {} - {}",
-                priority, score, artist, title
+                priority,
+                score,
+                artist,
+                title
             );
             if !meta.genres.is_empty() {
                 meta.genres = crate::genre_map::normalize_genres(&meta.genres);
@@ -188,36 +217,44 @@ impl MetadataRegistry {
     }
 
     fn cache_file_path(&self) -> Option<PathBuf> {
-        self.cache_path.as_ref().map(|p| p.join("metadata_cache.json"))
+        self.cache_path
+            .as_ref()
+            .map(|p| p.join("metadata_cache.json"))
     }
 
     fn load_cache(&self) {
-        let Some(path) = self.cache_file_path() else { return; };
-        if !path.exists() { return; }
+        let Some(path) = self.cache_file_path() else {
+            return;
+        };
+        if !path.exists() {
+            return;
+        }
         match std::fs::read_to_string(&path) {
-            Ok(data) => {
-                match serde_json::from_str::<Vec<(String, ValidatedMetadata)>>(&data) {
-                    Ok(entries) => {
-                        let mut cache = self.cache.lock().unwrap();
-                        for (key, meta) in entries {
-                            cache.put(key, meta);
-                        }
-                        tracing::info!("Loaded {} entries from metadata cache", cache.len());
+            Ok(data) => match serde_json::from_str::<Vec<(String, ValidatedMetadata)>>(&data) {
+                Ok(entries) => {
+                    let mut cache = self.cache.lock().unwrap();
+                    for (key, meta) in entries {
+                        cache.put(key, meta);
                     }
-                    Err(e) => tracing::warn!("Failed to parse metadata cache: {}", e),
+                    tracing::info!("Loaded {} entries from metadata cache", cache.len());
                 }
-            }
+                Err(e) => tracing::warn!("Failed to parse metadata cache: {}", e),
+            },
             Err(e) => tracing::warn!("Failed to read metadata cache: {}", e),
         }
     }
 
     fn save_cache(&self) {
-        let Some(path) = self.cache_file_path() else { return; };
+        let Some(path) = self.cache_file_path() else {
+            return;
+        };
         let entries: Vec<(String, ValidatedMetadata)> = {
             let cache = self.cache.lock().unwrap();
             cache.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
         };
-        if entries.is_empty() { return; }
+        if entries.is_empty() {
+            return;
+        }
         match serde_json::to_string_pretty(&entries) {
             Ok(json) => {
                 if let Some(parent) = path.parent() {
@@ -239,7 +276,11 @@ impl MetadataRegistry {
     /// Cache-only lookup - no HTTP, no provider resolution.
     /// Returns None if not in LRU cache or if result is sparse (no album/year).
     pub fn lookup_cache(&self, key: &str) -> Option<ValidatedMetadata> {
-        self.cache.lock().unwrap().get(key).cloned()
+        self.cache
+            .lock()
+            .unwrap()
+            .get(key)
+            .cloned()
             .filter(|m| m.album.is_some() || m.year.is_some())
     }
 
@@ -257,16 +298,23 @@ mod tests {
     use super::*;
     use crate::overrides::MetadataOverrides;
 
-    fn make_meta(artist: Option<&str>, album: Option<&str>, year: Option<&str>, tracks: usize) -> ValidatedMetadata {
+    fn make_meta(
+        artist: Option<&str>,
+        album: Option<&str>,
+        year: Option<&str>,
+        tracks: usize,
+    ) -> ValidatedMetadata {
         ValidatedMetadata {
             artist: artist.map(String::from),
             album: album.map(String::from),
             year: year.map(String::from),
-            album_tracks: (0..tracks).map(|i| AlbumTrack {
-                title: format!("Track {}", i + 1),
-                duration_secs: 100.0,
-                artist: None,
-            }).collect(),
+            album_tracks: (0..tracks)
+                .map(|i| AlbumTrack {
+                    title: format!("Track {}", i + 1),
+                    duration_secs: 100.0,
+                    artist: None,
+                })
+                .collect(),
             ..Default::default()
         }
     }
@@ -323,9 +371,15 @@ mod tests {
 
     #[test]
     fn score_complete_metadata() {
-        let meta = make_meta(Some("Metallica"), Some("Master of Puppets"), Some("1986"), 8);
+        let meta = make_meta(
+            Some("Metallica"),
+            Some("Master of Puppets"),
+            Some("1986"),
+            8,
+        );
         let score = MetadataRegistry::score_result(&meta, "Metallica", "Master of Puppets");
-        // tracks(100) + album(10) + year(5) + artist_exact(50) + album_title(15) + and_norm(10) + 8*2 = 206
+        // tracks(100) + album(10) + year(5) + artist_exact(50) + album_title(15) +
+        // and_norm(10) + 8*2 = 206
         assert_eq!(score, 206);
     }
 
@@ -383,8 +437,16 @@ mod tests {
                 album: Some("Master of Puppets".into()),
                 year: Some("1986".into()),
                 album_tracks: vec![
-                    AlbumTrack { title: "Battery".into(), duration_secs: 500.0, artist: None },
-                    AlbumTrack { title: "Master of Puppets".into(), duration_secs: 515.0, artist: None },
+                    AlbumTrack {
+                        title: "Battery".into(),
+                        duration_secs: 500.0,
+                        artist: None,
+                    },
+                    AlbumTrack {
+                        title: "Master of Puppets".into(),
+                        duration_secs: 515.0,
+                        artist: None,
+                    },
                 ],
                 ..Default::default()
             }),
@@ -468,8 +530,7 @@ mod tests {
         assert_eq!(result.album_tracks.len(), 1);
 
         // Resolve without album param also works (provider always returns same)
-        let result2 =
-            futures::executor::block_on(reg.resolve("Band", "Song", None)).unwrap();
+        let result2 = futures::executor::block_on(reg.resolve("Band", "Song", None)).unwrap();
         assert_eq!(result2.album, Some("The Album".to_string()));
     }
 }

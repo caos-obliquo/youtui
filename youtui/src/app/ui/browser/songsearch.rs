@@ -12,7 +12,6 @@ use crate::app::server::{HandleApiError, SearchSongs};
 use crate::app::structures::{
     BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent,
 };
-use ytmapi_rs::common::YoutubeID;
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{
     AdvancedTableView, BasicConstraint, FilterString, HasTitle, Loadable, SortDirection,
@@ -28,7 +27,7 @@ use itertools::Either;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use tracing::warn;
-use ytmapi_rs::common::SearchSuggestion;
+use ytmapi_rs::common::{SearchSuggestion, YoutubeID};
 use ytmapi_rs::parse::SearchResultSong;
 
 pub struct SongSearchBrowser {
@@ -130,48 +129,54 @@ impl BrowserSongsAction {
     /// LikedSongs/Artists: playlist mgmt hidden.
     /// Albums: playlist mgmt hidden except RatePlaylist (like/unlike album).
     /// Subscribe/Unsubscribe: Artists only.
-    pub fn is_valid_for_category(&self, category: crate::app::ui::browser::library::LibraryCategory) -> bool {
+    pub fn is_valid_for_category(
+        &self,
+        category: crate::app::ui::browser::library::LibraryCategory,
+    ) -> bool {
         use crate::app::ui::browser::library::LibraryCategory;
         match category {
             LibraryCategory::Playlists => true,
-            LibraryCategory::LikedSongs => !matches!(self,
+            LibraryCategory::LikedSongs => !matches!(
+                self,
                 BrowserSongsAction::DeletePlaylist
-                | BrowserSongsAction::RenamePlaylist
-                | BrowserSongsAction::EditPlaylistDetails
-                | BrowserSongsAction::OpenPlaylistEditor
-                | BrowserSongsAction::SaveToExistingPlaylist
-                | BrowserSongsAction::RatePlaylist
-                | BrowserSongsAction::GetPlaylistDetails
-                | BrowserSongsAction::RemoveTrackFromPlaylist
-                | BrowserSongsAction::SubscribeToArtist
-                | BrowserSongsAction::UnsubscribeFromArtist
-                | BrowserSongsAction::ToggleSubscribeArtist
-                | BrowserSongsAction::MergePlaylist
+                    | BrowserSongsAction::RenamePlaylist
+                    | BrowserSongsAction::EditPlaylistDetails
+                    | BrowserSongsAction::OpenPlaylistEditor
+                    | BrowserSongsAction::SaveToExistingPlaylist
+                    | BrowserSongsAction::RatePlaylist
+                    | BrowserSongsAction::GetPlaylistDetails
+                    | BrowserSongsAction::RemoveTrackFromPlaylist
+                    | BrowserSongsAction::SubscribeToArtist
+                    | BrowserSongsAction::UnsubscribeFromArtist
+                    | BrowserSongsAction::ToggleSubscribeArtist
+                    | BrowserSongsAction::MergePlaylist
             ),
-            LibraryCategory::Artists => !matches!(self,
+            LibraryCategory::Artists => !matches!(
+                self,
                 BrowserSongsAction::DeletePlaylist
-                | BrowserSongsAction::RenamePlaylist
-                | BrowserSongsAction::EditPlaylistDetails
-                | BrowserSongsAction::OpenPlaylistEditor
-                | BrowserSongsAction::SaveToExistingPlaylist
-                | BrowserSongsAction::RatePlaylist
-                | BrowserSongsAction::GetPlaylistDetails
-                | BrowserSongsAction::RemoveTrackFromPlaylist
-                | BrowserSongsAction::GoToAlbum
-                | BrowserSongsAction::MergePlaylist
+                    | BrowserSongsAction::RenamePlaylist
+                    | BrowserSongsAction::EditPlaylistDetails
+                    | BrowserSongsAction::OpenPlaylistEditor
+                    | BrowserSongsAction::SaveToExistingPlaylist
+                    | BrowserSongsAction::RatePlaylist
+                    | BrowserSongsAction::GetPlaylistDetails
+                    | BrowserSongsAction::RemoveTrackFromPlaylist
+                    | BrowserSongsAction::GoToAlbum
+                    | BrowserSongsAction::MergePlaylist
             ),
-            LibraryCategory::Albums => !matches!(self,
+            LibraryCategory::Albums => !matches!(
+                self,
                 BrowserSongsAction::DeletePlaylist
-                | BrowserSongsAction::RenamePlaylist
-                | BrowserSongsAction::EditPlaylistDetails
-                | BrowserSongsAction::OpenPlaylistEditor
-                | BrowserSongsAction::SaveToExistingPlaylist
-                | BrowserSongsAction::GetPlaylistDetails
-                | BrowserSongsAction::RemoveTrackFromPlaylist
-                | BrowserSongsAction::SubscribeToArtist
-                | BrowserSongsAction::UnsubscribeFromArtist
-                | BrowserSongsAction::ToggleSubscribeArtist
-                | BrowserSongsAction::MergePlaylist
+                    | BrowserSongsAction::RenamePlaylist
+                    | BrowserSongsAction::EditPlaylistDetails
+                    | BrowserSongsAction::OpenPlaylistEditor
+                    | BrowserSongsAction::SaveToExistingPlaylist
+                    | BrowserSongsAction::GetPlaylistDetails
+                    | BrowserSongsAction::RemoveTrackFromPlaylist
+                    | BrowserSongsAction::SubscribeToArtist
+                    | BrowserSongsAction::UnsubscribeFromArtist
+                    | BrowserSongsAction::ToggleSubscribeArtist
+                    | BrowserSongsAction::MergePlaylist
             ),
         }
     }
@@ -311,7 +316,9 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::PlaySongs => return self.play_songs().into(),
             BrowserSongsAction::AddSongToPlaylist => return self.add_song_to_playlist().into(),
             BrowserSongsAction::AddSongsToPlaylist => return self.add_songs_to_playlist().into(),
-            BrowserSongsAction::SaveToExistingPlaylist => return self.save_to_existing_playlist().into(),
+            BrowserSongsAction::SaveToExistingPlaylist => {
+                return self.save_to_existing_playlist().into();
+            }
             BrowserSongsAction::InsertNext => return self.insert_next().into(),
             BrowserSongsAction::QueueSong => return self.queue_song().into(),
             BrowserSongsAction::ViewLyrics => return self.view_lyrics().into(),
@@ -387,15 +394,13 @@ impl TableView for SongSearchBrowser {
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
         let subcolumns = Self::subcolumns_of_vec();
-        self.view_indices
-            .iter()
-            .map(move |&idx| {
-                self.song_list
-                    .get_song_from_idx(idx)
-                    .expect("view_indices entries valid")
-                    .get_fields(subcolumns)
-                    .into_iter()
-            })
+        self.view_indices.iter().map(move |&idx| {
+            self.song_list
+                .get_song_from_idx(idx)
+                .expect("view_indices entries valid")
+                .get_fields(subcolumns)
+                .into_iter()
+        })
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
         ["Song", "Artist", "Album", "Duration", "Plays", "Liked"].into_iter()
@@ -501,9 +506,12 @@ impl HasTitle for SongSearchBrowser {
                 search_tag
             )
             .into(),
-            ListStatus::Loaded => {
-                format!("Songs - {} results{}", self.song_list.get_list_iter().len(), search_tag).into()
-            }
+            ListStatus::Loaded => format!(
+                "Songs - {} results{}",
+                self.song_list.get_list_iter().len(),
+                search_tag
+            )
+            .into(),
             ListStatus::Error => format!("Songs - Error receieved{}", search_tag).into(),
         }
     }
@@ -577,15 +585,30 @@ impl SongSearchBrowser {
             let fuzzy_pass = if filter_text.is_empty() {
                 true
             } else {
-                let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
-                let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
-                let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
-                crate::app::structures::fuzzy_match(&filter_text, &title).is_some()
-                    || crate::app::structures::fuzzy_match(&filter_text, &album).is_some()
-                    || crate::app::structures::fuzzy_match(&filter_text, &artist).is_some()
+                let title = ls
+                    .get_fields([ListSongDisplayableField::Song])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let album = ls
+                    .get_fields([ListSongDisplayableField::Album])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let artist = ls
+                    .get_fields([ListSongDisplayableField::Artists])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                crate::app::structures::fuzzy_match(filter_text, &title).is_some()
+                    || crate::app::structures::fuzzy_match(filter_text, &album).is_some()
+                    || crate::app::structures::fuzzy_match(filter_text, &artist).is_some()
             };
-            if !fuzzy_pass { return None; }
-            let pass = self.get_filter_commands()
+            if !fuzzy_pass {
+                return None;
+            }
+            let pass = self
+                .get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
                     let match_found = command.matches_row(
@@ -724,7 +747,11 @@ impl SongSearchBrowser {
     pub fn search(&mut self) -> ComponentEffect<Self> {
         self.search_popped = false;
         self.input_routing = InputRouting::List;
-        let search_text = self.search.get_text().map(|s| s.to_string()).unwrap_or_default();
+        let search_text = self
+            .search
+            .get_text()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
         if search_text.trim().is_empty() {
             self.search.clear_text();
             return AsyncTask::new_no_op();
@@ -785,27 +812,43 @@ impl SongSearchBrowser {
         if video_ids.is_empty() {
             return (AsyncTask::new_no_op(), None);
         }
-        (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)))
+        (
+            AsyncTask::new_no_op(),
+            Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)),
+        )
     }
     pub fn queue_song(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
         if let Some(song) = self.get_song_from_idx(cur_idx) {
-            return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song.clone()])));
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::QueueSong(vec![song.clone()])),
+            );
         }
         (AsyncTask::new_no_op(), None)
     }
     pub fn insert_next(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
-        let song_list: Vec<_> = self.get_filtered_list_iter().skip(cur_idx).cloned().collect();
+        let song_list: Vec<_> = self
+            .get_filtered_list_iter()
+            .skip(cur_idx)
+            .cloned()
+            .collect();
         if song_list.is_empty() {
             return (AsyncTask::new_no_op(), None);
         }
-        (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(song_list)))
+        (
+            AsyncTask::new_no_op(),
+            Some(AppCallback::InsertNext(song_list)),
+        )
     }
     pub fn get_related_tracks(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
         if let Some(song) = self.get_song_from_idx(cur_idx) {
-            return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+            return (
+                AsyncTask::new_no_op(),
+                Some(AppCallback::GetRelatedTracks(song.video_id.clone())),
+            );
         }
         (AsyncTask::new_no_op(), None)
     }
@@ -822,7 +865,9 @@ impl SongSearchBrowser {
     pub fn view_lyrics(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
         if let Some(song) = self.get_song_from_idx(cur_idx) {
-            let artist = song.artists.iter()
+            let artist = song
+                .artists
+                .iter()
                 .map(|a| a.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
@@ -839,7 +884,10 @@ impl SongSearchBrowser {
     pub fn copy_song_url(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
         if let Some(song) = self.get_song_from_idx(cur_idx) {
-            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+            let raw_url = format!(
+                "https://music.youtube.com/watch?v={}",
+                song.video_id.get_raw()
+            );
             crate::app::structures::copy_to_clipboard(&raw_url);
             tracing::info!("Copied URL: {}", raw_url);
         }
@@ -847,10 +895,10 @@ impl SongSearchBrowser {
     }
     pub fn go_to_artist(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
-        if let Some(song) = self.get_song_from_idx(cur_idx) {
-            if let Some(cb) = super::shared_components::navigate_to_artist(song) {
-                return (AsyncTask::new_no_op(), Some(cb));
-            }
+        if let Some(song) = self.get_song_from_idx(cur_idx)
+            && let Some(cb) = super::shared_components::navigate_to_artist(song)
+        {
+            return (AsyncTask::new_no_op(), Some(cb));
         }
         (AsyncTask::new_no_op(), None)
     }

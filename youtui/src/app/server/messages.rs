@@ -1,30 +1,33 @@
-use super::ArcServer;
-use super::ValidatedMetadata;
-use ytmapi_rs::parse::SearchResultAlbum;
-use ytmapi_rs::parse::{TableListSong, LibraryArtist, LibraryPlaylist};
 use super::api::GetArtistSongsProgressUpdate;
 use super::player::{DecodedInMemSong, Player};
 use super::song_downloader::{DownloadProgressUpdate, InMemSong};
 use super::song_thumbnail_downloader::SongThumbnail;
+use super::{ArcServer, ValidatedMetadata};
+use crate::app::AudioQuality;
 use crate::app::server::api::GetPlaylistSongsProgressUpdate;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
-use crate::app::AudioQuality;
 use crate::app::structures::ListSongID;
+use anyhow::{Error, Result};
+use async_callback_manager::{BackendStreamingTask, BackendTask, MapFn};
 use audio_player::rodio::decoder::DecoderError;
 use audio_player::{
     AllStopped, AutoplayUpdate, PausePlayResponse, Paused, PlayUpdate, ProgressUpdate, QueueUpdate,
     Resumed, SeekDirection, Stopped, VolumeUpdate,
 };
-use anyhow::{Error, Result};
-use async_callback_manager::{BackendStreamingTask, BackendTask, MapFn};
 use futures::{Future, Stream};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, VideoID, SetVideoID, YoutubeID, LikeStatus};
+use ytmapi_rs::common::{
+    AlbumID, ArtistChannelID, LikeStatus, PlaylistID, SearchSuggestion, SetVideoID, VideoID,
+    YoutubeID,
+};
+use ytmapi_rs::parse::{
+    GetPlaylistDetails, LibraryArtist, LibraryPlaylist, SearchResultAlbum, SearchResultArtist,
+    SearchResultPlaylist, SearchResultSong, TableListSong,
+};
 use ytmapi_rs::query::library::GetLibrarySortOrder;
 use ytmapi_rs::query::playlist::PrivacyStatus;
-use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong, GetPlaylistDetails};
 
 #[derive(PartialEq, Debug)]
 pub enum TaskMetadata {
@@ -43,7 +46,14 @@ pub struct GetLyrics(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
 pub struct GetAnnotations(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
-pub struct ValidateMetadata(pub String, pub String, pub crate::app::structures::ListSongID, pub String, pub Option<String>, pub Option<String>);
+pub struct ValidateMetadata(
+    pub String,
+    pub String,
+    pub crate::app::structures::ListSongID,
+    pub String,
+    pub Option<String>,
+    pub Option<String>,
+);
 
 #[derive(Debug, PartialEq)]
 pub struct GetSearchSuggestions(pub String);
@@ -96,9 +106,7 @@ impl BackendTask<ArcServer> for RateSong {
         backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
-        async move {
-            backend.api.rate_song(self.0, self.1).await
-        }
+        async move { backend.api.rate_song(self.0, self.1).await }
     }
 }
 
@@ -117,7 +125,11 @@ impl BackendTask<ArcServer> for SubscribeToArtist {
             use ytmapi_rs::query::SubscribeArtistQuery;
             let api_guard = backend.api.get_api().await?;
             let query = SubscribeArtistQuery::new(self.0);
-            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
+            api_guard
+                .read()
+                .await
+                .query_browser_or_oauth::<_, ()>(query)
+                .await?;
             tracing::info!("Subscribed to artist");
             Ok(())
         }
@@ -138,8 +150,12 @@ impl BackendTask<ArcServer> for UnsubscribeFromArtists {
         async move {
             use ytmapi_rs::query::UnsubscribeArtistsQuery;
             let api_guard = backend.api.get_api().await?;
-            let query = UnsubscribeArtistsQuery::new(self.0.into_iter().map(|id| id));
-            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await
+            let query = UnsubscribeArtistsQuery::new(self.0.into_iter());
+            api_guard
+                .read()
+                .await
+                .query_browser_or_oauth::<_, ()>(query)
+                .await
         }
     }
 }
@@ -195,12 +211,21 @@ impl BackendTask<ArcServer> for AddPlaylistToPlaylist {
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
-            use ytmapi_rs::query::EditPlaylistQuery;
             use ytmapi_rs::common::ApiOutcome;
+            use ytmapi_rs::query::EditPlaylistQuery;
             let api_guard = backend.api.get_api().await?;
-            let query = EditPlaylistQuery::add_playlist(self.target_id.clone(), self.source_id.clone());
-            let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
-            tracing::info!("Added playlist {} to {}", self.target_id.get_raw(), self.source_id.get_raw());
+            let query =
+                EditPlaylistQuery::add_playlist(self.target_id.clone(), self.source_id.clone());
+            let _: ApiOutcome = api_guard
+                .read()
+                .await
+                .query_browser_or_oauth::<_, ApiOutcome>(query)
+                .await?;
+            tracing::info!(
+                "Added playlist {} to {}",
+                self.target_id.get_raw(),
+                self.source_id.get_raw()
+            );
             Ok(())
         }
     }
@@ -218,8 +243,8 @@ impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
-            use ytmapi_rs::query::GetLibraryPlaylistsQuery;
             use crate::app::server::api::stream_api_with_retry_n;
+            use ytmapi_rs::query::GetLibraryPlaylistsQuery;
 
             let api_guard = backend.api.get_api().await?;
 
@@ -230,9 +255,13 @@ impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
                     Ok(playlists)
                 }
                 Err(e) => {
-                    tracing::warn!("GetLibraryPlaylistsQuery failed: {}. Library playlists require browser auth (cookies) or OAuth.", e);
+                    tracing::warn!(
+                        "GetLibraryPlaylistsQuery failed: {}. Library playlists require browser auth (cookies) or OAuth.",
+                        e
+                    );
                     Err(anyhow::anyhow!(
-                        "Library playlists unavailable. Configure cookies or OAuth in config. Error: {}", e
+                        "Library playlists unavailable. Configure cookies or OAuth in config. Error: {}",
+                        e
                     ))
                 }
             }
@@ -255,8 +284,8 @@ impl BackendTask<ArcServer> for GetAllLibrarySongs {
         let backend = backend.clone();
         let sort_order = self.sort_order;
         async move {
-            use ytmapi_rs::query::GetLibrarySongsQuery;
             use crate::app::server::api::stream_api_with_retry_n;
+            use ytmapi_rs::query::GetLibrarySongsQuery;
 
             let api_guard = backend.api.get_api().await?;
             let query = GetLibrarySongsQuery::new(sort_order);
@@ -268,9 +297,13 @@ impl BackendTask<ArcServer> for GetAllLibrarySongs {
                     Ok(songs)
                 }
                 Err(e) => {
-                    tracing::warn!("GetLibrarySongsQuery failed: {}. Library songs require browser auth (cookies) or OAuth.", e);
+                    tracing::warn!(
+                        "GetLibrarySongsQuery failed: {}. Library songs require browser auth (cookies) or OAuth.",
+                        e
+                    );
                     Err(anyhow::anyhow!(
-                        "Library songs unavailable. Configure cookies or OAuth in config. Error: {}", e
+                        "Library songs unavailable. Configure cookies or OAuth in config. Error: {}",
+                        e
                     ))
                 }
             }
@@ -293,8 +326,8 @@ impl BackendTask<ArcServer> for GetAllLibraryArtists {
         let backend = backend.clone();
         let sort_order = self.sort_order;
         async move {
-            use ytmapi_rs::query::GetLibraryArtistsQuery;
             use crate::app::server::api::stream_api_with_retry_n;
+            use ytmapi_rs::query::GetLibraryArtistsQuery;
 
             let api_guard = backend.api.get_api().await?;
             let query = GetLibraryArtistsQuery::new(sort_order);
@@ -306,9 +339,13 @@ impl BackendTask<ArcServer> for GetAllLibraryArtists {
                     Ok(artists)
                 }
                 Err(e) => {
-                    tracing::warn!("GetLibraryArtistsQuery failed: {}. Library artists require browser auth (cookies) or OAuth.", e);
+                    tracing::warn!(
+                        "GetLibraryArtistsQuery failed: {}. Library artists require browser auth (cookies) or OAuth.",
+                        e
+                    );
                     Err(anyhow::anyhow!(
-                        "Library artists unavailable. Configure cookies or OAuth in config. Error: {}", e
+                        "Library artists unavailable. Configure cookies or OAuth in config. Error: {}",
+                        e
                     ))
                 }
             }
@@ -331,8 +368,8 @@ impl BackendTask<ArcServer> for GetAllLibraryAlbums {
         let backend = backend.clone();
         let sort_order = self.sort_order;
         async move {
-            use ytmapi_rs::query::GetLibraryAlbumsQuery;
             use crate::app::server::api::stream_api_with_retry_n;
+            use ytmapi_rs::query::GetLibraryAlbumsQuery;
 
             let api_guard = backend.api.get_api().await?;
             let query = GetLibraryAlbumsQuery::new(sort_order);
@@ -344,9 +381,13 @@ impl BackendTask<ArcServer> for GetAllLibraryAlbums {
                     Ok(albums)
                 }
                 Err(e) => {
-                    tracing::warn!("GetLibraryAlbumsQuery failed: {}. Library albums require browser auth (cookies) or OAuth.", e);
+                    tracing::warn!(
+                        "GetLibraryAlbumsQuery failed: {}. Library albums require browser auth (cookies) or OAuth.",
+                        e
+                    );
                     Err(anyhow::anyhow!(
-                        "Library albums unavailable. Configure cookies or OAuth in config. Error: {}", e
+                        "Library albums unavailable. Configure cookies or OAuth in config. Error: {}",
+                        e
                     ))
                 }
             }
@@ -354,8 +395,7 @@ impl BackendTask<ArcServer> for GetAllLibraryAlbums {
     }
 }
 
-use ytmapi_rs::parse::PlaylistSong;
-use ytmapi_rs::parse::WatchPlaylistTrack;
+use ytmapi_rs::parse::{PlaylistSong, WatchPlaylistTrack};
 
 /// Cache-only enrichment for library songs - no HTTP.
 /// Input: (index_in_browser, artist, title)
@@ -378,14 +418,20 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
 
             // First pass: cache lookups
             for (idx, artist, title, album) in &self.0 {
-                let key = format!("{}::{}",
+                let key = format!(
+                    "{}::{}",
                     metadata_provider::util::norm_for_lfm(&artist.to_lowercase()),
                     metadata_provider::util::norm_for_lfm(&title.to_lowercase()),
                 );
                 if let Some(cached) = registry.lookup_cache(&key) {
                     results.push((*idx, cached.year, cached.genres, cached.styles));
                 } else {
-                    misses.push((*idx, artist.clone(), title.clone(), album.clone().unwrap_or_default()));
+                    misses.push((
+                        *idx,
+                        artist.clone(),
+                        title.clone(),
+                        album.clone().unwrap_or_default(),
+                    ));
                 }
             }
 
@@ -399,7 +445,14 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
                 let sem = semaphore.clone();
                 let handle = tokio::spawn(async move {
                     let _permit = sem.acquire().await.unwrap();
-                    match reg.resolve(&artist, &title, if album.is_empty() { None } else { Some(&album) }).await {
+                    match reg
+                        .resolve(
+                            &artist,
+                            &title,
+                            if album.is_empty() { None } else { Some(&album) },
+                        )
+                        .await
+                    {
                         Ok(meta) => Some((idx, meta.year, meta.genres, meta.styles)),
                         Err(_) => None,
                     }
@@ -442,14 +495,20 @@ impl BackendTask<ArcServer> for EnrichRelatedTracks {
                 let handle = tokio::spawn(async move {
                     let _permit = sem.acquire().await.unwrap();
                     let output = tokio::process::Command::new("yt-dlp")
-                        .args(["--dump-json", "--no-warnings", "--flat-playlist",
-                               &format!("https://youtu.be/{}", video_id)])
-                        .output().await;
+                        .args([
+                            "--dump-json",
+                            "--no-warnings",
+                            "--flat-playlist",
+                            &format!("https://youtu.be/{}", video_id),
+                        ])
+                        .output()
+                        .await;
                     match output {
                         Ok(out) if out.status.success() => {
                             let stdout = String::from_utf8_lossy(&out.stdout);
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
-                                let year = v.get("release_year")
+                                let year = v
+                                    .get("release_year")
                                     .and_then(|s| s.as_i64())
                                     .or_else(|| {
                                         v.get("upload_date")
@@ -458,7 +517,8 @@ impl BackendTask<ArcServer> for EnrichRelatedTracks {
                                             .and_then(|y| y.parse::<i64>().ok())
                                     })
                                     .map(|y| y.to_string());
-                                let album = v.get("album")
+                                let album = v
+                                    .get("album")
                                     .and_then(|s| s.as_str())
                                     .map(|s| s.to_string());
                                 Some((idx, year, album))
@@ -504,9 +564,9 @@ impl BackendTask<ArcServer> for GetPlaylistTracks {
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
-            use ytmapi_rs::query::GetPlaylistTracksQuery;
-            use ytmapi_rs::parse::PlaylistItem;
             use crate::app::server::api::stream_api_with_retry_n;
+            use ytmapi_rs::parse::PlaylistItem;
+            use ytmapi_rs::query::GetPlaylistTracksQuery;
 
             let api_guard = backend.api.get_api().await?;
             let query = GetPlaylistTracksQuery::new(self.0);
@@ -515,12 +575,13 @@ impl BackendTask<ArcServer> for GetPlaylistTracks {
                 Ok(pages) => {
                     let items: Vec<PlaylistItem> = pages.into_iter().flatten().collect();
                     tracing::info!(count = %items.len(), "GetPlaylistTracks streaming done");
-                    let songs: Vec<PlaylistSong> = items.into_iter().filter_map(|item| {
-                        match item {
+                    let songs: Vec<PlaylistSong> = items
+                        .into_iter()
+                        .filter_map(|item| match item {
                             PlaylistItem::Song(s) => Some(s),
                             _ => None,
-                        }
-                    }).collect();
+                        })
+                        .collect();
                     Ok(songs)
                 }
                 Err(e) => {
@@ -544,8 +605,8 @@ impl BackendTask<ArcServer> for GetRelatedTracks {
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
-            use ytmapi_rs::query::GetWatchPlaylistQuery;
             use crate::app::server::api::query_api_with_retry;
+            use ytmapi_rs::query::GetWatchPlaylistQuery;
             let api_guard = backend.api.get_api().await?;
             let query = GetWatchPlaylistQuery::new_from_video_id(self.0);
             query_api_with_retry(&api_guard, query).await
@@ -577,7 +638,9 @@ impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
             let mut playlist_index = 0;
 
             while !remaining.is_empty() {
-                let playlist_songs: Vec<VideoID<'static>> = remaining.drain(..remaining.len().min(max_per_playlist)).collect();
+                let playlist_songs: Vec<VideoID<'static>> = remaining
+                    .drain(..remaining.len().min(max_per_playlist))
+                    .collect();
 
                 let playlist_title = if total <= max_per_playlist {
                     title.clone()
@@ -586,21 +649,28 @@ impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
                 };
                 playlist_index += 1;
 
-                tracing::info!("Creating playlist #{playlist_index}: {playlist_title} ({} songs)", playlist_songs.len());
+                tracing::info!(
+                    "Creating playlist #{playlist_index}: {playlist_title} ({} songs)",
+                    playlist_songs.len()
+                );
 
-                let pid = backend.api.create_playlist_with_videos(
-                    playlist_title,
-                    description.clone(),
-                    playlist_songs,
-                    privacy.clone(),
-                ).await?;
+                let pid = backend
+                    .api
+                    .create_playlist_with_videos(
+                        playlist_title,
+                        description.clone(),
+                        playlist_songs,
+                        privacy.clone(),
+                    )
+                    .await?;
 
                 if first_playlist_id.is_none() {
                     first_playlist_id = Some(pid);
                 }
             }
 
-            Ok(first_playlist_id.ok_or_else(|| anyhow::anyhow!("No playlist was created: empty video ID list"))?)
+            first_playlist_id
+                .ok_or_else(|| anyhow::anyhow!("No playlist was created: empty video ID list"))
         }
     }
 }
@@ -619,18 +689,24 @@ impl BackendTask<ArcServer> for AddSongsToPlaylist {
             let total = all_ids.len();
             // Deduplicate: YouTube API rejects duplicates in ReturnError mode
             let mut seen = std::collections::HashSet::new();
-            let unique_ids: Vec<_> = all_ids.into_iter().filter(|id| seen.insert(id.clone())).collect();
+            let unique_ids: Vec<_> = all_ids
+                .into_iter()
+                .filter(|id| seen.insert(id.clone()))
+                .collect();
             let deduped = total - unique_ids.len();
             if deduped > 0 {
                 tracing::warn!("Removed {deduped} duplicate video IDs before adding to playlist");
             }
-            tracing::info!("Adding {} videos to playlist in batches of 100", unique_ids.len());
+            tracing::info!(
+                "Adding {} videos to playlist in batches of 100",
+                unique_ids.len()
+            );
             for chunk in unique_ids.chunks(100) {
                 tracing::info!("Adding batch of {} videos", chunk.len());
-                backend.api.add_playlist_items(
-                    playlist_id.clone(),
-                    chunk.to_vec(),
-                ).await?;
+                backend
+                    .api
+                    .add_playlist_items(playlist_id.clone(), chunk.to_vec())
+                    .await?;
             }
             Ok(())
         }
@@ -646,11 +722,15 @@ impl BackendTask<ArcServer> for RenamePlaylist {
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
-            use ytmapi_rs::query::EditPlaylistQuery;
             use ytmapi_rs::common::ApiOutcome;
+            use ytmapi_rs::query::EditPlaylistQuery;
             let api_guard = backend.api.get_api().await?;
             let query = EditPlaylistQuery::new_title(self.playlist_id, self.new_title);
-            let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+            let _: ApiOutcome = api_guard
+                .read()
+                .await
+                .query_browser_or_oauth::<_, ApiOutcome>(query)
+                .await?;
             tracing::info!("Playlist renamed");
             Ok(())
         }
@@ -669,7 +749,11 @@ impl BackendTask<ArcServer> for RemovePlaylistItems {
             use ytmapi_rs::query::RemovePlaylistItemsQuery;
             let api_guard = backend.api.get_api().await?;
             let query = RemovePlaylistItemsQuery::new(self.playlist_id, self.video_ids);
-            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
+            api_guard
+                .read()
+                .await
+                .query_browser_or_oauth::<_, ()>(query)
+                .await?;
             tracing::info!("Playlist items removed");
             Ok(())
         }
@@ -688,7 +772,11 @@ impl BackendTask<ArcServer> for DeletePlaylist {
             use ytmapi_rs::query::DeletePlaylistQuery;
             let api_guard = backend.api.get_api().await?;
             let query = DeletePlaylistQuery::new(self.0);
-            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
+            api_guard
+                .read()
+                .await
+                .query_browser_or_oauth::<_, ()>(query)
+                .await?;
             tracing::info!("Playlist deleted");
             Ok(())
         }
@@ -704,21 +792,34 @@ impl BackendTask<ArcServer> for EditPlaylistDetails {
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
-            use ytmapi_rs::query::EditPlaylistQuery;
             use ytmapi_rs::common::ApiOutcome;
+            use ytmapi_rs::query::EditPlaylistQuery;
             let api_guard = backend.api.get_api().await?;
             // Apply each change sequentially. YTM API supports per-field edits.
             if let Some(title) = &self.title {
                 let query = EditPlaylistQuery::new_title(&self.playlist_id, title.as_str());
-                let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+                let _: ApiOutcome = api_guard
+                    .read()
+                    .await
+                    .query_browser_or_oauth::<_, ApiOutcome>(query)
+                    .await?;
             }
             if let Some(description) = &self.description {
-                let query = EditPlaylistQuery::new_description(&self.playlist_id, description.as_str());
-                let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+                let query =
+                    EditPlaylistQuery::new_description(&self.playlist_id, description.as_str());
+                let _: ApiOutcome = api_guard
+                    .read()
+                    .await
+                    .query_browser_or_oauth::<_, ApiOutcome>(query)
+                    .await?;
             }
             if let Some(privacy) = self.privacy {
                 let query = EditPlaylistQuery::new_privacy_status(&self.playlist_id, privacy);
-                let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+                let _: ApiOutcome = api_guard
+                    .read()
+                    .await
+                    .query_browser_or_oauth::<_, ApiOutcome>(query)
+                    .await?;
             }
             tracing::info!("Playlist details updated");
             Ok(())
@@ -741,7 +842,11 @@ impl BackendTask<ArcServer> for RatePlaylistMessage {
             let rating = format!("{:?}", self.1);
             let query = RatePlaylistQuery::new(self.0, self.1);
             tracing::info!("RatePlaylist: id={}, rating={}", pid, rating);
-            api_guard.read().await.query_browser_or_oauth::<_, ()>(query).await?;
+            api_guard
+                .read()
+                .await
+                .query_browser_or_oauth::<_, ()>(query)
+                .await?;
             tracing::info!("Playlist rated");
             Ok(())
         }
@@ -760,7 +865,11 @@ impl BackendTask<ArcServer> for GetPlaylistDetailsMessage {
             use ytmapi_rs::query::GetPlaylistDetailsQuery;
             let api_guard = backend.api.get_api().await?;
             let query = GetPlaylistDetailsQuery::new(self.0);
-            api_guard.read().await.query_browser_or_oauth::<_, GetPlaylistDetails>(query).await
+            api_guard
+                .read()
+                .await
+                .query_browser_or_oauth::<_, GetPlaylistDetails>(query)
+                .await
         }
     }
 }
@@ -774,13 +883,18 @@ impl BackendTask<ArcServer> for ReorderPlaylistItem {
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let backend = backend.clone();
         async move {
-            use ytmapi_rs::query::EditPlaylistQuery;
             use ytmapi_rs::common::ApiOutcome;
+            use ytmapi_rs::query::EditPlaylistQuery;
             let api_guard = backend.api.get_api().await?;
             let set_id = SetVideoID::from_raw(self.video_id.get_raw().to_string());
             let target_set_id = SetVideoID::from_raw(self.target_video_id.get_raw().to_string());
-            let query = EditPlaylistQuery::swap_videos_order(self.playlist_id, set_id, target_set_id);
-            let _: ApiOutcome = api_guard.read().await.query_browser_or_oauth::<_, ApiOutcome>(query).await?;
+            let query =
+                EditPlaylistQuery::swap_videos_order(self.playlist_id, set_id, target_set_id);
+            let _: ApiOutcome = api_guard
+                .read()
+                .await
+                .query_browser_or_oauth::<_, ApiOutcome>(query)
+                .await?;
             tracing::info!("Playlist item reordered");
             Ok(())
         }
@@ -788,7 +902,12 @@ impl BackendTask<ArcServer> for ReorderPlaylistItem {
 }
 
 #[derive(Debug)]
-pub struct DownloadSong(pub VideoID<'static>, pub ListSongID, pub Arc<CancellationToken>, pub AudioQuality);
+pub struct DownloadSong(
+    pub VideoID<'static>,
+    pub ListSongID,
+    pub Arc<CancellationToken>,
+    pub AudioQuality,
+);
 
 impl PartialEq for DownloadSong {
     fn eq(&self, other: &Self) -> bool {
@@ -841,7 +960,11 @@ pub struct Resume(pub ListSongID);
 pub struct Pause(pub ListSongID);
 /// Decode a song into a format that can be played.
 #[derive(PartialEq, Debug)]
-pub struct DecodeSong(pub Arc<InMemSong>, pub Option<Duration>, pub Option<Duration>);
+pub struct DecodeSong(
+    pub Arc<InMemSong>,
+    pub Option<Duration>,
+    pub Option<Duration>,
+);
 /// Play a song, starting from the start, regardless what's queued.
 #[derive(Debug)]
 pub struct PlaySong {
@@ -899,8 +1022,11 @@ impl BackendTask<ArcServer> for GetLyrics {
             let genius = genius_rs::GeniusClient::new(Some(self.2), http_client.clone());
             match genius.find_and_fetch(&artist, &title).await {
                 Ok((_hit, lyrics)) => {
-                    tracing::info!("Genius lyrics: {} chars, {} lines",
-                        lyrics.len(), lyrics.lines().count());
+                    tracing::info!(
+                        "Genius lyrics: {} chars, {} lines",
+                        lyrics.len(),
+                        lyrics.lines().count()
+                    );
                     if lyrics.len() > 50 && lyrics.lines().count() > 2 {
                         return Ok(lyrics);
                     }
@@ -924,26 +1050,33 @@ impl BackendTask<ArcServer> for GetLyrics {
             tracing::info!("Genius + LRCLIB failed, trying fallback CLI providers");
             // Fallback 2: bandcamp-lyrics CLI (great for niche/underground music)
             fn bc_slug(s: &str) -> String {
-                s.to_lowercase().chars()
+                s.to_lowercase()
+                    .chars()
                     .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-')
                     .collect::<String>()
-                    .split_whitespace().collect::<Vec<_>>().join("-")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join("-")
             }
             let bc_artist = bc_slug(&artist);
             let bc_title = bc_slug(&title);
             let bc_variants = [&bc_artist as &str];
             for artist_slug in &bc_variants {
                 for suffix in &["", "-2", "-3", "-4", "-5"] {
-                    let bc_url = format!("https://{}.bandcamp.com/track/{}{}", artist_slug, bc_title, suffix);
+                    let bc_url = format!(
+                        "https://{}.bandcamp.com/track/{}{}",
+                        artist_slug, bc_title, suffix
+                    );
                     if let Ok(out) = tokio::process::Command::new("bandcamp-lyrics")
-                        .arg(&bc_url).output().await
+                        .arg(&bc_url)
+                        .output()
+                        .await
+                        && out.status.success()
                     {
-                        if out.status.success() {
-                            let l = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                            if !l.is_empty() {
-                                tracing::info!("bandcamp found lyrics ({} chars)", l.len());
-                                return Ok(l);
-                            }
+                        let l = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                        if !l.is_empty() {
+                            tracing::info!("bandcamp found lyrics ({} chars)", l.len());
+                            return Ok(l);
                         }
                     }
                 }
@@ -957,16 +1090,21 @@ impl BackendTask<ArcServer> for GetLyrics {
             for (artist_v, title_v) in &variants {
                 if let Ok(out) = tokio::process::Command::new("lyr")
                     .args(["--artist", artist_v, "--title", title_v])
-                    .output().await
+                    .output()
+                    .await
+                    && out.status.success()
                 {
-                    if out.status.success() {
-                        let raw = String::from_utf8_lossy(&out.stdout).to_string();
-                        let l = raw.lines().skip(1).collect::<Vec<_>>().join("\n");
-                        let l = l.splitn(2, "Lyrics").nth(1).unwrap_or(&l).trim().to_string();
-                        if !l.is_empty() {
-                            tracing::info!("lyr CLI found lyrics ({} chars)", l.len());
-                            return Ok(l);
-                        }
+                    let raw = String::from_utf8_lossy(&out.stdout).to_string();
+                    let l = raw.lines().skip(1).collect::<Vec<_>>().join("\n");
+                    let l = l
+                        .split_once("Lyrics")
+                        .map(|x| x.1)
+                        .unwrap_or(&l)
+                        .trim()
+                        .to_string();
+                    if !l.is_empty() {
+                        tracing::info!("lyr CLI found lyrics ({} chars)", l.len());
+                        return Ok(l);
                     }
                 }
             }
@@ -1012,13 +1150,17 @@ impl BackendTask<ArcServer> for SearchSongs {
             // Try YTMusic first
             match backend.api.search_songs(query.clone()).await {
                 Ok(results) if !results.is_empty() => return Ok(results),
-                Ok(_) => tracing::info!("YTMusic no results, trying YouTube fallback for: {}", query),
+                Ok(_) => {
+                    tracing::info!("YTMusic no results, trying YouTube fallback for: {}", query)
+                }
                 Err(e) => tracing::warn!("YTMusic search error: {}, trying YouTube fallback", e),
             }
             // Fallback: yt-dlp YouTube search
             let output = tokio::process::Command::new("yt-dlp")
                 .args([
-                    "--flat-playlist", "--dump-json", "--no-warnings",
+                    "--flat-playlist",
+                    "--dump-json",
+                    "--no-warnings",
                     &format!("ytsearch10:{}", query),
                 ])
                 .output()
@@ -1037,11 +1179,15 @@ impl BackendTask<ArcServer> for SearchSongs {
             }
 
             let stdout = String::from_utf8_lossy(&output.stdout);
-            let results: Vec<SearchResultSong> = stdout.lines()
+            let results: Vec<SearchResultSong> = stdout
+                .lines()
                 .filter_map(|line| {
                     let v: serde_json::Value = serde_json::from_str(line).ok()?;
                     let title = v.get("title")?.as_str()?;
-                    let uploader = v.get("uploader").and_then(|u| u.as_str()).unwrap_or("Unknown");
+                    let uploader = v
+                        .get("uploader")
+                        .and_then(|u| u.as_str())
+                        .unwrap_or("Unknown");
                     let artist = extract_artist_from_title(title, uploader);
                     let id = v.get("id")?.as_str()?;
                     let d = v.get("duration").and_then(|s| s.as_f64()).unwrap_or(0.0) as u64;
@@ -1083,11 +1229,15 @@ impl BackendTask<ArcServer> for GetAnnotations {
 
             // Use genius-rs with API-first annotations when token available
             let genius = genius_rs::GeniusClient::new(Some(token), client.clone());
-            let hit = genius.find_song(&artist, &title).await
+            let hit = genius
+                .find_song(&artist, &title)
+                .await
                 .map_err(|e| anyhow::anyhow!("Genius search error: {}", e))?
                 .ok_or_else(|| anyhow::anyhow!("No Genius results"))?;
 
-            let annotations = genius.fetch_annotations_with_token(&hit.path, hit.id).await
+            let annotations = genius
+                .fetch_annotations_with_token(&hit.path, hit.id)
+                .await
                 .map_err(|e| anyhow::anyhow!("Genius annotation fetch error: {}", e))?;
 
             let pairs: Vec<(String, String)> = annotations
@@ -1095,7 +1245,11 @@ impl BackendTask<ArcServer> for GetAnnotations {
                 .map(|a| (a.fragment, a.body))
                 .collect();
 
-            tracing::info!("Fetched {} annotations for song {} via API+scrape", pairs.len(), hit.id);
+            tracing::info!(
+                "Fetched {} annotations for song {} via API+scrape",
+                pairs.len(),
+                hit.id
+            );
             Ok(pairs)
         }
     }
@@ -1123,15 +1277,19 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
             // Query Last.fm album.getInfo for image URL + canonical album name
             let info_url = format!(
                 "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&api_key={}&artist={}&album={}&format=json",
-                api_key, metadata_provider::util::urlencoding(&artist), metadata_provider::util::urlencoding(&album)
+                api_key,
+                metadata_provider::util::urlencoding(&artist),
+                metadata_provider::util::urlencoding(&album)
             );
             let mut canonical_album: Option<String> = None;
             let image_url = if api_key.is_empty() {
                 None
             } else if let Ok(resp) = client.get(&info_url).send().await {
                 if let Ok(data) = resp.json::<serde_json::Value>().await {
-                    // Extract canonical album name from Last.fm response (the name that matches an existing entry with art)
-                    canonical_album = data.get("album")
+                    // Extract canonical album name from Last.fm response (the name that matches an
+                    // existing entry with art)
+                    canonical_album = data
+                        .get("album")
                         .and_then(|a| a.get("name"))
                         .and_then(|n| n.as_str())
                         .map(|s| s.to_string());
@@ -1183,7 +1341,10 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
 impl BackendTask<ArcServer> for ValidateMetadata {
     type Output = Result<ValidatedMetadata>;
     type MetadataType = TaskMetadata;
-    fn into_future(self, backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
         let registry = backend.metadata_registry.clone();
         let api = backend.api.clone();
         async move {
@@ -1197,18 +1358,22 @@ impl BackendTask<ArcServer> for ValidateMetadata {
             if result.year.is_none() || result.album.is_none() {
                 // Prefer known album name for search, fall back to artist + title
                 let search_query = match album {
-                    Some(ref a) => result.artist.as_ref()
+                    Some(ref a) => result
+                        .artist
+                        .as_ref()
                         .map(|art| format!("{} {}", art, a))
                         .unwrap_or_else(|| format!("{} {}", artist, a)),
-                    None => result.artist.as_ref()
+                    None => result
+                        .artist
+                        .as_ref()
                         .map(|art| format!("{} {}", art, title))
                         .unwrap_or_else(|| format!("{} {}", artist, title)),
                 };
                 match api.search_albums(search_query).await {
                     Ok(albums) => {
                         if let Some(album_result) = albums.into_iter().next() {
-                            use ytmapi_rs::query::GetAlbumQuery;
                             use super::api::query_api_with_retry;
+                            use ytmapi_rs::query::GetAlbumQuery;
                             let query = GetAlbumQuery::new(&album_result.album_id);
                             let api_guard = match api.get_api().await {
                                 Ok(g) => g,
@@ -1220,11 +1385,17 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                             match query_api_with_retry(&api_guard, query).await {
                                 Ok(album_data) => {
                                     if result.year.is_none() && !album_data.year.is_empty() {
-                                        tracing::debug!("YTM album enrichment: year={}", album_data.year);
+                                        tracing::debug!(
+                                            "YTM album enrichment: year={}",
+                                            album_data.year
+                                        );
                                         result.year = Some(album_data.year);
                                     }
                                     if result.album.is_none() && !album_data.title.is_empty() {
-                                        tracing::debug!("YTM album enrichment: album={}", album_data.title);
+                                        tracing::debug!(
+                                            "YTM album enrichment: album={}",
+                                            album_data.title
+                                        );
                                         result.album = Some(album_data.title);
                                     }
                                 }
@@ -1240,8 +1411,6 @@ impl BackendTask<ArcServer> for ValidateMetadata {
         }
     }
 }
-
-
 
 impl BackendTask<ArcServer> for SearchPlaylists {
     type Output = Result<Vec<SearchResultPlaylist>>;
@@ -1292,19 +1461,28 @@ impl BackendTask<ArcServer> for SearchAlbums {
             }
             // yt-dlp fallback for YouTube full-album videos
             match tokio::process::Command::new("yt-dlp")
-                .args(["--flat-playlist", "--dump-json", "--no-warnings",
-                       &format!("ytsearch10:{}", query)])
-                .output().await
+                .args([
+                    "--flat-playlist",
+                    "--dump-json",
+                    "--no-warnings",
+                    &format!("ytsearch10:{}", query),
+                ])
+                .output()
+                .await
             {
                 Ok(output) => {
                     if let Ok(stdout) = String::from_utf8(output.stdout) {
                         for line in stdout.lines() {
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-                                let duration = v.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0);
+                                let duration =
+                                    v.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0);
                                 let title = v.get("title").and_then(|t| t.as_str()).unwrap_or("");
-                                if duration > 1200.0 || title.to_lowercase().contains("full album") {
-                                    let video_id_str = v.get("id").and_then(|i| i.as_str()).unwrap_or("");
-                                    let uploader = v.get("uploader").and_then(|u| u.as_str()).unwrap_or("");
+                                if duration > 1200.0 || title.to_lowercase().contains("full album")
+                                {
+                                    let video_id_str =
+                                        v.get("id").and_then(|i| i.as_str()).unwrap_or("");
+                                    let uploader =
+                                        v.get("uploader").and_then(|u| u.as_str()).unwrap_or("");
                                     let mins = (duration / 60.0) as u64;
                                     let secs = (duration % 60.0) as u64;
                                     let duration_str = format!("{}:{:02}", mins, secs);
@@ -1319,7 +1497,9 @@ impl BackendTask<ArcServer> for SearchAlbums {
                                             thumbnails: vec![],
                                         },
                                         is_youtube: true,
-                                        youtube_video_id: Some(VideoID::from_raw(video_id_str.to_string())),
+                                        youtube_video_id: Some(VideoID::from_raw(
+                                            video_id_str.to_string(),
+                                        )),
                                         youtube_duration: Some(duration_str),
                                     });
                                 }
@@ -1368,7 +1548,9 @@ impl BackendStreamingTask<ArcServer> for DownloadSong {
         backend: &ArcServer,
     ) -> impl futures::Stream<Item = Self::Output> + Send + Unpin + 'static {
         let backend = backend.clone();
-        backend.song_downloader.download_song(self.0, self.1, Some(self.2), self.3)
+        backend
+            .song_downloader
+            .download_song(self.0, self.1, Some(self.2), self.3)
     }
 }
 impl BackendTask<ArcServer> for Seek {

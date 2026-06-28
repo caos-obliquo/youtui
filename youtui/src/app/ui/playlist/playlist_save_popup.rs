@@ -2,10 +2,10 @@ use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffec
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use ytmapi_rs::common::VideoID;

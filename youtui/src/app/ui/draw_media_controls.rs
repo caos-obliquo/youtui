@@ -18,7 +18,11 @@ pub fn draw_app_media_controls(w: &YoutuiWindow) -> MediaControlsUpdate<'_> {
                 .map(parse_simple_time_to_secs)
                 .unwrap_or(0);
             progress = w.playlist.cur_played_dur.unwrap_or_default();
-            if duration == 0 { 0.0 } else { (progress.as_secs_f64() / duration as f64).clamp(0.0, 1.0) }
+            if duration == 0 {
+                0.0
+            } else {
+                (progress.as_secs_f64() / duration as f64).clamp(0.0, 1.0)
+            }
         }
         _ => 0.0,
     };
@@ -36,10 +40,13 @@ pub fn draw_app_media_controls(w: &YoutuiWindow) -> MediaControlsUpdate<'_> {
         .and_then(|s| s.album.as_ref())
         .map(|s| s.name.as_str())
         .unwrap_or_default();
-    
+
     let cover_url = cur_active_song.and_then(|s| {
         if let AlbumArtState::Downloaded(album_art) = &s.album_art {
-            debug!("draw_media_controls: using local album art: {:?}", album_art.on_disk_path);
+            debug!(
+                "draw_media_controls: using local album art: {:?}",
+                album_art.on_disk_path
+            );
             Some(format!("file://{}", &album_art.on_disk_path.display()))
         } else {
             let thumb = s.thumbnails.iter().max_by_key(|t| t.height * t.width);
@@ -78,7 +85,8 @@ pub fn draw_app_media_controls(w: &YoutuiWindow) -> MediaControlsUpdate<'_> {
 }
 
 /// Upgrade YTM thumbnail URL to request largest available resolution.
-/// YTM URLs contain size params like =w60-h60 or =s60 - replace with =w600-h600.
+/// YTM URLs contain size params like =w60-h60 or =s60 - replace with
+/// =w600-h600.
 pub fn upgrade_thumbnail_url(url: &str) -> String {
     // Upgrade YTM thumbnail URL to full HD resolution.
     // The downloader saves at 1920x1080; display should match.

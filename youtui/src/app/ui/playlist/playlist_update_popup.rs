@@ -2,10 +2,10 @@ use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffec
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::KeyEvent;
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
-use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use tracing::info;
@@ -66,7 +66,9 @@ impl PlaylistUpdatePopup {
                     self.filtered_indices = (0..playlists.len()).collect();
                 } else {
                     let lower = self.search_text.to_lowercase();
-                    self.filtered_indices = playlists.iter().enumerate()
+                    self.filtered_indices = playlists
+                        .iter()
+                        .enumerate()
                         .filter(|(_, p)| p.title.to_lowercase().contains(&lower))
                         .map(|(i, _)| i)
                         .collect();
@@ -76,16 +78,18 @@ impl PlaylistUpdatePopup {
         }
     }
 
-    fn selected_playlist<'a>(&self, playlists: &'a [LibraryPlaylist]) -> Option<&'a LibraryPlaylist> {
-        self.filtered_indices.get(self.selected_idx).and_then(|&i| playlists.get(i))
+    fn selected_playlist<'a>(
+        &self,
+        playlists: &'a [LibraryPlaylist],
+    ) -> Option<&'a LibraryPlaylist> {
+        self.filtered_indices
+            .get(self.selected_idx)
+            .and_then(|&i| playlists.get(i))
     }
 }
 
 impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
-    fn apply_action(
-        &mut self,
-        action: PlaylistUpdatePopupAction,
-    ) -> impl Into<YoutuiEffect<Self>> {
+    fn apply_action(&mut self, action: PlaylistUpdatePopupAction) -> impl Into<YoutuiEffect<Self>> {
         use PlaylistUpdatePopupAction::*;
 
         let result: (ComponentEffect<Self>, Option<AppCallback>) = match action {
@@ -118,7 +122,10 @@ impl ActionHandler<PlaylistUpdatePopupAction> for PlaylistUpdatePopup {
                             // Merge mode: add source playlist to target playlist
                             (
                                 AsyncTask::new_no_op(),
-                                Some(AppCallback::AddPlaylistToPlaylistFromLibrary(source_id.clone(), target_id)),
+                                Some(AppCallback::AddPlaylistToPlaylistFromLibrary(
+                                    source_id.clone(),
+                                    target_id,
+                                )),
                             )
                         } else if self.video_ids.is_empty() {
                             // Load mode: fetch playlist tracks into player
@@ -215,10 +222,7 @@ impl PlaylistUpdatePopup {
         }
         match event.code {
             KeyCode::Esc => {
-                return (
-                    AsyncTask::new_no_op(),
-                    Some(AppCallback::ClosePopup),
-                );
+                return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
             }
             KeyCode::Char('/') => {
                 self.search_active = true;
@@ -237,8 +241,9 @@ impl PlaylistUpdatePopup {
                 return (effect.effect, effect.callback);
             }
             crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Down => {
-                let effect: YoutuiEffect<Self> =
-                    self.apply_action(PlaylistUpdatePopupAction::MoveDown).into();
+                let effect: YoutuiEffect<Self> = self
+                    .apply_action(PlaylistUpdatePopupAction::MoveDown)
+                    .into();
                 return (effect.effect, effect.callback);
             }
             KeyCode::Char('g') => {
@@ -291,7 +296,10 @@ impl PlaylistUpdatePopup {
         } else if self.search_active {
             format!(" Search Playlists [{}] ", self.search_text)
         } else {
-            format!(" Add to Playlist ({} songs) /:Search ", self.video_ids.len())
+            format!(
+                " Add to Playlist ({} songs) /:Search ",
+                self.video_ids.len()
+            )
         };
         let block = Block::default()
             .title(title)
@@ -313,12 +321,16 @@ impl PlaylistUpdatePopup {
                 frame.render_widget(loading, chunks[0]);
             }
             PlaylistUpdatePopupState::Loaded(playlists) => {
-                let filtered: Vec<&LibraryPlaylist> = if self.search_active || !self.search_text.is_empty() {
-                    let lower = self.search_text.to_lowercase();
-                    playlists.iter().filter(|p| p.title.to_lowercase().contains(&lower)).collect()
-                } else {
-                    playlists.iter().collect()
-                };
+                let filtered: Vec<&LibraryPlaylist> =
+                    if self.search_active || !self.search_text.is_empty() {
+                        let lower = self.search_text.to_lowercase();
+                        playlists
+                            .iter()
+                            .filter(|p| p.title.to_lowercase().contains(&lower))
+                            .collect()
+                    } else {
+                        playlists.iter().collect()
+                    };
                 let items: Vec<ListItem> = filtered
                     .iter()
                     .map(|p| {
@@ -345,9 +357,10 @@ impl PlaylistUpdatePopup {
             }
         }
 
-        let instructions = Paragraph::new("/: Search | j/k: Navigate | Enter: Select | Esc: Cancel")
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray));
+        let instructions =
+            Paragraph::new("/: Search | j/k: Navigate | Enter: Select | Esc: Cancel")
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(instructions, chunks[1]);
     }
 }

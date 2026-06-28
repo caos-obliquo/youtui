@@ -234,10 +234,10 @@ pub trait TextHandler: Component {
         if !self.is_text_handling() {
             return None;
         }
-        if let Event::Key(k) = event {
-            if matches!(k.code, KeyCode::F(_)) {
-                return None;
-            }
+        if let Event::Key(k) = event
+            && matches!(k.code, KeyCode::F(_))
+        {
+            return None;
         }
         self.handle_text_event_impl(event)
     }
@@ -249,8 +249,6 @@ pub trait Suggestable: TextHandler {
     fn get_search_suggestions(&self) -> &[SearchSuggestion];
     fn has_search_suggestions(&self) -> bool;
 }
-
-
 
 /// The action to do after handling a key event
 #[derive(Debug)]

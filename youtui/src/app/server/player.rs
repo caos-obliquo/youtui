@@ -1,9 +1,9 @@
 use super::song_downloader::InMemSong;
 use crate::app::structures::ListSongID;
+use anyhow::Context;
 use audio_player::rodio::Decoder;
 use audio_player::rodio::decoder::DecoderError;
 use audio_player::{self, AsyncRodio};
-use anyhow::Context;
 use futures::Stream;
 use std::io::Cursor;
 use std::sync::Arc;
@@ -83,10 +83,7 @@ impl Player {
     ) -> Option<audio_player::PausePlayResponse<ListSongID>> {
         self.rodio_handle.pause_play(song_id).await
     }
-    pub async fn resume(
-        &self,
-        song_id: ListSongID,
-    ) -> Option<audio_player::Resumed<ListSongID>> {
+    pub async fn resume(&self, song_id: ListSongID) -> Option<audio_player::Resumed<ListSongID>> {
         self.rodio_handle.resume(song_id).await
     }
     pub async fn pause(&self, song_id: ListSongID) -> Option<audio_player::Paused<ListSongID>> {
@@ -117,12 +114,19 @@ impl Player {
 /// the exact track section (`-ss offset -t duration`) before decoding.
 /// This ensures each album track plays the correct audio for its exact length,
 /// enabling gapless QueueDecodedSong transitions.
-fn try_decode(song: Arc<InMemSong>, start_offset: Option<Duration>, actual_duration: Option<Duration>) -> std::result::Result<DecodedInMemSong, DecoderError> {
+fn try_decode(
+    song: Arc<InMemSong>,
+    start_offset: Option<Duration>,
+    actual_duration: Option<Duration>,
+) -> std::result::Result<DecodedInMemSong, DecoderError> {
     let (data, len) = if let (Some(offset), Some(dur)) = (start_offset, actual_duration) {
         match extract_section(&song, offset, Some(dur)) {
             Ok(extracted) => {
                 let len = extracted.0.len();
-                info!("Extracted section offset={:?} dur={:?}: {} bytes", offset, dur, len);
+                info!(
+                    "Extracted section offset={:?} dur={:?}: {} bytes",
+                    offset, dur, len
+                );
                 (Arc::new(extracted), len)
             }
             Err(e) => {
@@ -158,7 +162,10 @@ fn try_decode(song: Arc<InMemSong>, start_offset: Option<Duration>, actual_durat
     let header: Vec<u8> = data.as_ref().0.iter().take(16).copied().collect();
     tracing::info!(
         "try_decode: {} bytes, header={:02x?}, offset={:?}, dur={:?}",
-        len, header, start_offset, actual_duration
+        len,
+        header,
+        start_offset,
+        actual_duration
     );
 
     // Try direct decode first (fast path)
@@ -193,7 +200,8 @@ fn try_decode(song: Arc<InMemSong>, start_offset: Option<Duration>, actual_durat
                     .with_data(cur)
                     .with_gapless(true)
                     .with_byte_len(
-                        wav_len.try_into()
+                        wav_len
+                            .try_into()
                             .expect("Expected usize to be smaller than or equal to u64"),
                     )
                     .with_seekable(true)
@@ -203,16 +211,33 @@ fn try_decode(song: Arc<InMemSong>, start_offset: Option<Duration>, actual_durat
     }
 }
 
-/// Fallback: convert any audio bytes to WAV via ffmpeg. Returns None on failure.
+/// Fallback: convert any audio bytes to WAV via ffmpeg. Returns None on
+/// failure.
 fn convert_to_wav_fallback(data: &[u8]) -> Option<Vec<u8>> {
     let pid = std::process::id();
     let tmp = std::env::temp_dir();
-    let in_file = tmp.join(format!("youtui_wav_{}.bin", pid)).to_string_lossy().into_owned();
-    let out_file = tmp.join(format!("youtui_wav_{}.wav", pid)).to_string_lossy().into_owned();
+    let in_file = tmp
+        .join(format!("youtui_wav_{}.bin", pid))
+        .to_string_lossy()
+        .into_owned();
+    let out_file = tmp
+        .join(format!("youtui_wav_{}.wav", pid))
+        .to_string_lossy()
+        .into_owned();
 
     let _ = std::fs::write(&in_file, data);
     let status = std::process::Command::new("ffmpeg")
-        .args(&["-loglevel", "error", "-y", "-i", &in_file, "-vn", "-f", "wav", &out_file])
+        .args([
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            &in_file,
+            "-vn",
+            "-f",
+            "wav",
+            &out_file,
+        ])
         .status()
         .ok()?;
     if !status.success() {
@@ -230,7 +255,17 @@ fn convert_to_wav_fallback(data: &[u8]) -> Option<Vec<u8>> {
 fn remux_moov(in_file: &str) -> bool {
     let tmp = format!("{}_remuxed", in_file);
     let ok = std::process::Command::new("ffmpeg")
-        .args(&["-loglevel", "error", "-i", in_file, "-c", "copy", "-movflags", "+faststart", &tmp])
+        .args([
+            "-loglevel",
+            "error",
+            "-i",
+            in_file,
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            &tmp,
+        ])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
@@ -245,11 +280,21 @@ fn remux_moov(in_file: &str) -> bool {
 /// Extract a section of audio via ffmpeg.
 /// Writes full audio to temp file, runs ffmpeg with fast copy-based seek first.
 /// Falls back to accurate decode-based seek if fast path produces garbage.
-fn extract_section(song: &Arc<InMemSong>, offset: Duration, duration: Option<Duration>) -> anyhow::Result<InMemSong> {
+fn extract_section(
+    song: &Arc<InMemSong>,
+    offset: Duration,
+    duration: Option<Duration>,
+) -> anyhow::Result<InMemSong> {
     let pid = std::process::id();
     let tmp = std::env::temp_dir();
-    let in_file = tmp.join(format!("youtui_seek_{}.m4a", pid)).to_string_lossy().into_owned();
-    let out_file = tmp.join(format!("youtui_seek_{}_out.m4a", pid)).to_string_lossy().into_owned();
+    let in_file = tmp
+        .join(format!("youtui_seek_{}.m4a", pid))
+        .to_string_lossy()
+        .into_owned();
+    let out_file = tmp
+        .join(format!("youtui_seek_{}_out.m4a", pid))
+        .to_string_lossy()
+        .into_owned();
 
     std::fs::write(&in_file, &song.as_ref().0).context("write temp input")?;
 
@@ -259,13 +304,15 @@ fn extract_section(song: &Arc<InMemSong>, offset: Duration, duration: Option<Dur
     let s = total_secs as u64 % 60;
     let start_fmt = format!("{}:{:02}:{:02}", h, m, s);
 
-    let (dur_fmt, expected_secs) = duration.map(|dur| {
-        let dur_secs = dur.as_secs_f64();
-        let dh = dur_secs as u64 / 3600;
-        let dm = (dur_secs as u64 % 3600) / 60;
-        let ds = dur_secs as u64 % 60;
-        (format!("{}:{:02}:{:02}", dh, dm, ds), dur_secs)
-    }).unwrap_or_else(|| (String::new(), 0.0));
+    let (dur_fmt, expected_secs) = duration
+        .map(|dur| {
+            let dur_secs = dur.as_secs_f64();
+            let dh = dur_secs as u64 / 3600;
+            let dm = (dur_secs as u64 % 3600) / 60;
+            let ds = dur_secs as u64 % 60;
+            (format!("{}:{:02}:{:02}", dh, dm, ds), dur_secs)
+        })
+        .unwrap_or_else(|| (String::new(), 0.0));
 
     // Fast path: keyframe-seeking with stream copy
     let run_ffmpeg = |args: &[&str]| -> anyhow::Result<Vec<u8>> {
@@ -282,12 +329,35 @@ fn extract_section(song: &Arc<InMemSong>, offset: Duration, duration: Option<Dur
     };
 
     let fast_args = if !dur_fmt.is_empty() {
-        vec!["-loglevel", "error", "-ss", &start_fmt, "-i", &in_file,
-             "-c", "copy", "-avoid_negative_ts", "1",
-             "-t", &dur_fmt, &out_file]
+        vec![
+            "-loglevel",
+            "error",
+            "-ss",
+            &start_fmt,
+            "-i",
+            &in_file,
+            "-c",
+            "copy",
+            "-avoid_negative_ts",
+            "1",
+            "-t",
+            &dur_fmt,
+            &out_file,
+        ]
     } else {
-        vec!["-loglevel", "error", "-ss", &start_fmt, "-i", &in_file,
-             "-c", "copy", "-avoid_negative_ts", "1", &out_file]
+        vec![
+            "-loglevel",
+            "error",
+            "-ss",
+            &start_fmt,
+            "-i",
+            &in_file,
+            "-c",
+            "copy",
+            "-avoid_negative_ts",
+            "1",
+            &out_file,
+        ]
     };
 
     let try_both = |in_file: &str| -> anyhow::Result<Vec<u8>> {
@@ -322,7 +392,11 @@ fn extract_section(song: &Arc<InMemSong>, offset: Duration, duration: Option<Dur
                 let _ = std::fs::remove_file(&out_file);
                 return Ok(InMemSong(data));
             }
-            info!("ffmpeg fast path: small output ({}b, expected >{}b), retrying accurate", data.len(), min_expected);
+            info!(
+                "ffmpeg fast path: small output ({}b, expected >{}b), retrying accurate",
+                data.len(),
+                min_expected
+            );
             let _ = std::fs::remove_file(&out_file);
             try_both(&in_file)?
         }
@@ -339,14 +413,25 @@ fn extract_section(song: &Arc<InMemSong>, offset: Duration, duration: Option<Dur
 }
 
 /// Accurate seek fallback: decode from start, cut at exact offset
-fn extract_accurate(in_file: &str, out_file: &str, start_fmt: &str, dur_fmt: &str) -> anyhow::Result<Vec<u8>> {
+fn extract_accurate(
+    in_file: &str,
+    out_file: &str,
+    start_fmt: &str,
+    dur_fmt: &str,
+) -> anyhow::Result<Vec<u8>> {
     let mut args: Vec<&str> = vec![
-        "-loglevel", "error",
-        "-i", in_file,
-        "-ss", start_fmt,
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-avoid_negative_ts", "1",
+        "-loglevel",
+        "error",
+        "-i",
+        in_file,
+        "-ss",
+        start_fmt,
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-avoid_negative_ts",
+        "1",
     ];
     if !dur_fmt.is_empty() {
         args.push("-t");

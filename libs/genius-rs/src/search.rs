@@ -15,7 +15,8 @@ impl SongHit {
     }
 }
 
-/// Search Genius for a song. Tries Bearer token first, falls back to public API.
+/// Search Genius for a song. Tries Bearer token first, falls back to public
+/// API.
 pub async fn search(
     client: &reqwest::Client,
     artist: &str,
@@ -41,7 +42,10 @@ pub async fn search(
                     tracing::info!("Genius Bearer search status={}", status);
                     match resp.json::<serde_json::Value>().await {
                         Ok(data) => {
-                            tracing::info!("Genius Bearer response keys: {:?}", data.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+                            tracing::info!(
+                                "Genius Bearer response keys: {:?}",
+                                data.as_object().map(|o| o.keys().collect::<Vec<_>>())
+                            );
                             let hits = parse_hits(&data, "/response/hits");
                             tracing::info!("Genius Bearer search parsed {} hits", hits.len());
                             if !hits.is_empty() {
@@ -181,10 +185,13 @@ pub fn hit_from_path(artist: &str, title: &str) -> SongHit {
 }
 
 /// Check if a SongHit actually matches the queried artist and title.
-/// Normalizes both sides (lowercase, strip trailing punctuation) for fuzzy comparison.
+/// Normalizes both sides (lowercase, strip trailing punctuation) for fuzzy
+/// comparison.
 pub fn hit_matches_query(hit: &SongHit, artist: &str, title: &str) -> bool {
     let norm = |s: &str| -> String {
-        s.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string()
+        s.to_lowercase()
+            .trim_matches(|c: char| !c.is_alphanumeric())
+            .to_string()
     };
     let hit_artist = norm(&hit.artist);
     let hit_title = norm(&hit.title);
@@ -194,8 +201,7 @@ pub fn hit_matches_query(hit: &SongHit, artist: &str, title: &str) -> bool {
     let artist_ok = hit_artist == query_artist
         || hit_artist.contains(&query_artist)
         || query_artist.contains(&hit_artist);
-    let title_ok = hit_title.contains(&query_title)
-        || query_title.contains(&hit_title);
+    let title_ok = hit_title.contains(&query_title) || query_title.contains(&hit_title);
     artist_ok && title_ok
 }
 #[cfg(test)]
@@ -265,7 +271,13 @@ mod tests {
     #[test]
     fn test_compute_path() {
         assert_eq!(compute_path("FIDLAR", "Wasted"), "/fidlar-wasted-lyrics");
-        assert_eq!(compute_path("Love Letter", "Love Letter"), "/love-letter-love-letter-lyrics");
-        assert_eq!(compute_path("Alice in Chains", "It Ain't Like That"), "/alice-in-chains-it-aint-like-that-lyrics");
+        assert_eq!(
+            compute_path("Love Letter", "Love Letter"),
+            "/love-letter-love-letter-lyrics"
+        );
+        assert_eq!(
+            compute_path("Alice in Chains", "It Ain't Like That"),
+            "/alice-in-chains-it-aint-like-that-lyrics"
+        );
     }
 }

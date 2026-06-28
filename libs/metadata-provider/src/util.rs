@@ -4,12 +4,22 @@ pub fn norm_for_lfm(s: &str) -> String {
     out = &out_owned;
 
     let patterns = [
-        "full album", "full lp", "full ep",
-        "full-length album", "full length",
-        "official music video", "official video", "official audio",
-        "music video", "lyric video", "audio",
-        " - single", " - ep", " - lp",
-        " - full album", " - full ep",
+        "full album",
+        "full lp",
+        "full ep",
+        "full-length album",
+        "full length",
+        "official music video",
+        "official video",
+        "official audio",
+        "music video",
+        "lyric video",
+        "audio",
+        " - single",
+        " - ep",
+        " - lp",
+        " - full album",
+        " - full ep",
     ];
     let mut result = out.to_string();
     for pat in &patterns {
@@ -37,7 +47,8 @@ pub fn extract_year(s: &str) -> Option<String> {
 }
 
 pub fn extract_duration(v: &serde_json::Value) -> f64 {
-    v.as_str().and_then(|s| s.parse::<f64>().ok())
+    v.as_str()
+        .and_then(|s| s.parse::<f64>().ok())
         .or_else(|| v.as_f64())
         .unwrap_or(0.0)
 }

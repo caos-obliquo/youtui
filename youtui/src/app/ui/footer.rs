@@ -1,17 +1,16 @@
 use crate::app::structures::{AlbumArtState, PlayState};
-use tracing::warn;
 use crate::drawutils::{
     BUTTON_BG_COLOUR, BUTTON_FG_COLOUR, PROGRESS_BG_COLOUR, PROGRESS_FG_COLOUR, middle_of_rect,
 };
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
 use ratatui_image::Image;
 use ratatui_image::picker::Picker;
 use std::time::Duration;
+use tracing::warn;
 
 pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
     time_string
@@ -60,8 +59,11 @@ pub fn draw_footer(
                 .map(parse_simple_time_to_secs)
                 .unwrap_or(0);
             progress = w.playlist.cur_played_dur.unwrap_or_default();
-            if duration == 0 { 0.0 }
-            else { (progress.as_secs_f64() / duration as f64).clamp(0.0, 1.0) }
+            if duration == 0 {
+                0.0
+            } else {
+                (progress.as_secs_f64() / duration as f64).clamp(0.0, 1.0)
+            }
         }
         _ => 0.0,
     };
@@ -81,15 +83,27 @@ pub fn draw_footer(
             let icon = w.playlist.play_status.list_icon().to_string();
             let mut artist_song = String::new();
             for (i, artist) in song.artists.iter().enumerate() {
-                if i > 0 { artist_song.push_str(", "); }
+                if i > 0 {
+                    artist_song.push_str(", ");
+                }
                 artist_song.push_str(&crate::app::structures::normalize_artist_name(&artist.name));
             }
             artist_song.push_str(" - ");
             artist_song.push_str(&song.title);
-            let album = song.album.as_ref()
-                .map(|a| a.name.strip_prefix("Album: ").unwrap_or(&a.name).to_string())
+            let album = song
+                .album
+                .as_ref()
+                .map(|a| {
+                    a.name
+                        .strip_prefix("Album: ")
+                        .unwrap_or(&a.name)
+                        .to_string()
+                })
                 .filter(|n| !n.is_empty());
-            (format!("{} {}", icon, artist_song), album.unwrap_or_default())
+            (
+                format!("{} {}", icon, artist_song),
+                album.unwrap_or_default(),
+            )
         })
         .unwrap_or_default();
     let repeat_icon = match w.playlist.repeat_mode {
@@ -97,13 +111,29 @@ pub fn draw_footer(
         crate::app::structures::RepeatMode::One => " \u{F0458}",
         _ => " \u{F0457}",
     };
-    let radio_icon = if w.playlist.radio_mode { " \u{F0456}" } else { "" };
-    let shuffle_icon = if w.playlist.shuffle_enabled { " \u{F049D}" } else { "" };
+    let radio_icon = if w.playlist.radio_mode {
+        " \u{F0456}"
+    } else {
+        ""
+    };
+    let shuffle_icon = if w.playlist.shuffle_enabled {
+        " \u{F049D}"
+    } else {
+        ""
+    };
     let scrobble_indicator = if w.playlist.scrobbling_config.enabled {
-        if w.playlist.scrobble_state.is_some() { " [Scrobble]" } else { " [s]" }
-    } else { "" };
+        if w.playlist.scrobble_state.is_some() {
+            " [Scrobble]"
+        } else {
+            " [s]"
+        }
+    } else {
+        ""
+    };
     let album_art = cur_active_song.map(|s| &s.album_art);
-    let heart = cur_active_song.map(|s| like_icon(s.like_status.clone())).unwrap_or("");
+    let heart = cur_active_song
+        .map(|s| like_icon(s.like_status.clone()))
+        .unwrap_or("");
     let bar = Gauge::default()
         .label(bar_str)
         .gauge_style(
@@ -141,7 +171,8 @@ pub fn draw_footer(
         Constraint::Length(ALBUM_ART_WIDTH),
         Constraint::Length(1),
         Constraint::Min(0),
-    ]).areas(block_inner);
+    ])
+    .areas(block_inner);
     fn render_album_protocol(
         f: &mut Frame,
         w: &mut super::YoutuiWindow,
@@ -161,7 +192,11 @@ pub fn draw_footer(
         img: image::DynamicImage,
         terminal_image_capabilities: &Picker,
     ) -> Option<ratatui_image::protocol::Protocol> {
-        match terminal_image_capabilities.new_protocol(img, album_art_chunk, ratatui_image::Resize::Fit(None)) {
+        match terminal_image_capabilities.new_protocol(
+            img,
+            album_art_chunk,
+            ratatui_image::Resize::Fit(None),
+        ) {
             Ok(p) => Some(p),
             Err(e) => {
                 warn!("new_protocol failed: {e}, album_art_chunk={album_art_chunk:?}");
@@ -170,22 +205,29 @@ pub fn draw_footer(
         }
     }
     // Invalidate protocol cache when chunk dimensions change (terminal resize)
-    let chunk_changed = w.cached_album_chunk.map_or(true, |c| c != album_art_chunk);
+    let chunk_changed = w.cached_album_chunk != Some(album_art_chunk);
     w.cached_album_chunk = Some(album_art_chunk);
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
-            let art_changed = w.last_album_art.as_ref()
-                .map_or(true, |last| !std::rc::Rc::ptr_eq(last, album_art));
+            let art_changed = w
+                .last_album_art
+                .as_ref()
+                .is_none_or(|last| !std::rc::Rc::ptr_eq(last, album_art));
             w.last_album_art = Some(album_art.clone());
             if art_changed || chunk_changed || w.cached_album_protocol.is_none() {
                 if let Some(protocol) = encode_album_protocol(
-                    album_art_chunk, album_art.in_mem_image.clone(), terminal_image_capabilities,
+                    album_art_chunk,
+                    album_art.in_mem_image.clone(),
+                    terminal_image_capabilities,
                 ) {
                     w.cached_album_protocol = Some(protocol.clone());
                     render_album_protocol(f, w, album_art_chunk, &protocol);
                 } else {
                     w.sixel_data = None;
-                    f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
+                    f.render_widget(
+                        Paragraph::new("").centered(),
+                        middle_of_rect(album_art_chunk),
+                    );
                 }
             } else if let Some(protocol) = w.cached_album_protocol.take() {
                 render_album_protocol(f, w, album_art_chunk, &protocol);
@@ -198,7 +240,10 @@ pub fn draw_footer(
             w.sixel_data = None;
             w.cached_album_protocol = None;
             w.cached_album_chunk = None;
-            f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
+            f.render_widget(
+                Paragraph::new("").centered(),
+                middle_of_rect(album_art_chunk),
+            );
         }
         Some(AlbumArtState::None) => {
             // Song has no art yet - show cached fallback while fetch is pending
@@ -208,15 +253,23 @@ pub fn draw_footer(
                 w.cached_album_protocol = Some(cached);
             } else if let Some(ref last) = w.last_album_art {
                 if let Some(protocol) = encode_album_protocol(
-                    album_art_chunk, last.in_mem_image.clone(), terminal_image_capabilities,
+                    album_art_chunk,
+                    last.in_mem_image.clone(),
+                    terminal_image_capabilities,
                 ) {
                     w.cached_album_protocol = Some(protocol.clone());
                     render_album_protocol(f, w, album_art_chunk, &protocol);
                 } else {
-                    f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
+                    f.render_widget(
+                        Paragraph::new(" ").centered(),
+                        middle_of_rect(album_art_chunk),
+                    );
                 }
             } else {
-                f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
+                f.render_widget(
+                    Paragraph::new(" ").centered(),
+                    middle_of_rect(album_art_chunk),
+                );
             }
         }
         None => {
@@ -225,7 +278,10 @@ pub fn draw_footer(
             w.cached_album_protocol = None;
             w.cached_album_chunk = None;
             w.last_album_art = None;
-            f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
+            f.render_widget(
+                Paragraph::new(" ").centered(),
+                middle_of_rect(album_art_chunk),
+            );
         }
         Some(AlbumArtState::Init) => {
             // Loading placeholder - show cached old art while fetch pending
@@ -235,15 +291,23 @@ pub fn draw_footer(
                 w.cached_album_protocol = Some(cached);
             } else if let Some(ref last) = w.last_album_art {
                 if let Some(protocol) = encode_album_protocol(
-                    album_art_chunk, last.in_mem_image.clone(), terminal_image_capabilities,
+                    album_art_chunk,
+                    last.in_mem_image.clone(),
+                    terminal_image_capabilities,
                 ) {
                     w.cached_album_protocol = Some(protocol.clone());
                     render_album_protocol(f, w, album_art_chunk, &protocol);
                 } else {
-                    f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
+                    f.render_widget(
+                        Paragraph::new("").centered(),
+                        middle_of_rect(album_art_chunk),
+                    );
                 }
             } else {
-                f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
+                f.render_widget(
+                    Paragraph::new(" ").centered(),
+                    middle_of_rect(album_art_chunk),
+                );
             }
         }
     };
@@ -251,17 +315,19 @@ pub fn draw_footer(
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
-    ]).areas(right_area);
-    let [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk] = Layout::horizontal([
-        Constraint::Max(4),
-        Constraint::Min(1),
-        Constraint::Max(4),
-    ]).areas(bar_chunk);
+    ])
+    .areas(right_area);
+    let [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk] =
+        Layout::horizontal([Constraint::Max(4), Constraint::Min(1), Constraint::Max(4)])
+            .areas(bar_chunk);
     f.render_widget(bar, mid_bar_chunk);
     f.render_widget(left_arrow, left_arrow_chunk);
     f.render_widget(right_arrow, right_arrow_chunk);
     f.render_widget(Paragraph::new(Line::from(song_artist_line)), line1);
-    let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
+    let status_prefix = format!(
+        "{} {}{}{}",
+        scrobble_indicator, repeat_icon, radio_icon, shuffle_icon
+    );
     let mut album_spans = Vec::new();
     if !album_line.is_empty() {
         let avail = album_icons_line.width.saturating_sub(3) as usize;

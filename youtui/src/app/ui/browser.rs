@@ -1,14 +1,13 @@
 use self::draw::draw_browser;
 use super::action::{AppAction, TextEntryAction};
 use super::{AppCallback, WindowContext};
-use crate::app::{NavTarget};
+use crate::app::NavTarget;
 use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, DelegateScrollable, DominantKeyRouter, KeyRouter,
     Scrollable, TextHandler, YoutuiEffect, apply_action_mapped,
 };
-use crate::app::ui::browser::library::{BrowserLibraryAction, LibraryBrowser};
-use vi_text_editor::ViTextEditor;
 use crate::app::ui::browser::albumsearch::AlbumSearchBrowser;
+use crate::app::ui::browser::library::{BrowserLibraryAction, LibraryBrowser};
 use crate::app::view::{DrawableMut, HasTabs};
 use crate::config::Config;
 use crate::config::keymap::Keymap;
@@ -17,21 +16,22 @@ use artistsearch::search_panel::BrowserArtistsAction;
 use artistsearch::songs_panel::BrowserArtistSongsAction;
 use async_callback_manager::AsyncTask;
 use itertools::Either;
-use serde::{Deserialize, Serialize};
-use shared_components::{BrowserSearchAction, FilterAction, SortAction};
-use songsearch::{BrowserSongsAction, SongSearchBrowser};
 use playlistsearch::PlaylistSearchBrowser;
 use playlistsearch::search_panel::BrowserPlaylistsAction;
 use playlistsearch::songs_panel::BrowserPlaylistSongsAction;
+use serde::{Deserialize, Serialize};
+use shared_components::{BrowserSearchAction, FilterAction, SortAction};
+use songsearch::{BrowserSongsAction, SongSearchBrowser};
 use std::borrow::Cow;
 use std::convert::Into;
 use std::iter::{IntoIterator, Iterator};
 use tracing::{debug, warn};
+use vi_text_editor::ViTextEditor;
 
+pub mod albumsearch;
 pub mod artistsearch;
 mod draw;
 pub mod library;
-pub mod albumsearch;
 pub mod playlistsearch;
 pub mod shared_components;
 pub mod songsearch;
@@ -103,7 +103,9 @@ impl DelegateScrollable for Browser {
             BrowserVariant::Song => &mut self.song_search_browser as &mut dyn Scrollable,
             BrowserVariant::Album => &mut self.album_search_browser as &mut dyn Scrollable,
             BrowserVariant::LibraryPlaylist => &mut self.library_browser as &mut dyn Scrollable,
-            BrowserVariant::PlaylistSearch => &mut self.playlist_search_browser as &mut dyn Scrollable,
+            BrowserVariant::PlaylistSearch => {
+                &mut self.playlist_search_browser as &mut dyn Scrollable
+            }
         }
     }
     fn delegate_ref(&self) -> &dyn Scrollable {
@@ -128,12 +130,14 @@ impl ActionHandler<BrowserSearchAction> for Browser {
             BrowserVariant::Album => apply_action_mapped(self, action, |this: &mut Self| {
                 &mut this.album_search_browser
             }),
-            BrowserVariant::LibraryPlaylist => apply_action_mapped(self, action, |this: &mut Self| {
-                &mut this.library_browser
-            }),
-            BrowserVariant::PlaylistSearch => apply_action_mapped(self, action, |this: &mut Self| {
-                &mut this.playlist_search_browser
-            }),
+            BrowserVariant::LibraryPlaylist => {
+                apply_action_mapped(self, action, |this: &mut Self| &mut this.library_browser)
+            }
+            BrowserVariant::PlaylistSearch => {
+                apply_action_mapped(self, action, |this: &mut Self| {
+                    &mut this.playlist_search_browser
+                })
+            }
         }
     }
 }
@@ -323,7 +327,10 @@ impl ActionHandler<BrowserPlaylistsAction> for Browser {
     }
 }
 impl ActionHandler<BrowserPlaylistSongsAction> for Browser {
-    fn apply_action(&mut self, action: BrowserPlaylistSongsAction) -> impl Into<YoutuiEffect<Self>> {
+    fn apply_action(
+        &mut self,
+        action: BrowserPlaylistSongsAction,
+    ) -> impl Into<YoutuiEffect<Self>> {
         match self.variant {
             BrowserVariant::PlaylistSearch => {
                 return apply_action_mapped(self, action, |this: &mut Self| {
@@ -395,25 +402,29 @@ impl TextHandler for Browser {
         event: &crossterm::event::Event,
     ) -> Option<ComponentEffect<Self>> {
         if self.filter_active {
-            if let crossterm::event::Event::Key(k) = event {
-                if k.kind == crossterm::event::KeyEventKind::Press {
-                    match k.code {
-                        crossterm::event::KeyCode::Esc => {
-                            self.filter_text.clear();
-                            self.filter_active = false;
-                            self.filter_editor.clear();
-                            self.sync_local_filter();
-                        }
-                        crossterm::event::KeyCode::Enter => {
-                            self.filter_text = self.filter_editor.get_text().to_string();
-                            self.filter_active = false;
-                            self.filter_editor.clear();
-                            self.sync_local_filter();
-                        }
-                        _ => {
-                            self.filter_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
-                            self.sync_local_filter();
-                        }
+            if let crossterm::event::Event::Key(k) = event
+                && k.kind == crossterm::event::KeyEventKind::Press
+            {
+                match k.code {
+                    crossterm::event::KeyCode::Esc => {
+                        self.filter_text.clear();
+                        self.filter_active = false;
+                        self.filter_editor.clear();
+                        self.sync_local_filter();
+                    }
+                    crossterm::event::KeyCode::Enter => {
+                        self.filter_text = self.filter_editor.get_text().to_string();
+                        self.filter_active = false;
+                        self.filter_editor.clear();
+                        self.sync_local_filter();
+                    }
+                    _ => {
+                        self.filter_editor.handle_key(
+                            k.code,
+                            k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT),
+                            false,
+                        );
+                        self.sync_local_filter();
                     }
                 }
             }
@@ -430,12 +441,13 @@ impl TextHandler for Browser {
                 .song_search_browser
                 .handle_text_event_impl(event)
                 .map(|effect| effect.map_frontend(|this: &mut Self| &mut this.song_search_browser)),
-            BrowserVariant::Album => self
-                .album_search_browser
-                .handle_text_event_impl(event)
-                .map(|effect| {
-                    effect.map_frontend(|this: &mut Self| &mut this.album_search_browser)
-                }),
+            BrowserVariant::Album => {
+                self.album_search_browser
+                    .handle_text_event_impl(event)
+                    .map(|effect| {
+                        effect.map_frontend(|this: &mut Self| &mut this.album_search_browser)
+                    })
+            }
             BrowserVariant::LibraryPlaylist => self
                 .library_browser
                 .handle_text_event_impl(event)
@@ -443,7 +455,9 @@ impl TextHandler for Browser {
             BrowserVariant::PlaylistSearch => self
                 .playlist_search_browser
                 .handle_text_event_impl(event)
-                .map(|effect| effect.map_frontend(|this: &mut Self| &mut this.playlist_search_browser)),
+                .map(|effect| {
+                    effect.map_frontend(|this: &mut Self| &mut this.playlist_search_browser)
+                }),
         }
     }
 }
@@ -498,23 +512,27 @@ impl KeyRouter<AppAction> for Browser {
         }
         let base: Vec<&Keymap<AppAction>> = vec![&config.keybinds.browser];
         let extra: Vec<&Keymap<AppAction>> = match self.variant {
-            BrowserVariant::Song => {
-                self.song_search_browser.get_active_keybinds(config).collect()
-            }
-            BrowserVariant::Artist => {
-                self.artist_search_browser.get_active_keybinds(config).collect()
-            }
-            BrowserVariant::Album => {
-                self.album_search_browser.get_active_keybinds(config).collect()
-            }
+            BrowserVariant::Song => self
+                .song_search_browser
+                .get_active_keybinds(config)
+                .collect(),
+            BrowserVariant::Artist => self
+                .artist_search_browser
+                .get_active_keybinds(config)
+                .collect(),
+            BrowserVariant::Album => self
+                .album_search_browser
+                .get_active_keybinds(config)
+                .collect(),
             BrowserVariant::LibraryPlaylist => {
                 self.library_browser.get_active_keybinds(config).collect()
             }
-            BrowserVariant::PlaylistSearch => {
-                self.playlist_search_browser.get_active_keybinds(config).collect()
-            }
+            BrowserVariant::PlaylistSearch => self
+                .playlist_search_browser
+                .get_active_keybinds(config)
+                .collect(),
         };
-        Either::Right(base.into_iter().chain(extra.into_iter()))
+        Either::Right(base.into_iter().chain(extra))
     }
 }
 impl DominantKeyRouter<AppAction> for Browser {
@@ -610,21 +628,20 @@ impl Browser {
                     true // all actions valid when tracks shown
                 } else {
                     // Album list: hide track-level actions
-                    !matches!(action,
+                    !matches!(
+                        action,
                         BrowserSongsAction::PlaySongs
-                        | BrowserSongsAction::AddSongToPlaylist
-                        | BrowserSongsAction::InsertNext
-                        | BrowserSongsAction::ViewLyrics
-                        | BrowserSongsAction::GoToAlbum
-                        | BrowserSongsAction::CopySongUrl
-                        | BrowserSongsAction::GetRelatedTracks
-                        | BrowserSongsAction::SaveToExistingPlaylist
+                            | BrowserSongsAction::AddSongToPlaylist
+                            | BrowserSongsAction::InsertNext
+                            | BrowserSongsAction::ViewLyrics
+                            | BrowserSongsAction::GoToAlbum
+                            | BrowserSongsAction::CopySongUrl
+                            | BrowserSongsAction::GetRelatedTracks
+                            | BrowserSongsAction::SaveToExistingPlaylist
                     )
                 }
             }
-            BrowserVariant::Song
-            | BrowserVariant::Artist
-            | BrowserVariant::PlaylistSearch => true,
+            BrowserVariant::Song | BrowserVariant::Artist | BrowserVariant::PlaylistSearch => true,
             BrowserVariant::LibraryPlaylist => true, // handled by is_library() above
         }
     }
@@ -650,7 +667,11 @@ impl Browser {
                 self.sync_local_filter();
             }
             _ => {
-                self.filter_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
+                self.filter_editor.handle_key(
+                    k.code,
+                    k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT),
+                    false,
+                );
                 let text = self.filter_editor.get_text().to_string();
                 eprintln!("FILTER KEY: text='{}'", text);
                 self.library_browser.local_filter_text = text;
@@ -668,8 +689,12 @@ impl Browser {
         };
         match self.variant {
             BrowserVariant::Artist => {
-                self.artist_search_browser.artist_search_panel.local_filter_text = text.clone();
-                self.artist_search_browser.album_songs_panel.local_filter_text = text;
+                self.artist_search_browser
+                    .artist_search_panel
+                    .local_filter_text = text.clone();
+                self.artist_search_browser
+                    .album_songs_panel
+                    .local_filter_text = text;
             }
             BrowserVariant::Song => self.song_search_browser.local_filter_text = text,
             BrowserVariant::Album => self.album_search_browser.local_filter_text = text,
@@ -678,24 +703,41 @@ impl Browser {
                 debug!(text = %self.library_browser.local_filter_text, "sync_local_filter: library set");
             }
             BrowserVariant::PlaylistSearch => {
-                self.playlist_search_browser.playlist_search_panel.local_filter_text = text.clone();
-                self.playlist_search_browser.playlist_songs_panel.local_filter_text = text;
+                self.playlist_search_browser
+                    .playlist_search_panel
+                    .local_filter_text = text.clone();
+                self.playlist_search_browser
+                    .playlist_songs_panel
+                    .local_filter_text = text;
             }
         }
     }
-    pub fn set_cur_playing_video_id(&mut self, video_id: Option<ytmapi_rs::common::VideoID<'static>>) {
+    pub fn set_cur_playing_video_id(
+        &mut self,
+        video_id: Option<ytmapi_rs::common::VideoID<'static>>,
+    ) {
         self.library_browser.cur_playing_video_id = video_id.clone();
         self.song_search_browser.cur_playing_video_id = video_id.clone();
         self.album_search_browser.cur_playing_video_id = video_id.clone();
-        self.artist_search_browser.album_songs_panel.cur_playing_video_id = video_id.clone();
-        self.playlist_search_browser.playlist_songs_panel.cur_playing_video_id = video_id;
+        self.artist_search_browser
+            .album_songs_panel
+            .cur_playing_video_id = video_id.clone();
+        self.playlist_search_browser
+            .playlist_songs_panel
+            .cur_playing_video_id = video_id;
     }
-    pub fn navigate_to(&mut self, target: NavTarget) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
+    pub fn navigate_to(
+        &mut self,
+        target: NavTarget,
+    ) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
         self.push_snapshot();
         match target {
             NavTarget::Artist(name) => {
                 self.variant = BrowserVariant::Artist;
-                self.artist_search_browser.artist_search_panel.search.replace_text(name);
+                self.artist_search_browser
+                    .artist_search_panel
+                    .search
+                    .replace_text(name);
                 let effect = self.artist_search_browser.search();
                 Some(effect.map_frontend(|this: &mut Self| &mut this.artist_search_browser))
             }
@@ -705,16 +747,26 @@ impl Browser {
                 let (search_task, _) = self.album_search_browser.search_albums_query(query);
                 Some(search_task.map_frontend(|this: &mut Self| &mut this.album_search_browser))
             }
-            NavTarget::AlbumOpen { artist, album, album_id } => {
+            NavTarget::AlbumOpen {
+                artist,
+                album,
+                album_id,
+            } => {
                 self.variant = BrowserVariant::Album;
-                let (task, _) = self.album_search_browser.open_album_direct(artist, album, album_id);
+                let (task, _) = self
+                    .album_search_browser
+                    .open_album_direct(artist, album, album_id);
                 Some(task.map_frontend(|this: &mut Self| &mut this.album_search_browser))
             }
             NavTarget::ArtistChannel(channel_id) => {
                 self.variant = BrowserVariant::Artist;
                 self.artist_search_browser.artist_search_panel.search_popped = false;
                 self.artist_search_browser.input_routing = artistsearch::InputRouting::Song;
-                Some(self.artist_search_browser.load_artist_by_id(channel_id).map_frontend(|b: &mut Self| &mut b.artist_search_browser))
+                Some(
+                    self.artist_search_browser
+                        .load_artist_by_id(channel_id)
+                        .map_frontend(|b: &mut Self| &mut b.artist_search_browser),
+                )
             }
             NavTarget::SongSearch(query) => {
                 self.variant = BrowserVariant::Song;
@@ -728,9 +780,7 @@ impl Browser {
         let snapshot = BrowserSnapshot {
             variant: self.variant,
             library_category: match self.variant {
-                BrowserVariant::LibraryPlaylist => {
-                    Some(self.library_browser.category)
-                }
+                BrowserVariant::LibraryPlaylist => Some(self.library_browser.category),
                 _ => None,
             },
         };
@@ -739,18 +789,22 @@ impl Browser {
     pub fn navigate_back(&mut self) {
         if let Some(snapshot) = self.state_stack.pop() {
             self.variant = snapshot.variant;
-            if let Some(cat) = snapshot.library_category {
-                if self.variant == BrowserVariant::LibraryPlaylist {
-                    self.library_browser.category = cat;
-                    self.library_browser.input_routing = library::InputRouting::Content;
-                }
+            if let Some(cat) = snapshot.library_category
+                && self.variant == BrowserVariant::LibraryPlaylist
+            {
+                self.library_browser.category = cat;
+                self.library_browser.input_routing = library::InputRouting::Content;
             }
         }
     }
     pub fn text_editor_mode(&self) -> Option<String> {
         if self.filter_active {
             let mode = self.filter_editor.mode_char();
-            return Some(format!("{} SEARCH: {}", mode, self.filter_editor.get_text()));
+            return Some(format!(
+                "{} SEARCH: {}",
+                mode,
+                self.filter_editor.get_text()
+            ));
         }
         if !self.filter_text.is_empty() {
             return Some(format!("SEARCH: {}", self.filter_text));
@@ -763,10 +817,18 @@ impl Browser {
             BrowserVariant::PlaylistSearch => self.playlist_search_browser.text_editor_mode(),
         }
     }
-    pub fn left(&mut self) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
+    pub fn left(
+        &mut self,
+    ) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
         match self.variant {
-            BrowserVariant::Artist => { self.artist_search_browser.left(); None }
-            BrowserVariant::Album => { self.album_search_browser.left(); None }
+            BrowserVariant::Artist => {
+                self.artist_search_browser.left();
+                None
+            }
+            BrowserVariant::Album => {
+                self.album_search_browser.left();
+                None
+            }
             BrowserVariant::Song => None,
             BrowserVariant::LibraryPlaylist => {
                 if self.library_browser.show_playlist_tracks {
@@ -777,19 +839,33 @@ impl Browser {
                 }
                 None
             }
-            BrowserVariant::PlaylistSearch => { self.playlist_search_browser.left(); None }
+            BrowserVariant::PlaylistSearch => {
+                self.playlist_search_browser.left();
+                None
+            }
         }
     }
-    pub fn right(&mut self) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
+    pub fn right(
+        &mut self,
+    ) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
         match self.variant {
-            BrowserVariant::Artist => { self.artist_search_browser.right(); None }
-            BrowserVariant::Album => { let _ = self.album_search_browser.right(); None }
+            BrowserVariant::Artist => {
+                self.artist_search_browser.right();
+                None
+            }
+            BrowserVariant::Album => {
+                let _ = self.album_search_browser.right();
+                None
+            }
             BrowserVariant::Song => None,
             BrowserVariant::LibraryPlaylist => {
                 let task = self.library_browser.focus_content();
                 Some(task.map_frontend(|this: &mut Self| &mut this.library_browser))
             }
-            BrowserVariant::PlaylistSearch => { self.playlist_search_browser.right(); None }
+            BrowserVariant::PlaylistSearch => {
+                self.playlist_search_browser.right();
+                None
+            }
         }
     }
     pub fn handle_text_entry_action(&mut self, action: TextEntryAction) -> ComponentEffect<Self> {
@@ -846,7 +922,9 @@ impl Browser {
         match self.variant {
             BrowserVariant::Artist => {
                 if self.artist_search_browser.artist_search_panel.search_popped {
-                    self.artist_search_browser.artist_search_panel.close_search();
+                    self.artist_search_browser
+                        .artist_search_panel
+                        .close_search();
                     self.artist_search_browser.revert_routing();
                 }
             }
@@ -872,7 +950,9 @@ impl Browser {
             }
         }
     }
-    pub fn handle_change_search_type(&mut self) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
+    pub fn handle_change_search_type(
+        &mut self,
+    ) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
         self.push_snapshot();
         match self.variant {
             BrowserVariant::Artist => {
@@ -962,7 +1042,10 @@ mod tests {
         b2.artist_search_browser.handle_toggle_search();
         let actual_kb = b2.get_active_keybinds(&cfg);
         let expected_kb = (
-            &Keybind::new(crossterm::event::KeyCode::Char('n'), crossterm::event::KeyModifiers::CONTROL),
+            &Keybind::new(
+                crossterm::event::KeyCode::Char('n'),
+                crossterm::event::KeyModifiers::CONTROL,
+            ),
             &KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::NextSearchSuggestion,
             )),
@@ -981,7 +1064,10 @@ mod tests {
         b.song_search_browser.handle_toggle_search();
         let actual_kb = b.get_active_keybinds(&cfg);
         let expected_kb = (
-            &Keybind::new(crossterm::event::KeyCode::Char('n'), crossterm::event::KeyModifiers::CONTROL),
+            &Keybind::new(
+                crossterm::event::KeyCode::Char('n'),
+                crossterm::event::KeyModifiers::CONTROL,
+            ),
             &KeyActionTree::new_key(AppAction::BrowserSearch(
                 BrowserSearchAction::NextSearchSuggestion,
             )),

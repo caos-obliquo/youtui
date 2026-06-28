@@ -215,7 +215,6 @@ pub struct TableListSong {
     pub playlist_id: PlaylistID<'static>,
 }
 
-
 fn parse_artist_song(mut json: impl JsonCrawler) -> Result<ArtistSong> {
     let mut data = json.borrow_pointer(MRLIR)?;
     let title = parse_flex_column_item(&mut data, 0, 0)?;

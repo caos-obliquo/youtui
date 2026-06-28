@@ -85,10 +85,7 @@ async fn main() {
                 eprintln!("Error: need search query");
                 std::process::exit(1);
             }
-            let search_url = format!(
-                "https://lrclib.net/api/search?q={}",
-                urlenc(&query),
-            );
+            let search_url = format!("https://lrclib.net/api/search?q={}", urlenc(&query),);
             match client.client().get(&search_url).send().await {
                 Ok(resp) if resp.status().is_success() => {
                     match resp.json::<Vec<lrclib_rs::LrcLibResponse>>().await {
@@ -102,11 +99,23 @@ async fn main() {
                                     for (i, r) in results.iter().enumerate() {
                                         let album = r.album_name.as_deref().unwrap_or("?");
                                         let dur = format_duration(r.duration);
-                                        let instrumental = if r.instrumental { " [INSTR]" } else { "" };
-                                        let has_plain = if r.plain_lyrics.is_some() { " P" } else { "" };
-                                        let has_synced = if r.synced_lyrics.is_some() { " S" } else { "" };
-                                        println!("{}. {} - {} [{}]{} [{}{}]{}", 
-                                            i + 1, r.artist_name, r.track_name, album, dur, has_plain, has_synced, instrumental);
+                                        let instrumental =
+                                            if r.instrumental { " [INSTR]" } else { "" };
+                                        let has_plain =
+                                            if r.plain_lyrics.is_some() { " P" } else { "" };
+                                        let has_synced =
+                                            if r.synced_lyrics.is_some() { " S" } else { "" };
+                                        println!(
+                                            "{}. {} - {} [{}]{} [{}{}]{}",
+                                            i + 1,
+                                            r.artist_name,
+                                            r.track_name,
+                                            album,
+                                            dur,
+                                            has_plain,
+                                            has_synced,
+                                            instrumental
+                                        );
                                     }
                                 }
                             }
@@ -162,7 +171,10 @@ async fn main() {
                 Err(e) => Err(format!("Request failed: {}", e)),
             }
         }
-        _ => Err(format!("Unknown command: {}. Use 'fetch', 'search', or 'raw'", command)),
+        _ => Err(format!(
+            "Unknown command: {}. Use 'fetch', 'search', or 'raw'",
+            command
+        )),
     };
 
     if let Err(e) = result {

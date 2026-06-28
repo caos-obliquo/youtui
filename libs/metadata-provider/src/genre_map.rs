@@ -15,13 +15,17 @@ fn build_genre_map() -> HashMap<String, String> {
         } else {
             continue;
         };
-        if canonical.is_empty() { continue; }
+        if canonical.is_empty() {
+            continue;
+        }
         // Index by lowercase form for case-insensitive matching
-        map.entry(canonical.to_lowercase()).or_insert_with(|| canonical.clone());
+        map.entry(canonical.to_lowercase())
+            .or_insert_with(|| canonical.clone());
         // Also index normalized form (strip " music" suffix)
         if let Some(stripped) = canonical.strip_suffix(" music") {
             if !stripped.is_empty() {
-                map.entry(stripped.to_lowercase()).or_insert_with(|| canonical.clone());
+                map.entry(stripped.to_lowercase())
+                    .or_insert_with(|| canonical.clone());
             }
         }
     }
@@ -60,7 +64,8 @@ fn build_genre_map() -> HashMap<String, String> {
         ("indie", "Indie"),
     ];
     for (key, val) in discogs_overrides {
-        map.entry(key.to_string()).or_insert_with(|| val.to_string());
+        map.entry(key.to_string())
+            .or_insert_with(|| val.to_string());
     }
     map
 }
@@ -133,21 +138,23 @@ pub fn is_known_genre(name: &str) -> bool {
 
 /// Normalize all genres in a list, deduplicating and sorting.
 pub fn normalize_genres(genres: &[String]) -> Vec<String> {
-    let mut normalized: Vec<String> = genres.iter()
-        .map(|g| normalize_genre(g))
-        .collect();
+    let mut normalized: Vec<String> = genres.iter().map(|g| normalize_genre(g)).collect();
     // Also add any genre that contains a '/' by splitting it
     let mut split: Vec<String> = Vec::new();
     for g in &normalized {
         if g.contains(" / ") {
             for part in g.split(" / ") {
                 let n = normalize_genre(part.trim());
-                if !n.is_empty() { split.push(n); }
+                if !n.is_empty() {
+                    split.push(n);
+                }
             }
         } else if g.contains('/') {
             for part in g.split('/') {
                 let n = normalize_genre(part.trim());
-                if !n.is_empty() { split.push(n); }
+                if !n.is_empty() {
+                    split.push(n);
+                }
             }
         }
     }
@@ -178,12 +185,19 @@ mod tests {
     #[test]
     fn test_normalize_unknown() {
         assert_eq!(normalize_genre(""), "");
-        assert_eq!(normalize_genre("Super obscure genre 3000"), "Super obscure genre 3000");
+        assert_eq!(
+            normalize_genre("Super obscure genre 3000"),
+            "Super obscure genre 3000"
+        );
     }
 
     #[test]
     fn test_normalize_list() {
-        let input = vec!["Heavy metal".to_string(), "Black metal".to_string(), "Heavy metal".to_string()];
+        let input = vec![
+            "Heavy metal".to_string(),
+            "Black metal".to_string(),
+            "Heavy metal".to_string(),
+        ];
         let result = normalize_genres(&input);
         assert_eq!(result.len(), 2);
         assert!(result.contains(&"Heavy metal".to_string()));
@@ -194,7 +208,10 @@ mod tests {
     fn test_split_slash_genres() {
         let input = vec!["Doom Metal / Drone".to_string()];
         let result = normalize_genres(&input);
-        assert!(result.contains(&"Doom metal".to_string()) || result.contains(&"Doom Metal".to_string()));
+        assert!(
+            result.contains(&"Doom metal".to_string())
+                || result.contains(&"Doom Metal".to_string())
+        );
         assert!(result.contains(&"Drone".to_string()));
     }
 

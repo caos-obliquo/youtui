@@ -40,7 +40,10 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
         None
     };
     if let Some(ref mode) = vi_mode {
-        spans.push(Span::styled(mode.as_str(), Style::default().fg(Color::Cyan)));
+        spans.push(Span::styled(
+            mode.as_str(),
+            Style::default().fg(Color::Cyan),
+        ));
         spans.push(Span::raw(" "));
     }
 

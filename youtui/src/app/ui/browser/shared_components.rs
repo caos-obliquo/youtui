@@ -1,14 +1,14 @@
+use crate::app::NavTarget;
 use crate::app::component::actionhandler::{Action, ComponentEffect, Suggestable, TextHandler};
 use crate::app::server::{GetSearchSuggestions, HandleApiError};
 use crate::app::structures::ListSong;
 use crate::app::ui::AppCallback;
-use crate::app::NavTarget;
-use vi_text_editor::ViTextEditor;
 use crate::app::view::{TableFilterCommand, TableSortCommand};
 use anyhow::Context;
 use async_callback_manager::{AsyncTask, Constraint, NoOpHandler};
 use ratatui::widgets::ListState;
 use serde::{Deserialize, Serialize};
+use vi_text_editor::ViTextEditor;
 use ytmapi_rs::common::SearchSuggestion;
 
 #[derive(Default)]
@@ -144,7 +144,10 @@ impl TextHandler for FilterManager {
         event: &crossterm::event::Event,
     ) -> Option<ComponentEffect<Self>> {
         if let crossterm::event::Event::Key(key) = event {
-            if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+            if key
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+            {
                 return None;
             }
             // Let '3' (Close Filter), Enter (Apply Filter), Esc reach keybind dispatch
@@ -154,10 +157,10 @@ impl TextHandler for FilterManager {
             }
             use vi_text_editor::ViMode;
             if self.filter_text.mode == ViMode::Normal
-                && matches!(key.code, KeyCode::Char('j')
-                    | KeyCode::Char('k')
-                    | KeyCode::Up
-                    | KeyCode::Down)
+                && matches!(
+                    key.code,
+                    KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Up | KeyCode::Down
+                )
             {
                 return None;
             }
@@ -187,7 +190,10 @@ impl TextHandler for SearchBlock {
         event: &crossterm::event::Event,
     ) -> Option<ComponentEffect<Self>> {
         if let crossterm::event::Event::Key(key) = event {
-            if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+            if key
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL)
+            {
                 return None;
             }
             use vi_text_editor::ViMode;
@@ -202,7 +208,10 @@ impl TextHandler for SearchBlock {
             if key.code == crossterm::event::KeyCode::Esc && was_normal {
                 return None;
             }
-            if matches!(key.code, crossterm::event::KeyCode::Char(_) | crossterm::event::KeyCode::Backspace) {
+            if matches!(
+                key.code,
+                crossterm::event::KeyCode::Char(_) | crossterm::event::KeyCode::Backspace
+            ) {
                 return Some(self.fetch_search_suggestions());
             }
         }
@@ -313,7 +322,9 @@ pub fn get_adjusted_list_column<T: Copy, const N: usize>(
 }
 
 pub fn navigate_to_artist(song: &ListSong) -> Option<AppCallback> {
-    let artist = song.artists.iter()
+    let artist = song
+        .artists
+        .iter()
         .map(|a| a.name.as_str())
         .collect::<Vec<_>>()
         .join(", ");
@@ -321,12 +332,17 @@ pub fn navigate_to_artist(song: &ListSong) -> Option<AppCallback> {
 }
 
 pub fn navigate_to_album(song: &ListSong) -> Option<AppCallback> {
-    let artist = song.artists.iter()
+    let artist = song
+        .artists
+        .iter()
         .map(|a| a.name.as_str())
         .collect::<Vec<_>>()
         .join(", ");
     song.album.as_ref().map(|album| {
-        AppCallback::Navigate(NavTarget::Album { artist, album: album.name.clone() })
+        AppCallback::Navigate(NavTarget::Album {
+            artist,
+            album: album.name.clone(),
+        })
     })
 }
 

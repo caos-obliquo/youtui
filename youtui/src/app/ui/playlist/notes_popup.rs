@@ -1,13 +1,13 @@
 use crate::app::component::actionhandler::ComponentEffect;
-use vi_text_editor::{ViMode, ViTextEditor};
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::{KeyCode, KeyModifiers};
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 use std::borrow::Cow;
+use vi_text_editor::{ViMode, ViTextEditor};
 
 pub struct NotesPopup {
     pub editor: ViTextEditor,
@@ -33,7 +33,11 @@ impl NotesPopup {
     }
 
     pub fn mode_char(&self) -> Cow<'static, str> {
-        if self.command_mode { Cow::Borrowed(": ") } else { self.editor.mode_char() }
+        if self.command_mode {
+            Cow::Borrowed(": ")
+        } else {
+            self.editor.mode_char()
+        }
     }
 
     fn save(&self) {
@@ -46,24 +50,35 @@ impl NotesPopup {
     fn open_url_at_line(&self) -> Option<AppCallback> {
         let line = self.editor.cursor_line();
         let text = self.editor.get_text();
-        let url = text.lines().nth(line)
+        let url = text
+            .lines()
+            .nth(line)
             .map(|l| l.trim())
             .filter(|l| l.starts_with("http://") || l.starts_with("https://"))
             .map(|l| l.to_string());
-        url.map(|u| AppCallback::OpenUrl(u))
+        url.map(AppCallback::OpenUrl)
     }
 
     fn execute_command(&mut self, cmd: &str) -> (ComponentEffect<Self>, Option<AppCallback>) {
-        let parts: Vec<&str> = cmd.trim().split_whitespace().collect();
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
         match parts.first().copied().unwrap_or("") {
-            "w" => { self.save(); (AsyncTask::new_no_op(), None) }
-            "wq" => { self.save(); (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)) }
+            "w" => {
+                self.save();
+                (AsyncTask::new_no_op(), None)
+            }
+            "wq" => {
+                self.save();
+                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
+            }
             "q" | "q!" => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
             _ => (AsyncTask::new_no_op(), None),
         }
     }
 
-    pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+    pub fn handle_key(
+        &mut self,
+        event: crossterm::event::KeyEvent,
+    ) -> (ComponentEffect<Self>, Option<AppCallback>) {
         if self.command_mode {
             match event.code {
                 KeyCode::Esc => {
@@ -81,7 +96,11 @@ impl NotesPopup {
                     return (AsyncTask::new_no_op(), None);
                 }
                 _ => {
-                    self.command_editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), false);
+                    self.command_editor.handle_key(
+                        event.code,
+                        event.modifiers.contains(KeyModifiers::SHIFT),
+                        false,
+                    );
                     return (AsyncTask::new_no_op(), None);
                 }
             }
@@ -93,10 +112,10 @@ impl NotesPopup {
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Enter => {
-                if self.editor.mode == ViMode::Normal {
-                    if let Some(callback) = self.open_url_at_line() {
-                        return (AsyncTask::new_no_op(), Some(callback));
-                    }
+                if self.editor.mode == ViMode::Normal
+                    && let Some(callback) = self.open_url_at_line()
+                {
+                    return (AsyncTask::new_no_op(), Some(callback));
                 }
                 self.editor.handle_key(KeyCode::Enter, false, false);
                 (AsyncTask::new_no_op(), None)
@@ -106,7 +125,10 @@ impl NotesPopup {
                 self.command_editor = ViTextEditor::new();
                 (AsyncTask::new_no_op(), None)
             }
-            KeyCode::Char('y') if self.editor.mode == ViMode::VisualLine || self.editor.mode == ViMode::VisualChar => {
+            KeyCode::Char('y')
+                if self.editor.mode == ViMode::VisualLine
+                    || self.editor.mode == ViMode::VisualChar =>
+            {
                 self.editor.handle_key(event.code, false, false);
                 let text = self.editor.get_clipboard();
                 if !text.is_empty() {
@@ -125,12 +147,22 @@ impl NotesPopup {
             _ => {
                 let before_line = self.editor.cursor_line();
                 let before_mode = self.editor.mode.clone();
-                self.editor.handle_key(event.code, event.modifiers.contains(KeyModifiers::SHIFT), event.modifiers.contains(KeyModifiers::CONTROL));
+                self.editor.handle_key(
+                    event.code,
+                    event.modifiers.contains(KeyModifiers::SHIFT),
+                    event.modifiers.contains(KeyModifiers::CONTROL),
+                );
                 let after_line = self.editor.cursor_line();
-                if matches!(event.code, crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Char('k')) {
+                if matches!(
+                    event.code,
+                    crossterm::event::KeyCode::Char('j') | crossterm::event::KeyCode::Char('k')
+                ) {
                     tracing::info!(
                         "notes j/k: before_line={}, after_line={}, mode={:?}, multiline={}",
-                        before_line, after_line, before_mode, self.editor.multiline
+                        before_line,
+                        after_line,
+                        before_mode,
+                        self.editor.multiline
                     );
                 }
                 (AsyncTask::new_no_op(), None)
@@ -149,12 +181,15 @@ impl NotesPopup {
         let inner = block.inner(popup_area);
         frame.render_widget(block, popup_area);
 
-        let [text_area, footer_area] = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).areas(inner);
+        let [text_area, footer_area] =
+            Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).areas(inner);
 
         if self.command_mode {
             let display = self.editor.render_simple("");
             frame.render_widget(
-                Paragraph::new(display).style(Style::default().fg(Color::White)).wrap(Wrap { trim: false }),
+                Paragraph::new(display)
+                    .style(Style::default().fg(Color::White))
+                    .wrap(Wrap { trim: false }),
                 text_area,
             );
             let cmd_display = self.command_editor.render_simple(":");
@@ -192,45 +227,78 @@ impl NotesPopup {
                 let is_cursor = abs_line == cur_line;
                 let line_num = format!("{:>width$} ", abs_line + 1, width = line_num_width);
 
-                if let Some((top, left, bot, right)) = block_range {
-                    if abs_line >= top && abs_line <= bot {
-                        let cols = left.min(right);
-                        let cole = right.max(left);
-                        let before = &line_text[..cols.min(line_text.len())];
-                        let mid_start = cols.min(line_text.len());
-                        let mid_end = cole.min(line_text.len());
-                        let mid = &line_text[mid_start..mid_end];
-                        let after = &line_text[mid_end..];
-                        lines.push(ratatui::text::Line::from(vec![
-                            ratatui::text::Span::styled(line_num, Style::default().fg(Color::DarkGray)),
-                            ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White)),
-                            ratatui::text::Span::styled(mid.to_string(), Style::default().fg(Color::White).bg(Color::Rgb(0x00, 0x5f, 0x5f))),
-                            ratatui::text::Span::styled(after.to_string(), Style::default().fg(Color::White)),
-                        ]));
-                        continue;
-                    }
+                if let Some((top, left, bot, right)) = block_range
+                    && abs_line >= top
+                    && abs_line <= bot
+                {
+                    let cols = left.min(right);
+                    let cole = right.max(left);
+                    let before = &line_text[..cols.min(line_text.len())];
+                    let mid_start = cols.min(line_text.len());
+                    let mid_end = cole.min(line_text.len());
+                    let mid = &line_text[mid_start..mid_end];
+                    let after = &line_text[mid_end..];
+                    lines.push(ratatui::text::Line::from(vec![
+                        ratatui::text::Span::styled(line_num, Style::default().fg(Color::DarkGray)),
+                        ratatui::text::Span::styled(
+                            before.to_string(),
+                            Style::default().fg(Color::White),
+                        ),
+                        ratatui::text::Span::styled(
+                            mid.to_string(),
+                            Style::default()
+                                .fg(Color::White)
+                                .bg(Color::Rgb(0x00, 0x5f, 0x5f)),
+                        ),
+                        ratatui::text::Span::styled(
+                            after.to_string(),
+                            Style::default().fg(Color::White),
+                        ),
+                    ]));
+                    continue;
                 }
 
-                let selected = visual_range.map_or(false, |(s, e)| abs_line >= s && abs_line <= e);
-                let bg = if selected { Color::Rgb(0x00, 0x5f, 0x5f) } else { ratatui::style::Color::default() };
+                let selected = visual_range.is_some_and(|(s, e)| abs_line >= s && abs_line <= e);
+                let bg = if selected {
+                    Color::Rgb(0x00, 0x5f, 0x5f)
+                } else {
+                    ratatui::style::Color::default()
+                };
 
                 if is_cursor {
                     let (before, after) = line_text.split_at(cur_col.min(line_text.len()));
-                    let after_rest = after.chars().next().map(|c| &after[c.len_utf8()..]).unwrap_or(after);
+                    let after_rest = after
+                        .chars()
+                        .next()
+                        .map(|c| &after[c.len_utf8()..])
+                        .unwrap_or(after);
                     // Show character under cursor with inverted colors (Black on White)
                     lines.push(ratatui::text::Line::from(vec![
                         ratatui::text::Span::styled(line_num, Style::default().fg(Color::DarkGray)),
-                        ratatui::text::Span::styled(before.to_string(), Style::default().fg(Color::White).bg(bg)),
                         ratatui::text::Span::styled(
-                            after.chars().next().map(|c| c.to_string()).unwrap_or_else(|| " ".to_string()),
+                            before.to_string(),
+                            Style::default().fg(Color::White).bg(bg),
+                        ),
+                        ratatui::text::Span::styled(
+                            after
+                                .chars()
+                                .next()
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| " ".to_string()),
                             Style::default().fg(Color::Black).bg(Color::White),
                         ),
-                        ratatui::text::Span::styled(after_rest.to_string(), Style::default().fg(Color::White).bg(bg)),
+                        ratatui::text::Span::styled(
+                            after_rest.to_string(),
+                            Style::default().fg(Color::White).bg(bg),
+                        ),
                     ]));
                 } else {
                     lines.push(ratatui::text::Line::from(vec![
                         ratatui::text::Span::styled(line_num, Style::default().fg(Color::DarkGray)),
-                        ratatui::text::Span::styled(line_text.to_string(), Style::default().fg(Color::White).bg(bg)),
+                        ratatui::text::Span::styled(
+                            line_text.to_string(),
+                            Style::default().fg(Color::White).bg(bg),
+                        ),
                     ]));
                 }
             }
@@ -246,10 +314,7 @@ impl NotesPopup {
                 ]));
             }
 
-            frame.render_widget(
-                Paragraph::new(lines).wrap(Wrap { trim: false }),
-                text_area,
-            );
+            frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), text_area);
 
             // Footer: cursor position + key hints
             let pos_info = format!("Ln {}, Col {}", cur_line + 1, cur_col + 1);

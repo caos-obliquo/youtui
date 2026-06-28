@@ -5,7 +5,9 @@ use tracing::{debug, error, info, warn};
 const SCROBBLE_CACHE_FILENAME: &str = "scrobble_cache.json";
 
 fn scrobble_cache_path() -> Option<PathBuf> {
-    crate::get_config_dir().ok().map(|d| d.join(SCROBBLE_CACHE_FILENAME))
+    crate::get_config_dir()
+        .ok()
+        .map(|d| d.join(SCROBBLE_CACHE_FILENAME))
 }
 
 #[derive(Debug, Clone)]
@@ -20,16 +22,37 @@ pub struct ScrobbleState {
 }
 
 impl ScrobbleState {
-    pub fn new(artist: String, track: String, album: Option<String>, album_artist: Option<String>, duration: Duration) -> Self {
+    pub fn new(
+        artist: String,
+        track: String,
+        album: Option<String>,
+        album_artist: Option<String>,
+        duration: Duration,
+    ) -> Self {
         let album = album.map(|a| clean_album_for_scrobble(&a));
-        Self { artist, track, album, album_artist, duration, start_time: SystemTime::now(), scrobbled: false }
+        Self {
+            artist,
+            track,
+            album,
+            album_artist,
+            duration,
+            start_time: SystemTime::now(),
+            scrobbled: false,
+        }
     }
 
     pub fn should_scrobble(&self) -> bool {
-        if self.scrobbled { return false; }
+        if self.scrobbled {
+            return false;
+        }
         let elapsed = self.start_time.elapsed().unwrap_or(Duration::ZERO);
         let result = elapsed >= Duration::from_secs(15) || elapsed >= self.duration / 3;
-        tracing::info!("Scrobble check: elapsed={:?}, duration={:?}, should={}", elapsed, self.duration, result);
+        tracing::info!(
+            "Scrobble check: elapsed={:?}, duration={:?}, should={}",
+            elapsed,
+            self.duration,
+            result
+        );
         result
     }
 }
@@ -37,8 +60,9 @@ impl ScrobbleState {
 /// Strip common album-name suffixes that prevent Last.fm art matching.
 /// Also strips YTM format prefixes (EP:, Album:, Single:, LP:).
 /// Last.fm creates new empty album entries when the name differs even slightly.
-/// Safe patterns - clearly not canonical title (format markers, edition labels).
-/// Does NOT strip year-parentheticals like "(2007 Remaster)" - those ARE canonical.
+/// Safe patterns - clearly not canonical title (format markers, edition
+/// labels). Does NOT strip year-parentheticals like "(2007 Remaster)" - those
+/// ARE canonical.
 pub(crate) fn clean_album_for_scrobble(album: &str) -> String {
     let mut s = album.to_string();
     // YTM prefixes: format descriptors before canonical title
@@ -51,10 +75,19 @@ pub(crate) fn clean_album_for_scrobble(album: &str) -> String {
         }
     }
     let paren_suffixes = [
-        " (EP)", " (Single)", " (Bonus Track)", " (Bonus Track Version)",
-        " (Deluxe)", " (Deluxe Edition)", " (Deluxe Version)",
-        " (Expanded Edition)", " (Special Edition)", " (Limited Edition)",
-        " (LP)", " - EP", " - Single",
+        " (EP)",
+        " (Single)",
+        " (Bonus Track)",
+        " (Bonus Track Version)",
+        " (Deluxe)",
+        " (Deluxe Edition)",
+        " (Deluxe Version)",
+        " (Expanded Edition)",
+        " (Special Edition)",
+        " (Limited Edition)",
+        " (LP)",
+        " - EP",
+        " - Single",
     ];
     for suffix in &paren_suffixes {
         if s.ends_with(suffix) {
@@ -63,7 +96,13 @@ pub(crate) fn clean_album_for_scrobble(album: &str) -> String {
             break;
         }
     }
-    let fmt_markers = [" [CD]", " [Vinyl]", " [Digital]", " [Cassette]", " [Box Set]"];
+    let fmt_markers = [
+        " [CD]",
+        " [Vinyl]",
+        " [Digital]",
+        " [Cassette]",
+        " [Box Set]",
+    ];
     for marker in &fmt_markers {
         if s.ends_with(marker) {
             s.truncate(s.len() - marker.len());
@@ -80,7 +119,9 @@ const MAX_RETRY_COUNT: u32 = 3;
 /// Save failed scrobble to persistent cache for later retry.
 /// Caps cache at MAX_CACHE_ENTRIES (drops oldest first).
 fn save_failed_scrobble(state: &ScrobbleState) {
-    let Some(path) = scrobble_cache_path() else { return };
+    let Some(path) = scrobble_cache_path() else {
+        return;
+    };
     let mut cache: Vec<serde_json::Value> = std::fs::read_to_string(&path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
@@ -101,8 +142,15 @@ fn save_failed_scrobble(state: &ScrobbleState) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    match std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap_or_default()) {
-        Ok(_) => info!("Saved failed scrobble to cache: {} ({} entries)", path.display(), cache.len()),
+    match std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&cache).unwrap_or_default(),
+    ) {
+        Ok(_) => info!(
+            "Saved failed scrobble to cache: {} ({} entries)",
+            path.display(),
+            cache.len()
+        ),
         Err(e) => warn!("Failed to write scrobble cache: {}", e),
     }
 }
@@ -110,7 +158,9 @@ fn save_failed_scrobble(state: &ScrobbleState) {
 /// Retry failed scrobbles from persistent cache.
 /// Drops entries with retry_count >= MAX_RETRY_COUNT.
 pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
-    let Some(path) = scrobble_cache_path() else { return };
+    let Some(path) = scrobble_cache_path() else {
+        return;
+    };
     let mut cache: Vec<serde_json::Value> = match std::fs::read_to_string(&path) {
         Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
         Err(_) => return,
@@ -118,13 +168,20 @@ pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
     if cache.is_empty() {
         return;
     }
-    info!("Retrying {} failed scrobbles from cache (with 2s delay between each, max {} retries)", cache.len(), MAX_RETRY_COUNT);
+    info!(
+        "Retrying {} failed scrobbles from cache (with 2s delay between each, max {} retries)",
+        cache.len(),
+        MAX_RETRY_COUNT
+    );
 
     // Drop entries that exceeded max retries
     let before = cache.len();
     cache.retain(|e| e["retry_count"].as_u64().unwrap_or(0) < MAX_RETRY_COUNT as u64);
     if cache.len() < before {
-        info!("Dropped {} expired entries (max retries reached)", before - cache.len());
+        info!(
+            "Dropped {} expired entries (max retries reached)",
+            before - cache.len()
+        );
     }
 
     let mut i = 0;
@@ -150,19 +207,27 @@ pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
                 // Don't increment i - next entry shifts into this position
             }
             ScrobbleResult::RateLimited => {
-                warn!("Rate limited during cache retry - stopping retries, keeping remaining entries for next startup");
+                warn!(
+                    "Rate limited during cache retry - stopping retries, keeping remaining entries for next startup"
+                );
                 // Increment retry_count for remaining entries so they eventually expire
                 for entry in cache.iter_mut() {
                     let rc = entry["retry_count"].as_u64().unwrap_or(0);
                     entry["retry_count"] = serde_json::json!(rc + 1);
                 }
-                let _ = std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap_or_default());
+                let _ = std::fs::write(
+                    &path,
+                    serde_json::to_string_pretty(&cache).unwrap_or_default(),
+                );
                 return;
             }
             ScrobbleResult::Failure => {
                 // Increment retry_count, save updated cache
                 cache[i]["retry_count"] = serde_json::json!(retry_count + 1);
-                let _ = std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap_or_default());
+                let _ = std::fs::write(
+                    &path,
+                    serde_json::to_string_pretty(&cache).unwrap_or_default(),
+                );
                 i += 1;
             }
         }
@@ -173,7 +238,10 @@ pub async fn retry_failed_scrobbles(config: &crate::config::ScrobblingConfig) {
     if cache.is_empty() {
         let _ = std::fs::remove_file(&path);
     } else {
-        let _ = std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap_or_default());
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&cache).unwrap_or_default(),
+        );
     }
 }
 
@@ -183,12 +251,15 @@ pub(crate) enum ScrobbleResult {
     RateLimited,
 }
 
-/// Inner submit: returns Success if accepted, Failure on error, RateLimited when rate-limited.
+/// Inner submit: returns Success if accepted, Failure on error, RateLimited
+/// when rate-limited.
 pub(crate) async fn submit_scrobble_inner(
     config: &crate::config::ScrobblingConfig,
     state: &ScrobbleState,
 ) -> ScrobbleResult {
-    if !config.enabled { return ScrobbleResult::Failure; }
+    if !config.enabled {
+        return ScrobbleResult::Failure;
+    }
     if config.api_key.is_empty() {
         warn!("Scrobble blocked: api_key not configured");
         return ScrobbleResult::Failure;
@@ -197,7 +268,11 @@ pub(crate) async fn submit_scrobble_inner(
         warn!("Scrobble blocked: session_key not configured");
         return ScrobbleResult::Failure;
     }
-    let timestamp = state.start_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+    let timestamp = state
+        .start_time
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let mut params: Vec<(String, String)> = vec![
         ("method".into(), "track.scrobble".into()),
         ("api_key".into(), config.api_key.clone()),
@@ -214,16 +289,19 @@ pub(crate) async fn submit_scrobble_inner(
     }
     params.push(("duration".into(), state.duration.as_secs().to_string()));
     params.sort_by(|a, b| a.0.cmp(&b.0));
-    let sig_string: String = params.iter()
+    let sig_string: String = params
+        .iter()
         .map(|(k, v)| format!("{}{}", k, v))
         .collect::<Vec<_>>()
-        .join("") + &config.api_secret;
+        .join("")
+        + &config.api_secret;
     let api_sig = format!("{:x}", md5::compute(sig_string.as_bytes()));
     debug!("Scrobble params: {:?}, api_sig={}", params, api_sig);
     params.push(("api_sig".into(), api_sig));
 
     let client = reqwest::Client::new();
-    match client.post("https://ws.audioscrobbler.com/2.0/")
+    match client
+        .post("https://ws.audioscrobbler.com/2.0/")
         .form(&params)
         .send()
         .await
@@ -231,26 +309,39 @@ pub(crate) async fn submit_scrobble_inner(
         Ok(resp) => {
             let text = resp.text().await.unwrap_or_default();
             if text.contains("<lfm status=\"ok\">") {
-                info!("Scrobbled: {} - {} (album: {:?})", state.artist, state.track, state.album);
+                info!(
+                    "Scrobbled: {} - {} (album: {:?})",
+                    state.artist, state.track, state.album
+                );
                 ScrobbleResult::Success
             } else if text.contains("error code=\"29\"") {
-                error!("Scrobble rate limited: {} (artist={}, track={})", text, state.artist, state.track);
+                error!(
+                    "Scrobble rate limited: {} (artist={}, track={})",
+                    text, state.artist, state.track
+                );
                 eprintln!("SCROBBLE_API_RESPONSE={}", text);
                 ScrobbleResult::RateLimited
             } else {
-                error!("Scrobble failed: {} (artist={}, track={})", text, state.artist, state.track);
+                error!(
+                    "Scrobble failed: {} (artist={}, track={})",
+                    text, state.artist, state.track
+                );
                 eprintln!("SCROBBLE_API_RESPONSE={}", text);
                 ScrobbleResult::Failure
             }
         }
         Err(e) => {
-            error!("Scrobble HTTP error: {} (artist={}, track={})", e, state.artist, state.track);
+            error!(
+                "Scrobble HTTP error: {} (artist={}, track={})",
+                e, state.artist, state.track
+            );
             ScrobbleResult::Failure
         }
     }
 }
 
-/// Submit a scrobble to Last.fm. Always saves to persistent cache first, removes on success.
+/// Submit a scrobble to Last.fm. Always saves to persistent cache first,
+/// removes on success.
 pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) {
     // Always queue to cache first (all pending scrobbles visible in cache)
     save_failed_scrobble(state);
@@ -266,21 +357,36 @@ pub async fn submit_scrobble(config: &crate::config::ScrobblingConfig, state: &S
                     e["artist"].as_str() != Some(&state.artist)
                         || e["track"].as_str() != Some(&state.track)
                         || e["timestamp"].as_u64()
-                            != Some(state.start_time.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs())
+                            != Some(
+                                state
+                                    .start_time
+                                    .duration_since(UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs(),
+                            )
                 });
-                let _ = std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap_or_default());
+                let _ = std::fs::write(
+                    &path,
+                    serde_json::to_string_pretty(&cache).unwrap_or_default(),
+                );
             }
         }
         _ => {
-            // save_failed_scrobble already saved it; retry_count stays 0 for next retry
+            // save_failed_scrobble already saved it; retry_count stays 0 for
+            // next retry
         }
     }
 }
 
-/// Send "now playing" notification to Last.fm. Best-effort, no cache on failure.
+/// Send "now playing" notification to Last.fm. Best-effort, no cache on
+/// failure.
 pub async fn submit_now_playing(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) {
-    if !config.enabled { return; }
-    if config.api_key.is_empty() || config.session_key.is_empty() { return; }
+    if !config.enabled {
+        return;
+    }
+    if config.api_key.is_empty() || config.session_key.is_empty() {
+        return;
+    }
     let mut params: Vec<(String, String)> = vec![
         ("method".into(), "track.updateNowPlaying".into()),
         ("api_key".into(), config.api_key.clone()),
@@ -295,14 +401,17 @@ pub async fn submit_now_playing(config: &crate::config::ScrobblingConfig, state:
         params.push(("albumArtist".into(), album_artist.clone()));
     }
     params.sort_by(|a, b| a.0.cmp(&b.0));
-    let sig_string: String = params.iter()
+    let sig_string: String = params
+        .iter()
         .map(|(k, v)| format!("{}{}", k, v))
         .collect::<Vec<_>>()
-        .join("") + &config.api_secret;
+        .join("")
+        + &config.api_secret;
     let api_sig = format!("{:x}", md5::compute(sig_string.as_bytes()));
     params.push(("api_sig".into(), api_sig));
     let client = reqwest::Client::new();
-    match client.post("https://ws.audioscrobbler.com/2.0/")
+    match client
+        .post("https://ws.audioscrobbler.com/2.0/")
         .form(&params)
         .send()
         .await
@@ -329,7 +438,13 @@ mod tests {
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("scrobble_cache.json");
         // Override scrobble_cache_path for tests by writing directly
-        let state = ScrobbleState::new("TestArtist".into(), "TestTrack".into(), Some("TestAlbum".into()), None, Duration::from_secs(240));
+        let state = ScrobbleState::new(
+            "TestArtist".into(),
+            "TestTrack".into(),
+            Some("TestAlbum".into()),
+            None,
+            Duration::from_secs(240),
+        );
         (path, state)
     }
 
@@ -350,7 +465,8 @@ mod tests {
         std::fs::write(&path, serde_json::to_string_pretty(&cache).unwrap()).unwrap();
 
         // Read back
-        let loaded: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let loaded: Vec<serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0]["artist"], "TestArtist");
         assert_eq!(loaded[0]["track"], "TestTrack");
@@ -360,7 +476,8 @@ mod tests {
         let mut remaining = loaded;
         remaining.remove(0);
         std::fs::write(&path, serde_json::to_string_pretty(&remaining).unwrap()).unwrap();
-        let final_cache: Vec<serde_json::Value> = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let final_cache: Vec<serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(final_cache.is_empty());
 
         let _ = std::fs::remove_file(&path);
@@ -372,22 +489,33 @@ mod tests {
         let (path, _) = temp_cache_path();
         // Write MAX_CACHE_ENTRIES + 10 entries
         let mut cache: Vec<serde_json::Value> = (0..MAX_CACHE_ENTRIES + 10)
-            .map(|i| serde_json::json!({
-                "artist": format!("Artist{}", i),
-                "track": "Track",
-                "duration_secs": 240u64,
-                "timestamp": 1000u64 + i as u64,
-                "retry_count": 0,
-            }))
+            .map(|i| {
+                serde_json::json!({
+                    "artist": format!("Artist{}", i),
+                    "track": "Track",
+                    "duration_secs": 240u64,
+                    "timestamp": 1000u64 + i as u64,
+                    "retry_count": 0,
+                })
+            })
             .collect();
         // Simulate save_failed_scrobble cap logic (after push)
         while cache.len() > MAX_CACHE_ENTRIES {
             cache.remove(0);
         }
-        assert_eq!(cache.len(), MAX_CACHE_ENTRIES, "Should cap at {} entries", MAX_CACHE_ENTRIES);
+        assert_eq!(
+            cache.len(),
+            MAX_CACHE_ENTRIES,
+            "Should cap at {} entries",
+            MAX_CACHE_ENTRIES
+        );
         // Verify oldest entries were dropped (first retained is index 10)
         let first_artist = cache[0]["artist"].as_str().unwrap().to_string();
-        assert_eq!(first_artist, format!("Artist{}", 10), "Oldest entries should be dropped");
+        assert_eq!(
+            first_artist,
+            format!("Artist{}", 10),
+            "Oldest entries should be dropped"
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -416,13 +544,15 @@ mod tests {
     #[test]
     fn test_drop_expired_entries() {
         let mut cache: Vec<serde_json::Value> = (0..5u64)
-            .map(|i| serde_json::json!({
-                "artist": format!("Artist{}", i),
-                "track": "Track",
-                "duration_secs": 240u64,
-                "timestamp": 1000u64 + i,
-                "retry_count": if i < 3 { 2u64 } else { MAX_RETRY_COUNT as u64 },
-            }))
+            .map(|i| {
+                serde_json::json!({
+                    "artist": format!("Artist{}", i),
+                    "track": "Track",
+                    "duration_secs": 240u64,
+                    "timestamp": 1000u64 + i,
+                    "retry_count": if i < 3 { 2u64 } else { MAX_RETRY_COUNT as u64 },
+                })
+            })
             .collect();
         let before = cache.len();
         cache.retain(|e| e["retry_count"].as_u64().unwrap_or(0) < MAX_RETRY_COUNT as u64);
@@ -445,9 +575,12 @@ mod tests {
     }
 
     /// Verify signature is computed with sorted params (Last.fm requirement).
-    /// Known test vector: artist="Test Artist", track="Test Track", duration=240,
-    /// api_key="key123", api_secret="secret456", session_key="sk789", timestamp=1000000
-    /// Expected sig: MD5 of "albumapi_keykey123artistTest Artistduration240methodtrack.scrobbleksk789timestamp1000000trackTest Tracksecret456"
+    /// Known test vector: artist="Test Artist", track="Test Track",
+    /// duration=240, api_key="key123", api_secret="secret456",
+    /// session_key="sk789", timestamp=1000000 Expected sig: MD5 of
+    /// "albumapi_keykey123artistTest
+    /// Artistduration240methodtrack.scrobbleksk789timestamp1000000trackTest
+    /// Tracksecret456"
     #[test]
     fn test_signature_sorted_alphabetically() {
         let config = crate::config::ScrobblingConfig {
@@ -469,7 +602,11 @@ mod tests {
         );
         state.start_time = UNIX_EPOCH + Duration::from_secs(1000);
 
-        let timestamp = state.start_time.duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let timestamp = state
+            .start_time
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         assert_eq!(timestamp, 1000);
 
         let mut params: Vec<(String, String)> = vec![
@@ -488,19 +625,38 @@ mod tests {
 
         // Verify sorted order
         let keys: Vec<&str> = params.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, vec!["album", "api_key", "artist", "duration", "method", "sk", "timestamp", "track"],
-            "Params must be alphabetically sorted for Last.fm signature");
+        assert_eq!(
+            keys,
+            vec![
+                "album",
+                "api_key",
+                "artist",
+                "duration",
+                "method",
+                "sk",
+                "timestamp",
+                "track"
+            ],
+            "Params must be alphabetically sorted for Last.fm signature"
+        );
 
-        let sig_string: String = params.iter()
+        let sig_string: String = params
+            .iter()
             .map(|(k, v)| format!("{}{}", k, v))
             .collect::<Vec<_>>()
-            .join("") + &config.api_secret;
+            .join("")
+            + &config.api_secret;
         let api_sig = format!("{:x}", md5::compute(sig_string.as_bytes()));
 
-        // Expected: MD5("albumTest Albumapi_keykey123artistTest Artistduration240methodtrack.scrobbleksk789timestamp1000trackTest Tracksecret456")
-        // Verified via manual computation: should produce a 32-char hex string
+        // Expected: MD5("albumTest Albumapi_keykey123artistTest
+        // Artistduration240methodtrack.scrobbleksk789timestamp1000trackTest
+        // Tracksecret456") Verified via manual computation: should produce a
+        // 32-char hex string
         assert_eq!(api_sig.len(), 32, "API signature must be 32 hex chars");
-        assert!(api_sig.chars().all(|c| c.is_ascii_hexdigit()), "API sig must be hex");
+        assert!(
+            api_sig.chars().all(|c| c.is_ascii_hexdigit()),
+            "API sig must be hex"
+        );
 
         // Verify that WITHOUT sorting, a DIFFERENT sig is produced (catches regression)
         let unsorted_params: Vec<(String, String)> = vec![
@@ -514,20 +670,28 @@ mod tests {
             ("duration".into(), state.duration.as_secs().to_string()),
         ];
         // NO sort - use insertion order
-        let unsorted_sig = format!("{:x}", md5::compute(
-            unsorted_params.iter()
-                .map(|(k, v)| format!("{}{}", k, v))
-                .collect::<Vec<_>>()
-                .join("")
-                .as_bytes()
-        ));
-        assert_ne!(api_sig, unsorted_sig, "Sorted sig must differ from unsorted sig");
+        let unsorted_sig = format!(
+            "{:x}",
+            md5::compute(
+                unsorted_params
+                    .iter()
+                    .map(|(k, v)| format!("{}{}", k, v))
+                    .collect::<Vec<_>>()
+                    .join("")
+                    .as_bytes()
+            )
+        );
+        assert_ne!(
+            api_sig, unsorted_sig,
+            "Sorted sig must differ from unsorted sig"
+        );
     }
 
     /// Verify that should_scrobble returns false when scrobbled=true
     #[test]
     fn test_should_scrobble_already_scrobbled() {
-        let mut state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
+        let mut state =
+            ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         state.scrobbled = true;
         assert!(!state.should_scrobble());
     }
@@ -535,7 +699,8 @@ mod tests {
     /// Verify that should_scrobble returns false when insufficient time elapsed
     #[test]
     fn test_should_scrobble_too_soon() {
-        let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
+        let state =
+            ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         // start_time is now, so elapsed ≈ 0
         assert!(!state.should_scrobble());
     }
@@ -551,11 +716,13 @@ mod tests {
             genius_token: String::new(),
             discogs_token: String::new(),
         };
-        let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
+        let state =
+            ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         // This should not panic - just return immediately
         let _fut = submit_scrobble(&config, &state);
         // We can't easily block on async in non-async test,
-        // but at least verify the function signature compiles and doesn't panic at start
+        // but at least verify the function signature compiles and doesn't panic
+        // at start
     }
 
     /// Verify submit_scrobble silently returns when api_key is empty
@@ -569,7 +736,8 @@ mod tests {
             genius_token: String::new(),
             discogs_token: String::new(),
         };
-        let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
+        let state =
+            ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         let _fut = submit_scrobble(&config, &state);
         // Should return immediately, no HTTP call
     }
@@ -582,17 +750,26 @@ mod tests {
 
     #[test]
     fn test_clean_album_prefix() {
-        assert_eq!(clean_album_for_scrobble("Album: Almost Free"), "Almost Free");
+        assert_eq!(
+            clean_album_for_scrobble("Album: Almost Free"),
+            "Almost Free"
+        );
     }
 
     #[test]
     fn test_clean_single_prefix() {
-        assert_eq!(clean_album_for_scrobble("Single: Don't Fuck With Vol. 02"), "Don't Fuck With Vol. 02");
+        assert_eq!(
+            clean_album_for_scrobble("Single: Don't Fuck With Vol. 02"),
+            "Don't Fuck With Vol. 02"
+        );
     }
 
     #[test]
     fn test_clean_lp_prefix() {
-        assert_eq!(clean_album_for_scrobble("LP: The Dark Side of the Moon"), "The Dark Side of the Moon");
+        assert_eq!(
+            clean_album_for_scrobble("LP: The Dark Side of the Moon"),
+            "The Dark Side of the Moon"
+        );
     }
 
     #[test]
@@ -604,7 +781,10 @@ mod tests {
     #[test]
     fn test_clean_prefix_also_strips_suffix() {
         // Both prefix and suffix stripping applied to same name
-        assert_eq!(clean_album_for_scrobble("EP: Rumours (Deluxe Edition)"), "Rumours");
+        assert_eq!(
+            clean_album_for_scrobble("EP: Rumours (Deluxe Edition)"),
+            "Rumours"
+        );
     }
 
     #[test]

@@ -54,10 +54,7 @@ impl PostQuery for RatePlaylistQuery<'_> {
     fn header(&self) -> serde_json::Map<String, serde_json::Value> {
         let raw = self.playlist_id.get_raw();
         let clean_id = raw.strip_prefix("VL").unwrap_or(raw);
-        serde_json::Map::from_iter([(
-            "target".to_string(),
-            json!({"playlistId" : clean_id} ),
-        )])
+        serde_json::Map::from_iter([("target".to_string(), json!({"playlistId" : clean_id} ))])
     }
     fn params(&self) -> Vec<(&str, Cow<'_, str>)> {
         vec![]

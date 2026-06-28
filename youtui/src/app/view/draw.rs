@@ -4,8 +4,8 @@ use super::{
 use crate::app::ui::draw::draw_text_box;
 use crate::app::view::{BasicConstraint, HasTitle, ListView, Loadable};
 use crate::drawutils::{
-    DESELECTED_BORDER_COLOUR, PLAYING_COLOUR, ROW_HIGHLIGHT_COLOUR, VISUAL_MODE_COLOUR,
-    SELECTED_BORDER_COLOUR, TABLE_HEADINGS_COLOUR, TEXT_COLOUR,
+    DESELECTED_BORDER_COLOUR, PLAYING_COLOUR, ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR,
+    TABLE_HEADINGS_COLOUR, TEXT_COLOUR, VISUAL_MODE_COLOUR,
 };
 use crate::widgets::{ScrollingList, ScrollingTable, ScrollingTableState};
 use ratatui::Frame;
@@ -199,12 +199,20 @@ pub fn draw_table_impl<'a>(
         .visual_range_style(Style::default().bg(VISUAL_MODE_COLOUR))
         .row_highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
         .headings_style(Style::default().bold().fg(TABLE_HEADINGS_COLOUR))
-        .secondary_row_highlight_style(Style::default().fg(PLAYING_COLOUR).add_modifier(ratatui::style::Modifier::BOLD))
+        .secondary_row_highlight_style(
+            Style::default()
+                .fg(PLAYING_COLOUR)
+                .add_modifier(ratatui::style::Modifier::BOLD),
+        )
         .visual_range(visual_range)
         // During visual mode, suppress green playing indicator - all highlighted rows
         // should show uniform cyan bg. The playing song is still visually tracked by
         // the cursor position within the selection.
-        .secondary_highlight_row(if visual_range.is_some() { None } else { secondary_highlighted_row })
+        .secondary_highlight_row(if visual_range.is_some() {
+            None
+        } else {
+            secondary_highlighted_row
+        })
         .min_ticker_gap(6)
         .max_times_to_scroll(Some(MAX_TIMES_TO_SCROLL_LIST))
         .total_items(len)
@@ -352,10 +360,7 @@ fn draw_sort_popup(f: &mut Frame, table: &mut impl AdvancedTableView, chunk: Rec
     let height = sortable_columns.len() + 2;
     let popup_chunk = crate::drawutils::centered_rect(height as u16, width as u16, chunk);
     // Clone of ListState is cheap
-    let mut new_state = table
-        .get_sort_state()
-        .clone()
-        .with_selected(Some(table.get_sort_popup_cur()));
+    let mut new_state = (*table.get_sort_state()).with_selected(Some(table.get_sort_popup_cur()));
     let list = List::new(headers)
         .highlight_style(Style::default().bg(ROW_HIGHLIGHT_COLOUR))
         .block(

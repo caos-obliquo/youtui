@@ -1,18 +1,19 @@
-use serde::{Serialize, Deserialize};
 use super::server::song_downloader::InMemSong;
 use super::server::song_thumbnail_downloader::SongThumbnail;
 use super::view::SortDirection;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
-use ytmapi_rs::common::{
-    AlbumID, ArtistChannelID, Explicit, LikeStatus, UploadAlbumID, UploadArtistID, VideoID, YoutubeID,
-};
 pub use ytmapi_rs::common::Thumbnail;
+use ytmapi_rs::common::{
+    AlbumID, ArtistChannelID, Explicit, LikeStatus, UploadAlbumID, UploadArtistID, VideoID,
+    YoutubeID,
+};
 use ytmapi_rs::parse::{
     AlbumSong, ParsedSongAlbum, ParsedSongArtist, ParsedUploadArtist, ParsedUploadSongAlbum,
     PlaylistEpisode, PlaylistItem, PlaylistSong, PlaylistUploadSong, PlaylistVideo,
@@ -138,7 +139,9 @@ impl From<ParsedUploadArtist> for ListSongArtist {
 
 pub fn normalize_artist_name(name: &str) -> String {
     let trimmed = name.trim();
-    if trimmed.is_empty() { return String::new(); }
+    if trimmed.is_empty() {
+        return String::new();
+    }
     // Strip leading bracket prefix like "[hate5six] Sunami" -> "Sunami"
     let trimmed = {
         let s = trimmed;
@@ -146,8 +149,12 @@ pub fn normalize_artist_name(name: &str) -> String {
             if let Some(close) = s.find(']') {
                 let after = s[close + 1..].trim();
                 if !after.is_empty() { after } else { s }
-            } else { s }
-        } else { s }
+            } else {
+                s
+            }
+        } else {
+            s
+        }
     };
     // Strip YouTube " - Topic" suffix (auto-generated topic channels)
     let trimmed = {
@@ -173,7 +180,8 @@ pub fn normalize_artist_name(name: &str) -> String {
             s
         }
     };
-    // Respect intentional lowercase names (e.g. "data da morte" should not become "Data da morte")
+    // Respect intentional lowercase names (e.g. "data da morte" should not become
+    // "Data da morte")
     let mut chars = trimmed.chars();
     let Some(first) = chars.next() else {
         return trimmed.to_string();
@@ -247,7 +255,9 @@ pub enum DownloadStatus {
     #[serde(skip)]
     Downloaded(Arc<InMemSong>),
     Failed,
-    Retrying { times_retried: usize },
+    Retrying {
+        times_retried: usize,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -311,7 +321,7 @@ impl ListSong {
         match field {
             ListSongDisplayableField::DownloadStatus => {
                 Cow::Borrowed(self.download_status.list_icon_str())
-            },
+            }
             ListSongDisplayableField::TrackNo => self
                 .track_no
                 .map(|track_no| track_no.to_string())
@@ -362,10 +372,12 @@ impl ListSong {
                 id: None,
             })
             .collect();
-        let list_album = album.map(|name| MaybeRc::Owned(ListSongAlbum {
-            name,
-            id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
-        }));
+        let list_album = album.map(|name| {
+            MaybeRc::Owned(ListSongAlbum {
+                name,
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+            })
+        });
         ListSong {
             video_id,
             track_no: None,
@@ -457,7 +469,10 @@ impl BrowserSongsList {
             self.add_raw_playlist_item(song);
         }
     }
-    pub fn append_raw_search_result_songs(&mut self, raw_list: Vec<SearchResultSong>) -> ListSongID {
+    pub fn append_raw_search_result_songs(
+        &mut self,
+        raw_list: Vec<SearchResultSong>,
+    ) -> ListSongID {
         let mut last_id = self.create_next_id();
         for song in raw_list {
             last_id = self.add_raw_search_result_song(song);
@@ -506,27 +521,41 @@ impl BrowserSongsList {
         });
         id
     }
-    /// Strip known channel upload suffixes from an album name extracted from a video title.
-    /// E.g., "Pixel Death FULL ALBUM" -> "Pixel Death", "Demo 2024 FULL EP" -> "Demo 2024"
-    /// Also strips parenthetical groups containing years like "(2020 - Goregrind)".
-    /// Extract a 4-digit year (1900-2100) from a parenthetical group in a title.
-/// E.g., "Pixel Death FULL ALBUM (2020 - Goregrind)" -> Some("2020")
-fn extract_year_from_title(title: &str) -> Option<String> {
-    let lower = title.to_lowercase();
-    let paren = lower.rfind('(')?;
-    let inner_lower = lower[paren..].to_lowercase();
-    inner_lower
-        .split(|c: char| !c.is_ascii_digit())
-        .find(|p| p.len() == 4 && p.parse::<u16>().ok().is_some_and(|y| (1900..2100).contains(&y)))
-        .map(|s| s.to_string())
-}
+    /// Strip known channel upload suffixes from an album name extracted from a
+    /// video title. E.g., "Pixel Death FULL ALBUM" -> "Pixel Death", "Demo
+    /// 2024 FULL EP" -> "Demo 2024" Also strips parenthetical groups
+    /// containing years like "(2020 - Goregrind)". Extract a 4-digit year
+    /// (1900-2100) from a parenthetical group in a title. E.g., "Pixel
+    /// Death FULL ALBUM (2020 - Goregrind)" -> Some("2020")
+    fn extract_year_from_title(title: &str) -> Option<String> {
+        let lower = title.to_lowercase();
+        let paren = lower.rfind('(')?;
+        let inner_lower = lower[paren..].to_lowercase();
+        inner_lower
+            .split(|c: char| !c.is_ascii_digit())
+            .find(|p| {
+                p.len() == 4
+                    && p.parse::<u16>()
+                        .ok()
+                        .is_some_and(|y| (1900..2100).contains(&y))
+            })
+            .map(|s| s.to_string())
+    }
 
-fn clean_channel_album_name(name: &str) -> String {
+    fn clean_channel_album_name(name: &str) -> String {
         let suffixes = [
-            "full album", "full ep", "full lp", "full demo", "full single",
-            "full-length album", "full-length",
-            "official album", "official audio", "official video",
-            "lyric video", "lyrics",
+            "full album",
+            "full ep",
+            "full lp",
+            "full demo",
+            "full single",
+            "full-length album",
+            "full-length",
+            "official album",
+            "official audio",
+            "official video",
+            "lyric video",
+            "lyrics",
         ];
         let mut s = name.trim().to_string();
         loop {
@@ -551,8 +580,12 @@ fn clean_channel_album_name(name: &str) -> String {
         if let Some(paren) = lower.rfind('(') {
             let inner = &s[paren..];
             let inner_lower = inner.to_lowercase();
-            let has_year = inner_lower.split(|c: char| !c.is_ascii_digit())
-                .any(|p| p.len() == 4 && p.parse::<u16>().map(|y| (1900..2100).contains(&y)).unwrap_or(false));
+            let has_year = inner_lower.split(|c: char| !c.is_ascii_digit()).any(|p| {
+                p.len() == 4
+                    && p.parse::<u16>()
+                        .map(|y| (1900..2100).contains(&y))
+                        .unwrap_or(false)
+            });
             if has_year {
                 s = s[..paren].trim().to_string();
             }
@@ -595,7 +628,8 @@ fn clean_channel_album_name(name: &str) -> String {
                     || lower_second.contains("collection")
                     || lower_second.contains("self-titled")
                     || lower_second.contains("self titled");
-                // Extract year from parenthetical group before stripping (e.g., "(2020 - Goregrind)")
+                // Extract year from parenthetical group before stripping (e.g., "(2020 -
+                // Goregrind)")
                 channel_year = Self::extract_year_from_title(&second);
                 // Strip artist prefix from title, keep only the song/album part
                 let cleaned_second = Self::clean_channel_album_name(&second);
@@ -634,27 +668,31 @@ fn clean_channel_album_name(name: &str) -> String {
                 name: normalize_artist_name(&artist),
                 id: None,
             }]),
-            album: album.map(|a| {
-                let mut album: ListSongAlbum = a.into();
-                // Strip "YouTube: " prefix from album name (uploader channel)
-                let lower = album.name.to_lowercase();
-                if lower.starts_with("youtube: ") {
-                    album.name = album.name[9..].trim().to_string();
-                }
-                // Strip " - Topic" suffix from album name (auto-generated topic channel)
-                let lower = album.name.to_lowercase();
-                if lower.ends_with(" - topic") {
-                    album.name = album.name[..album.name.len() - 8].trim().to_string();
-                }
-                // Strip leading bracket prefix like "[hate5six] Sunami" -> "Sunami"
-                if album.name.starts_with('[') {
-                    if let Some(close) = album.name.find(']') {
-                        let after = album.name[close + 1..].trim().to_string();
-                        if !after.is_empty() { album.name = after; }
+            album: album
+                .map(|a| {
+                    let mut album: ListSongAlbum = a.into();
+                    // Strip "YouTube: " prefix from album name (uploader channel)
+                    let lower = album.name.to_lowercase();
+                    if lower.starts_with("youtube: ") {
+                        album.name = album.name[9..].trim().to_string();
                     }
-                }
-                album
-            }).map(MaybeRc::Owned),
+                    // Strip " - Topic" suffix from album name (auto-generated topic channel)
+                    let lower = album.name.to_lowercase();
+                    if lower.ends_with(" - topic") {
+                        album.name = album.name[..album.name.len() - 8].trim().to_string();
+                    }
+                    // Strip leading bracket prefix like "[hate5six] Sunami" -> "Sunami"
+                    if album.name.starts_with('[')
+                        && let Some(close) = album.name.find(']')
+                    {
+                        let after = album.name[close + 1..].trim().to_string();
+                        if !after.is_empty() {
+                            album.name = after;
+                        }
+                    }
+                    album
+                })
+                .map(MaybeRc::Owned),
             actual_duration: None,
             video_id,
             track_no: None,
@@ -674,8 +712,17 @@ fn clean_channel_album_name(name: &str) -> String {
     }
     fn add_raw_playlist_item(&mut self, item: PlaylistItem) -> ListSongID {
         let id = self.create_next_id();
-        let (track_no, title, video_id, duration, artists, album, thumbnails, explicit, like_status) = match item
-        {
+        let (
+            track_no,
+            title,
+            video_id,
+            duration,
+            artists,
+            album,
+            thumbnails,
+            explicit,
+            like_status,
+        ) = match item {
             PlaylistItem::Song(PlaylistSong {
                 video_id,
                 album,
@@ -781,7 +828,11 @@ fn clean_channel_album_name(name: &str) -> String {
         let pos = position.min(self.list.len());
         let first_id = self.create_next_id();
         for (i, mut song) in song_list.into_iter().enumerate() {
-            song.id = if i == 0 { first_id } else { self.create_next_id() };
+            song.id = if i == 0 {
+                first_id
+            } else {
+                self.create_next_id()
+            };
             self.list.insert(pos + i, song);
         }
         first_id
@@ -840,13 +891,19 @@ fn clean_channel_album_name(name: &str) -> String {
     }
 
     /// Update year/genres/styles at a specific index (cache enrichment).
-    pub fn update_song_at(&mut self, idx: usize, year: Option<Rc<String>>, genres: Vec<String>, styles: Vec<String>) {
-        if let Some(song) = self.list.get_mut(idx) {
-            if year.is_some() || !genres.is_empty() || !styles.is_empty() {
-                song.year = year;
-                song.genres = genres;
-                song.styles = styles;
-            }
+    pub fn update_song_at(
+        &mut self,
+        idx: usize,
+        year: Option<Rc<String>>,
+        genres: Vec<String>,
+        styles: Vec<String>,
+    ) {
+        if let Some(song) = self.list.get_mut(idx)
+            && (year.is_some() || !genres.is_empty() || !styles.is_empty())
+        {
+            song.year = year;
+            song.genres = genres;
+            song.styles = styles;
         }
     }
     /// Sort the underlying song list in place using the given comparator.
@@ -856,11 +913,11 @@ fn clean_channel_album_name(name: &str) -> String {
     {
         self.list.sort_by(compare);
     }
-
 }
 
-/// Score-based fuzzy match: returns Some(score) if all query chars appear in target in order.
-/// Higher score = better match. Score favors early match position and contiguous runs.
+/// Score-based fuzzy match: returns Some(score) if all query chars appear in
+/// target in order. Higher score = better match. Score favors early match
+/// position and contiguous runs.
 pub fn fuzzy_match(query: &str, target: &str) -> Option<u64> {
     if query.is_empty() {
         return Some(0);
@@ -893,7 +950,9 @@ pub fn fuzzy_match(query: &str, target: &str) -> Option<u64> {
         ti += 1;
     }
     // Prefer matches that start earlier in the target string
-    let start_bonus = first_match.map(|s| (tb.len().saturating_sub(s) * 5) as u64).unwrap_or(0);
+    let start_bonus = first_match
+        .map(|s| (tb.len().saturating_sub(s) * 5) as u64)
+        .unwrap_or(0);
     Some(score + start_bonus)
 }
 
@@ -927,7 +986,10 @@ pub fn copy_to_clipboard(text: &str) {
                 .spawn()
             {
                 use std::io::Write;
-                let _ = child.stdin.as_mut().map(|stdin| stdin.write_all(text.as_bytes()));
+                let _ = child
+                    .stdin
+                    .as_mut()
+                    .map(|stdin| stdin.write_all(text.as_bytes()));
                 let _ = child.wait();
                 return;
             }
@@ -996,12 +1058,18 @@ mod channel_title_tests {
 
     #[test]
     fn year_from_parenthetical_with_dash() {
-        assert_eq!(extract_year("Pixel Death FULL ALBUM (2020 - Goregrind)"), Some("2020".into()));
+        assert_eq!(
+            extract_year("Pixel Death FULL ALBUM (2020 - Goregrind)"),
+            Some("2020".into())
+        );
     }
 
     #[test]
     fn year_from_parenthetical_only_year() {
-        assert_eq!(extract_year("Demo 2024 FULL EP (2024)"), Some("2024".into()));
+        assert_eq!(
+            extract_year("Demo 2024 FULL EP (2024)"),
+            Some("2024".into())
+        );
     }
 
     #[test]
@@ -1023,12 +1091,18 @@ mod channel_title_tests {
     #[test]
     fn year_extracted_before_cleaning() {
         // verify year extraction before clean_channel_album_name strips parenthetical
-        assert_eq!(extract_year("First Days of Humanity - Pixel Death FULL ALBUM (2020 - Goregrind)"), Some("2020".into()));
+        assert_eq!(
+            extract_year("First Days of Humanity - Pixel Death FULL ALBUM (2020 - Goregrind)"),
+            Some("2020".into())
+        );
     }
 
     #[test]
     fn year_multiple_parentheticals() {
-        assert_eq!(extract_year("Album (2005 Remaster) (2020 - Reissue)"), Some("2020".into()));
+        assert_eq!(
+            extract_year("Album (2005 Remaster) (2020 - Reissue)"),
+            Some("2020".into())
+        );
     }
 }
 

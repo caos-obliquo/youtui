@@ -1,11 +1,8 @@
-use super::{
-    WindowContext, YoutuiWindow, footer, header,
-};
+use super::{WindowContext, YoutuiWindow, footer, header};
 use crate::app::view::draw::{draw_panel_mut_impl, draw_table_impl};
 use crate::app::view::{BasicConstraint, Drawable, DrawableMut};
 use crate::drawutils::{SELECTED_BORDER_COLOUR, TEXT_COLOUR, left_bottom_corner_rect};
 use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
-use std::borrow::Cow;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::prelude::Rect;
@@ -13,6 +10,7 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Row, Table};
 use ratatui_image::picker::Picker;
+use std::borrow::Cow;
 
 // Add tests to try and draw app with oddly sized windows.
 pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities: &Picker) {
@@ -23,17 +21,19 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             use std::io::Write;
             let _ = std::io::stdout().write_all(b"\x1bP0p\x1b\\");
             let _ = std::io::stdout().flush();
-            use ratatui::layout::Margin;
-            use ratatui::layout::Alignment;
-            use ratatui_image::{Image, Resize};
+            use ratatui::layout::{Alignment, Margin};
+            use ratatui::style::{Color, Style};
             use ratatui::widgets::{Clear, Paragraph};
-            use ratatui::style::{Style, Color};
+            use ratatui_image::{Image, Resize};
             let area = f.area();
             f.render_widget(Clear, area);
             // Center image with 1/6 vertical and 1/8 horizontal margins
             let margin_v = (area.height / 6).max(1);
             let margin_h = (area.width / 8).max(1);
-            let centered = area.inner(Margin { vertical: margin_v, horizontal: margin_h });
+            let centered = area.inner(Margin {
+                vertical: margin_v,
+                horizontal: margin_h,
+            });
             if centered.width < 4 || centered.height < 4 {
                 f.render_widget(Paragraph::new("Terminal too small").centered(), area);
                 return;
@@ -52,7 +52,8 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                     Resize::Fit(None),
                 ) {
                     Ok(protocol) => {
-                        // Get the actual fitted area (may be smaller than centered due to aspect ratio)
+                        // Get the actual fitted area (may be smaller than centered due to aspect
+                        // ratio)
                         let fitted = protocol.area();
                         // Center the fitted image within the centered rect
                         let img_rect = Rect {
@@ -88,7 +89,10 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                     Err(_) => {
                         w.sixel_data = None;
                         w.sixel_rect = None;
-                        f.render_widget(Paragraph::new("Failed to load album art").centered(), area);
+                        f.render_widget(
+                            Paragraph::new("Failed to load album art").centered(),
+                            area,
+                        );
                     }
                 }
             }
@@ -112,7 +116,8 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             // Set current playing video ID for all browser playing indicators
             if let Some(id) = w.playlist.get_cur_playing_id() {
                 if let Some(song) = w.playlist.get_song_from_id(id) {
-                    w.browser.set_cur_playing_video_id(Some(song.video_id.clone()));
+                    w.browser
+                        .set_cur_playing_video_id(Some(song.video_id.clone()));
                 } else {
                     w.browser.set_cur_playing_video_id(None);
                 }
@@ -188,9 +193,9 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         popup.draw(f, window_chunk);
     }
     if let Some((_, ref title)) = w.delete_confirm {
+        use ratatui::layout::{Alignment, Constraint, Direction, Layout};
         use ratatui::style::{Color, Modifier, Style};
         use ratatui::widgets::{Clear, Paragraph};
-        use ratatui::layout::{Alignment, Constraint, Direction, Layout};
         let area = f.area();
         f.render_widget(Clear, area);
         let chunks = Layout::default()
@@ -214,16 +219,16 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     if w.quit_confirm {
         // Clear sixel album art from terminal graphics layer.
         w.sixel_data = Some(String::new());
+        use ratatui::layout::{Alignment, Constraint, Direction, Layout};
         use ratatui::style::{Color, Modifier, Style};
         use ratatui::widgets::{Clear, Paragraph};
-        use ratatui::layout::{Alignment, Constraint, Direction, Layout};
         let area = f.area();
         f.render_widget(Clear, area);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Percentage(40),
-            Constraint::Length(5),
+                Constraint::Length(5),
                 Constraint::Length(3),
                 Constraint::Percentage(40),
             ])
@@ -241,9 +246,9 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         // flush_sixel reads sixel_data after frame flush; setting it to
         // empty triggers DCS clear (\x1bP0p\x1b\\) which erases the image.
         w.sixel_data = Some(String::new());
+        use ratatui::layout::{Alignment, Constraint, Direction, Layout};
         use ratatui::style::{Color, Style};
         use ratatui::widgets::{Clear, Paragraph};
-        use ratatui::layout::{Alignment, Constraint, Direction, Layout};
         let area = f.area();
         f.render_widget(Clear, area);
         let chunks = Layout::default()
@@ -272,9 +277,9 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         popup.draw(f, f.area());
     }
     if w.delete_confirm.is_some() {
+        use ratatui::layout::Alignment;
         use ratatui::style::{Color, Modifier, Style};
         use ratatui::widgets::{Clear, Paragraph};
-        use ratatui::layout::Alignment;
         let area = f.area();
         f.render_widget(Clear, area);
         let chunks = Layout::default()
@@ -286,7 +291,11 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                 Constraint::Percentage(40),
             ])
             .split(area);
-        let title = w.delete_confirm.as_ref().map(|(_, t)| t.as_str()).unwrap_or("this playlist");
+        let title = w
+            .delete_confirm
+            .as_ref()
+            .map(|(_, t)| t.as_str())
+            .unwrap_or("this playlist");
         let text = Paragraph::new(format!("Delete \"{}\"?", title))
             .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
             .alignment(Alignment::Center);
@@ -353,8 +362,16 @@ fn draw_popup(f: &mut Frame, w: &YoutuiWindow, chunk: Rect) {
 /// Draw the help page. The help page should show all visible commands for the
 /// current page.
 fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
-    let items: Vec<[String; 3]> = w.get_help_list_items().into_iter()
-        .map(|a| [a.keybinds.into_owned(), a.context.into_owned(), a.description.into_owned()])
+    let items: Vec<[String; 3]> = w
+        .get_help_list_items()
+        .into_iter()
+        .map(|a| {
+            [
+                a.keybinds.into_owned(),
+                a.context.into_owned(),
+                a.description.into_owned(),
+            ]
+        })
         .collect();
     let items_count = items.len();
     let (mut s_len, mut c_len, mut d_len) = items
@@ -391,14 +408,16 @@ fn draw_help(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
         true,
         |_| "Help".into(),
         |t, f, chunk| {
-            let [table_chunk, ref_chunk] = Layout::vertical([
-                Constraint::Min(1),
-                Constraint::Length(REF_LINES),
-            ])
-            .areas(chunk);
-            let commands_table = items_ref.iter().map(
-                |[k, c, d]| { [Cow::Borrowed(k.as_str()), Cow::Borrowed(c.as_str()), Cow::Borrowed(d.as_str())].into_iter() },
-            );
+            let [table_chunk, ref_chunk] =
+                Layout::vertical([Constraint::Min(1), Constraint::Length(REF_LINES)]).areas(chunk);
+            let commands_table = items_ref.iter().map(|[k, c, d]| {
+                [
+                    Cow::Borrowed(k.as_str()),
+                    Cow::Borrowed(c.as_str()),
+                    Cow::Borrowed(d.as_str()),
+                ]
+                .into_iter()
+            });
             let (new_state, effect) = draw_table_impl(
                 f,
                 table_chunk,
@@ -446,13 +465,9 @@ pub fn draw_text_box(
         .title(title.as_ref());
     let text_chunk = block_widget.inner(chunk);
     let display = contents.render_simple("");
-    let text_widget = Paragraph::new(display)
-        .style(Style::default().fg(TEXT_COLOUR));
+    let text_widget = Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR));
     f.render_widget(block_widget, chunk);
     f.render_widget(text_widget, text_chunk);
     // Position hardware cursor at text cursor for terminals
-    f.set_cursor_position((
-        text_chunk.x + contents.cursor as u16,
-        text_chunk.y,
-    ));
+    f.set_cursor_position((text_chunk.x + contents.cursor as u16, text_chunk.y));
 }

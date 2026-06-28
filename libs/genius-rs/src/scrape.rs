@@ -2,7 +2,8 @@ use scraper::{Html, Selector};
 use serde_json::Value;
 
 /// Fetch a Genius song page and extract lyrics from the HTML.
-/// Returns (lyrics, final_url). Checks final URL is on genius.com (rejects external redirects).
+/// Returns (lyrics, final_url). Checks final URL is on genius.com (rejects
+/// external redirects).
 pub async fn fetch_lyrics(
     client: &reqwest::Client,
     song_path: &str,
@@ -24,8 +25,8 @@ pub async fn fetch_annotations(
     extract_annotations(&html)
 }
 
-/// Check if a Genius page exists at the given path (returns true if status 200).
-/// Does NOT validate content - use fetch_lyrics for that.
+/// Check if a Genius page exists at the given path (returns true if status
+/// 200). Does NOT validate content - use fetch_lyrics for that.
 pub async fn page_exists(client: &reqwest::Client, song_path: &str) -> bool {
     let url = format!("https://genius.com{}", song_path);
     match client.get(&url).send().await {
@@ -35,7 +36,8 @@ pub async fn page_exists(client: &reqwest::Client, song_path: &str) -> bool {
 }
 
 /// Fetch page HTML (shared helper).
-/// Returns (html, status, final_url). Final URL may differ from requested if redirects occurred.
+/// Returns (html, status, final_url). Final URL may differ from requested if
+/// redirects occurred.
 async fn fetch_page(
     client: &reqwest::Client,
     song_path: &str,
@@ -129,7 +131,8 @@ pub struct Annotation {
 pub fn extract_annotations(html: &str) -> Result<Vec<Annotation>, String> {
     // Try __INITIAL_STATE__ first
     if let Some(json) = extract_initial_state(html) {
-        if let Some(annotations) = extract_annotations_from_json(&json, "/annotations", "/body/dom") {
+        if let Some(annotations) = extract_annotations_from_json(&json, "/annotations", "/body/dom")
+        {
             if !annotations.is_empty() {
                 return Ok(annotations);
             }
@@ -139,7 +142,10 @@ pub fn extract_annotations(html: &str) -> Result<Vec<Annotation>, String> {
     if let Some(json) = extract_preloaded_state(html) {
         // Try multiple known paths for annotation data
         for (annotations_ptr, body_ptr) in &[
-            ("/songPage/lyricsData/referents", "/annotations/0/body/dom" as &str),
+            (
+                "/songPage/lyricsData/referents",
+                "/annotations/0/body/dom" as &str,
+            ),
             ("/songPage/referents", "/annotations/0/body/dom"),
             ("/entities/referents", "/annotations/0/body/dom"),
             ("/annotations", "/body/dom"),
@@ -343,8 +349,10 @@ fn clean_lyrics(raw: &str) -> String {
         if trimmed.is_empty() {
             continue;
         }
-        if trimmed.contains("You might also like") || trimmed.contains("Contributors")
-            || trimmed.contains("Embed") || trimmed.contains("Cancel")
+        if trimmed.contains("You might also like")
+            || trimmed.contains("Contributors")
+            || trimmed.contains("Embed")
+            || trimmed.contains("Cancel")
             || trimmed.contains("How to Format Lyrics")
         {
             continue;
@@ -482,7 +490,8 @@ mod tests {
 
     #[test]
     fn test_extract_preloaded_state_basic() {
-        let html = r#"<script>window.__PRELOADED_STATE__ = JSON.parse('{"song":{"id":123}}');</script>"#;
+        let html =
+            r#"<script>window.__PRELOADED_STATE__ = JSON.parse('{"song":{"id":123}}');</script>"#;
         let state = extract_preloaded_state(html);
         assert!(state.is_some());
         assert_eq!(state.unwrap()["song"]["id"].as_i64(), Some(123));
@@ -494,7 +503,10 @@ mod tests {
         let html = r#"<script>window.__PRELOADED_STATE__ = JSON.parse('{"key":"value with \\\"quotes\\\""}');</script>"#;
         let state = extract_preloaded_state(html);
         assert!(state.is_some());
-        assert_eq!(state.unwrap()["key"].as_str().unwrap(), "value with \"quotes\"");
+        assert_eq!(
+            state.unwrap()["key"].as_str().unwrap(),
+            "value with \"quotes\""
+        );
     }
 
     #[test]
@@ -510,7 +522,10 @@ mod tests {
         let html = r#"<html><script>window.__INITIAL_STATE__ = {"key":"value with \"quotes\""};;</script></html>"#;
         let state = extract_initial_state(html);
         assert!(state.is_some());
-        assert_eq!(state.unwrap()["key"].as_str().unwrap(), "value with \"quotes\"");
+        assert_eq!(
+            state.unwrap()["key"].as_str().unwrap(),
+            "value with \"quotes\""
+        );
     }
 
     #[test]

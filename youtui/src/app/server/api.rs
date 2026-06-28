@@ -1,11 +1,11 @@
 use crate::api::{DynamicApiError, DynamicYtMusic};
 use crate::app::CALLBACK_CHANNEL_SIZE;
-use audio_player::send_or_error;
 use crate::config::ApiKey;
 use crate::{OAUTH_FILENAME, get_config_dir};
 use anyhow::{Error, Result};
 use async_callback_manager::PanickingReceiverStream;
 use async_cell::sync::AsyncCell;
+use audio_player::send_or_error;
 use futures::stream::FuturesOrdered;
 use futures::{Stream, StreamExt};
 use std::borrow::Borrow;
@@ -13,20 +13,21 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tracing::{error, info};
-use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use ytmapi_rs::auth::noauth::NoAuthToken;
-use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, Thumbnail, VideoID, LikeStatus, YoutubeID};
+use ytmapi_rs::auth::{BrowserToken, OAuthToken};
+use ytmapi_rs::common::{
+    AlbumID, ArtistChannelID, LikeStatus, PlaylistID, SearchSuggestion, Thumbnail, VideoID,
+    YoutubeID,
+};
+use ytmapi_rs::continuations::ParseFromContinuable;
 use ytmapi_rs::parse::{
     AlbumSong, GetAlbum, GetArtistAlbums, ParsedSongAlbum, ParsedSongArtist, PlaylistItem,
     SearchResultAlbum, SearchResultArtist, SearchResultPlaylist, SearchResultSong,
 };
-use ytmapi_rs::continuations::ParseFromContinuable;
-use ytmapi_rs::query::{
-    GetAlbumQuery, GetArtistAlbumsQuery, PostQuery,
-};
 use ytmapi_rs::query::playlist::{
-    PrivacyStatus, CreatePlaylistQuery, DuplicateHandlingMode, AddPlaylistItemsQuery,
+    AddPlaylistItemsQuery, CreatePlaylistQuery, DuplicateHandlingMode, PrivacyStatus,
 };
+use ytmapi_rs::query::{GetAlbumQuery, GetArtistAlbumsQuery, PostQuery};
 
 #[derive(Clone)]
 /// # Note
@@ -80,7 +81,14 @@ impl Api {
         video_ids: Vec<VideoID<'static>>,
         privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
     ) -> Result<PlaylistID<'static>> {
-        create_playlist_with_videos(self.get_api().await?, title, description, video_ids, privacy).await
+        create_playlist_with_videos(
+            self.get_api().await?,
+            title,
+            description,
+            video_ids,
+            privacy,
+        )
+        .await
     }
     pub async fn add_playlist_items(
         &self,
@@ -89,11 +97,7 @@ impl Api {
     ) -> Result<()> {
         add_playlist_items(self.get_api().await?, playlist_id, video_ids).await
     }
-    pub async fn rate_song(
-        &self,
-        video_id: VideoID<'static>,
-        rating: LikeStatus,
-    ) -> Result<()> {
+    pub async fn rate_song(&self, video_id: VideoID<'static>, rating: LikeStatus) -> Result<()> {
         let api = self.get_api().await?;
         api.read().await.rate_song(video_id, rating).await
     }
@@ -137,11 +141,7 @@ where
     Q: ytmapi_rs::query::Query<OAuthToken, Output = O>,
     Q: ytmapi_rs::query::Query<NoAuthToken, Output = O>,
 {
-    let res = api
-        .read()
-        .await
-        .query::<Q, O>(query.borrow())
-        .await;
+    let res = api.read().await.query::<Q, O>(query.borrow()).await;
     match res {
         Ok(r) => Ok(r),
         Err(e) => {
@@ -165,20 +165,20 @@ where
                         // cancelled.
                         tokio::spawn(async {
                             info!("Refreshing oauth token");
-                            let tok = api_locked.refresh_token().await?
-                                .ok_or_else(|| anyhow::anyhow!("refresh_token returned None after OAuthTokenExpired"))?;
+                            let tok = api_locked.refresh_token().await?.ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "refresh_token returned None after OAuthTokenExpired"
+                                )
+                            })?;
                             info!("Oauth token refreshed");
                             if let Err(e) = update_oauth_token_file(tok).await {
                                 error!("Error updating locally saved oauth token: <{e}>")
                             }
-                            Ok::<_,anyhow::Error>(api_locked)
-                        }).await??;
+                            Ok::<_, anyhow::Error>(api_locked)
+                        })
+                        .await??;
                     }
-                    Ok(api_clone
-                        .read_owned()
-                        .await
-                        .query::<Q, O>(query)
-                        .await?)
+                    Ok(api_clone.read_owned().await.query::<Q, O>(query).await?)
                 }
                 // Regular retry without token refresh, if token isn't expired.
                 Ok(_) => {
@@ -223,14 +223,18 @@ where
                     if api_token_hash == Some(token_hash) {
                         tokio::spawn(async {
                             info!("Refreshing oauth token");
-                            let tok = api_locked.refresh_token().await?
-                                .ok_or_else(|| anyhow::anyhow!("refresh_token returned None after OAuthTokenExpired"))?;
+                            let tok = api_locked.refresh_token().await?.ok_or_else(|| {
+                                anyhow::anyhow!(
+                                    "refresh_token returned None after OAuthTokenExpired"
+                                )
+                            })?;
                             info!("Oauth token refreshed");
                             if let Err(e) = update_oauth_token_file(tok).await {
                                 error!("Error updating locally saved oauth token: <{e}>")
                             }
                             Ok::<_, anyhow::Error>(api_locked)
-                        }).await??;
+                        })
+                        .await??;
                     }
                     Ok(api_clone
                         .read_owned()
@@ -240,7 +244,11 @@ where
                 }
                 Ok(_) => {
                     info!("Retrying once");
-                    Ok(api.read().await.stream_browser_or_oauth(query, max_pages).await?)
+                    Ok(api
+                        .read()
+                        .await
+                        .stream_browser_or_oauth(query, max_pages)
+                        .await?)
                 }
                 Err(e) => Err(e),
             }
@@ -266,11 +274,9 @@ async fn search_albums(api: ConcurrentApi, text: String) -> Result<Vec<SearchRes
         return Ok(Vec::new());
     }
     tracing::info!("Searching albums for {text}");
-    let query = ytmapi_rs::query::SearchQuery::new_filtered(
-        text,
-        ytmapi_rs::query::search::AlbumsFilter,
-    )
-    .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
+    let query =
+        ytmapi_rs::query::SearchQuery::new_filtered(text, ytmapi_rs::query::search::AlbumsFilter)
+            .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
     query_api_with_retry(&api, query).await
 }
 
@@ -279,11 +285,9 @@ async fn search_artists(api: ConcurrentApi, text: String) -> Result<Vec<SearchRe
         return Ok(Vec::new());
     }
     tracing::info!("Searching artists for {text}");
-    let query = ytmapi_rs::query::SearchQuery::new_filtered(
-        text,
-        ytmapi_rs::query::search::ArtistsFilter,
-    )
-    .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
+    let query =
+        ytmapi_rs::query::SearchQuery::new_filtered(text, ytmapi_rs::query::search::ArtistsFilter)
+            .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
     query_api_with_retry(&api, query).await
 }
 
@@ -292,11 +296,9 @@ async fn search_songs(api: ConcurrentApi, text: String) -> Result<Vec<SearchResu
         return Ok(Vec::new());
     }
     tracing::info!("Searching songs for {text}");
-    let query = ytmapi_rs::query::SearchQuery::new_filtered(
-        text,
-        ytmapi_rs::query::search::SongsFilter,
-    )
-    .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
+    let query =
+        ytmapi_rs::query::SearchQuery::new_filtered(text, ytmapi_rs::query::search::SongsFilter)
+            .with_spelling_mode(ytmapi_rs::query::search::SpellingMode::ExactMatch);
     query_api_with_retry(&api, query).await
 }
 
@@ -307,10 +309,14 @@ async fn create_playlist_with_videos(
     video_ids: Vec<VideoID<'static>>,
     privacy: Option<ytmapi_rs::query::playlist::PrivacyStatus>,
 ) -> Result<PlaylistID<'static>> {
-    tracing::info!("Creating playlist with {} videos: {}", video_ids.len(), title);
+    tracing::info!(
+        "Creating playlist with {} videos: {}",
+        video_ids.len(),
+        title
+    );
     let privacy = privacy.unwrap_or(PrivacyStatus::Unlisted);
-    let query = CreatePlaylistQuery::new(&title, description.as_deref(), privacy)
-        .with_video_ids(video_ids);
+    let query =
+        CreatePlaylistQuery::new(&title, description.as_deref(), privacy).with_video_ids(video_ids);
     query_api_with_retry(&api, query).await
 }
 
@@ -327,9 +333,14 @@ async fn add_playlist_items(
     } else {
         playlist_id
     };
-    let query =
-        AddPlaylistItemsQuery::new_from_videos(clean_id, video_ids, DuplicateHandlingMode::Unhandled);
-    query_api_with_retry(&api, query).await.map(|_: Vec<ytmapi_rs::parse::AddPlaylistItem>| ())
+    let query = AddPlaylistItemsQuery::new_from_videos(
+        clean_id,
+        video_ids,
+        DuplicateHandlingMode::Unhandled,
+    );
+    query_api_with_retry(&api, query)
+        .await
+        .map(|_: Vec<ytmapi_rs::parse::AddPlaylistItem>| ())
 }
 
 pub async fn get_search_suggestions(
@@ -415,10 +426,18 @@ fn get_artist_songs(
                 && section_params.is_none()
                 && !section_results.is_empty()
             {
-                return Some(section_results.into_iter().map(|r| {
-                    let cat = r.album_type.map(|t| format!("{t:?}")).or_else(category_fallback);
-                    (r.album_id, cat)
-                }).collect());
+                return Some(
+                    section_results
+                        .into_iter()
+                        .map(|r| {
+                            let cat = r
+                                .album_type
+                                .map(|t| format!("{t:?}"))
+                                .or_else(category_fallback);
+                            (r.album_id, cat)
+                        })
+                        .collect(),
+                );
             }
             if section_params.is_none() || section_browse_id.is_none() {
                 return None;
@@ -426,8 +445,18 @@ fn get_artist_songs(
             let temp_browse_id = section_browse_id?;
             let temp_params = section_params?;
             let query = GetArtistAlbumsQuery::new(temp_browse_id, temp_params);
-            match query_api_with_retry(&api, query).await {
-                Ok(albums) => Some(albums.into_iter().map(|a| (a.browse_id, a.category.map(|c| c.to_string()).or_else(category_fallback))).collect()),
+            match query_api_with_retry(api, query).await {
+                Ok(albums) => Some(
+                    albums
+                        .into_iter()
+                        .map(|a| {
+                            (
+                                a.browse_id,
+                                a.category.map(|c| c.to_string()).or_else(category_fallback),
+                            )
+                        })
+                        .collect(),
+                ),
                 Err(e) => {
                     error!("Received error on get_artist_albums query \"{}\"", e);
                     send_or_error(tx, GetArtistSongsProgressUpdate::GetArtistAlbumsError(e)).await;
@@ -437,15 +466,22 @@ fn get_artist_songs(
         }
 
         let mut browse_id_list: Vec<(AlbumID<'static>, Option<String>)> = Vec::new();
-        if let Some(albums) = process_section(&api, &tx, artist.top_releases.albums, Some("Album")).await {
+        if let Some(albums) =
+            process_section(&api, &tx, artist.top_releases.albums, Some("Album")).await
+        {
             tracing::info!("get_artist_albums: found {} albums", albums.len());
             browse_id_list.extend(albums);
         }
-        if let Some(singles) = process_section(&api, &tx, artist.top_releases.singles, Some("Single")).await {
+        if let Some(singles) =
+            process_section(&api, &tx, artist.top_releases.singles, Some("Single")).await
+        {
             tracing::info!("get_artist_albums: found {} singles", singles.len());
             browse_id_list.extend(singles);
         }
-        tracing::info!("get_artist_albums: total {} albums+singles", browse_id_list.len());
+        tracing::info!(
+            "get_artist_albums: total {} albums+singles",
+            browse_id_list.len()
+        );
         if browse_id_list.is_empty() {
             tracing::info!("Telling caller no songs found (no albums or singles)");
             send_or_error(&tx, GetArtistSongsProgressUpdate::NoSongsFound).await;
@@ -560,7 +596,11 @@ fn get_playlist_songs(
         match tracks {
             Ok(pages) => {
                 let tracks: Vec<PlaylistItem> = pages.into_iter().flatten().collect();
-                info!("Sending {} caller tracks for {:?}", tracks.len(), playlist_id);
+                info!(
+                    "Sending {} caller tracks for {:?}",
+                    tracks.len(),
+                    playlist_id
+                );
                 send_or_error(&tx, GetPlaylistSongsProgressUpdate::Songs(tracks)).await;
             }
             Err(error) => {

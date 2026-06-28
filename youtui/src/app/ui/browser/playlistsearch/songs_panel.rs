@@ -2,7 +2,8 @@ use crate::app::component::actionhandler::{
     Action, ComponentEffect, KeyRouter, Scrollable, TextHandler,
 };
 use crate::app::structures::{
-    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent, fuzzy_match,
+    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage,
+    SongListComponent, fuzzy_match,
 };
 use crate::app::ui::action::AppAction;
 use crate::app::ui::browser::get_sort_keybinds;
@@ -153,15 +154,30 @@ impl PlaylistSongsPanel {
             let fuzzy_pass = if filter_text.is_empty() {
                 true
             } else {
-                let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
-                let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
-                let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
-                fuzzy_match(&filter_text, &title).is_some()
-                    || fuzzy_match(&filter_text, &album).is_some()
-                    || fuzzy_match(&filter_text, &artist).is_some()
+                let title = ls
+                    .get_fields([ListSongDisplayableField::Song])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let album = ls
+                    .get_fields([ListSongDisplayableField::Album])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let artist = ls
+                    .get_fields([ListSongDisplayableField::Artists])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                fuzzy_match(filter_text, &title).is_some()
+                    || fuzzy_match(filter_text, &album).is_some()
+                    || fuzzy_match(filter_text, &artist).is_some()
             };
-            if !fuzzy_pass { return None; }
-            let pass = self.get_filter_commands()
+            if !fuzzy_pass {
+                return None;
+            }
+            let pass = self
+                .get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
                     let match_found = command.matches_row(
@@ -267,7 +283,6 @@ impl PlaylistSongsPanel {
     pub fn get_song_from_idx(&self, idx: usize) -> Option<&ListSong> {
         self.get_filtered_list_iter().nth(idx)
     }
-
 }
 impl SongListComponent for PlaylistSongsPanel {
     fn get_song_from_idx(&self, idx: usize) -> Option<&crate::app::structures::ListSong> {
@@ -367,15 +382,13 @@ impl TableView for PlaylistSongsPanel {
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
         let subcolumns = Self::subcolumns_of_vec();
-        self.view_indices
-            .iter()
-            .map(move |&idx| {
-                self.list
-                    .get_song_from_idx(idx)
-                    .expect("view_indices entries valid")
-                    .get_fields(subcolumns)
-                    .into_iter()
-            })
+        self.view_indices.iter().map(move |&idx| {
+            self.list
+                .get_song_from_idx(idx)
+                .expect("view_indices entries valid")
+                .get_fields(subcolumns)
+                .into_iter()
+        })
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
         ["#", "Artist", "Album", "Song", "Duration", "Liked"].into_iter()
@@ -479,14 +492,10 @@ impl HasTitle for PlaylistSongsPanel {
         match self.list.state {
             ListStatus::New => "Songs".into(),
             ListStatus::Loading => "Songs - loading".into(),
-            ListStatus::InProgress => format!(
-                "Songs - {} results - loading",
-                self.list.len()
-            )
-            .into(),
-            ListStatus::Loaded => {
-                format!("Songs - {} results", self.list.len()).into()
+            ListStatus::InProgress => {
+                format!("Songs - {} results - loading", self.list.len()).into()
             }
+            ListStatus::Loaded => format!("Songs - {} results", self.list.len()).into(),
             ListStatus::Error => "Songs - Error receieved".into(),
         }
     }

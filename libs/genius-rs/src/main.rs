@@ -1,4 +1,4 @@
-use genius_rs::{GeniusClient, search};
+use genius_rs::{search, GeniusClient};
 use std::env;
 
 #[tokio::main]
@@ -72,7 +72,8 @@ async fn main() {
         "slug" => {
             let path = search::compute_path(artist, title);
             if json {
-                let out = serde_json::json!({"path": path, "url": format!("https://genius.com{}", path)});
+                let out =
+                    serde_json::json!({"path": path, "url": format!("https://genius.com{}", path)});
                 println!("{}", serde_json::to_string_pretty(&out).unwrap());
             } else {
                 println!("{}", path);
@@ -83,18 +84,33 @@ async fn main() {
         "fetch" | "lyrics" => {
             let hit = match client.find_song(artist, title).await {
                 Ok(Some(h)) => h,
-                Ok(None) => { eprintln!("No results for '{} - {}'", artist, title); std::process::exit(1); }
-                Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+                Ok(None) => {
+                    eprintln!("No results for '{} - {}'", artist, title);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
             };
 
             if raw_html {
                 let url = format!("https://genius.com{}", hit.path);
                 match client.client().get(&url).send().await {
                     Ok(resp) => match resp.text().await {
-                        Ok(html) => { println!("{}", html); return; }
-                        Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+                        Ok(html) => {
+                            println!("{}", html);
+                            return;
+                        }
+                        Err(e) => {
+                            eprintln!("Error: {}", e);
+                            std::process::exit(1);
+                        }
                     },
-                    Err(e) => { eprintln!("HTTP error: {}", e); std::process::exit(1); }
+                    Err(e) => {
+                        eprintln!("HTTP error: {}", e);
+                        std::process::exit(1);
+                    }
                 }
             }
 
@@ -118,46 +134,57 @@ async fn main() {
                         eprintln!("Saved fixture to {}/{}.txt", dir, slug);
                     }
                 }
-                Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
             }
             Ok::<(), String>(())
         }
-        "search" => {
-            match client.find_song(artist, title).await {
-                Ok(Some(hit)) => {
-                    if json {
-                        let j = serde_json::json!({
-                            "id": hit.id, "path": hit.path, "title": hit.title,
-                            "artist": hit.artist, "year": hit.year, "album": hit.album,
-                        });
-                        println!("{}", serde_json::to_string_pretty(&j).unwrap());
-                    } else {
-                        println!("Found: {} - {} (id={})", hit.artist, hit.title, hit.id);
-                        println!("  Path: {}", hit.path);
-                        println!("  Year: {:?}", hit.year);
-                        println!("  Album: {:?}", hit.album);
-                    }
-                    Ok(())
+        "search" => match client.find_song(artist, title).await {
+            Ok(Some(hit)) => {
+                if json {
+                    let j = serde_json::json!({
+                        "id": hit.id, "path": hit.path, "title": hit.title,
+                        "artist": hit.artist, "year": hit.year, "album": hit.album,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&j).unwrap());
+                } else {
+                    println!("Found: {} - {} (id={})", hit.artist, hit.title, hit.id);
+                    println!("  Path: {}", hit.path);
+                    println!("  Year: {:?}", hit.year);
+                    println!("  Album: {:?}", hit.album);
                 }
-                Ok(None) => Err(format!("No results for '{} - {}'", artist, title)),
-                Err(e) => Err(e),
+                Ok(())
             }
-        }
+            Ok(None) => Err(format!("No results for '{} - {}'", artist, title)),
+            Err(e) => Err(e),
+        },
         "annotations" => {
             let hit = match client.find_song(artist, title).await {
                 Ok(Some(h)) => h,
-                Ok(None) => { eprintln!("No results for '{} - {}'", artist, title); std::process::exit(1); }
-                Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+                Ok(None) => {
+                    eprintln!("No results for '{} - {}'", artist, title);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
             };
 
             let annotations = match client.fetch_annotations_with_token(&hit.path, hit.id).await {
                 Ok(a) => a,
-                Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
             };
             if json {
-                let ann_list: Vec<serde_json::Value> = annotations.iter().map(|a| {
-                    serde_json::json!({"fragment": a.fragment, "body": a.body})
-                }).collect();
+                let ann_list: Vec<serde_json::Value> = annotations
+                    .iter()
+                    .map(|a| serde_json::json!({"fragment": a.fragment, "body": a.body}))
+                    .collect();
                 let j = serde_json::json!({
                     "artist": hit.artist, "title": hit.title, "id": hit.id,
                     "path": hit.path, "annotations": ann_list,
@@ -176,28 +203,47 @@ async fn main() {
         "all" | "full" => {
             let hit = match client.find_song(artist, title).await {
                 Ok(Some(h)) => h,
-                Ok(None) => { eprintln!("No results for '{} - {}'", artist, title); std::process::exit(1); }
-                Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+                Ok(None) => {
+                    eprintln!("No results for '{} - {}'", artist, title);
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
             };
 
             if raw_html {
                 let url = format!("https://genius.com{}", hit.path);
                 match client.client().get(&url).send().await {
                     Ok(resp) => match resp.text().await {
-                        Ok(html) => { println!("{}", html); return; }
-                        Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+                        Ok(html) => {
+                            println!("{}", html);
+                            return;
+                        }
+                        Err(e) => {
+                            eprintln!("Error: {}", e);
+                            std::process::exit(1);
+                        }
                     },
-                    Err(e) => { eprintln!("HTTP error: {}", e); std::process::exit(1); }
+                    Err(e) => {
+                        eprintln!("HTTP error: {}", e);
+                        std::process::exit(1);
+                    }
                 }
             }
 
             match client.fetch_lyrics(&hit.path).await {
                 Ok((lyrics, _)) => {
-                    let annotations = client.fetch_annotations_with_token(&hit.path, hit.id).await.unwrap_or_default();
+                    let annotations = client
+                        .fetch_annotations_with_token(&hit.path, hit.id)
+                        .await
+                        .unwrap_or_default();
                     if json {
-                        let ann_list: Vec<serde_json::Value> = annotations.iter().map(|a| {
-                            serde_json::json!({"fragment": a.fragment, "body": a.body})
-                        }).collect();
+                        let ann_list: Vec<serde_json::Value> = annotations
+                            .iter()
+                            .map(|a| serde_json::json!({"fragment": a.fragment, "body": a.body}))
+                            .collect();
                         let j = serde_json::json!({
                             "artist": hit.artist, "title": hit.title, "id": hit.id,
                             "path": hit.path, "lyrics": lyrics, "annotations": ann_list,
@@ -221,19 +267,28 @@ async fn main() {
                             let p = std::path::Path::new(dir);
                             std::fs::create_dir_all(p).ok();
                             std::fs::write(p.join(format!("{}-lyrics.txt", slug)), &lyrics).ok();
-                            let ann_text: String = annotations.iter().map(|a| {
-                                format!("--- {} ---\n{}\n", a.fragment, a.body)
-                            }).collect::<Vec<_>>().join("\n");
-                            std::fs::write(p.join(format!("{}-annotations.txt", slug)), &ann_text).ok();
+                            let ann_text: String = annotations
+                                .iter()
+                                .map(|a| format!("--- {} ---\n{}\n", a.fragment, a.body))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            std::fs::write(p.join(format!("{}-annotations.txt", slug)), &ann_text)
+                                .ok();
                             eprintln!("Saved fixtures to {}/", dir);
                         }
                     }
                 }
-                Err(e) => { eprintln!("Error: {}", e); std::process::exit(1); }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
             }
             Ok::<(), String>(())
         }
-        _ => Err(format!("Unknown command: {}. Use 'fetch', 'search', 'all', or 'slug'", command)),
+        _ => Err(format!(
+            "Unknown command: {}. Use 'fetch', 'search', 'all', or 'slug'",
+            command
+        )),
     };
 
     if let Err(e) = result {

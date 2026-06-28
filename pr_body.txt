@@ -1,0 +1,7 @@
+Adds automated testing, linting, and build verification:
+
+- Tests on Ubuntu, macOS, FreeBSD, and OpenBSD
+- Clippy + rustfmt checks
+- Build verification
+
+Prevents regressions like PR #27 from happening again.

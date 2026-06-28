@@ -1,18 +1,20 @@
 use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffect, YoutuiEffect};
-use crate::app::structures::{ListSong, ListSongArtist, MaybeRc, ListSongAlbum, AlbumOrUploadAlbumID};
+use crate::app::structures::{
+    AlbumOrUploadAlbumID, ListSong, ListSongAlbum, ListSongArtist, MaybeRc,
+};
 use crate::app::ui::AppCallback;
-use ytmapi_rs::common::YoutubeID;
 use async_callback_manager::AsyncTask;
 use crossterm::event::KeyCode;
+use metadata_provider::genre_map;
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::rc::Rc;
-use metadata_provider::genre_map;
 use std::collections::HashSet;
+use std::rc::Rc;
+use ytmapi_rs::common::YoutubeID;
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -41,7 +43,13 @@ enum Field {
     Genre,
 }
 
-const FIELDS: &[Field] = &[Field::Title, Field::Artist, Field::Album, Field::Year, Field::Genre];
+const FIELDS: &[Field] = &[
+    Field::Title,
+    Field::Artist,
+    Field::Album,
+    Field::Year,
+    Field::Genre,
+];
 
 pub struct SongInfoPopup {
     pub song: ListSong,
@@ -55,9 +63,7 @@ impl_youtui_component!(SongInfoPopup);
 impl ActionHandler<SongInfoAction> for SongInfoPopup {
     fn apply_action(&mut self, action: SongInfoAction) -> impl Into<YoutuiEffect<Self>> {
         match action {
-            SongInfoAction::Close => {
-                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
-            }
+            SongInfoAction::Close => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
         }
     }
 }
@@ -72,7 +78,10 @@ impl SongInfoPopup {
         }
     }
 
-    pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+    pub fn handle_key(
+        &mut self,
+        event: crossterm::event::KeyEvent,
+    ) -> (ComponentEffect<Self>, Option<AppCallback>) {
         if self.editing {
             return self.handle_edit_key(event);
         }
@@ -90,7 +99,11 @@ impl SongInfoPopup {
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::BackTab => {
-                self.selected_field = if self.selected_field == 0 { FIELDS.len() - 1 } else { self.selected_field - 1 };
+                self.selected_field = if self.selected_field == 0 {
+                    FIELDS.len() - 1
+                } else {
+                    self.selected_field - 1
+                };
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('j') | KeyCode::Down => {
@@ -98,22 +111,32 @@ impl SongInfoPopup {
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.selected_field = if self.selected_field == 0 { FIELDS.len() - 1 } else { self.selected_field - 1 };
+                self.selected_field = if self.selected_field == 0 {
+                    FIELDS.len() - 1
+                } else {
+                    self.selected_field - 1
+                };
                 (AsyncTask::new_no_op(), None)
             }
             _ => (AsyncTask::new_no_op(), None),
         }
     }
 
-    fn handle_edit_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+    fn handle_edit_key(
+        &mut self,
+        event: crossterm::event::KeyEvent,
+    ) -> (ComponentEffect<Self>, Option<AppCallback>) {
         match event.code {
             KeyCode::Enter => {
                 self.commit_edit();
                 self.editing = false;
-                (AsyncTask::new_no_op(), Some(AppCallback::UpdateSongInfo {
-                    id: self.song.id,
-                    song: self.song.clone(),
-                }))
+                (
+                    AsyncTask::new_no_op(),
+                    Some(AppCallback::UpdateSongInfo {
+                        id: self.song.id,
+                        song: self.song.clone(),
+                    }),
+                )
             }
             KeyCode::Esc => {
                 self.editing = false;
@@ -134,19 +157,30 @@ impl SongInfoPopup {
     fn field_value(&self, idx: usize) -> String {
         match FIELDS[idx] {
             Field::Title => self.song.title.clone(),
-            Field::Artist => self.song.artists.iter()
+            Field::Artist => self
+                .song
+                .artists
+                .iter()
                 .map(|a| a.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", "),
-            Field::Album => self.song.album.as_ref()
+            Field::Album => self
+                .song
+                .album
+                .as_ref()
                 .map(|a| a.name.clone())
                 .unwrap_or_default(),
-            Field::Year => self.song.year.as_ref()
+            Field::Year => self
+                .song
+                .year
+                .as_ref()
                 .map(|y| y.as_str().to_string())
                 .unwrap_or_default(),
             Field::Genre => {
                 let mut parts = self.song.styles.clone();
-                if parts.is_empty() { parts = self.song.genres.clone(); }
+                if parts.is_empty() {
+                    parts = self.song.genres.clone();
+                }
                 parts.join(", ")
             }
         }
@@ -163,7 +197,7 @@ impl SongInfoPopup {
                             name: s.trim().to_string(),
                             id: None,
                         })
-                        .collect()
+                        .collect(),
                 );
             }
             Field::Album => {
@@ -177,10 +211,18 @@ impl SongInfoPopup {
                 }
             }
             Field::Year => {
-                self.song.year = if val.is_empty() { None } else { Some(Rc::new(val)) };
+                self.song.year = if val.is_empty() {
+                    None
+                } else {
+                    Some(Rc::new(val))
+                };
             }
             Field::Genre => {
-                let parts: Vec<String> = val.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+                let parts: Vec<String> = val
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
                 // Store both genres and styles (user intent wins)
                 self.song.genres = parts.clone();
                 self.song.styles = parts;
@@ -199,9 +241,14 @@ impl SongInfoPopup {
         let inner = block.inner(popup_area);
         frame.render_widget(block, popup_area);
 
-        let is_genre_edit = self.editing && self.selected_field == 4 && !self.edit_buffer.is_empty();
+        let is_genre_edit =
+            self.editing && self.selected_field == 4 && !self.edit_buffer.is_empty();
         let constraints: &[Constraint] = if is_genre_edit {
-            &[Constraint::Min(1), Constraint::Length(1), Constraint::Length(1)]
+            &[
+                Constraint::Min(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+            ]
         } else {
             &[Constraint::Min(1), Constraint::Length(1)]
         };
@@ -210,38 +257,63 @@ impl SongInfoPopup {
             .constraints(constraints)
             .split(inner);
 
-        let artist = self.song.artists.iter()
+        let artist = self
+            .song
+            .artists
+            .iter()
             .map(|a| a.name.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        let album = self.song.album.as_ref()
+        let album = self
+            .song
+            .album
+            .as_ref()
             .map(|a| a.name.as_str())
             .unwrap_or("-");
         let year = self.song.year.as_ref().map(|y| y.as_str()).unwrap_or("-");
-        let track_no = self.song.track_no.map(|t| t.to_string()).unwrap_or_else(|| "-".to_string());
+        let track_no = self
+            .song
+            .track_no
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "-".to_string());
         let duration = &self.song.duration_string;
         let source = self.song.video_id.get_raw();
         let genre_str = {
             let g = self.song.styles.join(", ");
-            if g.is_empty() { self.song.genres.join(", ") } else { g }
+            if g.is_empty() {
+                self.song.genres.join(", ")
+            } else {
+                g
+            }
         };
-        let genre_display = if genre_str.is_empty() { "-" } else { genre_str.as_str() };
+        let genre_display = if genre_str.is_empty() {
+            "-"
+        } else {
+            genre_str.as_str()
+        };
 
         // Look up RYM genre descriptions
         let genre_descriptions: Vec<String> = if !genre_str.is_empty() {
             let mut seen = HashSet::new();
-            genre_str.split(',')
+            genre_str
+                .split(',')
                 .map(|g| g.trim())
                 .filter_map(|g| rym_genre_data::find_genre(g))
                 .filter_map(|g| g.description.clone())
                 .filter(|d| seen.insert(d.clone()))
-                .map(|d| if d.len() > 120 { format!("{}...", &d[..117]) } else { d })
+                .map(|d| {
+                    if d.len() > 120 {
+                        format!("{}...", &d[..117])
+                    } else {
+                        d
+                    }
+                })
                 .collect()
         } else {
             Vec::new()
         };
 
-        let raw_lines = vec![
+        let raw_lines = [
             ("Title", self.song.title.as_str()),
             ("Artist", &artist),
             ("Album", album),
@@ -283,8 +355,14 @@ impl SongInfoPopup {
         if is_genre_edit {
             let all = genre_map::all_genres();
             let query = self.edit_buffer.to_lowercase();
-            let last_word = query.split(',').last().unwrap_or("").trim().to_string();
-            let matches: Vec<&String> = all.iter()
+            let last_word = query
+                .split(',')
+                .next_back()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            let matches: Vec<&String> = all
+                .iter()
                 .filter(|g| {
                     if last_word.is_empty() {
                         query.split(',').any(|w| {
@@ -298,7 +376,11 @@ impl SongInfoPopup {
                 .take(5)
                 .collect();
             if !matches.is_empty() {
-                let suggest_text: String = matches.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" | ");
+                let suggest_text: String = matches
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" | ");
                 let suggest_widget = Paragraph::new(suggest_text)
                     .style(Style::default().fg(Color::Cyan))
                     .wrap(Wrap { trim: false });

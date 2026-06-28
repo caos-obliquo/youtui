@@ -4,12 +4,12 @@ use crate::app::server::song_thumbnail_downloader::{SongThumbnail, SongThumbnail
 use crate::app::server::{ArcServer, TaskMetadata};
 use crate::app::structures::ListSongID;
 use crate::app::ui::playlist::Playlist;
+use async_callback_manager::{AsyncTask, FrontendEffect};
+use audio_player::rodio::decoder::DecoderError;
 use audio_player::{
     AllStopped, AutoplayUpdate, PausePlayResponse, Paused, PlayUpdate, ProgressUpdate, QueueUpdate,
     Resumed, Stopped, VolumeUpdate,
 };
-use async_callback_manager::{AsyncTask, FrontendEffect};
-use audio_player::rodio::decoder::DecoderError;
 use std::fmt::Debug;
 use tracing::error;
 

@@ -2,7 +2,8 @@ use crate::app::component::actionhandler::{
     Action, ComponentEffect, KeyRouter, Scrollable, TextHandler,
 };
 use crate::app::structures::{
-    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent, fuzzy_match,
+    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage,
+    SongListComponent, fuzzy_match,
 };
 use crate::app::ui::action::AppAction;
 use crate::app::ui::browser::get_sort_keybinds;
@@ -161,15 +162,30 @@ impl AlbumSongsPanel {
             let fuzzy_pass = if filter_text.is_empty() {
                 true
             } else {
-                let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
-                let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
-                let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
-                fuzzy_match(&filter_text, &title).is_some()
-                    || fuzzy_match(&filter_text, &album).is_some()
-                    || fuzzy_match(&filter_text, &artist).is_some()
+                let title = ls
+                    .get_fields([ListSongDisplayableField::Song])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let album = ls
+                    .get_fields([ListSongDisplayableField::Album])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                let artist = ls
+                    .get_fields([ListSongDisplayableField::Artists])
+                    .into_iter()
+                    .next()
+                    .unwrap_or_default();
+                fuzzy_match(filter_text, &title).is_some()
+                    || fuzzy_match(filter_text, &album).is_some()
+                    || fuzzy_match(filter_text, &artist).is_some()
             };
-            if !fuzzy_pass { return None; }
-            let pass = self.get_filter_commands()
+            if !fuzzy_pass {
+                return None;
+            }
+            let pass = self
+                .get_filter_commands()
                 .iter()
                 .fold(true, |acc, command| {
                     let match_found = command.matches_row(
@@ -280,7 +296,9 @@ impl AlbumSongsPanel {
             _ => None,
         };
         self.rebuild_filtered_cache();
-        self.cur_selected = self.cur_selected.min(self.filtered_cache.len().saturating_sub(1));
+        self.cur_selected = self
+            .cur_selected
+            .min(self.filtered_cache.len().saturating_sub(1));
     }
     pub fn rebuild_filtered_cache(&mut self) {
         self.filtered_cache = self.get_filtered_list_iter().cloned().collect();
@@ -540,11 +558,9 @@ impl HasTitle for AlbumSongsPanel {
         match self.list.state {
             ListStatus::New => "Songs".into(),
             ListStatus::Loading => "Songs - loading".into(),
-            ListStatus::InProgress => format!(
-                "Songs - {} results - loading",
-                self.list.len()
-            )
-            .into(),
+            ListStatus::InProgress => {
+                format!("Songs - {} results - loading", self.list.len()).into()
+            }
             ListStatus::Loaded => {
                 let cat_indicator = match self.category_filter {
                     Some("Album:") => " [Albums]",

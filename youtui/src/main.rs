@@ -28,7 +28,9 @@ mod tests;
 /// Windows is not supported. yt-dlp, wl-copy/xclip/xsel/pbcopy, ffmpeg,
 /// and ALSA are required deps not available on Windows.
 #[cfg(target_os = "windows")]
-compile_error!("youtui does not support Windows. Linux (Wayland/X11) and macOS are the only supported platforms.");
+compile_error!(
+    "youtui does not support Windows. Linux (Wayland/X11) and macOS are the only supported platforms."
+);
 
 pub const POTOKEN_FILENAME: &str = "po_token.txt";
 pub const COOKIE_FILENAME: &str = "cookie.txt";
@@ -507,13 +509,12 @@ async fn try_main() -> anyhow::Result<()> {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn();
-        if let Ok(mut child) = child {
-            if child.wait().map_or(false, |s| s.success())
-                && std::path::Path::new(&tmp).exists()
-            {
-                let _ = std::fs::rename(&tmp, cp);
-                info!("Auto-refreshed cookie from browser session");
-            }
+        if let Ok(mut child) = child
+            && child.wait().is_ok_and(|s| s.success())
+            && std::path::Path::new(&tmp).exists()
+        {
+            let _ = std::fs::rename(&tmp, cp);
+            info!("Auto-refreshed cookie from browser session");
         }
     }
     let rt = RuntimeInfo {
@@ -558,9 +559,7 @@ async fn get_api(config: &Config) -> anyhow::Result<api::DynamicYtMusic> {
             api::DynamicYtMusic::Browser(api)
         }
         config::AuthType::Unauthenticated => {
-            let api = ytmapi_rs::builder::YtMusicBuilder::new()
-                .build()
-                .await?;
+            let api = ytmapi_rs::builder::YtMusicBuilder::new().build().await?;
             api::DynamicYtMusic::NoAuth(api)
         }
     };

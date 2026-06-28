@@ -517,7 +517,10 @@ where
                         return;
                     }
                     AsyncRodioResponse::StartedPlaying(duration) => {
-                        info!("audio_output_started: song_id={:?}, duration={:?}", identifier, duration);
+                        info!(
+                            "audio_output_started: song_id={:?}, duration={:?}",
+                            identifier, duration
+                        );
                         send_or_error(&streamtx, AutoplayUpdate::Playing(duration, identifier))
                             .await;
                     }
@@ -622,7 +625,10 @@ where
                         .await;
                     }
                     AsyncRodioResponse::StartedPlaying(duration) => {
-                        info!("audio_output_started: song_id={:?}, duration={:?}", identifier, duration);
+                        info!(
+                            "audio_output_started: song_id={:?}, duration={:?}",
+                            identifier, duration
+                        );
                         send_or_error(&streamtx, PlayUpdate::Playing(duration, identifier)).await;
                     }
                     AsyncRodioResponse::StoppedPlaying => {

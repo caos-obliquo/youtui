@@ -134,26 +134,11 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_bounds_check_rect() {
-        bounds_check_rect(
-            Rect::new(0, 0, 50, 50),
-            Rect::new(0, 50, 50, 50),
-        );
-        bounds_check_rect(
-            Rect::new(30, 30, 50, 50),
-            Rect::new(30, 30, 51, 51),
-        );
-        bounds_check_rect(
-            Rect::new(30, 30, 50, 50),
-            Rect::new(30, 30, 51, 50),
-        );
-        bounds_check_rect(
-            Rect::new(30, 30, 50, 50),
-            Rect::new(30, 30, 50, 51),
-        );
-        bounds_check_rect(
-            Rect::new(30, 30, 50, 50),
-            Rect::new(31, 31, 50, 50),
-        );
+        bounds_check_rect(Rect::new(0, 0, 50, 50), Rect::new(0, 50, 50, 50));
+        bounds_check_rect(Rect::new(30, 30, 50, 50), Rect::new(30, 30, 51, 51));
+        bounds_check_rect(Rect::new(30, 30, 50, 50), Rect::new(30, 30, 51, 50));
+        bounds_check_rect(Rect::new(30, 30, 50, 50), Rect::new(30, 30, 50, 51));
+        bounds_check_rect(Rect::new(30, 30, 50, 50), Rect::new(31, 31, 50, 50));
     }
     // These don't actually do anything as they don't try to draw...
     #[test]
@@ -291,22 +276,10 @@ mod tests {
     #[test]
     fn bounds_check_below_left_rect() {
         let cases = [
-            (
-                Rect::new(0, 0, 50, 50),
-                Rect::new(100, 100, 1050, 1050),
-            ),
-            (
-                Rect::new(0, 50, 50, 50),
-                Rect::new(100, 1050, 1050, 1050),
-            ),
-            (
-                Rect::new(50, 0, 50, 50),
-                Rect::new(1050, 100, 1050, 1050),
-            ),
-            (
-                Rect::new(50, 50, 50, 50),
-                Rect::new(1050, 1050, 1050, 1050),
-            ),
+            (Rect::new(0, 0, 50, 50), Rect::new(100, 100, 1050, 1050)),
+            (Rect::new(0, 50, 50, 50), Rect::new(100, 1050, 1050, 1050)),
+            (Rect::new(50, 0, 50, 50), Rect::new(1050, 100, 1050, 1050)),
+            (Rect::new(50, 50, 50, 50), Rect::new(1050, 1050, 1050, 1050)),
         ];
         for (r, max) in &cases {
             let result = below_left_rect(u16::MAX, u16::MAX, *r, *max);

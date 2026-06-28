@@ -12,7 +12,9 @@ impl GeniusProvider {
 }
 
 impl MetadataProvider for GeniusProvider {
-    fn priority(&self) -> u8 { 40 }
+    fn priority(&self) -> u8 {
+        40
+    }
 
     fn lookup<'a>(
         &'a self,
@@ -24,7 +26,9 @@ impl MetadataProvider for GeniusProvider {
         let token = self.token.clone();
         Box::pin(async move {
             let tok = token.as_deref()?;
-            if tok.is_empty() { return None; }
+            if tok.is_empty() {
+                return None;
+            }
 
             let search_url = format!(
                 "https://api.genius.com/search?q={}+{}",
@@ -34,25 +38,35 @@ impl MetadataProvider for GeniusProvider {
             let resp = client
                 .get(&search_url)
                 .header("Authorization", format!("Bearer {}", tok))
-                .send().await.ok()?;
+                .send()
+                .await
+                .ok()?;
             let data: serde_json::Value = resp.json().await.ok()?;
             let hit = data.pointer("/response/hits/0/result")?;
 
-            let year = hit.get("release_date_components")
+            let year = hit
+                .get("release_date_components")
                 .and_then(|c| c.get("year"))
                 .and_then(|y| y.as_i64())
                 .map(|y| y.to_string());
 
-            let album = hit.get("album")
+            let album = hit
+                .get("album")
                 .and_then(|a| a.get("name"))
                 .and_then(|n| n.as_str())
                 .map(|s| s.to_string());
 
             if year.is_some() || album.is_some() {
-                tracing::info!("GeniusProvider: found metadata for {} - {} (year={:?}, album={:?})",
-                    artist, title, year, album);
+                tracing::info!(
+                    "GeniusProvider: found metadata for {} - {} (year={:?}, album={:?})",
+                    artist,
+                    title,
+                    year,
+                    album
+                );
                 Some(ValidatedMetadata {
-                    artist: hit.get("primary_artist")
+                    artist: hit
+                        .get("primary_artist")
                         .and_then(|a| a.get("name"))
                         .and_then(|n| n.as_str())
                         .map(|s| s.to_string()),
@@ -83,7 +97,8 @@ mod tests {
             }
         });
         let hit = json.get("result").unwrap();
-        let year = hit.get("release_date_components")
+        let year = hit
+            .get("release_date_components")
             .and_then(|c| c.get("year"))
             .and_then(|y| y.as_i64())
             .map(|y| y.to_string());
@@ -100,12 +115,14 @@ mod tests {
             }
         });
         let hit = json.get("result").unwrap();
-        let album = hit.get("album")
+        let album = hit
+            .get("album")
             .and_then(|a| a.get("name"))
             .and_then(|n| n.as_str())
             .map(|s| s.to_string());
         assert_eq!(album, None);
-        let year = hit.get("release_date_components")
+        let year = hit
+            .get("release_date_components")
             .and_then(|c| c.get("year"))
             .and_then(|y| y.as_i64())
             .map(|y| y.to_string());

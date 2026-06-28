@@ -85,7 +85,8 @@ pub const DEFAULT_ENDPOINT: &str = concatcp!("/defaultServiceEndpoint", FEEDBACK
 pub const TOGGLED_ENDPOINT: &str = concatcp!("/toggledServiceEndpoint", FEEDBACK_TOKEN);
 pub const TITLE_TEXT: &str = concatcp!("/title", RUN_TEXT);
 pub const NAVIGATION_VIDEO_ID: &str = concatcp!("/navigationEndpoint", WATCH_VIDEO_ID);
-pub const PLAYLIST_ITEM_VIDEO_ID: &str = concatcp!(PLAY_BUTTON, "/playNavigationEndpoint", WATCH_VIDEO_ID);
+pub const PLAYLIST_ITEM_VIDEO_ID: &str =
+    concatcp!(PLAY_BUTTON, "/playNavigationEndpoint", WATCH_VIDEO_ID);
 pub const SINGLE_COLUMN_TAB: &str = concatcp!(SINGLE_COLUMN, TAB_CONTENT);
 pub const SECTION_LIST_ITEM: &str = concatcp!("/sectionListRenderer", CONTENT);
 pub const SECONDARY_SECTION_LIST_RENDERER: &str =

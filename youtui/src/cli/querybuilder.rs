@@ -2,8 +2,7 @@ use crate::Command;
 use crate::api::DynamicYtMusic;
 use anyhow::bail;
 use std::borrow::Borrow;
-use std::fmt::Write;
-use std::fmt::Debug;
+use std::fmt::{Debug, Write};
 use ytmapi_rs::auth::noauth::NoAuthToken;
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use ytmapi_rs::common::{
@@ -14,8 +13,7 @@ use ytmapi_rs::common::{
     UserChannelID, UserPlaylistsParams, UserVideosParams, VideoID, YoutubeID,
 };
 use ytmapi_rs::continuations::ParseFromContinuable;
-use ytmapi_rs::parse::ParseFrom;
-use ytmapi_rs::parse::SearchResultAlbum;
+use ytmapi_rs::parse::{ParseFrom, SearchResultAlbum};
 use ytmapi_rs::process_json;
 use ytmapi_rs::query::library::{GetLibraryChannelsQuery, GetLibraryPodcastsQuery};
 use ytmapi_rs::query::playlist::GetPlaylistDetailsQuery;
@@ -154,20 +152,37 @@ pub async fn command_to_query(
         Command::DebugSearchAlbums { query } => {
             let mut out = String::new();
             writeln!(out, "--- YTM API Albums ---")?;
-            let q: SearchQuery<'_, ytmapi_rs::query::search::FilteredSearch<AlbumsFilter>> = SearchQuery::new_filtered(query.clone(), AlbumsFilter);
+            let q: SearchQuery<'_, ytmapi_rs::query::search::FilteredSearch<AlbumsFilter>> =
+                SearchQuery::new_filtered(query.clone(), AlbumsFilter);
             match yt.query::<_, Vec<SearchResultAlbum>>(q).await {
                 Ok(albums) => {
                     for (i, a) in albums.iter().enumerate() {
-                        writeln!(out, "{}. {} - {} ({:?}, year={})", i+1, a.artist, a.title, a.album_type, a.year)?;
+                        writeln!(
+                            out,
+                            "{}. {} - {} ({:?}, year={})",
+                            i + 1,
+                            a.artist,
+                            a.title,
+                            a.album_type,
+                            a.year
+                        )?;
                     }
                 }
                 Err(e) => writeln!(out, "Error: {}", e)?,
             }
-            writeln!(out, "--- yt-dlp YouTube Full-Album Candidates (>20min or 'full album' title) ---")?;
+            writeln!(
+                out,
+                "--- yt-dlp YouTube Full-Album Candidates (>20min or 'full album' title) ---"
+            )?;
             match tokio::process::Command::new("yt-dlp")
-                .args(["--flat-playlist", "--dump-json", "--no-warnings",
-                       &format!("ytsearch10:{}", query)])
-                .output().await
+                .args([
+                    "--flat-playlist",
+                    "--dump-json",
+                    "--no-warnings",
+                    &format!("ytsearch10:{}", query),
+                ])
+                .output()
+                .await
             {
                 Ok(output) => {
                     if let Ok(stdout) = String::from_utf8(output.stdout) {
@@ -175,13 +190,26 @@ pub async fn command_to_query(
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
                                 let dur = v.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0);
                                 let title = v.get("title").and_then(|t| t.as_str()).unwrap_or("");
-                                let uploader = v.get("uploader").and_then(|u| u.as_str()).unwrap_or("");
+                                let uploader =
+                                    v.get("uploader").and_then(|u| u.as_str()).unwrap_or("");
                                 if dur > 1200.0 || title.to_lowercase().contains("full album") {
                                     let mins = (dur / 60.0) as u64;
                                     let secs = (dur % 60.0) as u64;
-                                    writeln!(out, "{}. {} - {} ({}:{:02})", i+1, uploader, title, mins, secs)?;
+                                    writeln!(
+                                        out,
+                                        "{}. {} - {} ({}:{:02})",
+                                        i + 1,
+                                        uploader,
+                                        title,
+                                        mins,
+                                        secs
+                                    )?;
                                 } else {
-                                    writeln!(out, "  [SKIP {}s] {} - {}", dur as u64, uploader, title)?;
+                                    writeln!(
+                                        out,
+                                        "  [SKIP {}s] {} - {}",
+                                        dur as u64, uploader, title
+                                    )?;
                                 }
                             }
                         }
@@ -354,10 +382,7 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryArtists {
-            max_pages,
-            sort,
-        } => {
+        Command::GetLibraryArtists { max_pages, sort } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
                 GetLibraryArtistsQuery::new(parse_sort_order(sort)),
@@ -366,10 +391,7 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibrarySongs {
-            max_pages,
-            sort,
-        } => {
+        Command::GetLibrarySongs { max_pages, sort } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
                 GetLibrarySongsQuery::new(parse_sort_order(sort)),
@@ -378,10 +400,7 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryAlbums {
-            max_pages,
-            sort,
-        } => {
+        Command::GetLibraryAlbums { max_pages, sort } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
                 GetLibraryAlbumsQuery::new(parse_sort_order(sort)),
@@ -390,10 +409,7 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryArtistSubscriptions {
-            max_pages,
-            sort,
-        } => {
+        Command::GetLibraryArtistSubscriptions { max_pages, sort } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
                 GetLibraryArtistSubscriptionsQuery::new(parse_sort_order(sort)),
@@ -402,10 +418,7 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryPodcasts {
-            max_pages,
-            sort,
-        } => {
+        Command::GetLibraryPodcasts { max_pages, sort } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
                 GetLibraryPodcastsQuery::new(parse_sort_order(sort)),
@@ -414,10 +427,7 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryChannels {
-            max_pages,
-            sort,
-        } => {
+        Command::GetLibraryChannels { max_pages, sort } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
                 GetLibraryChannelsQuery::new(parse_sort_order(sort)),
@@ -495,10 +505,7 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryUploadSongs {
-            max_pages,
-            sort,
-        } => {
+        Command::GetLibraryUploadSongs { max_pages, sort } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
                 GetLibraryUploadSongsQuery::new(parse_sort_order(sort)),
@@ -507,10 +514,7 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryUploadArtists {
-            max_pages,
-            sort,
-        } => {
+        Command::GetLibraryUploadArtists { max_pages, sort } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
                 GetLibraryUploadArtistsQuery::new(parse_sort_order(sort)),
@@ -519,10 +523,7 @@ pub async fn command_to_query(
             )
             .await
         }
-        Command::GetLibraryUploadAlbums {
-            max_pages,
-            sort,
-        } => {
+        Command::GetLibraryUploadAlbums { max_pages, sort } => {
             get_string_output_of_streaming_query_browser_or_oauth(
                 yt,
                 GetLibraryUploadAlbumsQuery::new(parse_sort_order(sort)),

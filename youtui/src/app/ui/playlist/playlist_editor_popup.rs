@@ -3,14 +3,14 @@ use crate::app::structures::ListSong;
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::KeyCode;
+use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use ratatui::Frame;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use ytmapi_rs::common::{VideoID, PlaylistID};
 use vi_text_editor::ViTextEditor;
+use ytmapi_rs::common::{PlaylistID, VideoID};
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum PlaylistEditorAction {
@@ -49,7 +49,11 @@ pub struct PlaylistEditorPopup {
 }
 
 impl PlaylistEditorPopup {
-    pub fn new(playlist_id: PlaylistID<'static>, playlist_title: String, tracks: Vec<ListSong>) -> Self {
+    pub fn new(
+        playlist_id: PlaylistID<'static>,
+        playlist_title: String,
+        tracks: Vec<ListSong>,
+    ) -> Self {
         Self {
             playlist_id,
             playlist_title,
@@ -80,7 +84,9 @@ impl PlaylistEditorPopup {
 
     fn remove_range(&mut self, start: usize, end: usize) {
         let end = end.min(self.tracks.len());
-        if start >= end { return; }
+        if start >= end {
+            return;
+        }
         self.save_state();
         for _ in start..end {
             self.tracks.remove(start);
@@ -90,7 +96,9 @@ impl PlaylistEditorPopup {
     }
 
     fn delete_cursor_to_start(&mut self) {
-        if self.cursor == 0 { return; }
+        if self.cursor == 0 {
+            return;
+        }
         self.save_state();
         for _ in 0..self.cursor {
             self.tracks.remove(0);
@@ -100,7 +108,9 @@ impl PlaylistEditorPopup {
     }
 
     fn delete_cursor_to_end(&mut self) {
-        if self.cursor >= self.tracks.len().saturating_sub(1) { return; }
+        if self.cursor >= self.tracks.len().saturating_sub(1) {
+            return;
+        }
         self.save_state();
         let len = self.tracks.len();
         for _ in self.cursor..len {
@@ -127,22 +137,20 @@ impl PlaylistEditorPopup {
                     self.yank_buffer = self.tracks[start..self.cursor].to_vec();
                 }
             }
-            "to_start" => {
-                if self.cursor > 0 {
-                    self.yank_buffer = self.tracks[0..self.cursor].to_vec();
-                }
+            "to_start" if self.cursor > 0 => {
+                self.yank_buffer = self.tracks[0..self.cursor].to_vec();
             }
-            "to_end" => {
-                if self.cursor + 1 < self.tracks.len() {
-                    self.yank_buffer = self.tracks[self.cursor + 1..].to_vec();
-                }
+            "to_end" if self.cursor + 1 < self.tracks.len() => {
+                self.yank_buffer = self.tracks[self.cursor + 1..].to_vec();
             }
             _ => {}
         }
     }
 
     fn insert_paste(&mut self, above: bool) {
-        if self.yank_buffer.is_empty() { return; }
+        if self.yank_buffer.is_empty() {
+            return;
+        }
         self.save_state();
         let pos = if above {
             self.cursor
@@ -182,11 +190,32 @@ impl PlaylistEditorPopup {
         if self.command_mode {
             ": ".to_string()
         } else if self.visual_mode {
-            format!("[V{}]", if self.pending_count > 0 { self.pending_count.to_string() } else { String::new() })
+            format!(
+                "[V{}]",
+                if self.pending_count > 0 {
+                    self.pending_count.to_string()
+                } else {
+                    String::new()
+                }
+            )
         } else if self.delete_mode {
-            format!("[DELETE{}]", if self.pending_count > 0 { format!(" {}", self.pending_count) } else { String::new() })
+            format!(
+                "[DELETE{}]",
+                if self.pending_count > 0 {
+                    format!(" {}", self.pending_count)
+                } else {
+                    String::new()
+                }
+            )
         } else if self.yank_mode {
-            format!("[YANK{}]", if self.pending_count > 0 { format!(" {}", self.pending_count) } else { String::new() })
+            format!(
+                "[YANK{}]",
+                if self.pending_count > 0 {
+                    format!(" {}", self.pending_count)
+                } else {
+                    String::new()
+                }
+            )
         } else if self.pending_count > 0 {
             format!("[{}]", self.pending_count)
         } else {
@@ -223,9 +252,8 @@ impl PlaylistEditorPopup {
     }
 
     fn save_tracks_callback(&self) -> Option<AppCallback> {
-        let video_ids: Vec<VideoID<'static>> = self.tracks.iter()
-            .map(|t| t.video_id.clone())
-            .collect();
+        let video_ids: Vec<VideoID<'static>> =
+            self.tracks.iter().map(|t| t.video_id.clone()).collect();
         if video_ids.is_empty() {
             return None;
         }
@@ -236,7 +264,7 @@ impl PlaylistEditorPopup {
     }
 
     fn execute_command(&mut self, cmd: &str) -> (ComponentEffect<Self>, Option<AppCallback>) {
-        let parts: Vec<&str> = cmd.trim().split_whitespace().collect();
+        let parts: Vec<&str> = cmd.split_whitespace().collect();
         match parts.first().copied().unwrap_or("") {
             "w" => {
                 self.modified = false;
@@ -256,31 +284,32 @@ impl PlaylistEditorPopup {
             }
             "q!" => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
             "d" | "delete" => {
-                if parts.len() >= 2 {
-                    if let Ok(n) = parts[1].parse::<usize>() {
-                        let idx = n.saturating_sub(1);
-                        if idx < self.tracks.len() {
-                            self.save_state();
-                            self.tracks.remove(idx);
-                            self.cursor = self.cursor.min(self.tracks.len().saturating_sub(1));
-                            self.modified = true;
-                        }
+                if parts.len() >= 2
+                    && let Ok(n) = parts[1].parse::<usize>()
+                {
+                    let idx = n.saturating_sub(1);
+                    if idx < self.tracks.len() {
+                        self.save_state();
+                        self.tracks.remove(idx);
+                        self.cursor = self.cursor.min(self.tracks.len().saturating_sub(1));
+                        self.modified = true;
                     }
                 }
                 (AsyncTask::new_no_op(), None)
             }
             "m" | "move" => {
-                if parts.len() >= 3 {
-                    if let (Ok(from), Ok(to)) = (parts[1].parse::<usize>(), parts[2].parse::<usize>()) {
-                        let fi = from.saturating_sub(1);
-                        let ti = to.saturating_sub(1);
-                        if fi < self.tracks.len() && ti < self.tracks.len() {
-                            self.save_state();
-                            let song = self.tracks.remove(fi);
-                            self.tracks.insert(ti, song);
-                            self.cursor = ti;
-                            self.modified = true;
-                        }
+                if parts.len() >= 3
+                    && let (Ok(from), Ok(to)) =
+                        (parts[1].parse::<usize>(), parts[2].parse::<usize>())
+                {
+                    let fi = from.saturating_sub(1);
+                    let ti = to.saturating_sub(1);
+                    if fi < self.tracks.len() && ti < self.tracks.len() {
+                        self.save_state();
+                        let song = self.tracks.remove(fi);
+                        self.tracks.insert(ti, song);
+                        self.cursor = ti;
+                        self.modified = true;
                     }
                 }
                 (AsyncTask::new_no_op(), None)
@@ -296,10 +325,13 @@ impl PlaylistEditorPopup {
                 if parts.len() >= 2 {
                     let new_name = parts[1..].join(" ");
                     let pid = self.playlist_id.clone();
-                    return (AsyncTask::new_no_op(), Some(AppCallback::RenamePlaylistFromLibrary {
-                        playlist_id: pid,
-                        new_title: new_name,
-                    }));
+                    return (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::RenamePlaylistFromLibrary {
+                            playlist_id: pid,
+                            new_title: new_name,
+                        }),
+                    );
                 }
                 (AsyncTask::new_no_op(), None)
             }
@@ -314,12 +346,15 @@ impl PlaylistEditorPopup {
                     };
                     if let Some(privacy) = privacy {
                         let pid = self.playlist_id.clone();
-                        return (AsyncTask::new_no_op(), Some(AppCallback::EditPlaylistDetailsFromLibrary {
-                            playlist_id: pid,
-                            title: None,
-                            description: None,
-                            privacy: Some(privacy),
-                        }));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::EditPlaylistDetailsFromLibrary {
+                                playlist_id: pid,
+                                title: None,
+                                description: None,
+                                privacy: Some(privacy),
+                            }),
+                        );
                     }
                 }
                 (AsyncTask::new_no_op(), None)
@@ -334,20 +369,28 @@ impl PlaylistEditorPopup {
                     };
                     if let Some(rating) = rating {
                         let pid = self.playlist_id.clone();
-                        return (AsyncTask::new_no_op(), Some(AppCallback::RatePlaylistFromLibrary(pid, rating)));
+                        return (
+                            AsyncTask::new_no_op(),
+                            Some(AppCallback::RatePlaylistFromLibrary(pid, rating)),
+                        );
                     }
                 }
                 (AsyncTask::new_no_op(), None)
             }
             "h" | "help" => {
-                tracing::info!("Commands: :w save, :wq save+quit, :q quit, :q! force quit, :d N delete, :m N M move, :rename <name>, :privacy public|private|unlisted, :rate like|dislike|none, :h help");
+                tracing::info!(
+                    "Commands: :w save, :wq save+quit, :q quit, :q! force quit, :d N delete, :m N M move, :rename <name>, :privacy public|private|unlisted, :rate like|dislike|none, :h help"
+                );
                 (AsyncTask::new_no_op(), None)
             }
             _ => (AsyncTask::new_no_op(), None),
         }
     }
 
-    pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+    pub fn handle_key(
+        &mut self,
+        event: crossterm::event::KeyEvent,
+    ) -> (ComponentEffect<Self>, Option<AppCallback>) {
         if self.command_mode {
             match event.code {
                 KeyCode::Esc => {
@@ -365,7 +408,13 @@ impl PlaylistEditorPopup {
                     return (AsyncTask::new_no_op(), None);
                 }
                 _ => {
-                    self.command_editor.handle_key(event.code, event.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
+                    self.command_editor.handle_key(
+                        event.code,
+                        event
+                            .modifiers
+                            .contains(crossterm::event::KeyModifiers::SHIFT),
+                        false,
+                    );
                     return (AsyncTask::new_no_op(), None);
                 }
             }
@@ -419,10 +468,17 @@ impl PlaylistEditorPopup {
         // Operator modes (d, y) - waiting for motion
         if self.delete_mode {
             match event.code {
-                KeyCode::Char('0') | KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3')
-                    | KeyCode::Char('4') | KeyCode::Char('5') | KeyCode::Char('6')
-                    | KeyCode::Char('7') | KeyCode::Char('8') | KeyCode::Char('9') => {
-                    if let Some(d) = event.code.to_string().parse::<usize>().ok() {
+                KeyCode::Char('0')
+                | KeyCode::Char('1')
+                | KeyCode::Char('2')
+                | KeyCode::Char('3')
+                | KeyCode::Char('4')
+                | KeyCode::Char('5')
+                | KeyCode::Char('6')
+                | KeyCode::Char('7')
+                | KeyCode::Char('8')
+                | KeyCode::Char('9') => {
+                    if let Ok(d) = event.code.to_string().parse::<usize>() {
                         self.pending_count = self.pending_count * 10 + d;
                     }
                     return (AsyncTask::new_no_op(), None);
@@ -434,7 +490,9 @@ impl PlaylistEditorPopup {
             self.pending_count = 0;
             match event.code {
                 KeyCode::Char('d') => self.remove_range(self.cursor, self.cursor + c),
-                KeyCode::Char('j') | KeyCode::Down => self.remove_range(self.cursor, self.cursor + c),
+                KeyCode::Char('j') | KeyCode::Down => {
+                    self.remove_range(self.cursor, self.cursor + c)
+                }
                 KeyCode::Char('k') | KeyCode::Up => {
                     let start = self.cursor.saturating_sub(c);
                     self.remove_range(start, self.cursor);
@@ -449,10 +507,17 @@ impl PlaylistEditorPopup {
 
         if self.yank_mode {
             match event.code {
-                KeyCode::Char('0') | KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3')
-                    | KeyCode::Char('4') | KeyCode::Char('5') | KeyCode::Char('6')
-                    | KeyCode::Char('7') | KeyCode::Char('8') | KeyCode::Char('9') => {
-                    if let Some(d) = event.code.to_string().parse::<usize>().ok() {
+                KeyCode::Char('0')
+                | KeyCode::Char('1')
+                | KeyCode::Char('2')
+                | KeyCode::Char('3')
+                | KeyCode::Char('4')
+                | KeyCode::Char('5')
+                | KeyCode::Char('6')
+                | KeyCode::Char('7')
+                | KeyCode::Char('8')
+                | KeyCode::Char('9') => {
+                    if let Ok(d) = event.code.to_string().parse::<usize>() {
                         self.pending_count = self.pending_count * 10 + d;
                     }
                     return (AsyncTask::new_no_op(), None);
@@ -484,20 +549,25 @@ impl PlaylistEditorPopup {
                 }
                 // If modified, show hint. Use :w then :q, or :q! to force quit.
             }
-            KeyCode::Char('q') => {
-                if !self.modified {
-                    return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
-                }
-                // If modified, show hint. Use :q! to force quit.
+            KeyCode::Char('q') if !self.modified => {
+                return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
             }
+            // If modified, show hint. Use :q! to force quit.
             KeyCode::Char(':') => {
                 self.command_mode = true;
                 self.command_editor.clear();
             }
-            KeyCode::Char('0') | KeyCode::Char('1') | KeyCode::Char('2') | KeyCode::Char('3')
-                | KeyCode::Char('4') | KeyCode::Char('5') | KeyCode::Char('6')
-                | KeyCode::Char('7') | KeyCode::Char('8') | KeyCode::Char('9') => {
-                if let Some(d) = event.code.to_string().parse::<usize>().ok() {
+            KeyCode::Char('0')
+            | KeyCode::Char('1')
+            | KeyCode::Char('2')
+            | KeyCode::Char('3')
+            | KeyCode::Char('4')
+            | KeyCode::Char('5')
+            | KeyCode::Char('6')
+            | KeyCode::Char('7')
+            | KeyCode::Char('8')
+            | KeyCode::Char('9') => {
+                if let Ok(d) = event.code.to_string().parse::<usize>() {
                     self.pending_count = self.pending_count * 10 + d;
                 }
             }
@@ -591,7 +661,9 @@ impl PlaylistEditorPopup {
             KeyCode::Char('o') => {
                 let c = self.pending_count.max(1);
                 self.pending_count = 0;
-                if self.tracks.is_empty() { return (AsyncTask::new_no_op(), None); }
+                if self.tracks.is_empty() {
+                    return (AsyncTask::new_no_op(), None);
+                }
                 self.save_state();
                 let blank = {
                     let mut s = self.tracks[self.cursor].clone();
@@ -608,7 +680,9 @@ impl PlaylistEditorPopup {
             KeyCode::Char('O') => {
                 let c = self.pending_count.max(1);
                 self.pending_count = 0;
-                if self.tracks.is_empty() { return (AsyncTask::new_no_op(), None); }
+                if self.tracks.is_empty() {
+                    return (AsyncTask::new_no_op(), None);
+                }
                 self.save_state();
                 let blank = {
                     let mut s = self.tracks[self.cursor].clone();
@@ -625,7 +699,9 @@ impl PlaylistEditorPopup {
             }
             KeyCode::Char('E') => {
                 let cb = self.save_tracks_callback();
-                if cb.is_some() { self.modified = false; }
+                if cb.is_some() {
+                    self.modified = false;
+                }
                 return (AsyncTask::new_no_op(), cb);
             }
             _ => {}
@@ -646,27 +722,43 @@ impl PlaylistEditorPopup {
         frame.render_widget(block, popup_area);
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Min(1), Constraint::Length(1)])
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
             .split(inner);
         let capacity_text = self.capacity_blocks();
         frame.render_widget(
-            Paragraph::new(capacity_text)
-                .style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new(capacity_text).style(Style::default().fg(Color::DarkGray)),
             chunks[0],
         );
         let visible = (chunks[1].height as usize).saturating_sub(1);
         let max_digits = self.tracks.len().max(1).to_string().len().max(2);
-        let list_lines: Vec<ratatui::text::Line> = self.tracks.iter()
+        let list_lines: Vec<ratatui::text::Line> = self
+            .tracks
+            .iter()
             .enumerate()
             .skip(self.scroll_offset)
             .take(visible)
             .map(|(i, song)| {
                 let num = i + 1;
                 let cursor_mark = if i == self.cursor { ">" } else { " " };
-                let artist_str = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                let line = format!("{}{:>width$}  {:<40} {:<25} {}",
-                    cursor_mark, num, song.title, artist_str, song.duration_string,
-                    width = max_digits);
+                let artist_str = song
+                    .artists
+                    .iter()
+                    .map(|a| a.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let line = format!(
+                    "{}{:>width$}  {:<40} {:<25} {}",
+                    cursor_mark,
+                    num,
+                    song.title,
+                    artist_str,
+                    song.duration_string,
+                    width = max_digits
+                );
                 let style = if self.visual_mode {
                     let (vs, ve) = self.get_visual_range();
                     let in_visual = i >= vs && i <= ve;
@@ -685,11 +777,13 @@ impl PlaylistEditorPopup {
                 ratatui::text::Line::from(ratatui::text::Span::styled(line, style))
             })
             .collect();
-        frame.render_widget(Paragraph::new(list_lines).wrap(Wrap { trim: false }), chunks[1]);
+        frame.render_widget(
+            Paragraph::new(list_lines).wrap(Wrap { trim: false }),
+            chunks[1],
+        );
         let hint = if self.command_mode {
             let display = self.command_editor.render_simple(":");
-            Paragraph::new(display)
-                .style(Style::default().fg(Color::Yellow))
+            Paragraph::new(display).style(Style::default().fg(Color::Yellow))
         } else if self.visual_mode {
             Paragraph::new("j/k: Extend | d/x: Delete | y: Yank | p/P: Paste | Esc: Exit Visual")
                 .style(Style::default().fg(Color::DarkGray))
@@ -740,9 +834,7 @@ impl_youtui_component!(PlaylistEditorPopup);
 impl ActionHandler<PlaylistEditorAction> for PlaylistEditorPopup {
     fn apply_action(&mut self, action: PlaylistEditorAction) -> impl Into<YoutuiEffect<Self>> {
         match action {
-            PlaylistEditorAction::Close => {
-                (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
-            }
+            PlaylistEditorAction::Close => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
         }
     }
 }
