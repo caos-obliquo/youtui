@@ -156,10 +156,9 @@ See `docs/01-architecture.md` for details.
 ## Special Thanks
 
 - **[nick42d](https://github.com/nick42d/youtui)** - Original youtui author. This fork would not exist without his work.
-- **[ncspot](https://github.com/hrkfdn/ncspot)** - Enter = primary action (never sub-menu) design copied directly. Queue-centric playback model.
-- **[kopuz](https://github.com/kopuz-music/kopuz)** - Terminal music player with Last.fm native scrobbling. Inspired the embedded scrobbler architecture.
 - **[sigma67/ytmusicapi](https://github.com/sigma67/ytmusicapi)** - Python YT Music API that ytmapi-rs was ported from.
-
+- **[ncspot](https://github.com/hrkfdn/ncspot)** - Enter = primary action (never sub-menu) design copied directly. Queue-centric playback model.
+- **[kopuz](https://github.com/kopuz-music/kopuz)** - Graphical desktop music player with Last.fm native scrobbling. Inspired the embedded scrobbler architecture.
 ## License
 
 MIT
