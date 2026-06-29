@@ -30,7 +30,7 @@ jobs:
       - name: Get current version
         id: version
         run: |
-          VERSION=$(grep '^version =' youtui/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          VERSION=$(grep -A5 '^\[package\]' youtui/Cargo.toml | grep '^version = ' | sed 's/.*"\(.*\)".*/\1/')
           echo "current=$VERSION" >> $GITHUB_ENV
 
       - name: Check tag exists
@@ -64,7 +64,7 @@ jobs:
           PATCH=$(echo "$OLD" | cut -d. -f3)
           NEW_PATCH=$((PATCH + 1))
           NEW="$MAJOR.$MINOR.$NEW_PATCH"
-          sed -i "s/^version = \"$OLD\"/version = \"$NEW\"/" youtui/Cargo.toml
+          sed -i "0,/^version = \"$OLD\"/s/^version = \"$OLD\"/version = \"$NEW\"/" youtui/Cargo.toml
           echo "new=$NEW" >> $GITHUB_ENV
 
       - name: Commit version bump
