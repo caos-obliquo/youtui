@@ -402,6 +402,18 @@ enum Command {
         /// Optional album name hint
         album: Option<String>,
     },
+    /// Inspect/manage the offline scrobble cache (failed scrobbles queued for retry).
+    ScrobbleCache {
+        /// Show cached entries (default if no flags)
+        #[arg(long)]
+        show: bool,
+        /// Clear all cached entries
+        #[arg(long)]
+        clear: bool,
+        /// Force retry all cached entries now
+        #[arg(long)]
+        retry: bool,
+    },
 }
 
 pub struct RuntimeInfo {

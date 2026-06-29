@@ -28,7 +28,7 @@ No AUR. Local compilation only.
 - `yt-dlp` - audio download (default backend)
 - Font with FontAwesome glyphs
 
-Linux audio (ALSA — pick your distro's package):
+Linux audio (ALSA - pick your distro's package):
 
 | Distro | Package |
 |---|---|
