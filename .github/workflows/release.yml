@@ -52,21 +52,19 @@ jobs:
         if: env.exists == 'false'
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          BODY="## v${{ env.current }}"
-          BODY="$BODY\n\n### Changes"
-          if [ -n "$PREV_TAG" ]; then
-            git log "$PREV_TAG..HEAD" --oneline --no-merges | while read line; do
-              BODY="$BODY\n- $line"
-            done
-          else
-            git log --oneline --no-merges HEAD | while read line; do
-              BODY="$BODY\n- $line"
-            done
-          fi
-          BODY="$BODY\n\n**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:+-}v${{ env.current }}"
-          echo "body<<EOF" >> $GITHUB_ENV
-          printf "%b" "$BODY" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          {
+            echo "## v${{ env.current }}"
+            echo ""
+            echo "### Changes"
+            echo ""
+            if [ -n "$PREV_TAG" ]; then
+              git log "$PREV_TAG..HEAD" --oneline --no-merges | sed 's/^/- /'
+            else
+              git log --oneline --no-merges HEAD | sed 's/^/- /'
+            fi
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:+-}v${{ env.current }}"
+          } > release_body.md
 
       - name: Create GitHub Release
         if: env.exists == 'false'
@@ -75,7 +73,7 @@ jobs:
           tag_name: v${{ env.current }}
           name: v${{ env.current }}
           files: target/release/youtui
-          body: ${{ env.body }}
+          body_path: release_body.md
 
       - name: Bump patch version
         if: env.exists == 'false'
