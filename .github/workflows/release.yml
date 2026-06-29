@@ -33,12 +33,14 @@ jobs:
           VERSION=$(grep -A5 '^\[package\]' youtui/Cargo.toml | grep '^version = ' | sed 's/.*"\(.*\)".*/\1/')
           echo "current=$VERSION" >> $GITHUB_ENV
 
-      - name: Check tag exists
+      - name: Check tag exists at HEAD
         id: tag_check
         run: |
-          if git rev-parse "v${{ env.current }}" >/dev/null 2>&1; then
+          TAG="v${{ env.current }}"
+          if git tag --points-at HEAD | grep -q "^${TAG}$"; then
             echo "exists=true" >> $GITHUB_ENV
           else
+            git tag -d "$TAG" 2>/dev/null || true
             echo "exists=false" >> $GITHUB_ENV
           fi
 
