@@ -64,3 +64,30 @@ jobs:
         run: cargo install cargo-audit
       - name: Audit
         run: cargo audit --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099 --ignore RUSTSEC-2026-0104
+
+  test-freebsd:
+    name: Test (FreeBSD)
+    runs-on: macos-13
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y rust cargo yt-dlp ffmpeg alsa-utils pkgconf
+          run: cargo test --workspace --release
+
+  test-openbsd:
+    name: Test (OpenBSD)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test in OpenBSD VM
+        uses: vmactions/openbsd-vm@v1
+        with:
+          prepare: |
+            pkg_add rust yt-dlp ffmpeg alsa-utils
+          run: cargo test --workspace --release
