@@ -184,71 +184,11 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 
 Album splitting: Detects full-album/EP/LP/demo/single entries (tags: full album, full ep, full lp, full demo, full single, album, demo, ep, single, singles). Triggers `ValidateMetadata` which identifies tracks → `insert_album_tracks` splits into individual entries with offsets, durations, metadata. Arc-sharing for audio data.
 
-## Playlist Editor Keybindings (nvim-driven, line-based list)
-See `playlist_editor_popup.rs` for implementation.
-
-### Motions
-- `j`/`k` - move down/up (with `Nj`/`Nk` count prefix)
-- `g`/`gg` - go to first line (or `Ng` to line N)
-- `G` - go to last line (or `NG` to line N)
-
-### Delete (d operator)
-- `dd`/`Ndd` - delete N lines
-- `dN`+`j` - delete N lines down
-- `dN`+`k` - delete N lines up
-- `dg` - delete to top
-- `dG`/`D` - delete to end
-
-### Yank (y operator)
-- `yy`/`Nyy` - yank N lines
-- `yj` - yank line below
-- `yk` - yank line above
-- `ygg` - yank to top
-- `yG` - yank to end
-- `Y` - yank current line
-
-### Paste
-- `p` - paste below cursor
-- `P` - paste above cursor
-
-### Visual mode
-- `V` - toggle visual line selection
-- `j`/`k` - extend selection
-- `d`/`x` - delete selection
-- `y` - yank selection
-- `p`/`P` - paste over selection
-
-### Undo/Redo
-- `u` - undo (100-level stack)
-- `C-r` - redo slot (unbound yet)
-
-### Insert/Reorder
-- `o`/`O` - insert blank line below/above
-- `J`/`K` - move line down/up (swap, with undo)
-
-### Other
-- `:` - command mode (`:w` save, `:wq` save+quit, `:q` quit, `:q!` force quit, `:d N` delete, `:m N M` move, `:rename`, `:privacy`, `:rate`)
-- `q`/`Esc` - close
-- `E` - save to existing playlist
-- Capacity bar at top: `Tracks: N/5000 [■■■■] [□□□□] [□□□□] [□□□□]` (4 blocks × 1250)
-- Pending count shows in mode indicator: `[5]`, `[DELETE 3]`, `[V]`
-
-### Architecture
-- `save_state()` pushes full track snapshot to `undo_stack` before every mutation
-- `yank_buffer: Vec<ListSong>` stores copied lines
-- `delete_mode`/`yank_mode` are operator-mode flags (like vim's d/y waiting for motion)
-- `visual_mode` + `visual_start` for visual line selection
-
-## Notes Popup Keybindings
-`:w` Save | `:wq` Save+Quit | `:q` Quit | Enter on URL: Open | `i` Insert | `V` visual line | `C-v` visual block | `y` yank | All VTE motions (j/k/h/l/gg/G/w/b/dd/yy/p/P/u/C-r/o/O)
-- Starts in Normal mode (navigate with j/k, edit with i)
-- `scroll_offset` keeps cursor visible in long files
-- Esc exits Insert/Visual mode to Normal (never closes popup)
-
-## Queue Keybindings (o menu)
-`o.s` shuffle, `o.r`/`o.S` sort, `o.R` get related, `o.q` save, `o.L` load, `o.Q` delete, `o.m` romaji, `o.n` new playlist, `o.E` existing playlist, `o.d` delete, `o.D` delete all, `o.A` best quality, `o.c` category filter, `o.I` song info, `o.z` repeat, `o.t` like, `o.l` lyrics, `o.a` artist, `o.b` album, `o.v` album cover, `o.y`/`y` copy url, `o.Y`/`Y` copy album url.
-
-## Enter Key Behavior (ncspot-style)
+## Keybinding Ref Docs
+- **Playlist editor (vim-driven)**: `docs/05-keybindings.md` + `playlist_editor_popup.rs`
+- **Notes popup**: `docs/05-keybindings.md` + `docs/subsystems/notes.md`
+- **Queue (o menu)**: `docs/05-keybindings.md`
+- **Enter = primary action (ncspot-style)
 Enter NEVER opens a sub-menu. Enter ALWAYS does the primary action:
 - Playlist (queue) → play selected song
 - Browser songs → play song
