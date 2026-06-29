@@ -26,7 +26,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo test --workspace --release
+        run: |
+          cargo test --workspace --release --exclude ytmapi-rs
+          cargo test --release -p ytmapi-rs --lib
 
   build:
     name: Build
@@ -77,7 +79,9 @@ jobs:
           usesh: true
           prepare: |
             pkg install -y rust cargo yt-dlp ffmpeg alsa-utils pkgconf
-          run: cargo test --workspace --release
+          run: |
+            cargo test --workspace --release --exclude ytmapi-rs
+            cargo test --release -p ytmapi-rs --lib
 
   test-openbsd:
     name: Test (OpenBSD)
@@ -90,4 +94,6 @@ jobs:
         with:
           prepare: |
             pkg_add rust yt-dlp ffmpeg alsa-utils
-          run: cargo test --workspace --release
+          run: |
+            cargo test --workspace --release --exclude ytmapi-rs
+            cargo test --release -p ytmapi-rs --lib
