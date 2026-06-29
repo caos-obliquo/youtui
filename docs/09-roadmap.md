@@ -345,3 +345,28 @@
 | 87 | Release workflow: GH_PAT swap (PAT can push to protected branches) | `.github/workflows/release.yml` |
 | 88 | README fix (F-keys claim, fork tagline), LICENSE cleanup (single MIT, caos-obliquo copyright), .gitignore (session-*.md) | `README.md`, `LICENSE`, `.gitignore` |
 | 89 | ScrobbleCache CLI subcommand: `youtui scrobble-cache [--show/--clear/--retry]` | `youtui/src/main.rs`, `youtui/src/cli.rs`, `youtui/src/app/scrobbler.rs` |
+| 90 | CI release workflow fix: anchor version grep to [package] section | `.github/workflows/release.yml` |
+
+## Previous Releases
+
+### v1.0.3 - Scrobble, playback, sixel fixes (PR #29)
+10 bugs fixed + 13 new tests. Workspace clean: 181/181 youtui, 426 total, 0 warnings.
+
+**Critical fix**: Gapless advance ID bug - album split playback stopped after track 2. QueueDecodedSong(id) used current song ID, not next.
+
+**Scrobble fixes**: Autoplay scrobble dead (no ScrobbleState/now_playing/FetchAlbumArt), Boundary scrobbler double-fire guard re-added, Scrobble wrong field (album sent as track title).
+
+**Album art/display fixes**: Footer cache wipe (AlbumArtState::None cleared cache), FetchAlbumArt never fired, Tmux sixel vanishing, Last track duration leak.
+
+**Year extraction**: Channel upload titles parsed for (YYYY - Genre).
+
+**Em-dash hygiene**: All Unicode em-dashes replaced with hyphens across 64 files.
+
+### v1.0.2 - Last.fm canonical album name fixes (PR #28)
+4 bugs fixed + 8 new tests. YTM prefixes stripped properly for scrobble submission.
+
+### v1.0.1 - ytmapi-rs regression fixes (PR #27)
+5 regressions fixed: auth cookies, EP/singles detection, reqwest version, VL prefix stripping, RemovePlaylistItems endpoint.
+
+### v1.0.0 - Initial stable release
+CI pipeline, README/LICENSE cleanup, scrobble cache CLI, suckless refactoring (-630 lines).
