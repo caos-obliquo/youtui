@@ -354,16 +354,25 @@
 
 **Critical fix**: Gapless advance ID bug - album split playback stopped after track 2. QueueDecodedSong(id) used current song ID, not next.
 
-**Scrobble fixes**: Autoplay scrobble dead (no ScrobbleState/now_playing/FetchAlbumArt), Boundary scrobbler double-fire guard re-added, Scrobble wrong field (album sent as track title).
+**Scrobble fixes**: Autoplay scrobble dead (no ScrobbleState/now_playing/FetchAlbumArt), Boundary scrobbler double-fire guard re-added, Scrobble wrong field (album sent as track title instead of song title).
 
-**Album art/display fixes**: Footer cache wipe (AlbumArtState::None cleared cache), FetchAlbumArt never fired, Tmux sixel vanishing, Last track duration leak.
+**Album art/display fixes**: Footer cache wipe (AlbumArtState::None cleared cached art/cache during fetch), FetchAlbumArt never fired (cur_played_dur.map_or(false) blocked on play), Tmux sixel vanishing (unconditional DCS clear), Last track duration leak (or_else fallback to track's own duration).
 
-**Year extraction**: Channel upload titles parsed for (YYYY - Genre).
+**Year extraction**: Channel upload titles parsed for (YYYY - Genre) before noise stripping.
 
 **Em-dash hygiene**: All Unicode em-dashes replaced with hyphens across 64 files.
 
-### v1.0.2 - Last.fm canonical album name fixes (PR #28)
-4 bugs fixed + 8 new tests. YTM prefixes stripped properly for scrobble submission.
+### v1.0.2 - Canonical Last.fm album names + scrobble fixes (PR #28)
+
+**Bug fixes**
+- YTM format prefixes now stripped before scrobble: Album:, EP:, Single:, LP:, Demo:, Live: prefixes from YTM album names stripped before sending to Last.fm. Fixes art not showing on Last.fm for most albums.
+- state.album no longer overwritten with raw prefixed name: Progress handler was refreshing scrobble state with uncleaned album names like "Album: FIDLAR" instead of "FIDLAR".
+- canonical_album_name cleared correctly: Only clears when album changes, not on every song change.
+- Cross-song guard fixed: Uses canonical name vs. state.album (both cleaned), not raw YTM vs. cleaned.
+
+**Architecture**: FetchAlbumArt returns canonical album name from Last.fm album.getInfo. canonical_album_name field on Playlist used as primary album for ALL scrobble paths.
+
+**Tests**: 8 new tests for prefix stripping. 172/172 youtui, 417 total workspace — 0 failures.
 
 ### v1.0.1 - ytmapi-rs regression fixes (PR #27)
 5 regressions fixed: auth cookies, EP/singles detection, reqwest version, VL prefix stripping, RemovePlaylistItems endpoint.
