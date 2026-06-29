@@ -25,9 +25,19 @@ No AUR. Local compilation only.
 
 ### Dependencies
 
-- `alsa-lib` (Linux) - audio playback
 - `yt-dlp` - audio download (default backend)
 - Font with FontAwesome glyphs
+
+Linux audio (ALSA — pick your distro's package):
+
+| Distro | Package |
+|---|---|
+| Debian / Ubuntu / Mint | `libasound2-dev` |
+| Arch / Manjaro | `alsa-lib` |
+| Fedora | `alsa-lib-devel` |
+| Void | `alsa-lib-devel` |
+| NixOS | `alsaLib` (in `buildInputs`) |
+| Gentoo | `media-libs/alsa-lib` |
 
 ## Authentication
 
