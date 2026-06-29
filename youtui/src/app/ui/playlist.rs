@@ -1354,6 +1354,7 @@ impl Playlist {
 
         // Fetch metadata via yt-dlp
         let mut duration = String::from("0");
+        let mut duration_secs: f64 = 0.0;
         let mut meta_cmd = std::process::Command::new("yt-dlp");
         meta_cmd.args(["--dump-json", "--no-warnings", "--flat-playlist"]);
         if self.yt_dlp_cookie_path.is_some() {
@@ -1376,6 +1377,7 @@ impl Playlist {
                         uploader.clone()
                     };
                     if let Some(d) = v.get("duration").and_then(|s| s.as_f64()) {
+                        duration_secs = d;
                         let secs = d as u64;
                         duration = format!("{}:{:02}", secs / 60, secs % 60);
                     }
@@ -1412,9 +1414,24 @@ impl Playlist {
         let year = year.or(title_year);
 
         let clean_title = Self::clean_title_for_metadata(&artist, &title);
+        // Handle " // " convention: "Artist // Album Title" (common YouTube album upload)
+        // e.g., "band - Artist // Album Title" -> artist="Artist", title="Album Title"
+        // After artist prefix strip, remaining title still has "Artist // Album Title".
+        let (meta_artist, meta_title) = if let Some(pos) = clean_title.find(" // ") {
+            let left = clean_title[..pos].trim();
+            let right = clean_title[pos + 4..].trim();
+            if !left.is_empty() && !right.is_empty() && left.len() < 80 {
+                info!("add_yt_video: split on ' // ' -> artist={}, title={}", left, right);
+                (left.to_string(), right.to_string())
+            } else {
+                (artist.clone(), clean_title.clone())
+            }
+        } else {
+            (artist.clone(), clean_title.clone())
+        };
         let song = ytmapi_rs::parse::SearchResultSong {
-            title: clean_title.clone(),
-            artist: artist.clone(),
+            title: meta_title.clone(),
+            artist: meta_artist.clone(),
             album: None,
             duration: format!("{}", duration),
             plays: String::new(),
@@ -1431,7 +1448,7 @@ impl Playlist {
                 if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
                     s.album = Some(crate::app::structures::MaybeRc::Owned(
                         crate::app::structures::ListSongAlbum {
-                            name: clean_title.clone(),
+                            name: meta_title.clone(),
                             id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
                         },
                     ));
@@ -1444,12 +1461,38 @@ impl Playlist {
                     }
                 }
             }
+            // Check if raw yt-dlp title has album indicator tags (were stripped by clean_title_for_metadata)
+            // or if video is album-length (>15 min). If so, allow album splitting.
+            let lower_raw = title.to_lowercase();
+            let has_raw_tags = lower_raw.contains("full album")
+                || lower_raw.contains("full ep")
+                || lower_raw.contains("full lp")
+                || lower_raw.contains("full demo")
+                || lower_raw.contains("full single")
+                || lower_raw.contains("full-length")
+                || lower_raw.contains("studio album")
+                || lower_raw.contains("live album")
+                || lower_raw.contains("official album")
+                || lower_raw.contains("compilation")
+                || lower_raw.contains("bootleg")
+                || lower_raw.contains("anthology")
+                || lower_raw.contains("collection")
+                || lower_raw.contains("self-titled")
+                || lower_raw.contains("self titled");
+            if has_raw_tags || duration_secs > 900.0 {
+                if let Some(idx) = self.get_index_from_id(id) {
+                    if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
+                        s.is_album_upload = true;
+                        info!("add_yt_video: set is_album_upload=true for {:?} (raw_tags={}, duration={}s)", title, has_raw_tags, duration_secs as u64);
+                    }
+                }
+            }
             let album_name = if let Some(idx) = self.get_index_from_id(id) {
                 self.get_song_from_idx(idx).and_then(|s| s.album.as_ref().map(|a| a.name.clone()))
             } else { None };
             // Spawn metadata validation (Last.fm -> MusicBrainz) in parallel with download
             let validation_task = AsyncTask::new_future_try(
-                ValidateMetadata(artist, clean_title, id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), album_name),
+                ValidateMetadata(meta_artist, meta_title, id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), album_name),
                 HandleMetadataValidated(id),
                 HandleMetadataValidationError,
                 None,
