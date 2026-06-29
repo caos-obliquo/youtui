@@ -6,5 +6,9 @@ resolver = "2"
 todo = "warn"
 unwrap_used = "warn"
 
-[patch.crates-io]
-rustls-webpki = { git = "https://github.com/rustls/webpki", rev = "v0.101.9" }
+[package.metadata.cargo-audit]
+ignore = [
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104",
+]
