@@ -112,6 +112,53 @@ ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli removed 
 - **Last track duration leak**: `parent_duration=None` gave `None` actual_duration → progress bar uncapped. `or_else` fallback added
 - **Gapless advance ID mismatch**: `QueueDecodedSong(id)` used current song ID not next song ID. Progress updates rejected after autoplay switched tracks. Stopped playback after track 2 for album splits.
 
+## PR #31 - v1.0.0 Release Prep + CI Pipeline (2026-06-29, **merged**)
+**Branch**: `fix/album-tracks-leak` (13 commits, merged → main)
+
+### Album Tracks Leak Fix
+- `album_tracks` cleared in `play_song_id()` and `autoplay_song_id()` when new song not a split track (`track_no.is_none()`). Prevents boundary scrobbler firing stale track names from previous album split.
+
+### CI Pipeline (new)
+- `.github/workflows/ci.yml` - PR checks on `main`:
+  - **Test (ubuntu-latest, macos-latest)**: workspace tests (excl. ytmapi-rs integration), ytmapi-rs lib tests
+  - **Build**: `cargo build --release --package youtui`
+  - **Lint**: `cargo clippy --workspace - -A warnings`
+  - **Security Audit**: `cargo audit` (3 ignores for known RUSTSEC advisories)
+  - **Test (FreeBSD)**: `continue-on-error: true`, via `vmactions/freebsd-vm@v1`
+  - **Test (OpenBSD)**: `continue-on-error: true`, via `vmactions/openbsd-vm@v1` (no alsa-utils, uses sndio)
+- `.github/workflows/release.yml` - on push to `main`:
+  - Build release binary, create GitHub Release, auto-patch-bump version, commit+push with `[skip ci]`
+  - Uses `GH_PAT` secret (fine-grained PAT with Contents:write) - `GITHUB_TOKEN` can't push to protected branches
+
+### CI Fixes
+- **clippy**: `lrclib-rs/src/main.rs:146` removed `|| true` debug leftover
+- **security**: `quinn-proto` v0.11.14→v0.11.15 (RUSTSEC-2026-0185, high severity)
+- **macOS test race**: `scrobbler.rs` - unique temp dir per test fn via `test_name` param
+- **CI ytmapi-rs**: workspace tests exclude ytmapi-rs integration (needs auth cookie), lib tests run separately
+- **OpenBSD**: removed `alsa-utils` from `pkg_add` (not in OpenBSD repos, uses sndio)
+
+### README + License Cleanup
+- **F-keys claim**: "zero F-keys" → "minimal F-keys (F1 search, F2/F3 toggle, F11 logs)"
+- **Fork tagline**: "Fork of..." → "Originally forked from... now independently maintained"
+- **ytmapi-rs note**: Added reliability note to Known Issues
+- **License**: Removed symlink LICENSE→LICENSE.txt, added `Copyright (c) 2026 caos-obliquo`, single clean MIT LICENSE file with all 3 copyright holders (sigma67, nick42d, caos-obliquo)
+- **README docs cross-ref**: Pointed to docs/README.md instead of duplicating setup commands
+- **`.gitignore`**: Added `session-*.md` to prevent log file commits
+
+### ScrobbleCache CLI Subcommand
+- New CLI subcommand: `youtui scrobble-cache [--show] [--clear] [--retry]`
+- Reads/manages `~/.config/youtui/scrobble_cache.json`
+- `--show`: list pending entries with retry count
+- `--clear`: purge all cached entries
+- `--retry`: force retry all queued scrobbles now
+
+### Current Priorities (from roadmap)
+1. **SQLite metadata cache** - reduce API calls, foundation for album art caching
+2. **MusicBrainz Cover Art Archive** - wire album art into footer/art popup
+3. **Wire SQLite cache into metadata-provider**
+4. **Plan trim** - remove dead items from robustness plan
+5. **Low**: OAuth refresh, native streaming, liked songs tables, artist pagination
+
 ## Platform Compatibility (Current Status)
 All 6 platform-specific items fixed. Youtui compiles on Linux (Wayland/X11) and macOS. Windows builds fail at compile-time with a clear error.
 
@@ -257,7 +304,12 @@ See `docs/09-roadmap.md` for detailed session history.
 - Prints full params + API response + timing info
 - Tests the full scrobble pipeline: session_key retrieval, HMAC signing, Last.fm API submission
 
-
+### CLI Scrobble Cache Tool
+- `youtui scrobble-cache --show` - list pending entries with retry count
+- `youtui scrobble-cache --clear` - purge all cached entries
+- `youtui scrobble-cache --retry` - force retry all queued scrobbles now
+- Default (no flags): shows pending entries
+- Reads from `~/.config/youtui/scrobble_cache.json`
 
 ## Remaining Items (Detailed)
 ### P3: ytmapi-rs ~68 remaining TODOs
@@ -363,6 +415,6 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 
 Youtui stands on the shoulders of these projects:
 
-- **[ncspot](https://github.com/hrkfdn/ncspot)** — ncurses Spotify TUI. Enter = primary action (never sub-menu) design copied directly. Queue-centric playback model.
-- **[kopuz](https://github.com/kopuz-music/kopuz)** — Terminal music player with Last.fm native scrobbling. Inspired the embedded scrobbler architecture.
-- **[youtui](https://github.com/caos-obliquo/youtui)** — This project itself. Special thanks to the contributors and testers who shaped every feature.
+- **[ncspot](https://github.com/hrkfdn/ncspot)** - ncurses Spotify TUI. Enter = primary action (never sub-menu) design copied directly. Queue-centric playback model.
+- **[kopuz](https://github.com/kopuz-music/kopuz)** - Terminal music player with Last.fm native scrobbling. Inspired the embedded scrobbler architecture.
+- **[youtui](https://github.com/caos-obliquo/youtui)** - This project itself. Special thanks to the contributors and testers who shaped every feature.

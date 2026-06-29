@@ -8,6 +8,20 @@ fn scrobble_cache_path() -> Option<PathBuf> {
     crate::get_config_dir().ok().map(|d| d.join(SCROBBLE_CACHE_FILENAME))
 }
 
+/// Read cached entries as JSON values (for CLI inspection).
+pub fn read_scrobble_cache_entries() -> Option<Vec<serde_json::Value>> {
+    let path = scrobble_cache_path()?;
+    std::fs::read_to_string(&path).ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+}
+
+/// Delete the entire scrobble cache file.
+pub fn clear_scrobble_cache() {
+    if let Some(path) = scrobble_cache_path() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ScrobbleState {
     pub artist: String,
