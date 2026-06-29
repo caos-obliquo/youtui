@@ -8,6 +8,20 @@ fn scrobble_cache_path() -> Option<PathBuf> {
     crate::get_config_dir().ok().map(|d| d.join(SCROBBLE_CACHE_FILENAME))
 }
 
+/// Read cached entries as JSON values (for CLI inspection).
+pub fn read_scrobble_cache_entries() -> Option<Vec<serde_json::Value>> {
+    let path = scrobble_cache_path()?;
+    std::fs::read_to_string(&path).ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+}
+
+/// Delete the entire scrobble cache file.
+pub fn clear_scrobble_cache() {
+    if let Some(path) = scrobble_cache_path() {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ScrobbleState {
     pub artist: String,
@@ -324,8 +338,9 @@ mod tests {
     use std::time::{Duration, UNIX_EPOCH};
 
     /// Helper: create a scrobble cache at a temp path for testing.
-    fn temp_cache_path() -> (PathBuf, ScrobbleState) {
-        let dir = std::env::temp_dir().join(format!("youtui_scrobble_test_{}", std::process::id()));
+    /// `test_name` must be unique per test to avoid parallel test races.
+    fn temp_cache_path(test_name: &str) -> (PathBuf, ScrobbleState) {
+        let dir = std::env::temp_dir().join(format!("youtui_scrobble_test_{}_{}", std::process::id(), test_name));
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("scrobble_cache.json");
         // Override scrobble_cache_path for tests by writing directly
@@ -336,7 +351,7 @@ mod tests {
     /// Test that save_failed_scrobble round-trips correctly.
     #[test]
     fn test_cache_roundtrip() {
-        let (path, state) = temp_cache_path();
+        let (path, state) = temp_cache_path("roundtrip");
         // Override scrobble_cache_path resolution by writing directly
         let entry = serde_json::json!({
             "artist": state.artist,
@@ -369,7 +384,7 @@ mod tests {
     /// Test that cache caps at MAX_CACHE_ENTRIES.
     #[test]
     fn test_cache_max_size() {
-        let (path, _) = temp_cache_path();
+        let (path, _) = temp_cache_path("maxsize");
         // Write MAX_CACHE_ENTRIES + 10 entries
         let mut cache: Vec<serde_json::Value> = (0..MAX_CACHE_ENTRIES + 10)
             .map(|i| serde_json::json!({

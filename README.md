@@ -1,6 +1,6 @@
 # youtui - caos-obliquo fork
 
-Vim-driven TUI for YouTube Music. Fork of [nick42d/youtui](https://github.com/nick42d/youtui) / [Icedwolf/youtui](https://github.com/Icedwolf/youtui) with custom playlist management, yt-dlp audio, zero F-keys.
+Vim-driven TUI for YouTube Music. Originally forked from [nick42d/youtui](https://github.com/nick42d/youtui) / [Icedwolf/youtui](https://github.com/Icedwolf/youtui), now independently maintained. Custom playlist management, yt-dlp audio, minimal F-keys (F1 search, F2/F3 toggle, F11 logs).
 
 **Upstream diff**: this fork adds playlist creation/update popups, EP/single labels in artist browser, yt-dlp audio backend by default, vim-only keybinds with minimal header, queue persistence, and effect-driven playlist management. Drifted significantly - we own the feature set now.
 
@@ -25,9 +25,19 @@ No AUR. Local compilation only.
 
 ### Dependencies
 
-- `alsa-lib` (Linux) - audio playback
 - `yt-dlp` - audio download (default backend)
 - Font with FontAwesome glyphs
+
+Linux audio (ALSA - pick your distro's package):
+
+| Distro | Package |
+|---|---|
+| Debian / Ubuntu / Mint | `libasound2-dev` |
+| Arch / Manjaro | `alsa-lib` |
+| Fedora | `alsa-lib-devel` |
+| Void | `alsa-lib-devel` |
+| NixOS | `alsaLib` (in `buildInputs`) |
+| Gentoo | `media-libs/alsa-lib` |
 
 ## Authentication
 
@@ -73,7 +83,7 @@ Full keybinds at `~/.config/youtui/config.toml`.
 
 ## Features
 
-- **Vim navigation** - j/k/h/l/g/G throughout, no function keys
+- **Vim navigation** - j/k/h/l/g/G throughout, minimal function keys (F1 search, F2/F3 tab nav)
 - **yt-dlp audio** - streams with `android_vr` extractor-args, no PO token needed
 - **Playlist management** - create from queue, add to existing, unlisted by default
 - **EP / Single labels** - artist browser shows `Album:`, `EP:`, `Single:` prefix on release names
@@ -99,6 +109,7 @@ yt_dlp_command = "yt-dlp"
 
 ## Known Issues
 
+- **ytmapi-rs (YouTube Music API)**: Google changes internal API frequently. yt-dlp is the primary/reliable backend for audio streaming. ytmapi-rs lib tests pass (82/82) but live integration calls may break without notice.
 - Playlist creation requires a fresh browser cookie (write operations need active session)
 - Client version extracted from YouTube Music page at startup - some endpoints may need updates
 

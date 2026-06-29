@@ -42,6 +42,34 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             }
             return Ok(());
         }
+        Some(crate::Command::ScrobbleCache { show: _show, clear, retry }) => {
+            use crate::app::scrobbler::{read_scrobble_cache_entries, clear_scrobble_cache};
+            if *clear {
+                clear_scrobble_cache();
+                println!("Scrobble cache cleared.");
+                return Ok(());
+            }
+            if *retry {
+                println!("Retrying cached scrobbles...");
+                crate::app::scrobbler::retry_failed_scrobbles(&config.scrobbling).await;
+                println!("Retry complete.");
+                return Ok(());
+            }
+            match read_scrobble_cache_entries() {
+                Some(entries) if !entries.is_empty() => {
+                    println!("Scrobble cache ({} entries):", entries.len());
+                    for (i, e) in entries.iter().enumerate() {
+                        let artist = e["artist"].as_str().unwrap_or("?");
+                        let track = e["track"].as_str().unwrap_or("?");
+                        let album = e["album"].as_str().unwrap_or("");
+                        let retries = e["retry_count"].as_u64().unwrap_or(0);
+                        println!("  {}. {} - {} ({}) retries={}", i + 1, artist, track, album, retries);
+                    }
+                }
+                _ => println!("Scrobble cache is empty."),
+            }
+            return Ok(());
+        }
         Some(crate::Command::TestValidateMetadata { artist, title, album }) => {
             use crate::app::server::MetadataRegistry;
             let http_client = reqwest::Client::builder()

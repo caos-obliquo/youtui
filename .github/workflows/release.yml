@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Create Release
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+
+      - name: Get current version
+        id: version
+        run: |
+          VERSION=$(grep '^version =' youtui/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          echo "current=$VERSION" >> $GITHUB_ENV
+
+      - name: Check tag exists
+        id: tag_check
+        run: |
+          if git rev-parse "v${{ env.current }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_ENV
+          else
+            echo "exists=false" >> $GITHUB_ENV
+          fi
+
+      - name: Build release binary
+        if: env.exists == 'false'
+        run: cargo build --release --package youtui
+
+      - name: Create GitHub Release
+        if: env.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.current }}
+          name: v${{ env.current }}
+          files: target/release/youtui
+          generate_release_notes: true
+
+      - name: Bump patch version
+        if: env.exists == 'false'
+        run: |
+          OLD="${{ env.current }}"
+          MAJOR=$(echo "$OLD" | cut -d. -f1)
+          MINOR=$(echo "$OLD" | cut -d. -f2)
+          PATCH=$(echo "$OLD" | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW="$MAJOR.$MINOR.$NEW_PATCH"
+          sed -i "s/^version = \"$OLD\"/version = \"$NEW\"/" youtui/Cargo.toml
+          echo "new=$NEW" >> $GITHUB_ENV
+
+      - name: Commit version bump
+        if: env.exists == 'false'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add youtui/Cargo.toml
+          git commit -m "chore: bump version to ${{ env.new }} [skip ci]"
+          git push origin main
