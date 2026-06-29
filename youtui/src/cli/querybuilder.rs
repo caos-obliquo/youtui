@@ -718,6 +718,9 @@ pub async fn command_to_query(
         Command::TestValidateMetadata { .. } => {
             anyhow::bail!("TestValidateMetadata is a standalone CLI command, not an API query")
         }
+        Command::ScrobbleCache { .. } => {
+            anyhow::bail!("ScrobbleCache is a standalone CLI command, not an API query")
+        }
     }
 }
 

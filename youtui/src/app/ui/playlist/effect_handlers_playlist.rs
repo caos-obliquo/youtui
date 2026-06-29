@@ -497,7 +497,10 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
     if let Some(ref album) = data.album {
         // Only override album when YTM has none (preserve YTM's album to prevent
         // wrong metadata from overwriting correct data, e.g. Phyllomedusa albums)
-        let ytm_empty = song.album.as_ref().map_or(true, |a| a.as_ref().name.is_empty());
+        let ytm_empty = song.album.as_ref().map_or(true, |a| {
+            a.as_ref().name.is_empty()
+                || matches!(&a.as_ref().id, AlbumOrUploadAlbumID::Album(id) if id.get_raw().is_empty())
+        });
         if ytm_empty {
             song.album = Some(MaybeRc::Owned(ListSongAlbum {
                 name: album.clone(),

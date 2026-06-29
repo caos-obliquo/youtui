@@ -112,6 +112,53 @@ ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli removed 
 - **Last track duration leak**: `parent_duration=None` gave `None` actual_duration → progress bar uncapped. `or_else` fallback added
 - **Gapless advance ID mismatch**: `QueueDecodedSong(id)` used current song ID not next song ID. Progress updates rejected after autoplay switched tracks. Stopped playback after track 2 for album splits.
 
+## PR #31 - v1.0.0 Release Prep + CI Pipeline (2026-06-29, **merged**)
+**Branch**: `fix/album-tracks-leak` (13 commits, merged → main)
+
+### Album Tracks Leak Fix
+- `album_tracks` cleared in `play_song_id()` and `autoplay_song_id()` when new song not a split track (`track_no.is_none()`). Prevents boundary scrobbler firing stale track names from previous album split.
+
+### CI Pipeline (new)
+- `.github/workflows/ci.yml` - PR checks on `main`:
+  - **Test (ubuntu-latest, macos-latest)**: workspace tests (excl. ytmapi-rs integration), ytmapi-rs lib tests
+  - **Build**: `cargo build --release --package youtui`
+  - **Lint**: `cargo clippy --workspace - -A warnings`
+  - **Security Audit**: `cargo audit` (3 ignores for known RUSTSEC advisories)
+  - **Test (FreeBSD)**: `continue-on-error: true`, via `vmactions/freebsd-vm@v1`
+  - **Test (OpenBSD)**: `continue-on-error: true`, via `vmactions/openbsd-vm@v1` (no alsa-utils, uses sndio)
+- `.github/workflows/release.yml` - on push to `main`:
+  - Build release binary, create GitHub Release, auto-patch-bump version, commit+push with `[skip ci]`
+  - Uses `GH_PAT` secret (fine-grained PAT with Contents:write) - `GITHUB_TOKEN` can't push to protected branches
+
+### CI Fixes
+- **clippy**: `lrclib-rs/src/main.rs:146` removed `|| true` debug leftover
+- **security**: `quinn-proto` v0.11.14→v0.11.15 (RUSTSEC-2026-0185, high severity)
+- **macOS test race**: `scrobbler.rs` - unique temp dir per test fn via `test_name` param
+- **CI ytmapi-rs**: workspace tests exclude ytmapi-rs integration (needs auth cookie), lib tests run separately
+- **OpenBSD**: removed `alsa-utils` from `pkg_add` (not in OpenBSD repos, uses sndio)
+
+### README + License Cleanup
+- **F-keys claim**: "zero F-keys" → "minimal F-keys (F1 search, F2/F3 toggle, F11 logs)"
+- **Fork tagline**: "Fork of..." → "Originally forked from... now independently maintained"
+- **ytmapi-rs note**: Added reliability note to Known Issues
+- **License**: Removed symlink LICENSE→LICENSE.txt, added `Copyright (c) 2026 caos-obliquo`, single clean MIT LICENSE file with all 3 copyright holders (sigma67, nick42d, caos-obliquo)
+- **README docs cross-ref**: Pointed to docs/README.md instead of duplicating setup commands
+- **`.gitignore`**: Added `session-*.md` to prevent log file commits
+
+### ScrobbleCache CLI Subcommand
+- New CLI subcommand: `youtui scrobble-cache [--show] [--clear] [--retry]`
+- Reads/manages `~/.config/youtui/scrobble_cache.json`
+- `--show`: list pending entries with retry count
+- `--clear`: purge all cached entries
+- `--retry`: force retry all queued scrobbles now
+
+### Current Priorities (from roadmap)
+1. **SQLite metadata cache** - reduce API calls, foundation for album art caching
+2. **MusicBrainz Cover Art Archive** - wire album art into footer/art popup
+3. **Wire SQLite cache into metadata-provider**
+4. **Plan trim** - remove dead items from robustness plan
+5. **Low**: OAuth refresh, native streaming, liked songs tables, artist pagination
+
 ## Platform Compatibility (Current Status)
 All 6 platform-specific items fixed. Youtui compiles on Linux (Wayland/X11) and macOS. Windows builds fail at compile-time with a clear error.
 
@@ -184,71 +231,11 @@ Frontend: 14 handler pairs, 9 AppCallbacks, context menu (D/R/E/t/i/x/J/K/S/U/M)
 
 Album splitting: Detects full-album/EP/LP/demo/single entries (tags: full album, full ep, full lp, full demo, full single, album, demo, ep, single, singles). Triggers `ValidateMetadata` which identifies tracks → `insert_album_tracks` splits into individual entries with offsets, durations, metadata. Arc-sharing for audio data.
 
-## Playlist Editor Keybindings (nvim-driven, line-based list)
-See `playlist_editor_popup.rs` for implementation.
-
-### Motions
-- `j`/`k` - move down/up (with `Nj`/`Nk` count prefix)
-- `g`/`gg` - go to first line (or `Ng` to line N)
-- `G` - go to last line (or `NG` to line N)
-
-### Delete (d operator)
-- `dd`/`Ndd` - delete N lines
-- `dN`+`j` - delete N lines down
-- `dN`+`k` - delete N lines up
-- `dg` - delete to top
-- `dG`/`D` - delete to end
-
-### Yank (y operator)
-- `yy`/`Nyy` - yank N lines
-- `yj` - yank line below
-- `yk` - yank line above
-- `ygg` - yank to top
-- `yG` - yank to end
-- `Y` - yank current line
-
-### Paste
-- `p` - paste below cursor
-- `P` - paste above cursor
-
-### Visual mode
-- `V` - toggle visual line selection
-- `j`/`k` - extend selection
-- `d`/`x` - delete selection
-- `y` - yank selection
-- `p`/`P` - paste over selection
-
-### Undo/Redo
-- `u` - undo (100-level stack)
-- `C-r` - redo slot (unbound yet)
-
-### Insert/Reorder
-- `o`/`O` - insert blank line below/above
-- `J`/`K` - move line down/up (swap, with undo)
-
-### Other
-- `:` - command mode (`:w` save, `:wq` save+quit, `:q` quit, `:q!` force quit, `:d N` delete, `:m N M` move, `:rename`, `:privacy`, `:rate`)
-- `q`/`Esc` - close
-- `E` - save to existing playlist
-- Capacity bar at top: `Tracks: N/5000 [■■■■] [□□□□] [□□□□] [□□□□]` (4 blocks × 1250)
-- Pending count shows in mode indicator: `[5]`, `[DELETE 3]`, `[V]`
-
-### Architecture
-- `save_state()` pushes full track snapshot to `undo_stack` before every mutation
-- `yank_buffer: Vec<ListSong>` stores copied lines
-- `delete_mode`/`yank_mode` are operator-mode flags (like vim's d/y waiting for motion)
-- `visual_mode` + `visual_start` for visual line selection
-
-## Notes Popup Keybindings
-`:w` Save | `:wq` Save+Quit | `:q` Quit | Enter on URL: Open | `i` Insert | `V` visual line | `C-v` visual block | `y` yank | All VTE motions (j/k/h/l/gg/G/w/b/dd/yy/p/P/u/C-r/o/O)
-- Starts in Normal mode (navigate with j/k, edit with i)
-- `scroll_offset` keeps cursor visible in long files
-- Esc exits Insert/Visual mode to Normal (never closes popup)
-
-## Queue Keybindings (o menu)
-`o.s` shuffle, `o.r`/`o.S` sort, `o.R` get related, `o.q` save, `o.L` load, `o.Q` delete, `o.m` romaji, `o.n` new playlist, `o.E` existing playlist, `o.d` delete, `o.D` delete all, `o.A` best quality, `o.c` category filter, `o.I` song info, `o.z` repeat, `o.t` like, `o.l` lyrics, `o.a` artist, `o.b` album, `o.v` album cover, `o.y`/`y` copy url, `o.Y`/`Y` copy album url.
-
-## Enter Key Behavior (ncspot-style)
+## Keybinding Ref Docs
+- **Playlist editor (vim-driven)**: `docs/05-keybindings.md` + `playlist_editor_popup.rs`
+- **Notes popup**: `docs/05-keybindings.md` + `docs/subsystems/notes.md`
+- **Queue (o menu)**: `docs/05-keybindings.md`
+- **Enter = primary action (ncspot-style)
 Enter NEVER opens a sub-menu. Enter ALWAYS does the primary action:
 - Playlist (queue) → play selected song
 - Browser songs → play song
@@ -317,7 +304,12 @@ See `docs/09-roadmap.md` for detailed session history.
 - Prints full params + API response + timing info
 - Tests the full scrobble pipeline: session_key retrieval, HMAC signing, Last.fm API submission
 
-
+### CLI Scrobble Cache Tool
+- `youtui scrobble-cache --show` - list pending entries with retry count
+- `youtui scrobble-cache --clear` - purge all cached entries
+- `youtui scrobble-cache --retry` - force retry all queued scrobbles now
+- Default (no flags): shows pending entries
+- Reads from `~/.config/youtui/scrobble_cache.json`
 
 ## Remaining Items (Detailed)
 ### P3: ytmapi-rs ~68 remaining TODOs
@@ -423,6 +415,6 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 
 Youtui stands on the shoulders of these projects:
 
-- **[ncspot](https://github.com/hrkfdn/ncspot)** — ncurses Spotify TUI. Enter = primary action (never sub-menu) design copied directly. Queue-centric playback model.
-- **[kopuz](https://github.com/kopuz-music/kopuz)** — Terminal music player with Last.fm native scrobbling. Inspired the embedded scrobbler architecture.
-- **[youtui](https://github.com/caos-obliquo/youtui)** — This project itself. Special thanks to the contributors and testers who shaped every feature.
+- **[ncspot](https://github.com/hrkfdn/ncspot)** - ncurses Spotify TUI. Enter = primary action (never sub-menu) design copied directly. Queue-centric playback model.
+- **[kopuz](https://github.com/kopuz-music/kopuz)** - Terminal music player with Last.fm native scrobbling. Inspired the embedded scrobbler architecture.
+- **[youtui](https://github.com/caos-obliquo/youtui)** - This project itself. Special thanks to the contributors and testers who shaped every feature.

@@ -143,7 +143,7 @@ async fn main() {
                     let status = resp.status();
                     match resp.text().await {
                         Ok(body) => {
-                            if json || true {
+                            if json {
                                 // Try to pretty-print
                                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {
                                     println!("{}", serde_json::to_string_pretty(&v).unwrap());

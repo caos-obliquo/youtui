@@ -329,3 +329,19 @@
 | Songs | F1 | Yes | Yes | all actions | g->a/g->b | Yes |
 | Library | F1 | Yes | Yes | all actions | g->a/g->b | Yes |
 | PlaylistSearch | F1 | Yes | Yes | all actions | g->a/g->b | Yes |
+
+## Completed (2026-06-28 -- CI pipeline, CLAUDE.md trim, v1.0.0 reset)
+
+| # | Feature | Files |
+|---|---------|-------|
+| 79 | Library playlists grid parsing fix | `ytmapi-rs/src/parse/library.rs` |
+| 80 | Search box no bottom border + album list title | `youtui/src/app/ui/browser/draw.rs` |
+| 81 | Album search/enrichment bugs (3 fixes: suggestions draw order, text box Clear, border) | `youtui/src/app/ui/browser/draw.rs`, `youtui/src/app/ui/draw.rs` |
+| 82 | Stale album_tracks leaks: split track names into next song scrobble | `youtui/src/app/ui/browser/draw.rs`, `youtui/src/app/ui/playlist.rs` |
+| 83 | CLAUDE.md trimmed: remove duplicated keybinding refs, phase tracking, inspirations (428→256 lines) | `CLAUDE.md` |
+| 84 | GitHub Actions CI: PR checks (test/build/lint/audit) + automated release + version bumping | `.github/workflows/ci.yml`, `.github/workflows/release.yml` |
+| 85 | Version reset to 1.0.0 (CI-managed from now on) | `youtui/Cargo.toml` |
+| 86 | OpenBSD CI: removed alsa-utils (not in repos, uses sndio) | `.github/workflows/ci.yml` |
+| 87 | Release workflow: GH_PAT swap (PAT can push to protected branches) | `.github/workflows/release.yml` |
+| 88 | README fix (F-keys claim, fork tagline), LICENSE cleanup (single MIT, caos-obliquo copyright), .gitignore (session-*.md) | `README.md`, `LICENSE`, `.gitignore` |
+| 89 | ScrobbleCache CLI subcommand: `youtui scrobble-cache [--show/--clear/--retry]` | `youtui/src/main.rs`, `youtui/src/cli.rs`, `youtui/src/app/scrobbler.rs` |

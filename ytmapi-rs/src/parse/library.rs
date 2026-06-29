@@ -268,12 +268,15 @@ fn parse_library_albums(
     mut grid_renderer: JsonCrawlerOwned,
 ) -> Result<(Vec<SearchResultAlbum>, Option<ContinuationParams<'static>>)> {
     let continuation_params = grid_renderer.take_value_pointer(CONTINUATION_PARAMS).ok();
-    let albums = grid_renderer
-        .navigate_pointer("/items")?
-        .try_into_iter()?
-        .map(parse_item_list_album)
-        .collect::<Result<_>>()?;
-    Ok((albums, continuation_params))
+    if let Ok(grid_items) = grid_renderer.navigate_pointer("/items") {
+        let albums = grid_items
+            .try_into_iter()?
+            .map(parse_item_list_album)
+            .collect::<Result<_>>()?;
+        Ok((albums, continuation_params))
+    } else {
+        Ok((vec![], continuation_params))
+    }
 }
 fn parse_library_songs(
     mut music_shelf: JsonCrawlerOwned,
@@ -315,27 +318,33 @@ fn parse_library_playlists(
     mut grid_renderer: JsonCrawlerOwned,
 ) -> Result<(Vec<LibraryPlaylist>, Option<ContinuationParams<'static>>)> {
     let continuation_params = grid_renderer.take_value_pointer(CONTINUATION_PARAMS).ok();
-    let playlists = grid_renderer
-        .navigate_pointer("/items")?
-        .try_into_iter()?
-        // First result is just a link to create a new playlist.
-        .skip(1)
-        .filter_map(|item| parse_content_list_playlist(item).transpose())
-        .collect::<Result<_>>()?;
-    Ok((playlists, continuation_params))
+    if let Ok(grid_items) = grid_renderer.navigate_pointer("/items") {
+        let playlists = grid_items
+            .try_into_iter()?
+            // First result is just a link to create a new playlist.
+            .skip(1)
+            .filter_map(|item| parse_content_list_playlist(item).transpose())
+            .collect::<Result<_>>()?;
+        Ok((playlists, continuation_params))
+    } else {
+        Ok((vec![], continuation_params))
+    }
 }
 fn parse_library_podcasts(
     mut grid_renderer: impl JsonCrawler,
 ) -> Result<(Vec<LibraryPodcast>, Option<ContinuationParams<'static>>)> {
     let continuation_params = grid_renderer.take_value_pointer(CONTINUATION_PARAMS).ok();
-    let res = grid_renderer
-        .navigate_pointer("/items")?
-        .try_into_iter()?
-        // First result is just a link to create a new podcast.
-        .skip(1)
-        .filter_map(|item| parse_content_list_podcast(item).transpose())
-        .collect::<Result<_>>()?;
-    Ok((res, continuation_params))
+    if let Ok(grid_items) = grid_renderer.navigate_pointer("/items") {
+        let res = grid_items
+            .try_into_iter()?
+            // First result is just a link to create a new podcast.
+            .skip(1)
+            .filter_map(|item| parse_content_list_podcast(item).transpose())
+            .collect::<Result<_>>()?;
+        Ok((res, continuation_params))
+    } else {
+        Ok((vec![], continuation_params))
+    }
 }
 
 // Consider returning ProcessedLibraryContents

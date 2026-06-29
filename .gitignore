@@ -13,6 +13,7 @@
 /target/*
 .vscode/
 *.webm
+session-*.md
 /ytmapi-rs/Cargo.lock
 /ytmapi-rs/target
 /async-callback-manager/Cargo.lock
