@@ -15,8 +15,9 @@ use crate::nav_consts::{
     MENU_ITEMS, MENU_LIKE_STATUS, MRLIR, MUSIC_PLAYLIST_SHELF, NAVIGATION_BROWSE_ID,
     NAVIGATION_PLAYLIST_ID, NAVIGATION_VIDEO_ID, NAVIGATION_VIDEO_TYPE, PLAY_BUTTON,
     PLAYLIST_PANEL_CONTINUATION, PPR, RADIO_CONTINUATION_PARAMS, RESPONSIVE_HEADER, RUN_TEXT,
-    SECOND_SUBTITLE_RUNS, SECONDARY_SECTION_LIST_RENDERER, SECTION_LIST_ITEM, TAB_CONTENT,
-    TEXT_RUN, TEXT_RUN_TEXT, THUMBNAIL, THUMBNAILS, WATCH_NEXT_CONTENT, WATCH_VIDEO_ID,
+    SECOND_SUBTITLE_RUNS, SECONDARY_SECTION_LIST_RENDERER, SECTION_LIST_ITEM,
+    SINGLE_COLUMN_TAB, TAB_CONTENT, TEXT_RUN, TEXT_RUN_TEXT, THUMBNAIL, THUMBNAILS,
+    WATCH_NEXT_CONTENT, WATCH_VIDEO_ID,
 };
 use crate::query::playlist::{
     CreatePlaylistType, GetPlaylistDetailsQuery, GetWatchPlaylistQueryID, PrivacyStatus,
@@ -219,11 +220,20 @@ impl<'a> ParseFromContinuable<GetPlaylistTracksQuery<'a>> for Vec<PlaylistItem> 
         if let Ok(shelf) = json_crawler.borrow_pointer(secondary) {
             return parse_playlist_items(shelf);
         }
-        let tabs = concatcp!(
+        // Try two-column tabs path (some library playlists)
+        let two_col_tabs = concatcp!(
             TWO_COLUMN, TAB_CONTENT,
             SECTION_LIST_ITEM, MUSIC_PLAYLIST_SHELF, "/contents"
         );
-        let shelf = json_crawler.navigate_pointer(tabs)?;
+        if let Ok(shelf) = json_crawler.borrow_pointer(two_col_tabs) {
+            return parse_playlist_items(shelf);
+        }
+        // Fall back to single-column path (user-created playlists)
+        let single_col = concatcp!(
+            SINGLE_COLUMN_TAB,
+            SECTION_LIST_ITEM, MUSIC_PLAYLIST_SHELF, "/contents"
+        );
+        let shelf = json_crawler.navigate_pointer(single_col)?;
         parse_playlist_items(shelf)
     }
     fn parse_continuation(
