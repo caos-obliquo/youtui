@@ -41,14 +41,17 @@ where
     pub query: &'a Q,
     /// The raw string output returned from the web request to YouTube.
     pub json: String,
+    /// HTTP status code from the response.
+    pub status_code: u16,
 }
 
 impl<'a, Q, A: AuthToken> RawResult<'a, Q, A> {
-    pub(crate) fn from_raw(json: String, query: &'a Q) -> Self {
+    pub(crate) fn from_raw(json: String, query: &'a Q, status_code: u16) -> Self {
         Self {
             query,
             token: PhantomData,
             json,
+            status_code,
         }
     }
     pub fn destructure_json(self) -> String {
@@ -79,10 +82,10 @@ pub(crate) async fn raw_query_post<'a, A: AuthToken, Q: PostQuery>(
     } else {
         unreachable!("Body created in this function as an object")
     };
-    let QueryResponse { text, .. } = c
+    let QueryResponse { text, status_code, .. } = c
         .post_json_query(url, tok.headers()?, &body, &q.params())
         .await?;
-    Ok(RawResult::from_raw(text, q))
+    Ok(RawResult::from_raw(text, q, status_code))
 }
 
 pub(crate) async fn raw_query_get<'a, Q: GetQuery, A: AuthToken>(
@@ -92,11 +95,10 @@ pub(crate) async fn raw_query_get<'a, Q: GetQuery, A: AuthToken>(
 ) -> Result<RawResult<'a, Q, A>> {
     let url = Url::parse_with_params(query.url(), query.params())
         .map_err(|e| Error::web(format!("{e}")))?;
-    let result = client
+    let QueryResponse { text, status_code, .. } = client
         .get_query(url, tok.headers()?, &query.params())
         .await?;
-    let result = RawResult::from_raw(result.text, query);
-    Ok(result)
+    Ok(RawResult::from_raw(text, query, status_code))
 }
 
 /// Marker trait to mark an AuthToken as LoggedIn
