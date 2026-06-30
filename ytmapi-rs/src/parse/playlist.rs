@@ -6,7 +6,7 @@ use super::{
 };
 use crate::common::{
     ApiOutcome, ArtistChannelID, ContinuationParams, EpisodeID, Explicit, LibraryManager,
-    LikeStatus, PlaylistID, SetVideoID, Thumbnail, UploadEntityID, VideoID,
+    LikeStatus, PlaylistID, SetVideoID, Thumbnail, UploadEntityID, VideoID, YoutubeID,
 };
 use crate::continuations::ParseFromContinuable;
 use crate::nav_consts::{
@@ -208,15 +208,23 @@ impl<'a> ParseFromContinuable<GetPlaylistTracksQuery<'a>> for Vec<PlaylistItem> 
     fn parse_from_continuable(
         p: ProcessedResult<GetPlaylistTracksQuery<'a>>,
     ) -> crate::Result<(Self, Option<crate::common::ContinuationParams<'static>>)> {
-        let json_crawler: JsonCrawlerOwned = p.into();
-        let music_playlist_shelf = json_crawler.navigate_pointer(concatcp!(
-            TWO_COLUMN,
-            SECONDARY_SECTION_LIST_RENDERER,
-            CONTENT,
-            MUSIC_PLAYLIST_SHELF,
-            "/contents"
-        ))?;
-        parse_playlist_items(music_playlist_shelf)
+        let mut json_crawler: JsonCrawlerOwned = p.into();
+        // Try secondaryContents path (library playlists). Use borrow_pointer
+        // (non-consuming) so we can fall back to tabs/tabContent for
+        // user-created playlists (e.g. from terraform-provider-ytmusic).
+        let secondary = concatcp!(
+            TWO_COLUMN, SECONDARY_SECTION_LIST_RENDERER,
+            CONTENT, MUSIC_PLAYLIST_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(secondary) {
+            return parse_playlist_items(shelf);
+        }
+        let tabs = concatcp!(
+            TWO_COLUMN, TAB_CONTENT,
+            SECTION_LIST_ITEM, MUSIC_PLAYLIST_SHELF, "/contents"
+        );
+        let shelf = json_crawler.navigate_pointer(tabs)?;
+        parse_playlist_items(shelf)
     }
     fn parse_continuation(
         p: ProcessedResult<crate::query::GetContinuationsQuery<'_, GetPlaylistTracksQuery<'a>>>,
@@ -329,11 +337,13 @@ pub(crate) fn parse_playlist_song(
     } else {
         Explicit::NotExplicit
     };
-    let playlist_id = data.take_value_pointer(concatcp!(
-        MENU_ITEMS,
-        "/0/menuNavigationItemRenderer",
-        NAVIGATION_PLAYLIST_ID
-    ))?;
+    let playlist_id = data
+        .take_value_pointer(concatcp!(
+            MENU_ITEMS,
+            "/0/menuNavigationItemRenderer",
+            NAVIGATION_PLAYLIST_ID
+        ))
+        .unwrap_or_else(|_| PlaylistID::from_raw(""));
     Ok(PlaylistSong {
         video_id,
         track_no,
@@ -459,11 +469,13 @@ pub(crate) fn parse_playlist_video(
         .map(|m| m != "MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT")
         .unwrap_or(true);
 
-    let playlist_id = data.take_value_pointer(concatcp!(
-        MENU_ITEMS,
-        "/0/menuNavigationItemRenderer",
-        NAVIGATION_PLAYLIST_ID
-    ))?;
+    let playlist_id = data
+        .take_value_pointer(concatcp!(
+            MENU_ITEMS,
+            "/0/menuNavigationItemRenderer",
+            NAVIGATION_PLAYLIST_ID
+        ))
+        .unwrap_or_else(|_| PlaylistID::from_raw(""));
     Ok(PlaylistVideo {
         video_id,
         track_no,
