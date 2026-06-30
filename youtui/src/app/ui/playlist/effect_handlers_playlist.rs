@@ -668,7 +668,11 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                     (None, String::new(), false)
                 };
                 // Step 2: Album split decision (borrows target, song reference is dropped)
-                if !data.album_tracks.is_empty() && target.album_tracks.is_none() {
+                // Note: album_tracks.is_none() guard intentionally omitted —
+                // insert_album_tracks has its own double-insert guard by video_id
+                // (line 1016). Removing the guard prevents stale album_tracks from
+                // a previous finished album blocking a new album split.
+                if !data.album_tracks.is_empty() {
                     if let Some(effect) = handle_album_split(
                         target, song_id, &data, &original_album, &original_title, is_album_upload,
                     ) {
