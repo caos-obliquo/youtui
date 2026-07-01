@@ -301,4 +301,67 @@ mod tests {
     fn like_icon_disliked() {
         assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Disliked), "  ♥");
     }
+
+    /// Regression: AlbumArtState::None must NOT clear sixel_data (PR #29, #36, #37).
+    /// Clearing causes sixel flash on track transitions when art fetch is pending.
+    #[test]
+    fn album_art_none_preserves_sixel_data() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/app/ui/footer.rs")
+        ).expect("footer.rs exists");
+        let start = src.find("Some(AlbumArtState::None) => {")
+            .expect("AlbumArtState::None branch");
+        // Find the matching closing brace by counting braces.
+        // The arm ends with two `}` at same level (one for match body, one for outer Some).
+        // We search for `        }\n        None =>` which is the closing of this arm.
+        let arm_text = &src[start..];
+        let end = arm_text.find("\n        None =>")
+            .expect("None => arm follows AlbumArtState::None");
+        let arm = &arm_text[..end];
+        assert!(
+            !arm.contains("sixel_data = None"),
+            "AlbumArtState::None must not clear sixel_data. Found in:\n{}",
+            arm
+        );
+    }
+
+    /// Regression: AlbumArtState::Init must NOT clear sixel_data (PR #29, #36, #37).
+    #[test]
+    fn album_art_init_preserves_sixel_data() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/app/ui/footer.rs")
+        ).expect("footer.rs exists");
+        let start = src.find("Some(AlbumArtState::Init)")
+            .expect("AlbumArtState::Init branch");
+        let arm = &src[start..];
+        let end = arm.find("};")
+            .expect("semicolon after Init arm");
+        let arm = &arm[..=end];
+        assert!(
+            !arm.contains("sixel_data = None"),
+            "AlbumArtState::Init must not clear sixel_data. Found in:\n{}",
+            arm
+        );
+    }
+
+    /// Regression: AlbumArtState::Error MUST clear sixel_data (rendering failed, no fallback).
+    #[test]
+    fn album_art_error_clears_sixel_data() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/app/ui/footer.rs")
+        ).expect("footer.rs exists");
+        let start = src.find("Some(AlbumArtState::Error)")
+            .expect("AlbumArtState::Error branch");
+        let arm = &src[start..];
+        let end = arm.find("Some(AlbumArtState::None)")
+            .expect("None branch after Error");
+        let arm = &arm[..end];
+        assert!(
+            arm.contains("sixel_data = None"),
+            "AlbumArtState::Error must clear sixel_data"
+        );
+    }
 }
