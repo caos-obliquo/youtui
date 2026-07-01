@@ -19,10 +19,7 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     // Album art popup: centered in terminal with proportional margins
     if w.album_art_popup.is_some() {
         if let Some(popup) = &mut w.album_art_popup {
-            // Clear stale sixel before drawing popup
-            use std::io::Write;
-            let _ = std::io::stdout().write_all(b"\x1bP0p\x1b\\");
-            let _ = std::io::stdout().flush();
+            // No DCS clear here — flush_sixel in footer handles stale sixel removal.
             use ratatui::layout::Margin;
             use ratatui::layout::Alignment;
             use ratatui_image::{Image, Resize};
