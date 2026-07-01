@@ -1506,8 +1506,11 @@ impl Playlist {
     }
 
     pub fn play_song_id(&mut self, id: ListSongID) -> ComponentEffect<Self> {
-        // Guard: don't re-decode if already Playing the same id
-        if matches!(self.play_status, PlayState::Playing(cur) | PlayState::Paused(cur) if cur == id) {
+        // Guard: don't re-decode if already Playing the same id.
+        // Allow replay for Repeat One (song finished naturally, needs replay).
+        if self.repeat_mode != crate::app::structures::RepeatMode::One
+            && matches!(self.play_status, PlayState::Playing(cur) | PlayState::Paused(cur) if cur == id)
+        {
             return AsyncTask::new_no_op();
         }
         self.drop_unscoped_from_id(id);
