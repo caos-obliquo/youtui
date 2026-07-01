@@ -169,7 +169,7 @@ impl<A: AuthToken> Query<A> for GetPlaylistTracksQuery<'_> {
 }
 impl PostQuery for GetPlaylistTracksQuery<'_> {
     fn header(&self) -> serde_json::Map<String, serde_json::Value> {
-        // TODO: Confirm if processing required to add 'VL' portion of playlistId
+        // Browse endpoints keep VL prefix (mutation endpoints strip it).
         let serde_json::Value::Object(map) = json!({
             "browseId" : self.id.get_raw(),
         }) else {
@@ -193,7 +193,7 @@ impl<A: AuthToken> Query<A> for GetPlaylistDetailsQuery<'_> {
 }
 impl PostQuery for GetPlaylistDetailsQuery<'_> {
     fn header(&self) -> serde_json::Map<String, serde_json::Value> {
-        // TODO: Confirm if processing required to add 'VL' portion of playlistId
+        // Browse endpoints keep VL prefix (mutation endpoints strip it).
         let serde_json::Value::Object(map) = json!({
             "browseId" : self.id.get_raw(),
         }) else {

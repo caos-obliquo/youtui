@@ -202,7 +202,8 @@ pub fn draw_footer(
         }
         Some(AlbumArtState::None) => {
             // Song has no art yet - show cached fallback while fetch is pending
-            w.sixel_data = None;
+            // Do NOT clear sixel_data here — let old art persist if cache miss.
+            // flush_sixel compares last_sixel_data and skips redraw when unchanged.
             if let Some(cached) = w.cached_album_protocol.take() {
                 render_album_protocol(f, w, album_art_chunk, &cached);
                 w.cached_album_protocol = Some(cached);
@@ -229,7 +230,7 @@ pub fn draw_footer(
         }
         Some(AlbumArtState::Init) => {
             // Loading placeholder - show cached old art while fetch pending
-            w.sixel_data = None;
+            // Do NOT clear sixel_data here — let old art persist if cache miss.
             if let Some(cached) = w.cached_album_protocol.take() {
                 render_album_protocol(f, w, album_art_chunk, &cached);
                 w.cached_album_protocol = Some(cached);

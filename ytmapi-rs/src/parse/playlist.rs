@@ -6,17 +6,18 @@ use super::{
 };
 use crate::common::{
     ApiOutcome, ArtistChannelID, ContinuationParams, EpisodeID, Explicit, LibraryManager,
-    LikeStatus, PlaylistID, SetVideoID, Thumbnail, UploadEntityID, VideoID,
+    LikeStatus, PlaylistID, SetVideoID, Thumbnail, UploadEntityID, VideoID, YoutubeID,
 };
 use crate::continuations::ParseFromContinuable;
 use crate::nav_consts::{
     APPEND_CONTINUATION_ITEMS, BADGE_LABEL, CONTENT, CONTINUATION_RENDERER_COMMAND,
     DELETION_ENTITY_ID, DISPLAY_POLICY, FACEPILE_AVATAR_URL, FACEPILE_TEXT, LIVE_BADGE_LABEL,
-    MENU_ITEMS, MENU_LIKE_STATUS, MRLIR, MUSIC_PLAYLIST_SHELF, NAVIGATION_BROWSE_ID,
+    ITEM_SECTION, MENU_ITEMS, MENU_LIKE_STATUS, MRLIR, MUSIC_PLAYLIST_SHELF, MUSIC_SHELF, NAVIGATION_BROWSE_ID,
     NAVIGATION_PLAYLIST_ID, NAVIGATION_VIDEO_ID, NAVIGATION_VIDEO_TYPE, PLAY_BUTTON,
     PLAYLIST_PANEL_CONTINUATION, PPR, RADIO_CONTINUATION_PARAMS, RESPONSIVE_HEADER, RUN_TEXT,
-    SECOND_SUBTITLE_RUNS, SECONDARY_SECTION_LIST_RENDERER, SECTION_LIST_ITEM, TAB_CONTENT,
-    TEXT_RUN, TEXT_RUN_TEXT, THUMBNAIL, THUMBNAILS, WATCH_NEXT_CONTENT, WATCH_VIDEO_ID,
+    SECOND_SUBTITLE_RUNS, SECONDARY_SECTION_LIST_RENDERER, SECTION_LIST_ITEM,
+    SINGLE_COLUMN_TAB, TAB_CONTENT, TEXT_RUN, TEXT_RUN_TEXT, THUMBNAIL, THUMBNAILS,
+    WATCH_NEXT_CONTENT, WATCH_VIDEO_ID,
 };
 use crate::query::playlist::{
     CreatePlaylistType, GetPlaylistDetailsQuery, GetWatchPlaylistQueryID, PrivacyStatus,
@@ -208,15 +209,76 @@ impl<'a> ParseFromContinuable<GetPlaylistTracksQuery<'a>> for Vec<PlaylistItem> 
     fn parse_from_continuable(
         p: ProcessedResult<GetPlaylistTracksQuery<'a>>,
     ) -> crate::Result<(Self, Option<crate::common::ContinuationParams<'static>>)> {
-        let json_crawler: JsonCrawlerOwned = p.into();
-        let music_playlist_shelf = json_crawler.navigate_pointer(concatcp!(
-            TWO_COLUMN,
-            SECONDARY_SECTION_LIST_RENDERER,
-            CONTENT,
-            MUSIC_PLAYLIST_SHELF,
-            "/contents"
-        ))?;
-        parse_playlist_items(music_playlist_shelf)
+        let mut json_crawler: JsonCrawlerOwned = p.into();
+        // Check if response has contents at all. Missing contents means YouTube
+        // returned a stripped response (e.g. auth failure, logged_in=0).
+        if !json_crawler.path_exists("/contents") {
+            return Err(crate::Error::response(
+                "YouTube API returned no contents. Auth may be expired \
+                 (logged_in=0). Try refreshing cookies."
+            ));
+        }
+        // Try secondaryContents path (library playlists). Use borrow_pointer
+        // (non-consuming) so we can fall back to tabs/tabContent for
+        // user-created playlists (e.g. from terraform-provider-ytmusic).
+        let secondary = concatcp!(
+            TWO_COLUMN, SECONDARY_SECTION_LIST_RENDERER,
+            CONTENT, MUSIC_PLAYLIST_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(secondary) {
+            return parse_playlist_items(shelf);
+        }
+        // Try two-column tabs path (some library playlists)
+        let two_col_tabs = concatcp!(
+            TWO_COLUMN, TAB_CONTENT,
+            SECTION_LIST_ITEM, MUSIC_PLAYLIST_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(two_col_tabs) {
+            return parse_playlist_items(shelf);
+        }
+        // Fall back to single-column path (user-created playlists)
+        // Try musicPlaylistShelfRenderer first (standard playlists)
+        let single_col = concatcp!(
+            SINGLE_COLUMN_TAB,
+            SECTION_LIST_ITEM, MUSIC_PLAYLIST_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(single_col) {
+            return parse_playlist_items(shelf);
+        }
+        // Some playlists use musicShelfRenderer instead (songs/search format)
+        let single_col_shelf = concatcp!(
+            SINGLE_COLUMN_TAB,
+            SECTION_LIST_ITEM, MUSIC_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(single_col_shelf) {
+            return parse_playlist_items(shelf);
+        }
+        // Item-section-wrapped renderers (e.g. channel mix playlists)
+        let with_section = concatcp!(
+            SINGLE_COLUMN_TAB, SECTION_LIST_ITEM,
+            ITEM_SECTION, MUSIC_PLAYLIST_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(with_section) {
+            return parse_playlist_items(shelf);
+        }
+        let with_section_shelf = concatcp!(
+            SINGLE_COLUMN_TAB, SECTION_LIST_ITEM,
+            ITEM_SECTION, MUSIC_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(with_section_shelf) {
+            return parse_playlist_items(shelf);
+        }
+        // Some playlists return flat items directly in sectionListRenderer/contents
+        // without a shelf wrapper (musicResponsiveListItemRenderer items).
+        let flat_items = concatcp!(SINGLE_COLUMN_TAB, "/sectionListRenderer/contents");
+        if let Ok(shelf) = json_crawler.borrow_pointer(flat_items) {
+            if let Ok(result) = parse_playlist_items(shelf) {
+                return Ok(result);
+            }
+        }
+        // Propagate error if no renderer type found
+        let shelf = json_crawler.navigate_pointer(single_col)?;
+        parse_playlist_items(shelf)
     }
     fn parse_continuation(
         p: ProcessedResult<crate::query::GetContinuationsQuery<'_, GetPlaylistTracksQuery<'a>>>,
@@ -329,11 +391,13 @@ pub(crate) fn parse_playlist_song(
     } else {
         Explicit::NotExplicit
     };
-    let playlist_id = data.take_value_pointer(concatcp!(
-        MENU_ITEMS,
-        "/0/menuNavigationItemRenderer",
-        NAVIGATION_PLAYLIST_ID
-    ))?;
+    let playlist_id = data
+        .take_value_pointer(concatcp!(
+            MENU_ITEMS,
+            "/0/menuNavigationItemRenderer",
+            NAVIGATION_PLAYLIST_ID
+        ))
+        .unwrap_or_else(|_| PlaylistID::from_raw(""));
     Ok(PlaylistSong {
         video_id,
         track_no,
@@ -459,11 +523,13 @@ pub(crate) fn parse_playlist_video(
         .map(|m| m != "MUSIC_ITEM_RENDERER_DISPLAY_POLICY_GREY_OUT")
         .unwrap_or(true);
 
-    let playlist_id = data.take_value_pointer(concatcp!(
-        MENU_ITEMS,
-        "/0/menuNavigationItemRenderer",
-        NAVIGATION_PLAYLIST_ID
-    ))?;
+    let playlist_id = data
+        .take_value_pointer(concatcp!(
+            MENU_ITEMS,
+            "/0/menuNavigationItemRenderer",
+            NAVIGATION_PLAYLIST_ID
+        ))
+        .unwrap_or_else(|_| PlaylistID::from_raw(""));
     Ok(PlaylistVideo {
         video_id,
         track_no,

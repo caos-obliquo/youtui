@@ -3,12 +3,14 @@
         video_id: VideoID(
             "0Toq8VrbLTQ",
         ),
-        album: ParsedSongAlbum {
-            name: "City Burials",
-            id: AlbumID(
-                "MPREb_6SxVm1I0tl9",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "City Burials",
+                id: AlbumID(
+                    "MPREb_6SxVm1I0tl9",
+                ),
+            },
+        ),
         duration: "3:19",
         library_management: Some(
             LibraryManager {
@@ -55,12 +57,14 @@
         video_id: VideoID(
             "-7avE0GKZrA",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "1:19",
         library_management: None,
         title: "Pyramid Strings",
@@ -97,12 +101,14 @@
         video_id: VideoID(
             "1ACmCuuIaMQ",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "5:33",
         library_management: None,
         title: "How to Disappear into Strings",
@@ -139,12 +145,14 @@
         video_id: VideoID(
             "1WzCN1syZfc",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "0:47",
         library_management: None,
         title: "Untitled v2",
@@ -181,12 +189,14 @@
         video_id: VideoID(
             "1pTnps5RQeE",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:36",
         library_management: None,
         title: "Morning Bell",
@@ -223,12 +233,14 @@
         video_id: VideoID(
             "2Hjrxn8qeig",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "0:53",
         library_management: None,
         title: "Untitled",
@@ -265,12 +277,14 @@
         video_id: VideoID(
             "9vPi8mWg-_8",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "2:26",
         library_management: None,
         title: "Fog (Again Again Version)",
@@ -307,12 +321,14 @@
         video_id: VideoID(
             "DWoL_N4zXUI",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "3:15",
         library_management: None,
         title: "Morning Bell/Amnesiac",
@@ -349,12 +365,14 @@
         video_id: VideoID(
             "GcIyKK8m4qo",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:21",
         library_management: None,
         title: "If You Say the Word",
@@ -391,12 +409,14 @@
         video_id: VideoID(
             "Gy9sQ_7bMk8",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "3:21",
         library_management: None,
         title: "Motion Picture Soundtrack",
@@ -433,12 +453,14 @@
         video_id: VideoID(
             "HY_UbJ3rEfY",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "5:57",
         library_management: None,
         title: "How to Disappear Completely",
@@ -475,12 +497,14 @@
         video_id: VideoID(
             "JFMq6lCJdHA",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:01",
         library_management: None,
         title: "Packt Like Sardines In a Crushd Tin Box",
@@ -517,12 +541,14 @@
         video_id: VideoID(
             "LyVB_52G4pg",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "5:10",
         library_management: None,
         title: "Idioteque",
@@ -559,12 +585,14 @@
         video_id: VideoID(
             "NGL_j8T1YVE",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:52",
         library_management: None,
         title: "Dollars and Cents",
@@ -601,12 +629,14 @@
         video_id: VideoID(
             "OYe7gqwrkro",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:54",
         library_management: None,
         title: "I Might Be Wrong",
@@ -643,12 +673,14 @@
         video_id: VideoID(
             "Ps6txeTlzkg",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:08",
         library_management: None,
         title: "Pulk/Pull Revolving Doors",
@@ -685,12 +717,14 @@
         video_id: VideoID(
             "QhHMJkeF8zo",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "5:05",
         library_management: None,
         title: "Like Spinning Plates ('Why Us?' Version)",
@@ -727,12 +761,14 @@
         video_id: VideoID(
             "SKUdDojvq4E",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "3:58",
         library_management: None,
         title: "Like Spinning Plates",
@@ -769,12 +805,14 @@
         video_id: VideoID(
             "TOfU3wVpwZQ",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:45",
         library_management: None,
         title: "Kid A",
@@ -811,12 +849,14 @@
         video_id: VideoID(
             "ZTvniQgAQ0o",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "1:49",
         library_management: None,
         title: "Untitled v1",
@@ -853,12 +893,14 @@
         video_id: VideoID(
             "ZtdW3HTUQqo",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "2:02",
         library_management: None,
         title: "Hunting Bears",
@@ -895,12 +937,14 @@
         video_id: VideoID(
             "cDQ7raytW0M",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "2:47",
         library_management: None,
         title: "Pulk/Pull (True Love Waits Version)",
@@ -937,12 +981,14 @@
         video_id: VideoID(
             "d9zk2j3JPK4",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:12",
         library_management: None,
         title: "Everything In Its Right Place",
@@ -979,12 +1025,14 @@
         video_id: VideoID(
             "dJV-1zkaTq8",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "1:33",
         library_management: None,
         title: "Alt. Fast Track",
@@ -1021,12 +1069,14 @@
         video_id: VideoID(
             "gA0J1V1_pXM",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "3:43",
         library_management: None,
         title: "Treefingers",

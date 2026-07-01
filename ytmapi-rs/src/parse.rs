@@ -24,7 +24,7 @@ use crate::auth::AuthToken;
 use crate::common::{AlbumID, ArtistChannelID, Thumbnail};
 use crate::json::Json;
 use crate::nav_consts::*;
-use crate::{RawResult, Result, error};
+use crate::{Error, RawResult, Result, error};
 use json_crawler::{JsonCrawler, JsonCrawlerOwned};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -108,8 +108,21 @@ impl<'a, Q, A: AuthToken> TryFrom<RawResult<'a, Q, A>> for ProcessedResult<'a, Q
         let RawResult {
             json: source,
             query,
+            status_code,
             ..
         } = value;
+        // Non-2xx HTTP status means the response body is likely an error page
+        // (HTML) or empty, not valid JSON. Check before JSON parse so user gets
+        // a meaningful error with HTTP status instead of cryptic "expected value".
+        // status_code 0 means "not from HTTP" (e.g. process_json for offline
+        // JSON files), skip HTTP check.
+        if status_code > 0 && (status_code < 200 || status_code >= 300) {
+            let preview = source.chars().take(200).collect::<String>();
+            return Err(Error::other_code(
+                status_code as u64,
+                format!("HTTP {} response (body preview): {}", status_code, preview),
+            ));
+        }
         let json = match source.as_str() {
             // Workaround for Get request returning empty string.
             "" => serde_json::Value::Null,
