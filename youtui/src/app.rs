@@ -910,6 +910,11 @@ impl Youtui {
 
     fn flush_sixel(&mut self) -> Result<()> {
         use std::io::Write;
+        // When album art popup is open, ratatui_image handles rendering via Image widget.
+        // flush_sixel would DCS-clear and re-render the same image → visible flash.
+        if self.window_state.album_art_popup.is_some() {
+            return Ok(());
+        }
         let rect = self.window_state.sixel_rect;
         if let Some((data, rect)) = self.window_state.sixel_data.as_ref().zip(rect) {
             let mut stdout = io::stdout();
