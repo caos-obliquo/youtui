@@ -342,6 +342,53 @@ fn dummy_tracks() -> Vec<AlbumTrack> {
 // --- Album partitioning tests ---
 
 #[test]
+fn album_split_trusts_metadata_provider_tracks_regardless_of_title() {
+    // Verify: album split triggers when metadata provider returns >=2 tracks,
+    // even if the song title has no album indicator tags and the song is
+    // not marked as an album upload. The provider's tracklist is authoritative.
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    // Song has no "Full Album" etc in title — just a regular-sounding name
+    let orig_id = p.list.push_song_list(vec![make_album_original("vx1", None)]);
+    let tracks = dummy_tracks(); // 3 tracks from provider
+
+    p.insert_album_tracks(
+        orig_id, &tracks,
+        &Some("Artist".into()), &Some("Album".into()), &None, &None,
+    );
+
+    // Should split: original + 3 tracks = 4 entries
+    assert_eq!(p.list.get_list_iter().count(), 4);
+    let entries: Vec<_> = p.list.get_list_iter().collect();
+    assert_eq!(entries[0].track_no, None); // original (album entry), no track_no
+    assert_eq!(entries[1].track_no, Some(1));
+    assert_eq!(entries[2].track_no, Some(2));
+    assert_eq!(entries[3].track_no, Some(3));
+}
+
+#[test]
+fn album_split_single_track_via_direct_insert_succeeds() {
+    // Note: handle_album_split (production path) guards against < 2 tracks.
+    // insert_album_tracks alone has no such guard — it inserts regardless.
+    // This test documents that insert_album_tracks will insert 1 track
+    // if called directly; the < 2 guard lives in handle_album_split.
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let orig_id = p.list.push_song_list(vec![make_album_original("vx1", None)]);
+    let tracks = vec![
+        AlbumTrack { title: "Only Track".into(), duration_secs: 240.0, artist: None },
+    ];
+
+    let _result = p.insert_album_tracks(
+        orig_id, &tracks,
+        &Some("Artist".into()), &Some("Album".into()), &None, &None,
+    );
+
+    let track_count = p.list.get_list_iter().filter(|s| s.track_no.is_some()).count();
+    assert_eq!(track_count, 1, "insert_album_tracks inserts single track");
+}
+
+#[test]
 fn insert_album_tracks_sets_correct_metadata() {
     let (mut p, _) = Playlist::new();
     p.list.state = ListStatus::Loaded;

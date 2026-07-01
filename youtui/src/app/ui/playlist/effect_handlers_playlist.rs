@@ -556,15 +556,11 @@ fn handle_album_split(
     original_album: &Option<String>,
     original_title: &str,
     is_album_upload: bool,
+    _song_duration_secs: u64,
 ) -> Option<AsyncTask<Playlist, ArcServer, TaskMetadata>> {
-    // Only split when the YouTube title contains album indicator tags
-    // (e.g. "Full Album", "Full EP"), or the song was identified as a
-    // channel upload with album indicator tags in the original title.
-    // Never split regular YTM tracks.
-    if !has_album_indicator_tags(original_title) && !is_album_upload {
-        info!("Album split rejected: title={:?} has no album indicator tags", original_title);
-        return None;
-    }
+    // Trust the metadata provider: if Last.fm/MusicBrainz returned album tracks,
+    // split regardless of title tags or duration. The provider's tracklist is
+    // the authoritative signal — no additional heuristics needed.
     if data.album_tracks.len() < 2 {
         info!("Album split rejected: only {} track(s) from provider", data.album_tracks.len());
         target.last_error = Some("Album split failed: only 1 track in provider data".to_string());
@@ -653,19 +649,35 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
         match self {
             MetadataEffect::Validated(data, song_id) => {
                 // Step 1: Apply metadata fields to song (borrows song, not target)
-                let (original_album, original_title, is_album_upload) = if let Some(idx) = target.get_index_from_id(song_id) {
+                let (original_album, original_title, is_album_upload, song_dur_secs) = if let Some(idx) = target.get_index_from_id(song_id) {
                     if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
                         let orig_album = apply_metadata_fields(song, &data);
                         let title = song.title.clone();
                         let upload = song.is_album_upload;
+                        let dur = song.actual_duration
+                            .map(|d| d.as_secs())
+                            .or_else(|| {
+                                let parts: Vec<&str> = song.duration_string.split(':').collect();
+                                if parts.len() == 2 {
+                                    Some(parts[0].parse::<u64>().unwrap_or(0) * 60
+                                        + parts[1].parse::<u64>().unwrap_or(0))
+                                } else if parts.len() == 3 {
+                                    Some(parts[0].parse::<u64>().unwrap_or(0) * 3600
+                                        + parts[1].parse::<u64>().unwrap_or(0) * 60
+                                        + parts[2].parse::<u64>().unwrap_or(0))
+                                } else {
+                                    None
+                                }
+                            })
+                            .unwrap_or(0);
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
-                        (orig_album, title, upload)
+                        (orig_album, title, upload, dur)
                     } else {
-                        (None, String::new(), false)
+                        (None, String::new(), false, 0)
                     }
                 } else {
-                    (None, String::new(), false)
+                    (None, String::new(), false, 0)
                 };
                 // Step 2: Album split decision (borrows target, song reference is dropped)
                 // Note: album_tracks.is_none() guard intentionally omitted —
@@ -674,7 +686,7 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                 // a previous finished album blocking a new album split.
                 if !data.album_tracks.is_empty() {
                     if let Some(effect) = handle_album_split(
-                        target, song_id, &data, &original_album, &original_title, is_album_upload,
+                        target, song_id, &data, &original_album, &original_title, is_album_upload, song_dur_secs,
                     ) {
                         return effect;
                     }
@@ -1122,82 +1134,3 @@ pub struct HandleAddPlaylistToPlaylistError;
 playlist_ok_handler!(HandleAddPlaylistToPlaylistOk, "Playlist merged successfully");
 playlist_err_handler!(HandleAddPlaylistToPlaylistError, "merge playlist", "Merge failed");
 
-/// Definite album indicator tags: if the original YouTube title contains any of these
-/// (word-boundary matched), the upload is intended as a full album/EP/split.
-const ALBUM_INDICATOR_TAGS: &[&str] = &[
-    "full album", "full-length album", "full-length",
-    "full ep", "full lp", "full demo", "full single",
-    "studio album", "live album", "official album",
-    "compilation", "bootleg", "anthology", "collection",
-    "self-titled", "self titled", "s/t",
-];
-
-fn has_album_indicator_tags(title: &str) -> bool {
-    let lower = title.to_lowercase();
-    let tokens: Vec<&str> = lower
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|t| !t.is_empty())
-        .collect();
-    ALBUM_INDICATOR_TAGS.iter().any(|tag| {
-        // Normalize tag same way as title: split by non-alphanumeric,
-        // so "full-length" matches "Full-Length Album Title"
-        let tag_tokens: Vec<&str> = tag
-            .split(|c: char| !c.is_alphanumeric())
-            .filter(|t| !t.is_empty())
-            .collect();
-        if tag_tokens.is_empty() {
-            return false;
-        }
-        tokens.windows(tag_tokens.len()).any(|w| w == tag_tokens.as_slice())
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bare_song_no_tags() {
-        assert!(!has_album_indicator_tags("My Parents House"));
-    }
-
-    #[test]
-    fn full_album_tag_detected() {
-        assert!(has_album_indicator_tags("Nice To Meet You I Hate You (Full Album)"));
-    }
-
-    #[test]
-    fn full_album_bracketed_tag() {
-        assert!(has_album_indicator_tags("Album Name [Full Album]"));
-    }
-
-    #[test]
-    fn compilation_tag() {
-        assert!(has_album_indicator_tags("Greatest Hits (Compilation)"));
-    }
-
-    #[test]
-    fn no_false_positive_epic() {
-        assert!(!has_album_indicator_tags("Epic Music Video"));
-    }
-
-    #[test]
-    fn self_titled_detected() {
-        assert!(has_album_indicator_tags("Band Name [Self-Titled]"));
-    }
-
-    #[test]
-    fn single_tag_not_indicator() {
-        assert!(!has_album_indicator_tags("My Song (Single)"));
-    }
-
-    #[test]
-    fn live_album_tag() {
-        assert!(has_album_indicator_tags("Live At Wembley (Live Album)"));
-    }
-
-    #[test]
-    fn full_length_detected() {
-        assert!(has_album_indicator_tags("Full-Length Album Title"));
-    }
-}

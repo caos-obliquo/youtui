@@ -12,7 +12,7 @@ use crate::continuations::ParseFromContinuable;
 use crate::nav_consts::{
     APPEND_CONTINUATION_ITEMS, BADGE_LABEL, CONTENT, CONTINUATION_RENDERER_COMMAND,
     DELETION_ENTITY_ID, DISPLAY_POLICY, FACEPILE_AVATAR_URL, FACEPILE_TEXT, LIVE_BADGE_LABEL,
-    MENU_ITEMS, MENU_LIKE_STATUS, MRLIR, MUSIC_PLAYLIST_SHELF, NAVIGATION_BROWSE_ID,
+    ITEM_SECTION, MENU_ITEMS, MENU_LIKE_STATUS, MRLIR, MUSIC_PLAYLIST_SHELF, MUSIC_SHELF, NAVIGATION_BROWSE_ID,
     NAVIGATION_PLAYLIST_ID, NAVIGATION_VIDEO_ID, NAVIGATION_VIDEO_TYPE, PLAY_BUTTON,
     PLAYLIST_PANEL_CONTINUATION, PPR, RADIO_CONTINUATION_PARAMS, RESPONSIVE_HEADER, RUN_TEXT,
     SECOND_SUBTITLE_RUNS, SECONDARY_SECTION_LIST_RENDERER, SECTION_LIST_ITEM,
@@ -229,10 +229,38 @@ impl<'a> ParseFromContinuable<GetPlaylistTracksQuery<'a>> for Vec<PlaylistItem> 
             return parse_playlist_items(shelf);
         }
         // Fall back to single-column path (user-created playlists)
+        // Try musicPlaylistShelfRenderer first (standard playlists)
         let single_col = concatcp!(
             SINGLE_COLUMN_TAB,
             SECTION_LIST_ITEM, MUSIC_PLAYLIST_SHELF, "/contents"
         );
+        if let Ok(shelf) = json_crawler.borrow_pointer(single_col) {
+            return parse_playlist_items(shelf);
+        }
+        // Some playlists use musicShelfRenderer instead (songs/search format)
+        let single_col_shelf = concatcp!(
+            SINGLE_COLUMN_TAB,
+            SECTION_LIST_ITEM, MUSIC_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(single_col_shelf) {
+            return parse_playlist_items(shelf);
+        }
+        // Item-section-wrapped renderers (e.g. channel mix playlists)
+        let with_section = concatcp!(
+            SINGLE_COLUMN_TAB, SECTION_LIST_ITEM,
+            ITEM_SECTION, MUSIC_PLAYLIST_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(with_section) {
+            return parse_playlist_items(shelf);
+        }
+        let with_section_shelf = concatcp!(
+            SINGLE_COLUMN_TAB, SECTION_LIST_ITEM,
+            ITEM_SECTION, MUSIC_SHELF, "/contents"
+        );
+        if let Ok(shelf) = json_crawler.borrow_pointer(with_section_shelf) {
+            return parse_playlist_items(shelf);
+        }
+        // Propagate error if no renderer type found
         let shelf = json_crawler.navigate_pointer(single_col)?;
         parse_playlist_items(shelf)
     }

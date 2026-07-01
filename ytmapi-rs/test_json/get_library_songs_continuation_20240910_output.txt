@@ -3,12 +3,14 @@
         video_id: VideoID(
             "ZtdW3HTUQqo",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "2:02",
         library_management: None,
         title: "Hunting Bears",
@@ -45,12 +47,14 @@
         video_id: VideoID(
             "Aeh_cU0pmR8",
         ),
-        album: ParsedSongAlbum {
-            name: "L.A. Woman",
-            id: AlbumID(
-                "MPREb_2kpSbS0hp4L",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "L.A. Woman",
+                id: AlbumID(
+                    "MPREb_2kpSbS0hp4L",
+                ),
+            },
+        ),
         duration: "3:11",
         library_management: None,
         title: "Hyacinth House",
@@ -87,12 +91,14 @@
         video_id: VideoID(
             "tt2-GsPA9kk",
         ),
-        album: ParsedSongAlbum {
-            name: "To Pimp A Butterfly",
-            id: AlbumID(
-                "MPREb_3jGuGO44ziy",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "To Pimp A Butterfly",
+                id: AlbumID(
+                    "MPREb_3jGuGO44ziy",
+                ),
+            },
+        ),
         duration: "5:37",
         library_management: None,
         title: "i",
@@ -129,12 +135,14 @@
         video_id: VideoID(
             "OYe7gqwrkro",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:54",
         library_management: None,
         title: "I Might Be Wrong",
@@ -171,12 +179,14 @@
         video_id: VideoID(
             "3mvGkjHf0NA",
         ),
-        album: ParsedSongAlbum {
-            name: "I'll Come Back",
-            id: AlbumID(
-                "MPREb_tlzBJv4t1DX",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "I'll Come Back",
+                id: AlbumID(
+                    "MPREb_tlzBJv4t1DX",
+                ),
+            },
+        ),
         duration: "4:45",
         library_management: None,
         title: "I'll Come Back",
@@ -213,12 +223,14 @@
         video_id: VideoID(
             "LyVB_52G4pg",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "5:10",
         library_management: None,
         title: "Idioteque",
@@ -255,12 +267,14 @@
         video_id: VideoID(
             "GcIyKK8m4qo",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:21",
         library_management: None,
         title: "If You Say the Word",
@@ -297,12 +311,14 @@
         video_id: VideoID(
             "wCM_udPMVYQ",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "3:31",
         library_management: None,
         title: "In Limbo",
@@ -339,12 +355,14 @@
         video_id: VideoID(
             "7L1POXocFIQ",
         ),
-        album: ParsedSongAlbum {
-            name: "To Pimp A Butterfly",
-            id: AlbumID(
-                "MPREb_3jGuGO44ziy",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "To Pimp A Butterfly",
+                id: AlbumID(
+                    "MPREb_3jGuGO44ziy",
+                ),
+            },
+        ),
         duration: "4:32",
         library_management: None,
         title: "Institutionalized (feat. Bilal, Anna Wise & Snoop Dogg)",
@@ -381,12 +399,14 @@
         video_id: VideoID(
             "mNOpJKOBv04",
         ),
-        album: ParsedSongAlbum {
-            name: "Invisible Monster",
-            id: AlbumID(
-                "MPREb_QaOhupQ8888",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "Invisible Monster",
+                id: AlbumID(
+                    "MPREb_QaOhupQ8888",
+                ),
+            },
+        ),
         duration: "6:31",
         library_management: Some(
             LibraryManager {
@@ -433,12 +453,14 @@
         video_id: VideoID(
             "TOfU3wVpwZQ",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:45",
         library_management: None,
         title: "Kid A",
@@ -475,12 +497,14 @@
         video_id: VideoID(
             "g0NVaX8DRN4",
         ),
-        album: ParsedSongAlbum {
-            name: "To Pimp A Butterfly",
-            id: AlbumID(
-                "MPREb_3jGuGO44ziy",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "To Pimp A Butterfly",
+                id: AlbumID(
+                    "MPREb_3jGuGO44ziy",
+                ),
+            },
+        ),
         duration: "3:55",
         library_management: None,
         title: "King Kunta",
@@ -517,12 +541,14 @@
         video_id: VideoID(
             "yiNEJsyowdQ",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:15",
         library_management: None,
         title: "Knives Out",
@@ -559,12 +585,14 @@
         video_id: VideoID(
             "vHXjcdNIN-Q",
         ),
-        album: ParsedSongAlbum {
-            name: "L.A. Woman",
-            id: AlbumID(
-                "MPREb_2kpSbS0hp4L",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "L.A. Woman",
+                id: AlbumID(
+                    "MPREb_2kpSbS0hp4L",
+                ),
+            },
+        ),
         duration: "7:52",
         library_management: None,
         title: "L.A. Woman",
@@ -601,12 +629,14 @@
         video_id: VideoID(
             "-JhkJjQwD-0",
         ),
-        album: ParsedSongAlbum {
-            name: "L.A. Woman",
-            id: AlbumID(
-                "MPREb_2kpSbS0hp4L",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "L.A. Woman",
+                id: AlbumID(
+                    "MPREb_2kpSbS0hp4L",
+                ),
+            },
+        ),
         duration: "4:35",
         library_management: None,
         title: "L'America",
@@ -643,12 +673,14 @@
         video_id: VideoID(
             "xn3K2ukfrVg",
         ),
-        album: ParsedSongAlbum {
-            name: "I'll Come Back",
-            id: AlbumID(
-                "MPREb_tlzBJv4t1DX",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "I'll Come Back",
+                id: AlbumID(
+                    "MPREb_tlzBJv4t1DX",
+                ),
+            },
+        ),
         duration: "4:20",
         library_management: None,
         title: "Lemons and Tangerines",
@@ -685,12 +717,14 @@
         video_id: VideoID(
             "vfDvGbBCq7s",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:37",
         library_management: None,
         title: "Life In a Glasshouse",
@@ -727,12 +761,14 @@
         video_id: VideoID(
             "SKUdDojvq4E",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "3:58",
         library_management: None,
         title: "Like Spinning Plates",
@@ -769,12 +805,14 @@
         video_id: VideoID(
             "QhHMJkeF8zo",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "5:05",
         library_management: None,
         title: "Like Spinning Plates ('Why Us?' Version)",
@@ -811,12 +849,14 @@
         video_id: VideoID(
             "5iqfXaGliq8",
         ),
-        album: ParsedSongAlbum {
-            name: "L.A. Woman",
-            id: AlbumID(
-                "MPREb_2kpSbS0hp4L",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "L.A. Woman",
+                id: AlbumID(
+                    "MPREb_2kpSbS0hp4L",
+                ),
+            },
+        ),
         duration: "3:19",
         library_management: None,
         title: "Love Her Madly",
@@ -853,12 +893,14 @@
         video_id: VideoID(
             "nwV1vsKk2yQ",
         ),
-        album: ParsedSongAlbum {
-            name: "I'll Come Back",
-            id: AlbumID(
-                "MPREb_tlzBJv4t1DX",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "I'll Come Back",
+                id: AlbumID(
+                    "MPREb_tlzBJv4t1DX",
+                ),
+            },
+        ),
         duration: "3:11",
         library_management: None,
         title: "Magdalene",
@@ -895,12 +937,14 @@
         video_id: VideoID(
             "WXR-mXEDRMc",
         ),
-        album: ParsedSongAlbum {
-            name: "Innate Passage",
-            id: AlbumID(
-                "MPREb_FqK76ioY6A7",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "Innate Passage",
+                id: AlbumID(
+                    "MPREb_FqK76ioY6A7",
+                ),
+            },
+        ),
         duration: "14:44",
         library_management: None,
         title: "Merged In Dreams - Ne Plus Ultra",
@@ -937,12 +981,14 @@
         video_id: VideoID(
             "q1AOP6NtGuc",
         ),
-        album: ParsedSongAlbum {
-            name: "To Pimp A Butterfly",
-            id: AlbumID(
-                "MPREb_3jGuGO44ziy",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "To Pimp A Butterfly",
+                id: AlbumID(
+                    "MPREb_3jGuGO44ziy",
+                ),
+            },
+        ),
         duration: "4:44",
         library_management: None,
         title: "Momma",
@@ -979,12 +1025,14 @@
         video_id: VideoID(
             "XnNgD-3Smh4",
         ),
-        album: ParsedSongAlbum {
-            name: "I'll Come Back",
-            id: AlbumID(
-                "MPREb_tlzBJv4t1DX",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "I'll Come Back",
+                id: AlbumID(
+                    "MPREb_tlzBJv4t1DX",
+                ),
+            },
+        ),
         duration: "3:52",
         library_management: None,
         title: "Monongah Mine",
@@ -1021,12 +1069,14 @@
         video_id: VideoID(
             "1pTnps5RQeE",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:36",
         library_management: None,
         title: "Morning Bell",
@@ -1063,12 +1113,14 @@
         video_id: VideoID(
             "DWoL_N4zXUI",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "3:15",
         library_management: None,
         title: "Morning Bell/Amnesiac",
@@ -1105,12 +1157,14 @@
         video_id: VideoID(
             "axwpgn3GRMs",
         ),
-        album: ParsedSongAlbum {
-            name: "To Pimp A Butterfly",
-            id: AlbumID(
-                "MPREb_3jGuGO44ziy",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "To Pimp A Butterfly",
+                id: AlbumID(
+                    "MPREb_3jGuGO44ziy",
+                ),
+            },
+        ),
         duration: "12:08",
         library_management: None,
         title: "Mortal Man",
@@ -1147,12 +1201,14 @@
         video_id: VideoID(
             "Gy9sQ_7bMk8",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "3:21",
         library_management: None,
         title: "Motion Picture Soundtrack",
@@ -1189,12 +1245,14 @@
         video_id: VideoID(
             "j4N8rpPu2ik",
         ),
-        album: ParsedSongAlbum {
-            name: "Let's Dance",
-            id: AlbumID(
-                "MPREb_YxNHZGrIQKb",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "Let's Dance",
+                id: AlbumID(
+                    "MPREb_YxNHZGrIQKb",
+                ),
+            },
+        ),
         duration: "2:45",
         library_management: Some(
             LibraryManager {
@@ -1257,12 +1315,14 @@
         video_id: VideoID(
             "Z7CIQ_OJZdg",
         ),
-        album: ParsedSongAlbum {
-            name: "Australasia",
-            id: AlbumID(
-                "MPREb_tqrE6uLCRnO",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "Australasia",
+                id: AlbumID(
+                    "MPREb_tqrE6uLCRnO",
+                ),
+            },
+        ),
         duration: "11:15",
         library_management: Some(
             LibraryManager {
@@ -1309,12 +1369,14 @@
         video_id: VideoID(
             "8liqoAIwokY",
         ),
-        album: ParsedSongAlbum {
-            name: "I'll Come Back",
-            id: AlbumID(
-                "MPREb_tlzBJv4t1DX",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "I'll Come Back",
+                id: AlbumID(
+                    "MPREb_tlzBJv4t1DX",
+                ),
+            },
+        ),
         duration: "3:10",
         library_management: None,
         title: "Not Gonna Cry over You",
@@ -1351,12 +1413,14 @@
         video_id: VideoID(
             "hv_RZsGDbpM",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "5:16",
         library_management: None,
         title: "Optimistic",
@@ -1393,12 +1457,14 @@
         video_id: VideoID(
             "JFMq6lCJdHA",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:01",
         library_management: None,
         title: "Packt Like Sardines In a Crushd Tin Box",
@@ -1435,12 +1501,14 @@
         video_id: VideoID(
             "cDQ7raytW0M",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "2:47",
         library_management: None,
         title: "Pulk/Pull (True Love Waits Version)",
@@ -1477,12 +1545,14 @@
         video_id: VideoID(
             "Ps6txeTlzkg",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:08",
         library_management: None,
         title: "Pulk/Pull Revolving Doors",
@@ -1519,12 +1589,14 @@
         video_id: VideoID(
             "SfCPYJ2CuLA",
         ),
-        album: ParsedSongAlbum {
-            name: "I'll Come Back",
-            id: AlbumID(
-                "MPREb_tlzBJv4t1DX",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "I'll Come Back",
+                id: AlbumID(
+                    "MPREb_tlzBJv4t1DX",
+                ),
+            },
+        ),
         duration: "2:50",
         library_management: None,
         title: "Put Your Head Down",
@@ -1561,12 +1633,14 @@
         video_id: VideoID(
             "qZGrXKYbcQs",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "4:49",
         library_management: None,
         title: "Pyramid Song",
@@ -1603,12 +1677,14 @@
         video_id: VideoID(
             "-7avE0GKZrA",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "1:19",
         library_management: None,
         title: "Pyramid Strings",
@@ -1645,12 +1721,14 @@
         video_id: VideoID(
             "lJZTgynPGT8",
         ),
-        album: ParsedSongAlbum {
-            name: "L.A. Woman",
-            id: AlbumID(
-                "MPREb_2kpSbS0hp4L",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "L.A. Woman",
+                id: AlbumID(
+                    "MPREb_2kpSbS0hp4L",
+                ),
+            },
+        ),
         duration: "7:15",
         library_management: None,
         title: "Riders on the Storm",
@@ -1687,12 +1765,14 @@
         video_id: VideoID(
             "8LgWWhgrcnI",
         ),
-        album: ParsedSongAlbum {
-            name: "I'll Come Back",
-            id: AlbumID(
-                "MPREb_tlzBJv4t1DX",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "I'll Come Back",
+                id: AlbumID(
+                    "MPREb_tlzBJv4t1DX",
+                ),
+            },
+        ),
         duration: "4:23",
         library_management: None,
         title: "Rodney Dangerfield",
@@ -1729,12 +1809,14 @@
         video_id: VideoID(
             "luXZuPTJ3f8",
         ),
-        album: ParsedSongAlbum {
-            name: "Spaces",
-            id: AlbumID(
-                "MPREb_00DnPWqG6G4",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "Spaces",
+                id: AlbumID(
+                    "MPREb_00DnPWqG6G4",
+                ),
+            },
+        ),
         duration: "8:18",
         library_management: Some(
             LibraryManager {
@@ -1781,12 +1863,14 @@
         video_id: VideoID(
             "Edt4AdolAS0",
         ),
-        album: ParsedSongAlbum {
-            name: "I'll Come Back",
-            id: AlbumID(
-                "MPREb_tlzBJv4t1DX",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "I'll Come Back",
+                id: AlbumID(
+                    "MPREb_tlzBJv4t1DX",
+                ),
+            },
+        ),
         duration: "3:50",
         library_management: None,
         title: "Something Special",
@@ -1823,12 +1907,14 @@
         video_id: VideoID(
             "8G44lWMlGUI",
         ),
-        album: ParsedSongAlbum {
-            name: "Barn",
-            id: AlbumID(
-                "MPREb_zWJwHbUGfRm",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "Barn",
+                id: AlbumID(
+                    "MPREb_zWJwHbUGfRm",
+                ),
+            },
+        ),
         duration: "6:05",
         library_management: Some(
             LibraryManager {
@@ -1883,12 +1969,14 @@
         video_id: VideoID(
             "VdPtVZDspIY",
         ),
-        album: ParsedSongAlbum {
-            name: "To Pimp A Butterfly",
-            id: AlbumID(
-                "MPREb_3jGuGO44ziy",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "To Pimp A Butterfly",
+                id: AlbumID(
+                    "MPREb_3jGuGO44ziy",
+                ),
+            },
+        ),
         duration: "5:29",
         library_management: None,
         title: "The Blacker The Berry",
@@ -1925,12 +2013,14 @@
         video_id: VideoID(
             "JpHJcwnZY34",
         ),
-        album: ParsedSongAlbum {
-            name: "L.A. Woman",
-            id: AlbumID(
-                "MPREb_2kpSbS0hp4L",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "L.A. Woman",
+                id: AlbumID(
+                    "MPREb_2kpSbS0hp4L",
+                ),
+            },
+        ),
         duration: "4:20",
         library_management: None,
         title: "The Changeling",
@@ -1967,12 +2057,14 @@
         video_id: VideoID(
             "tvHSh21qeDE",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "2:01",
         library_management: None,
         title: "The Morning Bell (In the Dark Version)",
@@ -2009,12 +2101,14 @@
         video_id: VideoID(
             "kr-44Vmjc4I",
         ),
-        album: ParsedSongAlbum {
-            name: "KID A MNESIA",
-            id: AlbumID(
-                "MPREb_E7NpKw54NIT",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "KID A MNESIA",
+                id: AlbumID(
+                    "MPREb_E7NpKw54NIT",
+                ),
+            },
+        ),
         duration: "5:52",
         library_management: None,
         title: "The National Anthem",
@@ -2051,12 +2145,14 @@
         video_id: VideoID(
             "8ibAS3dXd-E",
         ),
-        album: ParsedSongAlbum {
-            name: "Innate Passage",
-            id: AlbumID(
-                "MPREb_FqK76ioY6A7",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "Innate Passage",
+                id: AlbumID(
+                    "MPREb_FqK76ioY6A7",
+                ),
+            },
+        ),
         duration: "8:38",
         library_management: None,
         title: "The Purpose",
@@ -2093,12 +2189,14 @@
         video_id: VideoID(
             "5bdC7k2Nu4s",
         ),
-        album: ParsedSongAlbum {
-            name: "L.A. Woman",
-            id: AlbumID(
-                "MPREb_2kpSbS0hp4L",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "L.A. Woman",
+                id: AlbumID(
+                    "MPREb_2kpSbS0hp4L",
+                ),
+            },
+        ),
         duration: "4:14",
         library_management: None,
         title: "The WASP (Texas Radio and the Big Beat)",
@@ -2135,12 +2233,14 @@
         video_id: VideoID(
             "0Toq8VrbLTQ",
         ),
-        album: ParsedSongAlbum {
-            name: "City Burials",
-            id: AlbumID(
-                "MPREb_6SxVm1I0tl9",
-            ),
-        },
+        album: Some(
+            ParsedSongAlbum {
+                name: "City Burials",
+                id: AlbumID(
+                    "MPREb_6SxVm1I0tl9",
+                ),
+            },
+        ),
         duration: "3:19",
         library_management: Some(
             LibraryManager {
