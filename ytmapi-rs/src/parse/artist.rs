@@ -199,7 +199,7 @@ pub struct AlbumResult {
 // NOTE: Difference between this and PlaylistSong is no trackId.
 pub struct TableListSong {
     pub video_id: VideoID<'static>,
-    pub album: ParsedSongAlbum,
+    pub album: Option<ParsedSongAlbum>,
     pub duration: String,
     /// Some songs may not have library management features. There could be
     /// various resons for this.

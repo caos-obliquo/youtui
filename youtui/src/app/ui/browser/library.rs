@@ -280,7 +280,8 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
         use crate::app::structures::ArtistOrUploadArtistID;
         use ytmapi_rs::common::AlbumID;
         // YTM library song has no year field - extract from album name parenthetical
-        let year = ts.album.name.split('(').last()
+        let year = ts.album.as_ref()
+            .and_then(|a| a.name.split('(').last())
             .and_then(|s| s.get(..4))
             .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
             .map(|y| std::rc::Rc::new(y.to_string()));
@@ -304,9 +305,9 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
                 id: a.id.map(ArtistOrUploadArtistID::Artist),
             }).collect()),
             thumbnails: MaybeRc::Owned(ts.thumbnails),
-            album: Some(MaybeRc::Owned(ListSongAlbum {
-                name: ts.album.name,
-                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw(ts.album.id.get_raw().to_string())),
+            album: ts.album.map(|a| MaybeRc::Owned(ListSongAlbum {
+                name: a.name,
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw(a.id.get_raw().to_string())),
             })),
             like_status: ts.like_status,
             is_album_upload: false,

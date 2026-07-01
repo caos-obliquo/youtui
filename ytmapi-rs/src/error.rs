@@ -174,7 +174,7 @@ impl Display for ErrorKind {
             ErrorKind::OtherErrorCodeInResponse { code, message } => {
                 write!(
                     f,
-                    "Http error code {code} recieved in response. Message: <{message}>."
+                    "HTTP error {code} from API. Body: <{message}>."
                 )
             }
             ErrorKind::ApiStatusFailed => write!(f, "Api returned STATUS_FAILED for the query"),
