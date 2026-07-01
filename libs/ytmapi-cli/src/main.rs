@@ -536,10 +536,8 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                 eprintln!("Usage: ytmapi resolve-album <album_name> [artist_name]");
                 return;
             };
-            match yt.get_album_browse_id(album_name, artist_name.map(|x| x.as_str())).await {
-                Ok(id) => println!("Album ID: {}", id.get_raw()),
-                Err(e) => eprintln!("Resolve error: {}", e),
-            }
+            // get_album_browse_id removed from ytmapi-rs simplified queries
+            eprintln!("resolve-album temporarily disabled (API method removed)");
         }
         "watch-playlist" => {
             if args.is_empty() { eprintln!("Usage: ytmapi watch-playlist <video_id>"); return; }
@@ -582,27 +580,27 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "songs" => match yt.get_library_songs(sort_order).await {
+                "songs" => match yt.get_library_songs().await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "albums" => match yt.get_library_albums(sort_order).await {
+                "albums" => match yt.get_library_albums().await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "artists" => match yt.get_library_artists(sort_order).await {
+                "artists" => match yt.get_library_artists().await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "artist-subscriptions" => match yt.get_library_artist_subscriptions(sort_order).await {
+                "artist-subscriptions" => match yt.get_library_artist_subscriptions().await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "podcasts" => match yt.get_library_podcasts(sort_order).await {
+                "podcasts" => match yt.get_library_podcasts().await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },
-                "channels" => match yt.get_library_channels(sort_order).await {
+                "channels" => match yt.get_library_channels().await {
                     Ok(results) => print_results(&results, json),
                     Err(e) => eprintln!("Library error: {}", e),
                 },

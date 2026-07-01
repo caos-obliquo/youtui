@@ -6,7 +6,7 @@ description = "CLI debug tool for ytmapi-rs - search, playlist, album, fixture, 
 license = "MIT"
 
 [dependencies]
-ytmapi-rs = { path = "../../ytmapi-rs", version = "0.3.2" }
+ytmapi-rs = { path = "../../ytmapi-rs", version = "0.3.2", features = ["simplified-queries"] }
 tokio = { version = "1", features = ["full"] }
 serde_json = "1"
 tracing = "0.1"

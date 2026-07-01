@@ -210,6 +210,14 @@ impl<'a> ParseFromContinuable<GetPlaylistTracksQuery<'a>> for Vec<PlaylistItem> 
         p: ProcessedResult<GetPlaylistTracksQuery<'a>>,
     ) -> crate::Result<(Self, Option<crate::common::ContinuationParams<'static>>)> {
         let mut json_crawler: JsonCrawlerOwned = p.into();
+        // Check if response has contents at all. Missing contents means YouTube
+        // returned a stripped response (e.g. auth failure, logged_in=0).
+        if !json_crawler.path_exists("/contents") {
+            return Err(crate::Error::response(
+                "YouTube API returned no contents. Auth may be expired \
+                 (logged_in=0). Try refreshing cookies."
+            ));
+        }
         // Try secondaryContents path (library playlists). Use borrow_pointer
         // (non-consuming) so we can fall back to tabs/tabContent for
         // user-created playlists (e.g. from terraform-provider-ytmusic).
@@ -259,6 +267,14 @@ impl<'a> ParseFromContinuable<GetPlaylistTracksQuery<'a>> for Vec<PlaylistItem> 
         );
         if let Ok(shelf) = json_crawler.borrow_pointer(with_section_shelf) {
             return parse_playlist_items(shelf);
+        }
+        // Some playlists return flat items directly in sectionListRenderer/contents
+        // without a shelf wrapper (musicResponsiveListItemRenderer items).
+        let flat_items = concatcp!(SINGLE_COLUMN_TAB, "/sectionListRenderer/contents");
+        if let Ok(shelf) = json_crawler.borrow_pointer(flat_items) {
+            if let Ok(result) = parse_playlist_items(shelf) {
+                return Ok(result);
+            }
         }
         // Propagate error if no renderer type found
         let shelf = json_crawler.navigate_pointer(single_col)?;
