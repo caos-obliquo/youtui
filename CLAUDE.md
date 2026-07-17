@@ -49,18 +49,20 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui --bin youtui       # 181 pass, 4 ignore
-cargo test --release -p metadata-provider          # 48 pass
-cargo test --release -p vi-text-editor             # 67 pass
-cargo test --release -p ytmapi-rs --lib            # 82 pass (no auth)
-cargo test --release -p ytmapi-rs                  # 29/51 auth (needs cookie)
-cargo test --release -p genius-rs                  # 18 pass
-cargo test --release -p async-callback-manager     # 14 pass (3 lib + 11 integ)
-cargo test --release -p json-crawler               # 2 pass (0 lib + 2 doctests)
-cargo test --release -p lrclib-rs                  # 4 pass
-cargo test --release -p rym-genre-data             # 10 pass
+cargo test --release -p youtui                      # 177 pass, 4 ignore
+cargo test --release -p metadata-provider           # 110 pass (+62 new)
+cargo test --release -p vi-text-editor              # 67 pass
+cargo test --release -p ytmapi-rs --lib             # 82 pass (no auth)
+cargo test --release -p ytmapi-rs                   # 29/51 auth (needs cookie)
+cargo test --release -p genre-db-sqlite             # 27 pass (new crate)
+cargo test --release -p metadata-cache-sqlite       # 16 pass (new crate)
+cargo test --release -p genius-rs                   # 18 pass
+cargo test --release -p async-callback-manager      # 14 pass
+cargo test --release -p json-crawler                # 2 pass
+cargo test --release -p lrclib-rs                   # 4 pass
+cargo test --release -p rym-genre-data              # 10 pass
 ```
-Total: **~426/426 pass, 0 fail, 4 ignored, 0 warnings** (181 + 48 + 67 + 82 + 18 + 14 + 2 + 4 + 10 = 426)
+Total: **~531/531 pass, 0 fail, 4 ignored, 0 warnings** (177+4 + 110 + 67 + 82 + 27 + 16 + 18 + 14 + 2 + 4 + 10 = 531)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -153,11 +155,14 @@ ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli removed 
 - `--retry`: force retry all queued scrobbles now
 
 ### Current Priorities (from roadmap)
-1. **SQLite metadata cache** - reduce API calls, foundation for album art caching
-2. **MusicBrainz Cover Art Archive** - wire album art into footer/art popup
-3. **Wire SQLite cache into metadata-provider**
-4. **Plan trim** - remove dead items from robustness plan
-5. **Low**: OAuth refresh, native streaming, liked songs tables, artist pagination
+1. ✅ **Genre DB** - SQLite-backed genre hierarchy with MusicBee+RYM seed data
+2. ✅ **MB OAuth2+genres** - device flow, auto-refresh, release group genre fetch
+3. ✅ **LB genre validation** - known-genre tags promoted to genres
+4. ✅ **Genre+year merge** - provider-weighted vote (MB=3, LB=2, rest=1)
+5. ✅ **MB Cover Art Archive** - fallback pipeline before Last.fm
+6. ✅ **Queue year enrichment** - EnrichSongYear on queue-add, rate-limited
+7. ✅ **CLI tools** - test-musicbrainz, test-caa, test-listenbrainz, test-validate-metadata
+8. **Low**: OAuth refresh, native streaming, liked songs tables, artist pagination
 
 ## Platform Compatibility (Current Status)
 All 6 platform-specific items fixed. Youtui compiles on Linux (Wayland/X11) and macOS. Windows builds fail at compile-time with a clear error.
@@ -181,7 +186,7 @@ Frontend (UI) -> TaskManager -> Backend (Server)
 ```
 See `docs/` for full reference (4.1k lines, 31 files).
 
-## 10 Workspace Crates (50k+ LOC)
+## 12 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
 | `youtui` | Main binary | 164 |
@@ -193,6 +198,8 @@ See `docs/` for full reference (4.1k lines, 31 files).
 | `json-crawler` | JSON path parser | 2 |
 | `lrclib-rs` | LRCLIB lyrics provider | 4 |
 | `rym-genre-data` | RYM genre/descriptor hierarchy | 10 |
+| `genre-db-sqlite` | SQLite genre hierarchy + seed | 27 |
+| `metadata-cache-sqlite` | SQLite metadata cache | 16 |
 | `audio-player` | Async rodio-based audio player | 0 |
 
 ## 5 Browser Tabs Fully Wired
@@ -207,7 +214,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## Key Files
 | File | Lines | Purpose |
 |---|---|---|
-| `youtui/src/app/server/messages.rs` | ~1598 | All backend tasks |
+| `youtui/src/app/server/messages.rs` | ~1698 | All backend tasks |
 | `youtui/src/app/ui/playlist.rs` | ~3104 | Queue, playback, album splitting, visual mode |
 | `youtui/src/app/ui/browser.rs` | ~1012 | Browser routing, 5-tab dispatch |
 | `youtui/src/app/ui/browser/draw.rs` | ~517 | All browser draw functions |
@@ -269,7 +276,7 @@ See `docs/09-roadmap.md` for detailed session history.
 - **Genius lyrics**: `find_and_fetch` slug URL fails for songs with parenthetical/bracketed title extras (e.g., "(Japanese Bonus Track)"). Simplified slug fallback added but may not match all cases.
 - **Auth tests**: 51 ytmapi-rs integration tests need cookie file.
 - **Metal-API (metal-api.dev)**: Approved REST API for Metal Archives. Currently returns 500 errors (backend crash). Provider code is written but API must be back online.
-- **Year metadata**: Some tracks still show `None` for year when no metadata provider returns a year and album name has no year string. Fallback extracts from album name `(YYYY)`.
+- **Year metadata**: Some tracks still show `None` for year when no metadata provider returns a year and album name has no year string. EnrichSongYear fires on queue-add with 1/2s rate limit to fill missing years from metadata providers. Fallback extracts from album name `(YYYY)`.
 - **MA_COOKIE**: `cf_clearance` cookie from Metal Archives expires ~30 min. Must be refreshed manually via browser DevTools > Application > Cookies. The `metal-proxy` crate has been removed from workspace (backend API returns 500).
 - **Album `audio_playlist_id`**: May be `None` for some album types (singles/EPs). `o.t` shows feedback message now.
 - **Playlist editor modified check**: `Esc`/`:q` warns on unsaved changes. `:q!` force-quits.
