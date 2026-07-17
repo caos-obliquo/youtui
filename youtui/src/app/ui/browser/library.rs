@@ -341,7 +341,7 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
         let artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist { name: a.name, id: None }).collect());
         let album = Some(MaybeRc::Owned(ListSongAlbum {
             name: s.album.name.clone(),
-            id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+            id: AlbumOrUploadAlbumID::Album(s.album.id),
         }));
         let year = s.album.name.split('(').last().and_then(|s| s.get(..4))
             .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
