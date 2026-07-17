@@ -555,6 +555,17 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
 
 /// Handle album split decision: validate duration ratio, tracklist match, insert tracks, fetch album art.
 /// Returns an optional chained effect if album split occurs.
+/// Guard: should album split be skipped for this track?
+/// Returns true when song already has proper YTM track metadata
+/// (track_no + album) and is not a channel upload.
+pub(crate) fn should_skip_album_split(
+    is_album_upload: bool,
+    pre_track_no: Option<usize>,
+    pre_has_album: bool,
+) -> bool {
+    !is_album_upload && pre_track_no.is_some() && pre_has_album
+}
+
 fn handle_album_split(
     target: &mut Playlist,
     song_id: ListSongID,
@@ -563,10 +574,17 @@ fn handle_album_split(
     original_title: &str,
     is_album_upload: bool,
     _song_duration_secs: u64,
+    pre_track_no: Option<usize>,
+    pre_has_album: bool,
 ) -> Option<AsyncTask<Playlist, ArcServer, TaskMetadata>> {
-    // Trust the metadata provider: if Last.fm/MusicBrainz returned album tracks,
-    // split regardless of title tags or duration. The provider's tracklist is
-    // the authoritative signal — no additional heuristics needed.
+    // Layer 2: Internal belt-and-suspenders guard using PRE-mutation state.
+    // Even if the caller's needs_split check somehow passes, this catches
+    // regular YTM tracks that already have proper track_no and album.
+    if should_skip_album_split(is_album_upload, pre_track_no, pre_has_album) {
+        info!("Album split rejected (internal guard): song has YTM track metadata");
+        target.last_error = Some("Album split rejected: song has YTM track".to_string());
+        return None;
+    }
     if data.album_tracks.len() < 2 {
         info!("Album split rejected: only {} track(s) from provider", data.album_tracks.len());
         target.last_error = Some("Album split failed: only 1 track in provider data".to_string());
@@ -655,8 +673,12 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
         match self {
             MetadataEffect::Validated(data, song_id) => {
                 // Step 1: Apply metadata fields to song (borrows song, not target)
-                let (original_album, original_title, is_album_upload, song_dur_secs) = if let Some(idx) = target.get_index_from_id(song_id) {
+                // Capture pre-mutation track_no and album BEFORE apply_metadata_fields
+                // to prevent provider data from defeating the needs_split guard.
+                let (original_album, original_title, is_album_upload, song_dur_secs, pre_track_no, pre_has_album) = if let Some(idx) = target.get_index_from_id(song_id) {
                     if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
+                        let pre_track_no = song.track_no;
+                        let pre_has_album = song.album.is_some();
                         let orig_album = apply_metadata_fields(song, &data);
                         let title = song.title.clone();
                         let upload = song.is_album_upload;
@@ -678,25 +700,23 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                             .unwrap_or(0);
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
-                        (orig_album, title, upload, dur)
+                        (orig_album, title, upload, dur, pre_track_no, pre_has_album)
                     } else {
-                        (None, String::new(), false, 0)
+                        (None, String::new(), false, 0, None, false)
                     }
                 } else {
-                    (None, String::new(), false, 0)
+                    (None, String::new(), false, 0, None, false)
                 };
                 // Step 2: Album split decision (borrows target, song reference is dropped)
-                // Only split channel uploads or songs without YTM track metadata.
-                // Regular YTM tracks already have proper album/track structure —
-                // splitting them would replace correct YTM data with provider data
-                // and corrupt album art (e.g. "Album:" prefix in title column).
+                // Uses PRE-mutation track_no/album to prevent apply_metadata_fields
+                // from defeating the guard by overwriting pre-existing YTM data.
                 let needs_split = is_album_upload
-                    || target.get_song_from_id(song_id)
-                        .map(|s| s.track_no.is_none() || s.album.is_none())
-                        .unwrap_or(true);
+                    || pre_track_no.is_none()
+                    || !pre_has_album;
                 if !data.album_tracks.is_empty() && needs_split {
                     if let Some(effect) = handle_album_split(
                         target, song_id, &data, &original_album, &original_title, is_album_upload, song_dur_secs,
+                        pre_track_no, pre_has_album,
                     ) {
                         return effect;
                     }
