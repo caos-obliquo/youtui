@@ -389,12 +389,12 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
                 }
             }
 
-            // Second pass: bounded resolve for cache misses (first 30, max 5 concurrent)
+            // Second pass: bounded resolve for cache misses (max 5 concurrent)
             let hit_count = results.len();
-            let resolve_count = misses.len().min(30);
+            let resolve_count = misses.len();
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
             let mut handles = Vec::with_capacity(resolve_count);
-            for (idx, artist, title, album) in misses.into_iter().take(30) {
+            for (idx, artist, title, album) in misses.into_iter() {
                 let reg = registry.clone();
                 let sem = semaphore.clone();
                 let handle = tokio::spawn(async move {
