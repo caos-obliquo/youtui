@@ -686,11 +686,15 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                     (None, String::new(), false, 0)
                 };
                 // Step 2: Album split decision (borrows target, song reference is dropped)
-                // Note: album_tracks.is_none() guard intentionally omitted —
-                // insert_album_tracks has its own double-insert guard by video_id
-                // (line 1016). Removing the guard prevents stale album_tracks from
-                // a previous finished album blocking a new album split.
-                if !data.album_tracks.is_empty() {
+                // Only split channel uploads or songs without YTM track metadata.
+                // Regular YTM tracks already have proper album/track structure —
+                // splitting them would replace correct YTM data with provider data
+                // and corrupt album art (e.g. "Album:" prefix in title column).
+                let needs_split = is_album_upload
+                    || target.get_song_from_id(song_id)
+                        .map(|s| s.track_no.is_none() || s.album.is_none())
+                        .unwrap_or(true);
+                if !data.album_tracks.is_empty() && needs_split {
                     if let Some(effect) = handle_album_split(
                         target, song_id, &data, &original_album, &original_title, is_album_upload, song_dur_secs,
                     ) {
