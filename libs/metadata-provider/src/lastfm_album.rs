@@ -125,6 +125,7 @@ impl MetadataProvider for AlbumSearchProvider {
                         album_tracks,
                         genres,
                         styles: Vec::new(),
+                    musicbrainz_release_group_id: None,
                     });
                 }
             }

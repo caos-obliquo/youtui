@@ -69,6 +69,10 @@ pub struct ScrobblingConfig {
     pub session_key: String,
     pub genius_token: String,
     pub discogs_token: String,
+    pub listenbrainz_token: String,
+    pub musicbrainz_bearer_token: String,
+    pub musicbrainz_client_id: String,
+    pub musicbrainz_client_secret: String,
 }
 
 impl Default for ScrobblingConfig {
@@ -80,6 +84,10 @@ impl Default for ScrobblingConfig {
             session_key: String::new(),
             genius_token: String::new(),
             discogs_token: String::new(),
+            listenbrainz_token: String::new(),
+            musicbrainz_bearer_token: String::new(),
+            musicbrainz_client_id: String::new(),
+            musicbrainz_client_secret: String::new(),
         }
     }
 }

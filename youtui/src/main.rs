@@ -402,6 +402,29 @@ enum Command {
         /// Optional album name hint
         album: Option<String>,
     },
+    /// Query ListenBrainz for metadata about a song (requires listenbrainz_token in config).
+    TestListenbrainz {
+        artist: String,
+        title: String,
+    },
+    /// Query MusicBrainz for metadata about a song (uses OAuth2 bearer if configured).
+    TestMusicbrainz {
+        artist: String,
+        title: String,
+    },
+    /// Query Cover Art Archive for album art via MB release-group ID.
+    /// Provide --release-group-id directly, or --artist + --title to resolve first (requires MusicBrainz OAuth).
+    TestCaa {
+        /// MB release group ID (e.g. "xxxx-xxxx-xxxx-xxxx")
+        #[arg(long)]
+        release_group_id: Option<String>,
+        /// Artist name (used with --title to resolve MBID)
+        #[arg(long)]
+        artist: Option<String>,
+        /// Song title (used with --artist to resolve MBID)
+        #[arg(long)]
+        title: Option<String>,
+    },
     /// Inspect/manage the offline scrobble cache (failed scrobbles queued for retry).
     ScrobbleCache {
         /// Show cached entries (default if no flags)

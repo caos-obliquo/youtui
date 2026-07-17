@@ -32,6 +32,7 @@ impl OverrideEntry {
             album_tracks: Vec::new(),
             genres: self.genres.clone().unwrap_or_default(),
             styles: self.styles.clone().unwrap_or_default(),
+            musicbrainz_release_group_id: None,
         }
     }
 }

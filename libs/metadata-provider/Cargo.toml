@@ -18,3 +18,5 @@ tracing = "0.1"
 anyhow = "1"
 scraper = "0.21"
 regex = "1"
+metadata-cache-sqlite = { path = "../metadata-cache-sqlite" }
+genre-db-sqlite = { path = "../genre-db-sqlite" }

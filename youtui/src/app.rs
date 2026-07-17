@@ -637,6 +637,7 @@ impl Youtui {
                     album_tracks: Vec::new(),
                     genres: song.genres.clone(),
                     styles: song.styles.clone(),
+                    musicbrainz_release_group_id: None,
                 };
                 self.server.metadata_registry.save_override(&artist, &song.title, &meta);
                 self.window_state.playlist.update_song_info(id, song);
