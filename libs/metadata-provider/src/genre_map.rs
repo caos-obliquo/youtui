@@ -131,6 +131,14 @@ pub fn is_known_genre(name: &str) -> bool {
         || map.contains_key(&lowered.trim_end_matches(&[' ', '/'] as &[_]).to_string())
 }
 
+/// Expand genres by adding parent genres from the SQLite genre database hierarchy.
+pub fn expand_parent_genres(genres: &mut Vec<String>, styles: &mut Vec<String>) {
+    let expanded = genre_db_sqlite::GenreDb::global().expand_parent_genres(genres);
+    *genres = expanded;
+    let expanded_styles = genre_db_sqlite::GenreDb::global().expand_parent_genres(styles);
+    *styles = expanded_styles;
+}
+
 /// Normalize all genres in a list, deduplicating and sorting.
 pub fn normalize_genres(genres: &[String]) -> Vec<String> {
     let mut normalized: Vec<String> = genres.iter()

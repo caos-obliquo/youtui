@@ -60,8 +60,12 @@ impl Server {
             Some(config.scrobbling.api_key.clone()).filter(|s| !s.is_empty()),
             Some(config.scrobbling.discogs_token.clone()).filter(|s| !s.is_empty()),
             Some(config.scrobbling.genius_token.clone()).filter(|s| !s.is_empty()),
+            Some(config.scrobbling.listenbrainz_token.clone()).filter(|s| !s.is_empty()),
+            Some(config.scrobbling.musicbrainz_bearer_token.clone()).filter(|s| !s.is_empty()),
+            None, // librefm_key
             overrides_path,
             cache_path,
+            None, // sqlite_path
         ));
         Server {
             api,

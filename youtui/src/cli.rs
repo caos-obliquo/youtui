@@ -1,5 +1,6 @@
 use crate::{Cli, OAUTH_FILENAME, RuntimeInfo, get_api, get_config_dir};
 use anyhow::Result;
+use metadata_provider::MetadataProvider;
 use futures::future::try_join_all;
 use querybuilder::{CliQuery, QueryType, command_to_query};
 use std::path::PathBuf;
@@ -80,8 +81,12 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 Some(config.scrobbling.api_key.clone()).filter(|s| !s.is_empty()),
                 Some(config.scrobbling.discogs_token.clone()).filter(|s| !s.is_empty()),
                 Some(config.scrobbling.genius_token.clone()).filter(|s| !s.is_empty()),
+                Some(config.scrobbling.listenbrainz_token.clone()).filter(|s| !s.is_empty()),
+                Some(config.scrobbling.musicbrainz_bearer_token.clone()).filter(|s| !s.is_empty()),
+                Some(config.scrobbling.api_key.clone()).filter(|s| !s.is_empty()), // librefm_key
                 None,
                 None,
+                None, // sqlite_path
             );
             println!("Resolving: {} - {}", artist, title);
             if let Some(a) = album {
@@ -102,6 +107,106 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                     }
                 }
                 Err(e) => println!("ERROR: {}", e),
+            }
+            return Ok(());
+        }
+        Some(crate::Command::TestListenbrainz { artist, title }) => {
+            use metadata_provider::listenbrainz::ListenBrainzProvider;
+            let token = config.scrobbling.listenbrainz_token.clone();
+            if token.is_empty() {
+                println!("ERROR: listenbrainz_token not configured in [scrobbling] section");
+                return Ok(());
+            }
+            let provider = ListenBrainzProvider::new(token);
+            let client = reqwest::Client::builder()
+                .user_agent("Youtui/0.1 (listenbrainz-test)")
+                .build()?;
+            println!("Querying ListenBrainz: {} - {}", artist, title);
+            match provider.lookup(artist, title, None, &client).await {
+                Some(meta) => {
+                    println!("Artist: {:?}", meta.artist);
+                    println!("Album:  {:?}", meta.album);
+                    println!("Year:   {:?}", meta.year);
+                    println!("Genres: {:?}", meta.genres);
+                    println!("Styles: {:?}", meta.styles);
+                    println!("MBID:   {:?}", meta.musicbrainz_release_group_id);
+                }
+                None => println!("No result from ListenBrainz"),
+            }
+            return Ok(());
+        }
+        Some(crate::Command::TestMusicbrainz { artist, title }) => {
+            use metadata_provider::musicbrainz::MusicBrainzProvider;
+            let client = reqwest::Client::builder()
+                .user_agent("Youtui/0.1 (musicbrainz-test)")
+                .build()?;
+            let client_id = Some(config.scrobbling.musicbrainz_client_id.clone())
+                .filter(|s| !s.is_empty());
+            let client_secret = Some(config.scrobbling.musicbrainz_client_secret.clone())
+                .filter(|s| !s.is_empty());
+            let bearer = Some(config.scrobbling.musicbrainz_bearer_token.clone())
+                .filter(|s| !s.is_empty());
+            let provider = MusicBrainzProvider::new(client_id, client_secret, bearer);
+            println!("Querying MusicBrainz: {} - {}", artist, title);
+            match provider.lookup(artist, title, None, &client).await {
+                Some(meta) => {
+                    println!("Artist: {:?}", meta.artist);
+                    println!("Album:  {:?}", meta.album);
+                    println!("Year:   {:?}", meta.year);
+                    println!("Tracks: {}", meta.album_tracks.len());
+                    println!("Genres: {:?}", meta.genres);
+                    println!("Styles: {:?}", meta.styles);
+                    println!("MBID:   {:?}", meta.musicbrainz_release_group_id);
+                    for (i, t) in meta.album_tracks.iter().enumerate() {
+                        println!("  {}. {} ({:.0}s) {:?}", i + 1, t.title, t.duration_secs, t.artist);
+                    }
+                }
+                None => println!("No result from MusicBrainz"),
+            }
+            return Ok(());
+        }
+        Some(crate::Command::TestCaa { release_group_id, artist, title }) => {
+            let http = reqwest::Client::builder()
+                .user_agent("Youtui/0.1 (caa-test)")
+                .build()?;
+            let mbid = if let Some(rgid) = release_group_id {
+                rgid.clone()
+            } else if let (Some(a), Some(t)) = (artist, title) {
+                println!("Resolving MBID for {} - {}...", a, t);
+                use metadata_provider::musicbrainz::MusicBrainzProvider;
+                let client_id = Some(config.scrobbling.musicbrainz_client_id.clone())
+                    .filter(|s| !s.is_empty());
+                let client_secret = Some(config.scrobbling.musicbrainz_client_secret.clone())
+                    .filter(|s| !s.is_empty());
+                let bearer = Some(config.scrobbling.musicbrainz_bearer_token.clone())
+                    .filter(|s| !s.is_empty());
+                let provider = MusicBrainzProvider::new(client_id, client_secret, bearer);
+                match provider.lookup(&a, &t, None, &http).await {
+                    Some(meta) => match meta.musicbrainz_release_group_id {
+                        Some(id) => id,
+                        None => { println!("No MBID found"); return Ok(()); }
+                    },
+                    None => { println!("MusicBrainz lookup failed"); return Ok(()); }
+                }
+            } else {
+                println!("Provide --release-group-id OR --artist + --title");
+                return Ok(());
+            };
+            println!("Fetching CAA for release-group: {}", mbid);
+            let url = format!("https://coverartarchive.org/release-group/{}/front", mbid);
+            match http.get(&url).send().await {
+                Ok(resp) if resp.status().is_success() => {
+                    let bytes = resp.bytes().await.unwrap_or_default();
+                    let len = bytes.len();
+                    let path = std::env::temp_dir().join(format!("caa_{}.jpg", mbid));
+                    if let Err(e) = std::fs::write(&path, &bytes) {
+                        println!("Failed to write image: {}", e);
+                    } else {
+                        println!("OK: {} bytes -> {}", len, path.display());
+                    }
+                }
+                Ok(resp) => println!("CAA returned HTTP {}", resp.status()),
+                Err(e) => println!("CAA request failed: {}", e),
             }
             return Ok(());
         }

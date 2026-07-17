@@ -528,7 +528,7 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
             }
         }
         "resolve-album" => {
-            let (album_name, artist_name) = if args.len() >= 2 {
+            let (_album_name, _artist_name) = if args.len() >= 2 {
                 (&args[0], Some(&args[1]))
             } else if args.len() == 1 {
                 (&args[0], None)
@@ -551,7 +551,7 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                 // ── LIBRARY ─────────────────────────────────────────────────────
         "library" => {
             // Parse --sort flag before subcommand
-            let mut sort_order: Option<GetLibrarySortOrder> = None;
+            let mut _sort_order: Option<GetLibrarySortOrder> = None;
             let mut sub_args: Vec<String> = Vec::new();
             let mut i = 0;
             while i < args.len() {
@@ -560,7 +560,7 @@ async fn cmd_live(command: &str, args: &[String], cookie: Option<&str>, json: bo
                         i += 1;
                         if let Some(val) = args.get(i) {
                             if let Some(order) = parse_sort_order(val) {
-                                sort_order = Some(order);
+                                _sort_order = Some(order);
                             } else {
                                 eprintln!("Invalid --sort value '{}'. Valid: name-asc, name-desc, recent, default", val);
                                 return;
@@ -1043,8 +1043,12 @@ async fn cmd_debug_resolve(args: &[String]) {
         lastfm_key,
         discogs_token,
         genius_token,
+        None,  // listenbrainz_token
+        None,  // musicbrainz_bearer_token
+        None,  // librefm_key
         None,  // overrides_path
         None,  // cache_path
+        None,  // sqlite_path
     );
 
     println!("Resolving metadata...");
@@ -1111,8 +1115,12 @@ async fn cmd_debug_cache_test(args: &[String]) {
         lastfm_key.clone(),
         discogs_token.clone(),
         genius_token.clone(),
+        None,  // listenbrainz_token
+        None,  // musicbrainz_bearer_token
+        None,  // librefm_key
         None,
         Some(tmp_dir.clone()),
+        None,  // sqlite_path
     );
     match registry1.resolve(normalized.as_str(), cleaned.as_str(), None).await {
         Ok(meta) => {
@@ -1156,8 +1164,12 @@ async fn cmd_debug_cache_test(args: &[String]) {
         lastfm_key.clone(),
         discogs_token.clone(),
         genius_token.clone(),
+        None,  // listenbrainz_token
+        None,  // musicbrainz_bearer_token
+        None,  // librefm_key
         None,
         Some(tmp_dir.clone()),
+        None,  // sqlite_path
     );
     match registry2.resolve(normalized.as_str(), cleaned.as_str(), None).await {
         Ok(meta) => {
@@ -1224,8 +1236,12 @@ async fn cmd_debug_cache_check(args: &[String]) {
         lastfm_key.clone(),
         discogs_token.clone(),
         genius_token.clone(),
+        None,  // listenbrainz_token
+        None,  // musicbrainz_bearer_token
+        None,  // librefm_key
         None,
         Some(tmp_dir.clone()),
+        None,  // sqlite_path
     );
 
     // Phase 1: lookup_cache - should miss (cache empty)
@@ -1445,8 +1461,12 @@ async fn cmd_debug_simulate_url(args: &[String]) {
         lastfm_key,
         discogs_token,
         genius_token,
+        None,  // listenbrainz_token
+        None,  // musicbrainz_bearer_token
+        None,  // librefm_key
         None,  // overrides_path
         None,  // cache_path
+        None,  // sqlite_path
     );
 
     println!("=== Resolving Metadata ===");
