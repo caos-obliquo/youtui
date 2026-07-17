@@ -62,6 +62,7 @@ impl MetadataProvider for GeniusProvider {
                     album_tracks: Vec::new(),
                     genres: Vec::new(),
                     styles: Vec::new(),
+                    musicbrainz_release_group_id: None,
                 })
             } else {
                 None

@@ -179,11 +179,26 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
             }
             LibraryEffect::SongsEnriched(results) => {
                 let count = results.len();
-                for (idx, year, genres, styles) in results {
-                    let year_rc = year.map(Rc::new);
-                    target.song_list.update_song_at(idx, year_rc, genres, styles);
+                if target.show_playlist_tracks {
+                    for (idx, year, genres, styles) in results {
+                        if let Some(song) = target.playlist_tracks.get_mut(idx) {
+                            song.year = year.map(Rc::new);
+                            if !genres.is_empty() {
+                                song.genres = genres;
+                            }
+                            if !styles.is_empty() {
+                                song.styles = styles;
+                            }
+                        }
+                    }
+                    info!(count = %count, "Library playlist tracks enriched from cache");
+                } else {
+                    for (idx, year, genres, styles) in results {
+                        let year_rc = year.map(Rc::new);
+                        target.song_list.update_song_at(idx, year_rc, genres, styles);
+                    }
+                    info!(count = %count, "Library songs enriched from cache");
                 }
-                info!(count = %count, "Library songs enriched from cache");
             }
             LibraryEffect::PlaylistsLoaded(playlists) => {
                 info!(count = %playlists.len(), "Library playlists loaded");
@@ -311,6 +326,7 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
             })),
             like_status: ts.like_status,
             is_album_upload: false,
+            release_mbid: None,
         }
     }).collect();
     LibraryEffect::SongsLoaded(songs)
@@ -331,6 +347,17 @@ struct HandleLibraryPlaylistTracksErr;
 impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, LibraryBrowser, |_, songs: Vec<PlaylistSong>| {
     use std::rc::Rc;
     use crate::app::structures::ListSongID;
+    // Build enrichment data BEFORE consuming songs (like SongsLoaded pattern)
+    let enrich_data: Vec<(usize, String, String, Option<String>)> = songs.iter().enumerate()
+        .filter_map(|(i, s)| {
+            let artist: String = s.artists.iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            if artist.is_empty() { None } else { Some((i, artist, s.title.clone(), Some(s.album.name.clone()))) }
+        })
+        .collect();
+    let has_enrich = !enrich_data.is_empty();
     let mut set_id_map = HashMap::new();
     let list_songs: Vec<ListSong> = songs.into_iter().map(|s| {
         let vid = s.video_id.get_raw().to_string();
@@ -340,14 +367,14 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
         let artists = MaybeRc::Owned(s.artists.into_iter().map(|a| ListSongArtist { name: a.name, id: None }).collect());
         let album = Some(MaybeRc::Owned(ListSongAlbum {
             name: s.album.name.clone(),
-            id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+            id: AlbumOrUploadAlbumID::Album(s.album.id),
         }));
         let year = s.album.name.split('(').last().and_then(|s| s.get(..4))
             .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
             .map(|y| y.to_string());
         ListSong {
             video_id: s.video_id,
-            track_no: None,
+            track_no: Some(s.track_no),
             plays: String::new(),
             title: s.title,
             explicit: Some(s.explicit),
@@ -365,11 +392,12 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             album,
             like_status: s.like_status,
             is_album_upload: false,
+            release_mbid: None,
         }
     }).collect();
     // The effect handler will populate track_set_ids from the songs
     // We chain it via the effect
-    struct PopulateSetIds(Vec<ListSong>, HashMap<String, String>);
+    struct PopulateSetIds(Vec<ListSong>, HashMap<String, String>, bool, Vec<(usize, String, String, Option<String>)>);
     impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::TaskMetadata> for PopulateSetIds {
         fn apply(self, target: &mut LibraryBrowser) -> impl Into<ComponentEffect<LibraryBrowser>> {
             target.playlist_tracks = self.0;
@@ -377,10 +405,20 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             target.show_playlist_tracks = true;
             target.input_routing = InputRouting::Content;
             target.track_set_ids = self.1;
+            let has_enrich = self.2;
+            let enrich_data = self.3;
+            if has_enrich && !enrich_data.is_empty() {
+                return AsyncTask::new_future_try(
+                    EnrichFromMetadataCache(enrich_data),
+                    HandleEnrichFromCacheOk,
+                    HandleEnrichFromCacheErr,
+                    None,
+                );
+            }
             AsyncTask::new_no_op()
         }
     }
-    PopulateSetIds(list_songs, set_id_map)
+    PopulateSetIds(list_songs, set_id_map, has_enrich, enrich_data)
 });
 impl_youtui_task_handler!(HandleLibraryPlaylistTracksErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     tracing::error!("Error loading playlist tracks: {}", err);
@@ -1312,36 +1350,48 @@ impl Scrollable for LibraryBrowser {
                 }
                 LibraryCategory::Playlists => {
                     if self.show_playlist_tracks {
-                        let max = if !self.local_filter_text.is_empty() || !self.tracks_filter.filter_commands.is_empty() || !self.tracks_sort.sort_commands.is_empty() {
+                        let has_filter = !self.local_filter_text.is_empty()
+                            || !self.tracks_filter.filter_commands.is_empty()
+                            || !self.tracks_sort.sort_commands.is_empty();
+                        let max = if has_filter {
                             self.get_tracks_filtered_list_iter().count().saturating_sub(1)
                         } else {
                             self.playlist_tracks.len().saturating_sub(1)
                         };
-                        self.playlist_tracks_selected = self
-                            .playlist_tracks_selected
-                            .saturating_add_signed(amount)
-                            .min(max);
+                        if has_filter {
+                            let matching: Vec<usize> = self.get_tracks_filtered_list_iter()
+                                .filter_map(|ls| self.playlist_tracks.iter().position(|p| p.video_id == ls.video_id))
+                                .collect();
+                            self.playlist_tracks_selected = self.snap_filtered(
+                                self.playlist_tracks_selected, amount, max, &matching,
+                            );
+                        } else {
+                            self.playlist_tracks_selected = self
+                                .playlist_tracks_selected
+                                .saturating_add_signed(amount)
+                                .min(max);
+                        }
                     } else {
                         let max = self.playlist_data.len().saturating_sub(1);
-                        self.playlist_selected = self
-                            .playlist_selected
-                            .saturating_add_signed(amount)
-                            .min(max);
+                        let matching: Vec<usize> = self.get_playlists_filtered_iter().map(|(i, _)| i).collect();
+                        self.playlist_selected = self.snap_filtered(
+                            self.playlist_selected, amount, max, &matching,
+                        );
                     }
                 }
                 LibraryCategory::Artists => {
                     let max = self.artist_data.len().saturating_sub(1);
-                    self.artist_selected = self
-                        .artist_selected
-                        .saturating_add_signed(amount)
-                        .min(max);
+                    let matching: Vec<usize> = self.get_artists_filtered_iter().map(|(i, _)| i).collect();
+                    self.artist_selected = self.snap_filtered(
+                        self.artist_selected, amount, max, &matching,
+                    );
                 }
                 LibraryCategory::Albums => {
                     let max = self.album_data.len().saturating_sub(1);
-                    self.album_selected = self
-                        .album_selected
-                        .saturating_add_signed(amount)
-                        .min(max);
+                    let matching: Vec<usize> = self.get_albums_filtered_iter().map(|(i, _)| i).collect();
+                    self.album_selected = self.snap_filtered(
+                        self.album_selected, amount, max, &matching,
+                    );
                 }
             },
         }
@@ -1349,6 +1399,26 @@ impl Scrollable for LibraryBrowser {
 
     fn is_scrollable(&self) -> bool {
         true
+    }
+}
+
+impl LibraryBrowser {
+    fn snap_filtered(
+        &self,
+        current: usize,
+        amount: isize,
+        max: usize,
+        matching: &[usize],
+    ) -> usize {
+        if matching.is_empty() || self.local_filter_text.is_empty() {
+            return current.saturating_add_signed(amount).min(max);
+        }
+        let new_raw = current.saturating_add_signed(amount).min(max);
+        if amount >= 0 {
+            matching.iter().copied().find(|&i| i >= new_raw).unwrap_or(current)
+        } else {
+            matching.iter().copied().rev().find(|&i| i <= new_raw).unwrap_or(current)
+        }
     }
 }
 

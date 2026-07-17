@@ -302,6 +302,7 @@ fn make_album_original(video: &'static str, year: Option<&str>) -> ListSong {
         album: None,
         like_status: LikeStatus::Indifferent,
         is_album_upload: false,
+        release_mbid: None,
     }
 }
 
@@ -328,6 +329,7 @@ fn make_track_entry(video: &'static str, track_no: usize, title: &'static str, d
         album: None,
         like_status: LikeStatus::Indifferent,
         is_album_upload: false,
+        release_mbid: None,
     }
 }
 
@@ -645,4 +647,27 @@ fn download_scope_max_4_songs() {
             + crate::app::ui::playlist::SONGS_AHEAD_TO_BUFFER,
         4
     );
+}
+
+// --- Album split guard regression tests ---
+use crate::app::ui::playlist::effect_handlers_playlist::should_skip_album_split;
+
+#[test]
+fn album_split_guard_skips_regular_ytm_track() {
+    // Regular YTM track has track_no + album, not upload -> skip split
+    assert!(should_skip_album_split(false, Some(3), true));
+}
+
+#[test]
+fn album_split_guard_allows_channel_upload() {
+    // Channel upload skips guard (is_album_upload=true) even with track info
+    assert!(!should_skip_album_split(true, Some(1), true));
+}
+
+#[test]
+fn album_split_guard_allows_track_without_metadata() {
+    // Song without track_no + album should NOT be skipped
+    assert!(!should_skip_album_split(false, None, false));
+    assert!(!should_skip_album_split(false, Some(1), false));
+    assert!(!should_skip_album_split(false, None, true));
 }

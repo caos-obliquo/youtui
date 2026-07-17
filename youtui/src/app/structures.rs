@@ -100,6 +100,7 @@ pub struct ListSong {
     pub album: Option<MaybeRc<ListSongAlbum>>,
     pub like_status: LikeStatus,
     pub is_album_upload: bool,
+    pub release_mbid: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -386,6 +387,7 @@ impl ListSong {
             album: list_album,
             like_status: LikeStatus::Indifferent,
             is_album_upload: false,
+            release_mbid: None,
         }
     }
 }
@@ -503,6 +505,7 @@ impl BrowserSongsList {
             start_offset: None,
             like_status,
             is_album_upload: false,
+            release_mbid: None,
         });
         id
     }
@@ -669,6 +672,7 @@ fn clean_channel_album_name(name: &str) -> String {
             start_offset: None,
             like_status,
             is_album_upload,
+            release_mbid: None,
         });
         id
     }
@@ -761,6 +765,7 @@ fn clean_channel_album_name(name: &str) -> String {
             start_offset: None,
             like_status,
             is_album_upload: false,
+            release_mbid: None,
         });
         id
     }

@@ -136,6 +136,7 @@ impl MetadataProvider for DiscogsProvider {
                         album_tracks: tracks,
                         genres,
                         styles,
+                        musicbrainz_release_group_id: None,
                     });
                 } else {
                     tracing::debug!("Discogs: album has {} tracks but '{}' not found - skipping", tracks.len(), title);
