@@ -1325,25 +1325,25 @@ impl Scrollable for LibraryBrowser {
                             .min(max);
                     } else {
                         let max = self.playlist_data.len().saturating_sub(1);
-                        self.playlist_selected = self
-                            .playlist_selected
-                            .saturating_add_signed(amount)
-                            .min(max);
+                        let matching: Vec<usize> = self.get_playlists_filtered_iter().map(|(i, _)| i).collect();
+                        self.playlist_selected = self.snap_filtered(
+                            self.playlist_selected, amount, max, &matching,
+                        );
                     }
                 }
                 LibraryCategory::Artists => {
                     let max = self.artist_data.len().saturating_sub(1);
-                    self.artist_selected = self
-                        .artist_selected
-                        .saturating_add_signed(amount)
-                        .min(max);
+                    let matching: Vec<usize> = self.get_artists_filtered_iter().map(|(i, _)| i).collect();
+                    self.artist_selected = self.snap_filtered(
+                        self.artist_selected, amount, max, &matching,
+                    );
                 }
                 LibraryCategory::Albums => {
                     let max = self.album_data.len().saturating_sub(1);
-                    self.album_selected = self
-                        .album_selected
-                        .saturating_add_signed(amount)
-                        .min(max);
+                    let matching: Vec<usize> = self.get_albums_filtered_iter().map(|(i, _)| i).collect();
+                    self.album_selected = self.snap_filtered(
+                        self.album_selected, amount, max, &matching,
+                    );
                 }
             },
         }
@@ -1351,6 +1351,26 @@ impl Scrollable for LibraryBrowser {
 
     fn is_scrollable(&self) -> bool {
         true
+    }
+}
+
+impl LibraryBrowser {
+    fn snap_filtered(
+        &self,
+        current: usize,
+        amount: isize,
+        max: usize,
+        matching: &[usize],
+    ) -> usize {
+        if matching.is_empty() || self.local_filter_text.is_empty() {
+            return current.saturating_add_signed(amount).min(max);
+        }
+        let new_raw = current.saturating_add_signed(amount).min(max);
+        if amount >= 0 {
+            matching.iter().copied().find(|&i| i >= new_raw).unwrap_or(current)
+        } else {
+            matching.iter().copied().rev().find(|&i| i <= new_raw).unwrap_or(current)
+        }
     }
 }
 
