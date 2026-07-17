@@ -710,9 +710,26 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                 // Step 2: Album split decision (borrows target, song reference is dropped)
                 // Uses PRE-mutation track_no/album to prevent apply_metadata_fields
                 // from defeating the guard by overwriting pre-existing YTM data.
-                let needs_split = is_album_upload
+                // Duration match: sum(provider_tracks.duration_secs) must approximate
+                // song_duration_secs within 20%. Prevents finding wrong album for
+                // Liked Songs where track_no=None but provider returns artist's most
+                // popular album (e.g., 3min Liked Song matched with 42min 21-track album).
+                let duration_ok = !data.album_tracks.is_empty() && song_dur_secs > 0;
+                let dur_match = duration_ok && {
+                    let provider_sum: u64 = data.album_tracks.iter()
+                        .map(|t| t.duration_secs as u64)
+                        .sum();
+                    let diff = if provider_sum > song_dur_secs {
+                        provider_sum - song_dur_secs
+                    } else {
+                        song_dur_secs - provider_sum
+                    };
+                    // Allow 20% tolerance: sum within 1.2x of song duration
+                    diff <= song_dur_secs / 5 || diff <= 30
+                };
+                let needs_split = (is_album_upload
                     || pre_track_no.is_none()
-                    || !pre_has_album;
+                    || !pre_has_album) && dur_match;
                 if !data.album_tracks.is_empty() && needs_split {
                     if let Some(effect) = handle_album_split(
                         target, song_id, &data, &original_album, &original_title, is_album_upload, song_dur_secs,
@@ -932,7 +949,7 @@ fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
             .map(|y| y.to_string());
         list_songs.push(ListSong {
             video_id: s.video_id,
-            track_no: None,
+            track_no: Some(s.track_no),
             plays: String::new(),
             title: s.title,
             explicit: Some(s.explicit),
