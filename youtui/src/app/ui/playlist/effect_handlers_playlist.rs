@@ -502,9 +502,14 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
                 || matches!(&a.as_ref().id, AlbumOrUploadAlbumID::Album(id) if id.get_raw().is_empty())
         });
         if ytm_empty {
+            // Preserve original YTM album ID when overwriting album name
+            // (e.g. when metadata provider fills in empty YTM album)
+            let orig_id = song.album.as_ref()
+                .map(|a| a.as_ref().id.clone())
+                .unwrap_or(AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")));
             song.album = Some(MaybeRc::Owned(ListSongAlbum {
                 name: album.clone(),
-                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+                id: orig_id,
             }));
         } else {
             debug!(
@@ -896,7 +901,7 @@ fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
         let album_name = s.album.name.clone();
         let list_album = Some(MaybeRc::Owned(ListSongAlbum {
             name: album_name.clone(),
-            id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+            id: AlbumOrUploadAlbumID::Album(s.album.id),
         }));
         let year = album_name.split('(').last().and_then(|s| s.get(..4))
             .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
