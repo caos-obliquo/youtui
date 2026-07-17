@@ -238,6 +238,14 @@ impl ActionHandler<BrowserAction> for Browser {
                 }
             }
             BrowserAction::Back => {
+                if self.variant == BrowserVariant::LibraryPlaylist
+                    && self.library_browser.show_playlist_tracks
+                {
+                    self.library_browser.show_playlist_tracks = false;
+                    self.library_browser.tracks_visual_mode = false;
+                    self.library_browser.tracks_visual_start = 0;
+                    return (AsyncTask::new_no_op(), None);
+                }
                 self.navigate_back();
             }
         }
