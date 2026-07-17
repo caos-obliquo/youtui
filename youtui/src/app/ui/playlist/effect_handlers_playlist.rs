@@ -544,6 +544,7 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
     if !data.styles.is_empty() {
         song.styles = data.styles.clone();
     }
+    song.release_mbid = data.musicbrainz_release_group_id.clone();
     original_album
 }
 
@@ -625,7 +626,7 @@ fn handle_album_split(
                 info!("MetadataEffect: triggering FetchAlbumArt for '{}' - '{}'", aa, ab);
                 use crate::app::server::FetchAlbumArt;
                 let art_task = AsyncTask::new_future_try(
-                    FetchAlbumArt(aa.clone(), ab.clone(), api_key.clone()),
+                    FetchAlbumArt(aa.clone(), ab.clone(), api_key.clone(), data.musicbrainz_release_group_id.clone()),
                     HandleFetchAlbumArtOk,
                     HandleFetchAlbumArtErr,
                     None,
@@ -809,6 +810,68 @@ impl_youtui_task_handler!(
     }
 );
 
+// Song year enrichment effect handlers
+
+#[derive(Debug, PartialEq)]
+pub struct HandleEnrichSongYearOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleEnrichSongYearErr;
+
+#[derive(Debug, PartialEq)]
+pub enum EnrichSongYearEffect {
+    YearFound(String),
+    YearNotFound,
+    YearFetchError,
+}
+
+impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for EnrichSongYearEffect {
+    fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
+        match self {
+            EnrichSongYearEffect::YearFound(year) => {
+                if let Some(cur_id) = target.get_cur_playing_id() {
+                    if let Some(idx) = target.get_index_from_id(cur_id) {
+                        if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
+                            song.year = Some(Rc::new(year));
+                        }
+                    }
+                }
+                target.year_being_enriched = false;
+                info!("EnrichSongYearEffect: applied year to playing song");
+            }
+            EnrichSongYearEffect::YearNotFound => {
+                target.year_being_enriched = false;
+                debug!("EnrichSongYearEffect: no year found");
+            }
+            EnrichSongYearEffect::YearFetchError => {
+                target.year_being_enriched = false;
+                debug!("EnrichSongYearEffect: year fetch error");
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+impl_youtui_task_handler!(
+    HandleEnrichSongYearOk,
+    Option<String>,
+    Playlist,
+    |_, year: Option<String>| {
+        match year {
+            Some(year) => EnrichSongYearEffect::YearFound(year),
+            None => EnrichSongYearEffect::YearNotFound,
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleEnrichSongYearErr,
+    anyhow::Error,
+    Playlist,
+    |_, _error: anyhow::Error| {
+        EnrichSongYearEffect::YearFetchError
+    }
+);
+
 // Playlist load from YouTube Music effect handlers
 
 #[derive(Debug, PartialEq)]
@@ -858,6 +921,7 @@ fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
             album: list_album,
             like_status: s.like_status,
             is_album_upload: false,
+            release_mbid: None,
         });
     }
     list_songs
@@ -1011,6 +1075,7 @@ impl_youtui_task_handler!(
                     album: None,
                     like_status: ytmapi_rs::common::LikeStatus::Indifferent,
                     is_album_upload: false,
+                    release_mbid: None,
                 }
             }).collect();
             let _task = this.insert_next_song_list(songs);

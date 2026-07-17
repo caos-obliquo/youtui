@@ -492,6 +492,52 @@ impl BackendTask<ArcServer> for EnrichRelatedTracks {
     }
 }
 
+/// Enrich the currently playing song with a release year fetched from the
+/// metadata providers, when the song's year is missing.
+/// Input: (song_id, artist, title)
+/// Output: Option<String> (year) if a provider returned one.
+#[derive(Debug, PartialEq)]
+pub struct EnrichSongYear(pub ListSongID, pub String, pub String);
+
+impl BackendTask<ArcServer> for EnrichSongYear {
+    type Output = anyhow::Result<Option<String>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let EnrichSongYear(_song_id, artist, title) = self;
+        let registry = backend.metadata_registry.clone();
+        async move {
+            match registry.resolve(&artist, &title, None).await {
+                Ok(meta) => match meta.year {
+                    Some(year) => {
+                        tracing::info!(
+                            "EnrichSongYear: resolved year '{}' for {} - {}",
+                            year,
+                            artist,
+                            title
+                        );
+                        Ok(Some(year))
+                    }
+                    None => {
+                        tracing::debug!(
+                            "EnrichSongYear: no year found for {} - {}",
+                            artist,
+                            title
+                        );
+                        Ok(None)
+                    }
+                },
+                Err(e) => {
+                    tracing::debug!("EnrichSongYear: resolve failed for {} - {}: {}", artist, title, e);
+                    Ok(None)
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct GetPlaylistTracks(pub PlaylistID<'static>);
 
@@ -1102,7 +1148,7 @@ impl BackendTask<ArcServer> for GetAnnotations {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FetchAlbumArt(pub String, pub String, pub String);
+pub struct FetchAlbumArt(pub String, pub String, pub String, pub Option<String>);
 
 impl BackendTask<ArcServer> for FetchAlbumArt {
     type Output = anyhow::Result<(SongThumbnail, Option<String>)>;
@@ -1114,9 +1160,42 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
         let artist = self.0;
         let raw_album = self.1;
         let api_key = self.2;
+        let mbid = self.3;
         let backend = backend.clone();
         let client = backend.http_client.clone();
         async move {
+            // MusicBrainz Cover Art Archive: try release-group front image first
+            // (no auth required). Falls through to Last.fm on any failure.
+            if let Some(ref mbid) = mbid {
+                if !mbid.is_empty() {
+                    let caa_url = format!("https://coverartarchive.org/release-group/{}/front", mbid);
+                    tracing::info!("FetchAlbumArt: trying CAA release-group {}", mbid);
+                    if let Ok(resp) = client.get(&caa_url).send().await {
+                        if resp.status().is_success() {
+                            if let Ok(bytes) = resp.bytes().await {
+                                let thumb_id = SongThumbnailID::Album(ytmapi_rs::common::AlbumID::from_raw(
+                                    format!("caa:{}", mbid),
+                                ));
+                                match backend
+                                    .song_thumbnail_downloader
+                                    .download_song_thumbnail_from_bytes(thumb_id, bytes.to_vec())
+                                    .await
+                                {
+                                    Ok(thumbnail) => {
+                                        tracing::info!("FetchAlbumArt: CAA hit for {}", mbid);
+                                        return Ok((thumbnail, None));
+                                    }
+                                    Err(e) => tracing::debug!("FetchAlbumArt: CAA save failed: {}", e),
+                                }
+                            }
+                        } else {
+                            tracing::debug!("FetchAlbumArt: CAA returned status {}", resp.status());
+                        }
+                    } else {
+                        tracing::debug!("FetchAlbumArt: CAA request failed, falling back to Last.fm");
+                    }
+                }
+            }
             // Clean album name before querying Last.fm: strip edition suffixes
             // so "Rumours (Deluxe Edition)" matches canonical "Rumours".
             let album = crate::app::scrobbler::clean_album_for_scrobble(&raw_album);

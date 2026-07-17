@@ -183,6 +183,50 @@ impl SongThumbnailDownloader {
             song_thumbnail_id: thumbnail_id,
         })
     }
+    pub async fn download_song_thumbnail_from_bytes(
+        &self,
+        thumbnail_id: SongThumbnailID<'static>,
+        image_bytes: Vec<u8>,
+    ) -> anyhow::Result<SongThumbnail> {
+        // Do not download album art until directory setup and clean has completed.
+        self.status.get().await.map_err(|e| anyhow!(e))?;
+
+        // Return early if thumbnail already exists in disk cache.
+        if let Some(cached_song_thumbnail) = get_cached_album_art(thumbnail_id.clone()).await {
+            if let Err(e) =
+                touch_file_with_timestamp(&cached_song_thumbnail.on_disk_path, SystemTime::now())
+                    .await
+            {
+                warn!(
+                    "Error <{e} whilst trying to update timestamp on image {}",
+                    cached_song_thumbnail.on_disk_path.display()
+                )
+            }
+            return Ok(cached_song_thumbnail);
+        }
+
+        let image_bytes = bytes::Bytes::from(image_bytes);
+        let image_reader = image::ImageReader::new(std::io::Cursor::new(image_bytes.clone()))
+            .with_guessed_format()?;
+        let image_format = image_reader
+            .format()
+            .context("Unable to determine album art image format")?;
+        let on_disk_path = get_album_art_dir()?
+            .join(format!("{}{}", ALBUM_ART_FILENAME_PREFIX, thumbnail_id))
+            .with_extension(image_format.extensions_str()[0]);
+        let image_decoding_task = tokio::task::spawn_blocking(|| image_reader.decode());
+        let (in_mem_image, _) = try_join(
+            image_decoding_task.map(|res| res.map_err(anyhow::Error::from)),
+            tokio::fs::write(&on_disk_path, image_bytes)
+                .map(|res| res.map_err(anyhow::Error::from)),
+        )
+        .await?;
+        Ok(SongThumbnail {
+            in_mem_image: in_mem_image?,
+            on_disk_path,
+            song_thumbnail_id: thumbnail_id,
+        })
+    }
 }
 
 /// Get the first matching thumbnail in the cache directory matching
