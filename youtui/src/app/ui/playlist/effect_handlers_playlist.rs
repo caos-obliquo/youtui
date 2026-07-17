@@ -502,9 +502,14 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
                 || matches!(&a.as_ref().id, AlbumOrUploadAlbumID::Album(id) if id.get_raw().is_empty())
         });
         if ytm_empty {
+            // Preserve original YTM album ID when overwriting album name
+            // (e.g. when metadata provider fills in empty YTM album)
+            let orig_id = song.album.as_ref()
+                .map(|a| a.as_ref().id.clone())
+                .unwrap_or(AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")));
             song.album = Some(MaybeRc::Owned(ListSongAlbum {
                 name: album.clone(),
-                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+                id: orig_id,
             }));
         } else {
             debug!(
@@ -544,11 +549,23 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
     if !data.styles.is_empty() {
         song.styles = data.styles.clone();
     }
+    song.release_mbid = data.musicbrainz_release_group_id.clone();
     original_album
 }
 
 /// Handle album split decision: validate duration ratio, tracklist match, insert tracks, fetch album art.
 /// Returns an optional chained effect if album split occurs.
+/// Guard: should album split be skipped for this track?
+/// Returns true when song already has proper YTM track metadata
+/// (track_no + album) and is not a channel upload.
+pub(crate) fn should_skip_album_split(
+    is_album_upload: bool,
+    pre_track_no: Option<usize>,
+    pre_has_album: bool,
+) -> bool {
+    !is_album_upload && pre_track_no.is_some() && pre_has_album
+}
+
 fn handle_album_split(
     target: &mut Playlist,
     song_id: ListSongID,
@@ -557,10 +574,17 @@ fn handle_album_split(
     original_title: &str,
     is_album_upload: bool,
     _song_duration_secs: u64,
+    pre_track_no: Option<usize>,
+    pre_has_album: bool,
 ) -> Option<AsyncTask<Playlist, ArcServer, TaskMetadata>> {
-    // Trust the metadata provider: if Last.fm/MusicBrainz returned album tracks,
-    // split regardless of title tags or duration. The provider's tracklist is
-    // the authoritative signal — no additional heuristics needed.
+    // Layer 2: Internal belt-and-suspenders guard using PRE-mutation state.
+    // Even if the caller's needs_split check somehow passes, this catches
+    // regular YTM tracks that already have proper track_no and album.
+    if should_skip_album_split(is_album_upload, pre_track_no, pre_has_album) {
+        info!("Album split rejected (internal guard): song has YTM track metadata");
+        target.last_error = Some("Album split rejected: song has YTM track".to_string());
+        return None;
+    }
     if data.album_tracks.len() < 2 {
         info!("Album split rejected: only {} track(s) from provider", data.album_tracks.len());
         target.last_error = Some("Album split failed: only 1 track in provider data".to_string());
@@ -625,7 +649,7 @@ fn handle_album_split(
                 info!("MetadataEffect: triggering FetchAlbumArt for '{}' - '{}'", aa, ab);
                 use crate::app::server::FetchAlbumArt;
                 let art_task = AsyncTask::new_future_try(
-                    FetchAlbumArt(aa.clone(), ab.clone(), api_key.clone()),
+                    FetchAlbumArt(aa.clone(), ab.clone(), api_key.clone(), data.musicbrainz_release_group_id.clone()),
                     HandleFetchAlbumArtOk,
                     HandleFetchAlbumArtErr,
                     None,
@@ -649,8 +673,12 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
         match self {
             MetadataEffect::Validated(data, song_id) => {
                 // Step 1: Apply metadata fields to song (borrows song, not target)
-                let (original_album, original_title, is_album_upload, song_dur_secs) = if let Some(idx) = target.get_index_from_id(song_id) {
+                // Capture pre-mutation track_no and album BEFORE apply_metadata_fields
+                // to prevent provider data from defeating the needs_split guard.
+                let (original_album, original_title, is_album_upload, song_dur_secs, pre_track_no, pre_has_album) = if let Some(idx) = target.get_index_from_id(song_id) {
                     if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
+                        let pre_track_no = song.track_no;
+                        let pre_has_album = song.album.is_some();
                         let orig_album = apply_metadata_fields(song, &data);
                         let title = song.title.clone();
                         let upload = song.is_album_upload;
@@ -672,21 +700,40 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                             .unwrap_or(0);
                         info!("Metadata validated for song {:?} (artist={:?}, album={:?}, year={:?}, track={:?}, genres={:?}, styles={:?})",
                             song_id, data.artist, data.album, data.year, data.track_no, data.genres, data.styles);
-                        (orig_album, title, upload, dur)
+                        (orig_album, title, upload, dur, pre_track_no, pre_has_album)
                     } else {
-                        (None, String::new(), false, 0)
+                        (None, String::new(), false, 0, None, false)
                     }
                 } else {
-                    (None, String::new(), false, 0)
+                    (None, String::new(), false, 0, None, false)
                 };
                 // Step 2: Album split decision (borrows target, song reference is dropped)
-                // Note: album_tracks.is_none() guard intentionally omitted —
-                // insert_album_tracks has its own double-insert guard by video_id
-                // (line 1016). Removing the guard prevents stale album_tracks from
-                // a previous finished album blocking a new album split.
-                if !data.album_tracks.is_empty() {
+                // Uses PRE-mutation track_no/album to prevent apply_metadata_fields
+                // from defeating the guard by overwriting pre-existing YTM data.
+                // Duration match: sum(provider_tracks.duration_secs) must approximate
+                // song_duration_secs within 20%. Prevents finding wrong album for
+                // Liked Songs where track_no=None but provider returns artist's most
+                // popular album (e.g., 3min Liked Song matched with 42min 21-track album).
+                let duration_ok = !data.album_tracks.is_empty() && song_dur_secs > 0;
+                let dur_match = duration_ok && {
+                    let provider_sum: u64 = data.album_tracks.iter()
+                        .map(|t| t.duration_secs as u64)
+                        .sum();
+                    let diff = if provider_sum > song_dur_secs {
+                        provider_sum - song_dur_secs
+                    } else {
+                        song_dur_secs - provider_sum
+                    };
+                    // Allow 20% tolerance: sum within 1.2x of song duration
+                    diff <= song_dur_secs / 5 || diff <= 30
+                };
+                let needs_split = (is_album_upload
+                    || pre_track_no.is_none()
+                    || !pre_has_album) && dur_match;
+                if !data.album_tracks.is_empty() && needs_split {
                     if let Some(effect) = handle_album_split(
                         target, song_id, &data, &original_album, &original_title, is_album_upload, song_dur_secs,
+                        pre_track_no, pre_has_album,
                     ) {
                         return effect;
                     }
@@ -809,6 +856,68 @@ impl_youtui_task_handler!(
     }
 );
 
+// Song year enrichment effect handlers
+
+#[derive(Debug, PartialEq)]
+pub struct HandleEnrichSongYearOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleEnrichSongYearErr;
+
+#[derive(Debug, PartialEq)]
+pub enum EnrichSongYearEffect {
+    YearFound(String),
+    YearNotFound,
+    YearFetchError,
+}
+
+impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for EnrichSongYearEffect {
+    fn apply(self, target: &mut Playlist) -> impl Into<ComponentEffect<Playlist>> {
+        match self {
+            EnrichSongYearEffect::YearFound(year) => {
+                if let Some(cur_id) = target.get_cur_playing_id() {
+                    if let Some(idx) = target.get_index_from_id(cur_id) {
+                        if let Some(song) = target.list.get_list_iter_mut().nth(idx) {
+                            song.year = Some(Rc::new(year));
+                        }
+                    }
+                }
+                target.year_being_enriched = false;
+                info!("EnrichSongYearEffect: applied year to playing song");
+            }
+            EnrichSongYearEffect::YearNotFound => {
+                target.year_being_enriched = false;
+                debug!("EnrichSongYearEffect: no year found");
+            }
+            EnrichSongYearEffect::YearFetchError => {
+                target.year_being_enriched = false;
+                debug!("EnrichSongYearEffect: year fetch error");
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+}
+
+impl_youtui_task_handler!(
+    HandleEnrichSongYearOk,
+    Option<String>,
+    Playlist,
+    |_, year: Option<String>| {
+        match year {
+            Some(year) => EnrichSongYearEffect::YearFound(year),
+            None => EnrichSongYearEffect::YearNotFound,
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleEnrichSongYearErr,
+    anyhow::Error,
+    Playlist,
+    |_, _error: anyhow::Error| {
+        EnrichSongYearEffect::YearFetchError
+    }
+);
+
 // Playlist load from YouTube Music effect handlers
 
 #[derive(Debug, PartialEq)]
@@ -833,14 +942,14 @@ fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
         let album_name = s.album.name.clone();
         let list_album = Some(MaybeRc::Owned(ListSongAlbum {
             name: album_name.clone(),
-            id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+            id: AlbumOrUploadAlbumID::Album(s.album.id),
         }));
         let year = album_name.split('(').last().and_then(|s| s.get(..4))
             .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
             .map(|y| y.to_string());
         list_songs.push(ListSong {
             video_id: s.video_id,
-            track_no: None,
+            track_no: Some(s.track_no),
             plays: String::new(),
             title: s.title,
             explicit: Some(s.explicit),
@@ -858,6 +967,7 @@ fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
             album: list_album,
             like_status: s.like_status,
             is_album_upload: false,
+            release_mbid: None,
         });
     }
     list_songs
@@ -1011,6 +1121,7 @@ impl_youtui_task_handler!(
                     album: None,
                     like_status: ytmapi_rs::common::LikeStatus::Indifferent,
                     is_album_upload: false,
+                    release_mbid: None,
                 }
             }).collect();
             let _task = this.insert_next_song_list(songs);

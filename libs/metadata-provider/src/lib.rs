@@ -2,8 +2,11 @@ mod lastfm_album;
 mod lastfm_track;
 mod discogs;
 mod genius;
-mod musicbrainz;
+pub mod musicbrainz;
 mod metal_api;
+pub mod listenbrainz;
+mod libre_fm;
+mod merge;
 pub mod genre_map;
 pub mod util;
 pub mod overrides;
@@ -14,12 +17,15 @@ pub use discogs::DiscogsProvider;
 pub use genius::GeniusProvider;
 pub use musicbrainz::MusicBrainzProvider;
 pub use metal_api::MetalApiProvider;
+pub use listenbrainz::ListenBrainzProvider;
+pub use libre_fm::LibreFMProvider;
 
 pub use validated_metadata::{AlbumTrack, ValidatedMetadata};
 mod validated_metadata;
 
 use futures::future::BoxFuture;
 use lru::LruCache;
+use metadata_cache_sqlite::SqliteCache;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -36,12 +42,13 @@ pub trait MetadataProvider: Send + Sync {
 }
 
 pub struct MetadataRegistry {
-    providers: Vec<Box<dyn MetadataProvider>>,
-    http_client: reqwest::Client,
-    cache: Mutex<LruCache<String, ValidatedMetadata>>,
-    overrides: Mutex<overrides::MetadataOverrides>,
-    overrides_path: Option<PathBuf>,
-    cache_path: Option<PathBuf>,
+    pub providers: Vec<Box<dyn MetadataProvider>>,
+    pub http_client: reqwest::Client,
+    pub cache: Mutex<LruCache<String, ValidatedMetadata>>,
+    pub overrides: Mutex<overrides::MetadataOverrides>,
+    pub overrides_path: Option<PathBuf>,
+    pub cache_path: Option<PathBuf>,
+    pub sqlite_cache: Option<Mutex<SqliteCache>>,
 }
 
 impl MetadataRegistry {
@@ -50,18 +57,50 @@ impl MetadataRegistry {
         lastfm_key: Option<String>,
         discogs_token: Option<String>,
         genius_token: Option<String>,
+        listenbrainz_token: Option<String>,
+        musicbrainz_bearer_token: Option<String>,
+        librefm_key: Option<String>,
         overrides_path: Option<PathBuf>,
         cache_path: Option<PathBuf>,
+        sqlite_path: Option<PathBuf>,
     ) -> Self {
+        let client_id = std::env::var("MUSICBRAINZ_CLIENT_ID").ok();
+        let client_secret = std::env::var("MUSICBRAINZ_CLIENT_SECRET").ok();
         let mut providers: Vec<Box<dyn MetadataProvider>> = vec![
             Box::new(MetalApiProvider::new()),
             Box::new(AlbumSearchProvider::new(lastfm_key.clone())),
             Box::new(TrackSearchProvider::new(lastfm_key.clone())),
             Box::new(DiscogsProvider::new(discogs_token.clone())),
             Box::new(GeniusProvider::new(genius_token.clone())),
-            Box::new(MusicBrainzProvider::new()),
+            Box::new(MusicBrainzProvider::new(
+                client_id,
+                client_secret,
+                musicbrainz_bearer_token.clone(),
+            )),
         ];
+        if let Some(ref token) = listenbrainz_token {
+            if !token.is_empty() {
+                providers.push(Box::new(ListenBrainzProvider::new(token.clone())));
+            }
+        }
+        if let Some(ref key) = librefm_key {
+            if !key.is_empty() {
+                providers.push(Box::new(LibreFMProvider::new(Some(key.clone()))));
+            }
+        }
         providers.sort_by_key(|p| p.priority());
+        let sqlite_cache = sqlite_path.and_then(|path| {
+            match SqliteCache::open(&path) {
+                Ok(cache) => {
+                    tracing::info!("Opened SQLite metadata cache at {}", path.display());
+                    Some(Mutex::new(cache))
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to open SQLite metadata cache: {}", e);
+                    None
+                }
+            }
+        });
         let reg = Self {
             providers,
             http_client,
@@ -69,8 +108,9 @@ impl MetadataRegistry {
             overrides: Mutex::new(overrides::MetadataOverrides::load(overrides_path.clone())),
             overrides_path,
             cache_path,
+            sqlite_cache,
         };
-        reg.load_cache();
+        reg.init_cache();
         reg
     }
 
@@ -86,10 +126,10 @@ impl MetadataRegistry {
             else if a_low.contains(&art_low) || art_low.contains(&a_low) { score += 10; }
         }
         // album_tracks present: +100 if artist matches (enables splitting),
-        // +30 otherwise (tracklist without correct artist is low-confidence)
+        // +80 otherwise (tracklist without correct artist is reasonable)
         if !meta.album_tracks.is_empty() {
             if artist_ok { score += 100; }
-            else { score += 30; }
+            else { score += 80; }
         }
         // album name present: +10
         if meta.album.is_some() { score += 10; }
@@ -106,8 +146,8 @@ impl MetadataRegistry {
             let t_norm = t_low.replace(" & ", " and ").replace("&", "and");
             if a_norm == t_norm { score += 10; }
         }
-        // More tracks = more complete: +2 per track (up to +30)
-        score += (meta.album_tracks.len() as i32).min(15) * 2;
+        // More tracks = more complete: +1 per track (up to +10)
+        score += (meta.album_tracks.len() as i32).min(10) * 1;
         // PENALTY: if artist IS present but doesn't match at all - wrong band
         if !artist_ok {
             if let Some(ref a) = meta.artist {
@@ -142,8 +182,24 @@ impl MetadataRegistry {
             }
         }
 
+        // Check SQLite cache on LRU miss
+        if let Some(ref sqlite) = self.sqlite_cache {
+            if let Ok(cache) = sqlite.lock() {
+                if let Some(sqlite_meta) = cache.get(&cache_key) {
+                    let domain_meta = domain_meta_from_sqlite(&sqlite_meta);
+                    if domain_meta.album.is_some() || domain_meta.year.is_some() {
+                        tracing::info!("Metadata resolved from SQLite cache for {} - {}", artist, title);
+                        // Populate LRU
+                        self.cache.lock().unwrap().put(cache_key.clone(), domain_meta.clone());
+                        return Ok(domain_meta);
+                    }
+                }
+            }
+        }
+
         // Try ALL providers, collect results, pick the best-scoring one
         let mut best: Option<(i32, ValidatedMetadata, u8)> = None;
+        let mut all_results: Vec<(i32, ValidatedMetadata, u8)> = Vec::new();
         for provider in &self.providers {
             if let Some(meta) = provider.lookup(artist, title, album, &self.http_client).await {
                 let score = Self::score_result(&meta, artist, title);
@@ -159,8 +215,9 @@ impl MetadataRegistry {
                         Some((best_score, _, _)) => score > *best_score,
                     };
                     if is_better {
-                        best = Some((score, meta, provider.priority()));
+                        best = Some((score, meta.clone(), provider.priority()));
                     }
+                    all_results.push((score, meta, provider.priority()));
                 }
             }
         }
@@ -170,15 +227,38 @@ impl MetadataRegistry {
                 "Metadata resolved by provider priority {} (score {}) for {} - {}",
                 priority, score, artist, title
             );
-            if !meta.genres.is_empty() {
-                meta.genres = crate::genre_map::normalize_genres(&meta.genres);
+            if all_results.len() > 1 {
+                if let Some(merged_year) = merge::merge_year(&all_results) {
+                    meta.year = Some(merged_year);
+                }
+                let (merged_genres, merged_styles) = merge::weighted_merge_genres(&all_results);
+                if !merged_genres.is_empty() {
+                    meta.genres = merged_genres;
+                }
+                if !merged_styles.is_empty() {
+                    meta.styles = merged_styles;
+                }
+            } else {
+                if !meta.genres.is_empty() {
+                    meta.genres = crate::genre_map::normalize_genres(&meta.genres);
+                }
+                if !meta.styles.is_empty() {
+                    meta.styles = crate::genre_map::normalize_genres(&meta.styles);
+                }
             }
-            if !meta.styles.is_empty() {
-                meta.styles = crate::genre_map::normalize_genres(&meta.styles);
-            }
+            crate::genre_map::expand_parent_genres(&mut meta.genres, &mut meta.styles);
             // Only cache meaningful results (score >= 20: album match + artist or better)
             if score >= 20 {
-                self.cache.lock().unwrap().put(cache_key, meta.clone());
+                self.cache.lock().unwrap().put(cache_key.clone(), meta.clone());
+                // Write-through to SQLite
+                if let Some(ref sqlite) = self.sqlite_cache {
+                    if let Ok(cache) = sqlite.lock() {
+                        let sqlite_meta = sqlite_meta_from_domain(&meta);
+                        if let Err(e) = cache.put(&cache_key, &sqlite_meta) {
+                            tracing::warn!("Failed to write to SQLite cache: {}", e);
+                        }
+                    }
+                }
                 self.save_cache();
             }
             return Ok(meta);
@@ -191,7 +271,13 @@ impl MetadataRegistry {
         self.cache_path.as_ref().map(|p| p.join("metadata_cache.json"))
     }
 
-    fn load_cache(&self) {
+    /// Initialize caches: load JSON into LRU, then import JSON entries into SQLite.
+    fn init_cache(&self) {
+        self.load_json_into_lru();
+        self.import_json_to_sqlite();
+    }
+
+    fn load_json_into_lru(&self) {
         let Some(path) = self.cache_file_path() else { return; };
         if !path.exists() { return; }
         match std::fs::read_to_string(&path) {
@@ -208,6 +294,18 @@ impl MetadataRegistry {
                 }
             }
             Err(e) => tracing::warn!("Failed to read metadata cache: {}", e),
+        }
+    }
+
+    fn import_json_to_sqlite(&self) {
+        let Some(ref sqlite) = self.sqlite_cache else { return; };
+        let cache = self.cache.lock().unwrap();
+        let Ok(sqlite_cache) = sqlite.lock() else { return; };
+        for (key, meta) in cache.iter() {
+            let sqlite_meta = sqlite_meta_from_domain(meta);
+            if let Err(e) = sqlite_cache.put(&key, &sqlite_meta) {
+                tracing::warn!("Failed to import cache entry to SQLite: {}", e);
+            }
         }
     }
 
@@ -243,12 +341,56 @@ impl MetadataRegistry {
             .filter(|m| m.album.is_some() || m.year.is_some())
     }
 
+    pub fn get_sqlite_cache(&self) -> Option<&Mutex<SqliteCache>> {
+        self.sqlite_cache.as_ref()
+    }
+
     pub fn save_override(&self, artist: &str, title: &str, meta: &ValidatedMetadata) {
         let mut overrides = self.overrides.lock().unwrap();
         overrides.set(artist, title, meta);
         if let Some(ref path) = self.overrides_path {
             overrides.save_to(path);
         }
+    }
+}
+
+/// Convert domain ValidatedMetadata to SQLite cache format.
+fn sqlite_meta_from_domain(meta: &ValidatedMetadata) -> metadata_cache_sqlite::ValidatedMetadata {
+    metadata_cache_sqlite::ValidatedMetadata {
+        artist: meta.artist.clone(),
+        album: meta.album.clone(),
+        year: meta.year.clone(),
+        track_no: meta.track_no,
+        album_tracks: meta.album_tracks.iter().map(|t| {
+            metadata_cache_sqlite::AlbumTrack {
+                title: t.title.clone(),
+                duration_secs: t.duration_secs,
+                artist: t.artist.clone(),
+            }
+        }).collect(),
+        genres: meta.genres.clone(),
+        styles: meta.styles.clone(),
+        musicbrainz_release_group_id: meta.musicbrainz_release_group_id.clone(),
+    }
+}
+
+/// Convert SQLite cache ValidatedMetadata back to domain format.
+fn domain_meta_from_sqlite(meta: &metadata_cache_sqlite::ValidatedMetadata) -> ValidatedMetadata {
+    ValidatedMetadata {
+        artist: meta.artist.clone(),
+        album: meta.album.clone(),
+        year: meta.year.clone(),
+        track_no: meta.track_no,
+        album_tracks: meta.album_tracks.iter().map(|t| {
+            AlbumTrack {
+                title: t.title.clone(),
+                duration_secs: t.duration_secs,
+                artist: t.artist.clone(),
+            }
+        }).collect(),
+        genres: meta.genres.clone(),
+        styles: meta.styles.clone(),
+        musicbrainz_release_group_id: meta.musicbrainz_release_group_id.clone(),
     }
 }
 
@@ -280,8 +422,8 @@ mod tests {
     #[test]
     fn score_album_tracks_only() {
         let meta = make_meta(None, None, None, 3);
-        // artist missing → tracklist +30, 3 tracks = 6 → 36
-        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 36);
+        // artist missing → tracklist +80, 3 tracks = 3 → 83
+        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 83);
     }
 
     #[test]
@@ -296,7 +438,7 @@ mod tests {
     fn score_artist_contains_bonus() {
         let meta = make_meta(Some("The Beatles Band"), None, None, 0);
         let score = MetadataRegistry::score_result(&meta, "Beatles", "Title");
-        assert_eq!(score, 10); // contains match only (now +10)
+        assert_eq!(score, 10); // contains match only
     }
 
     #[test]
@@ -317,16 +459,16 @@ mod tests {
     #[test]
     fn score_track_count_capped() {
         let meta = make_meta(None, None, None, 20);
-        // artist missing → tracklist +30, min(15,20)*2 = 30 → 60
-        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 60);
+        // artist missing → tracklist +80, min(10,20)*1 = 10 → 90
+        assert_eq!(MetadataRegistry::score_result(&meta, "Artist", "Title"), 90);
     }
 
     #[test]
     fn score_complete_metadata() {
         let meta = make_meta(Some("Metallica"), Some("Master of Puppets"), Some("1986"), 8);
         let score = MetadataRegistry::score_result(&meta, "Metallica", "Master of Puppets");
-        // tracks(100) + album(10) + year(5) + artist_exact(50) + album_title(15) + and_norm(10) + 8*2 = 206
-        assert_eq!(score, 206);
+        // tracks(100) + album(10) + year(5) + artist_exact(50) + album_title(15) + and_norm(10) + 8 = 198
+        assert_eq!(score, 198);
     }
 
     #[test]
@@ -370,12 +512,29 @@ mod tests {
             overrides: std::sync::Mutex::new(MetadataOverrides::default()),
             overrides_path: None,
             cache_path: None,
+            sqlite_cache: None,
+        }
+    }
+
+    fn make_mock_meta(artist: Option<&str>, album: Option<&str>, year: Option<&str>,
+                       tracks: usize, genres: Vec<&str>) -> ValidatedMetadata {
+        ValidatedMetadata {
+            artist: artist.map(String::from),
+            album: album.map(String::from),
+            year: year.map(String::from),
+            album_tracks: (0..tracks).map(|i| AlbumTrack {
+                title: format!("Track {}", i + 1),
+                duration_secs: 100.0,
+                artist: None,
+            }).collect(),
+            genres: genres.into_iter().map(String::from).collect(),
+            ..Default::default()
         }
     }
 
     #[test]
     fn resolve_selects_highest_scored_provider() {
-        // Provider 1: tracks + album + exact artist → ~195
+        // Provider 1: tracks + album + exact artist → high score
         let p1 = MockProvider {
             priority_val: 1,
             result: Some(ValidatedMetadata {
@@ -389,7 +548,7 @@ mod tests {
                 ..Default::default()
             }),
         };
-        // Provider 2: album but no tracks, no artist → ~17
+        // Provider 2: album but no tracks, no artist
         let p2 = MockProvider {
             priority_val: 2,
             result: Some(ValidatedMetadata {
@@ -398,7 +557,7 @@ mod tests {
                 ..Default::default()
             }),
         };
-        // Provider 3: wrong artist penalty → ~ -490
+        // Provider 3: wrong artist penalty
         let p3 = MockProvider {
             priority_val: 3,
             result: Some(ValidatedMetadata {
@@ -421,7 +580,6 @@ mod tests {
 
     #[test]
     fn resolve_returns_default_when_no_match() {
-        // Provider returns metadata that doesn't match at all
         let p = MockProvider {
             priority_val: 1,
             result: Some(ValidatedMetadata {
@@ -435,7 +593,6 @@ mod tests {
             futures::executor::block_on(reg.resolve("Metallica", "Master of Puppets", None))
                 .unwrap();
 
-        // Default: all fields None/empty
         assert_eq!(result.artist, None);
         assert_eq!(result.album, None);
         assert_eq!(result.year, None);
@@ -444,7 +601,6 @@ mod tests {
 
     #[test]
     fn resolve_uses_album_param_for_better_match() {
-        // Provider matches only when album is given
         let p = MockProvider {
             priority_val: 1,
             result: Some(ValidatedMetadata {
@@ -460,16 +616,51 @@ mod tests {
             }),
         };
         let reg = make_registry(vec![Box::new(p)]);
-        // Resolve with album param
         let result =
             futures::executor::block_on(reg.resolve("Band", "Song", Some("The Album"))).unwrap();
         assert_eq!(result.artist, Some("Band".to_string()));
         assert_eq!(result.album, Some("The Album".to_string()));
         assert_eq!(result.album_tracks.len(), 1);
 
-        // Resolve without album param also works (provider always returns same)
         let result2 =
             futures::executor::block_on(reg.resolve("Band", "Song", None)).unwrap();
         assert_eq!(result2.album, Some("The Album".to_string()));
+    }
+
+    #[test]
+    fn resolve_merge_year_from_multiple_providers() {
+        // Two providers: same score, MB (priority 7) weight 3, other weight 1
+        let mb = MockProvider {
+            priority_val: 7,
+            result: Some(make_mock_meta(Some("Artist"), Some("Album"), Some("2003"), 0, vec![])),
+        };
+        let other = MockProvider {
+            priority_val: 1,
+            result: Some(make_mock_meta(Some("Artist"), Some("Album"), Some("2004"), 0, vec![])),
+        };
+        let reg = make_registry(vec![Box::new(mb), Box::new(other)]);
+        let result = futures::executor::block_on(
+            reg.resolve("Artist", "Title", None)
+        ).unwrap();
+        // MB weight 3 > other weight 1 → MB year wins
+        assert_eq!(result.year, Some("2003".to_string()));
+    }
+
+    #[test]
+    fn resolve_merge_genres_from_multiple_providers() {
+        let mb = MockProvider {
+            priority_val: 7,
+            result: Some(make_mock_meta(Some("Artist"), Some("Album"), Some("2003"), 0, vec!["Thrash metal"])),
+        };
+        let lb = MockProvider {
+            priority_val: 6,
+            result: Some(make_mock_meta(Some("Artist"), Some("Album"), Some("2003"), 0, vec!["Speed metal"])),
+        };
+        let reg = make_registry(vec![Box::new(mb), Box::new(lb)]);
+        let result = futures::executor::block_on(
+            reg.resolve("Artist", "Title", None)
+        ).unwrap();
+        assert!(result.genres.contains(&"Thrash metal".to_string()));
+        assert!(result.genres.contains(&"Speed metal".to_string()));
     }
 }

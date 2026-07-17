@@ -19,3 +19,5 @@ session-*.md
 /async-callback-manager/Cargo.lock
 /async-callback-manager/target/
 /async-callback-manager/target/*
+.omo/
+.codegraph/

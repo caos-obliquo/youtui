@@ -115,7 +115,7 @@ async fn try_metal_api(artist: &str, title: &str, client: &reqwest::Client) -> O
     tracing::info!("metal-api.dev resolved: album={:?}, year={:?}, tracks={}", album.name, year, album_tracks.len());
     Some(ValidatedMetadata {
         artist: detail.name.or_else(|| Some(artist.to_string())),
-        album: album.name.clone(), year, track_no: None, album_tracks, genres: vec![], styles: vec![],
+        album: album.name.clone(), year, track_no: None, album_tracks, genres: vec![], styles: vec![], musicbrainz_release_group_id: None,
     })
 }
 
@@ -165,7 +165,7 @@ async fn try_local_proxy(artist: &str, title: &str, client: &reqwest::Client) ->
     Some(ValidatedMetadata {
         artist: Some(normalize_artist(artist_name)),
         album: album_name, year, track_no: None, album_tracks,
-        genres: vec![], styles: vec![],
+        genres: vec![], styles: vec![], musicbrainz_release_group_id: None,
     })
 }
 
@@ -322,6 +322,7 @@ async fn try_direct_ma(artist: &str, title: &str) -> Option<ValidatedMetadata> {
         album_tracks: tracks,
         genres,
         styles: vec![],
+        musicbrainz_release_group_id: None,
     })
 }
 

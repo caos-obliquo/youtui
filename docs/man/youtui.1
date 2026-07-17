@@ -1,0 +1,227 @@
+.TH YOUTUI 1 "2026-07-17" "1.0.4" "Youtui Manual"
+.SH NAME
+youtui \- Terminal user interface for YouTube Music
+.SH SYNOPSIS
+.B youtui
+[\fI\,OPTIONS\/\fR] [\fI\,URL\/\fR] [\fI\,COMMAND\/\fR]
+.SH DESCRIPTION
+Youtui is a text-based user interface for browsing, searching, and playing
+music from YouTube Music. It supports album splitting, metadata enrichment,
+Last.fm scrobbling, lyrics display, and playlist management.
+
+When run without a subcommand, Youtui launches the full TUI. Subcommands
+provide CLI utilities for debugging, cache management, and authentication.
+.SH COMMANDS
+.TP
+.B (none)
+Run the TUI. This is the default when no subcommand is given. Requires a
+valid cookie file for YouTube Music authentication.
+.TP
+.B scrobble-cache
+Inspect or manage the offline scrobble cache. Failed scrobbles are queued
+here for background retry.
+.RS
+.TP
+.B \-\-show
+List cached entries with retry counts (default if no flags given).
+.TP
+.B \-\-clear
+Remove all cached entries.
+.TP
+.B \-\-retry
+Force immediate retry of all cached scrobbles.
+.RE
+.TP
+.B metadata-cache
+Inspect or manage the SQLite metadata cache.
+.RS
+.TP
+.B \-\-show
+List all cached metadata entries (default if no flags given).
+.TP
+.B \-\-clear
+Delete all cached entries.
+.TP
+.B \-\-stats
+Show cache statistics: entry count and database file size.
+.RE
+.TP
+.B logs
+Inspect or manage application log files.
+.RS
+.TP
+.B \-\-show
+Print the last N lines from the newest log file (default if no flags).
+.TP
+.B \-\-follow
+Tail the newest log file in real time.
+.TP
+.B \-\-clear
+Truncate all log files.
+.TP
+.B \-\-count \fI\,N\/\fR
+Number of lines to show (default 50).
+.RE
+.TP
+.B test-scrobble
+Submit a test scrobble to Last.fm. Requires the [scrobbling] config section.
+.RS
+.TP
+.I ARTIST
+Artist name.
+.TP
+.I TRACK
+Track title.
+.TP
+.I ALBUM
+Optional album name.
+.TP
+.I DURATION
+Duration in seconds (default 240).
+.RE
+.TP
+.B test-validate-metadata
+Run the metadata pipeline for a given artist and title. Queries Last.fm,
+MusicBrainz, Discogs, and other providers. Prints resolved album info and
+track listing.
+.RS
+.TP
+.I ARTIST
+Artist name.
+.TP
+.I TITLE
+Track title.
+.TP
+.I ALBUM
+Optional album name hint.
+.RE
+.TP
+.B test-listenbrainz
+Test the ListenBrainz metadata provider with a specific artist and title.
+.RS
+.TP
+.I ARTIST
+Artist name.
+.TP
+.I TITLE
+Track title.
+.TP
+.B \-\-release \fI\,RELEASE\/\fR
+Optional release name hint.
+.RE
+.TP
+.B auth-musicbrainz
+Interactive MusicBrainz OAuth2 setup. Prints an authorization URL, then
+exchanges the code for a bearer token and saves it to the config file.
+.RS
+.TP
+.B \-\-code \fI\,CODE\/\fR
+OAuth2 authorization code from the browser redirect. If omitted, prints
+the URL to open and instructions.
+.RE
+.SH OPTIONS
+.TP
+.B \-d, \-\-debug
+Display and log additional debug information.
+.TP
+.B \-\-disable-media-controls
+Disable system media control integration (MPRIS).
+.TP
+.B \-s, \-\-show-source
+Print raw JSON from the YouTube Music API instead of processed output.
+.TP
+.B \-i, \-\-input-json \fI\,PATH\/\fR
+Process local JSON file(s) as if received from the API. Can be passed
+multiple times for endpoints that support continuations.
+.TP
+.B \-\-auth-type \fI\,TYPE\/\fR
+Force a specific authentication type (browser, oauth).
+.TP
+.B \-D, \-\-downloader-type \fI\,TYPE\/\fR
+Force a specific downloader type (yt-dlp, ffmpeg).
+.TP
+.B \-f, \-\-force
+Skip duplicate check when adding a URL.
+.TP
+.B \-\-generate-completions \fI\,SHELL\/\fR
+Generate shell completion script for bash, zsh, fish, or PowerShell.
+.SH ENVIRONMENT
+.TP
+.B YT_COOKIE
+Path to the Netscape-format cookies.txt file for YouTube Music
+authentication. Overrides the default location.
+.SH FILES
+.TP
+.B ~/.config/youtui/config.toml
+Main configuration file. Contains auth settings, scrobbling credentials,
+keybindings, and UI preferences.
+.TP
+.B ~/.config/youtui/cookie.txt
+Netscape-format cookie file for YouTube Music authentication.
+.TP
+.B ~/.local/share/youtui/metadata_cache.sqlite
+SQLite database caching metadata from Last.fm, MusicBrainz, Discogs, and
+other providers.
+.TP
+.B ~/.local/share/youtui/scrobble_cache.json
+JSON file storing failed scrobbles for background retry.
+.TP
+.B ~/.local/share/youtui/debug*.log
+Rotating debug log files. The newest file has the highest number.
+.SH EXAMPLES
+.TP
+Run the TUI
+youtui
+.TP
+Run with debug logging
+youtui \-\-debug
+.TP
+Show failed scrobbles
+youtui scrobble-cache
+.TP
+Clear scrobble cache
+youtui scrobble-cache \-\-clear
+.TP
+Retry failed scrobbles now
+youtui scrobble-cache \-\-retry
+.TP
+Show metadata cache stats
+youtui metadata-cache \-\-stats
+.TP
+Clear metadata cache
+youtui metadata-cache \-\-clear
+.TP
+View last 100 log lines
+youtui logs \-\-count 100
+.TP
+Follow logs in real time
+youtui logs \-\-follow
+.TP
+Clear all log files
+youtui logs \-\-clear
+.TP
+Test a scrobble
+youtui test-scrobble "Radiohead" "Creep" "Pablo Honey" 239
+.TP
+Test metadata pipeline
+youtui test-validate-metadata "The Beatles" "Yesterday" "Help!"
+.TP
+Test ListenBrainz lookup
+youtui test-listenbrainz "Aphex Twin" "Windowlicker" \-\-release "Windowlicker"
+.TP
+Start MusicBrainz OAuth
+youtui auth-musicbrainz
+.TP
+Complete MusicBrainz OAuth
+youtui auth-musicbrainz \-\-code "YOUR_CODE_HERE"
+.SH EXIT STATUS
+.IP 0
+Success.
+.IP 1
+Error (invalid arguments, network failure, authentication failure, or
+internal error).
+.SH AUTHORS
+caos-obliquo <caos_obliquo@outlook.com>
+.SH SEE ALSO
+.BR genius-rs (1),
+.BR ytmapi-cli (1)

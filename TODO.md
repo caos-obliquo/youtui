@@ -13,14 +13,19 @@
 - Suckless refactoring: -630 lines (panics, dead crates, boilerplate, method subdivisions)
 - Perf batch: render throttle, stale download cancel, enter-spam guard, lazy iterator, protocol cache, help menu single-pass
 
-## Next (User Priority Queue)
-- **SQLite metadata cache crate** - cache metadata results to reduce API calls
-- **MusicBrainz Cover Art Archive** - wire album art into footer/art popup
-- **Wire SQLite cache into metadata-provider**
-- **Plan trim** - remove dead items from robustness plan, align with fork reality
+## Completed (v1.1.0 - feat/next-release-v1.1)
+- **genre-db-sqlite**: SQLite-backed GenreDb with MusicBee+RYM seed data, hierarchy propagation
+- **MB OAuth2+genres**: device flow, auto-refresh, release group genre fetch, MBID capture
+- **LB genre validation**: known-genre tags without mbid promoted to genres
+- **Genre+year merge**: provider-weighted voting (MB=3, LB=2, rest=1), cumulative weights
+- **MB Cover Art Archive**: fallback pipeline before Last.fm in FetchAlbumArt
+- **Queue year enrichment**: EnrichSongYear on queue-add, rate-limited 1/2s, stale-guard
+- **CLI tools**: test-musicbrainz, test-caa, test-listenbrainz, test-validate-metadata
+- **metadata-cache-sqlite crate**: SQLite metadata cache (+16 tests)
+- **LibreFM provider**: new metadata provider (+355 lines)
+- 105 new tests, 531 total pass, 0 warnings
 
 ## Low Priority
-- **OAuth refresh** - token expiry handling in ytmapi-rs
 - **Native streaming** - symphonia/basic-tcp-streaming prototype
 - **Liked songs in browser tables** - parse like_status from search results, add "Liked" column
 - **Artist album pagination** - `ParseFromContinuable` for `GetArtistAlbumsQuery`

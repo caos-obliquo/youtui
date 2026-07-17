@@ -472,6 +472,10 @@ mod tests {
             session_key: "sk789".into(),
             genius_token: String::new(),
             discogs_token: String::new(),
+            listenbrainz_token: String::new(),
+            musicbrainz_bearer_token: String::new(),
+            musicbrainz_client_id: String::new(),
+            musicbrainz_client_secret: String::new(),
         };
         // ScrobbleState with fixed start_time for deterministic timestamp
         // We set start_time to UNIX_EPOCH + 1000s so timestamp = 1000
@@ -565,6 +569,10 @@ mod tests {
             session_key: String::new(),
             genius_token: String::new(),
             discogs_token: String::new(),
+            listenbrainz_token: String::new(),
+            musicbrainz_bearer_token: String::new(),
+            musicbrainz_client_id: String::new(),
+            musicbrainz_client_secret: String::new(),
         };
         let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         // This should not panic - just return immediately
@@ -583,6 +591,10 @@ mod tests {
             session_key: "sk".into(),
             genius_token: String::new(),
             discogs_token: String::new(),
+            listenbrainz_token: String::new(),
+            musicbrainz_bearer_token: String::new(),
+            musicbrainz_client_id: String::new(),
+            musicbrainz_client_secret: String::new(),
         };
         let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         let _fut = submit_scrobble(&config, &state);

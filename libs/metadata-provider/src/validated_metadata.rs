@@ -9,6 +9,7 @@ pub struct ValidatedMetadata {
     pub album_tracks: Vec<AlbumTrack>,
     pub genres: Vec<String>,
     pub styles: Vec<String>,
+    pub musicbrainz_release_group_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
