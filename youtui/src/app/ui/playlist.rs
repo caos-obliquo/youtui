@@ -26,6 +26,7 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleMetadataValidated, HandleMetadataValidationError,
     HandleRateSongOk, HandleRateSongErr,
     HandleFetchAlbumArtOk, HandleFetchAlbumArtErr,
+    HandleEnrichSongYearOk, HandleEnrichSongYearErr,
 };
 use crate::app::ui::draw_media_controls::upgrade_thumbnail_url;
 use crate::app::ui::{AppCallback, WindowContext};
@@ -49,7 +50,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use tracing::{debug, error, info, warn};
 use ytmapi_rs::common::YoutubeID;
 
@@ -133,6 +134,10 @@ pub struct Playlist {
     pub album_art_fetching: bool,
     /// Album name being fetched for album art matching
     pub album_art_fetching_name: Option<String>,
+    /// Rate-limit guard for year enrichment (1/2s)
+    pub last_year_enrichment: Option<Instant>,
+    /// True while a year enrichment task is in-flight
+    pub year_being_enriched: bool,
     /// Last.fm verified canonical album name from album.getInfo (or cleaned fallback).
     /// Set by FetchAlbumArtEffect::apply(), cleared when song changes.
     /// Used as primary album name for ALL scrobble submissions.
@@ -946,6 +951,8 @@ impl Playlist {
             yank_buffer: Vec::new(),
             album_art_fetching: false,
             album_art_fetching_name: None,
+            last_year_enrichment: None,
+            year_being_enriched: false,
             canonical_album_name: None,
             pending_count: 0,
             search_text: String::new(),
@@ -1085,6 +1092,7 @@ impl Playlist {
                 album: list_album,
                 like_status: src_like_status.clone(),
                 is_album_upload: false,
+                release_mbid: None,
             };
             self.list.insert_after(src_idx + i, list_song);
             accum += track.duration_secs;
@@ -1584,11 +1592,12 @@ impl Playlist {
                             let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                             let album_name = album.name.clone();
                             let api_key = self.scrobbling_config.api_key.clone();
+                            let release_mbid = song.release_mbid.clone();
                             if !api_key.is_empty() {
                                 self.album_art_fetching = true;
                                 self.album_art_fetching_name = Some(album_name.clone());
                                 effect = effect.push(AsyncTask::new_future_try(
-                                    crate::app::server::FetchAlbumArt(artist, album_name, api_key),
+                                    crate::app::server::FetchAlbumArt(artist, album_name, api_key, release_mbid),
                                     HandleFetchAlbumArtOk,
                                     HandleFetchAlbumArtErr,
                                     None,
@@ -1633,6 +1642,28 @@ impl Playlist {
                             crate::app::scrobbler::submit_now_playing(&cfg, &state).await;
                         });
                     }
+                }
+            }
+            // Fire-and-forget year enrichment when the playing song lacks a year.
+            if self.last_year_enrichment.map_or(true, |t| t.elapsed() > Duration::from_secs(2)) && !self.year_being_enriched {
+                let enrich = self.get_song_from_idx(song_index).and_then(|song| {
+                    if song.year.is_none() {
+                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        let title = song.title.clone();
+                        Some((artist, title))
+                    } else {
+                        None
+                    }
+                });
+                if let Some((artist, title)) = enrich {
+                    self.last_year_enrichment = Some(Instant::now());
+                    self.year_being_enriched = true;
+                    effect = effect.push(AsyncTask::new_future_try(
+                        crate::app::server::EnrichSongYear(id, artist, title),
+                        HandleEnrichSongYearOk,
+                        HandleEnrichSongYearErr,
+                        None,
+                    ).map_frontend(|this: &mut Self| this));
                 }
             }
             return effect;
@@ -1702,9 +1733,10 @@ impl Playlist {
                     let title = song.title.clone();
                     let album_art = song.album_art.clone();
                     let actual_dur = song.actual_duration;
-                    (artist, album, title, album_art, actual_dur, song.artists.first().map(|a| a.name.clone()))
+                    let release_mbid = song.release_mbid.clone();
+                    (artist, album, title, album_art, actual_dur, song.artists.first().map(|a| a.name.clone()), release_mbid)
                 });
-                if let Some((song_artist, song_album, song_title, song_album_art, actual_dur, album_artist)) = song_data {
+                if let Some((song_artist, song_album, song_title, song_album_art, actual_dur, album_artist, song_release_mbid)) = song_data {
                     let album = self.canonical_album_name.clone().or_else(|| song_album.clone());
                     let dur = actual_dur.unwrap_or(std::time::Duration::from_secs(240));
                     let state = crate::app::scrobbler::ScrobbleState::new(
@@ -1728,7 +1760,7 @@ impl Playlist {
                                 self.album_art_fetching = true;
                                 self.album_art_fetching_name = Some(art_album.clone());
                                 effect = effect.push(AsyncTask::new_future_try(
-                                    crate::app::server::FetchAlbumArt(art_artist, art_album, api_key),
+                                    crate::app::server::FetchAlbumArt(art_artist, art_album, api_key, song_release_mbid),
                                     HandleFetchAlbumArtOk,
                                     HandleFetchAlbumArtErr,
                                     None,
@@ -1736,6 +1768,28 @@ impl Playlist {
                             }
                         }
                     }
+                }
+            }
+            // Fire-and-forget year enrichment when the playing song lacks a year.
+            if self.last_year_enrichment.map_or(true, |t| t.elapsed() > Duration::from_secs(2)) && !self.year_being_enriched {
+                let enrich = self.get_song_from_id(id).and_then(|song| {
+                    if song.year.is_none() {
+                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        let title = song.title.clone();
+                        Some((artist, title))
+                    } else {
+                        None
+                    }
+                });
+                if let Some((artist, title)) = enrich {
+                    self.last_year_enrichment = Some(Instant::now());
+                    self.year_being_enriched = true;
+                    effect = effect.push(AsyncTask::new_future_try(
+                        crate::app::server::EnrichSongYear(id, artist, title),
+                        HandleEnrichSongYearOk,
+                        HandleEnrichSongYearErr,
+                        None,
+                    ).map_frontend(|this: &mut Self| this));
                 }
             }
             return effect;

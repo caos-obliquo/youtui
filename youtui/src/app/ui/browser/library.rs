@@ -311,6 +311,7 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
             })),
             like_status: ts.like_status,
             is_album_upload: false,
+            release_mbid: None,
         }
     }).collect();
     LibraryEffect::SongsLoaded(songs)
@@ -365,6 +366,7 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             album,
             like_status: s.like_status,
             is_album_upload: false,
+            release_mbid: None,
         }
     }).collect();
     // The effect handler will populate track_set_ids from the songs

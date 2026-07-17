@@ -302,6 +302,7 @@ fn make_album_original(video: &'static str, year: Option<&str>) -> ListSong {
         album: None,
         like_status: LikeStatus::Indifferent,
         is_album_upload: false,
+        release_mbid: None,
     }
 }
 
@@ -328,6 +329,7 @@ fn make_track_entry(video: &'static str, track_no: usize, title: &'static str, d
         album: None,
         like_status: LikeStatus::Indifferent,
         is_album_upload: false,
+        release_mbid: None,
     }
 }
 
