@@ -316,7 +316,7 @@ impl ListSong {
             ListSongDisplayableField::TrackNo => self
                 .track_no
                 .map(|track_no| track_no.to_string())
-                .unwrap_or_default()
+                .unwrap_or_else(|| "-".to_string())
                 .into(),
             ListSongDisplayableField::Artists => compute_artists_string(&self.artists).into(),
             ListSongDisplayableField::Album => self

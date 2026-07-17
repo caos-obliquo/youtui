@@ -1582,22 +1582,41 @@ impl Playlist {
                     }
                 }
                 let is_track_entry = self.get_song_from_idx(song_index).and_then(|s| s.track_no).is_some();
-                // Trigger FetchAlbumArt if not already downloaded (with throttle)
+                // Try YTM thumbnails first (available for all API-fetched songs),
+                // fall back to FetchAlbumArt (Last.fm / CAA) when no thumbnails.
                 if let Some(song) = self.get_song_from_idx(song_index) {
-                    let should_fetch = matches!(song.album_art, crate::app::structures::AlbumArtState::None | AlbumArtState::Init)
+                    let should_get_art = matches!(song.album_art, AlbumArtState::None | AlbumArtState::Init)
                         && !self.album_art_fetching
                         && self.cur_played_dur.map_or(true, |d| d.as_secs() > 5 || d.is_zero());
-                    if should_fetch {
-                        if let Some(ref album) = song.album {
-                            let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                            let album_name = album.name.clone();
-                            let api_key = self.scrobbling_config.api_key.clone();
-                            let release_mbid = song.release_mbid.clone();
+                    if should_get_art {
+                        // Extract all data from song before mutating self
+                        let ytm_thumb_url = song.thumbnails.as_ref()
+                            .iter()
+                            .max_by_key(|t| t.height * t.width)
+                            .map(|t| t.url.clone());
+                        let thumbnail_id = ytm_thumb_url.as_ref().map(|_| {
+                            SongThumbnailID::from(song as &ListSong).into_owned()
+                        });
+                        let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                        let album_name = song.album.as_ref().map(|a| a.name.clone());
+                        let api_key = self.scrobbling_config.api_key.clone();
+                        let release_mbid = song.release_mbid.clone();
+                        if let Some(thumb_url) = ytm_thumb_url {
+                            let thumb_url = upgrade_thumbnail_url(&thumb_url);
+                            let thumb_id = thumbnail_id.unwrap();
+                            self.album_art_fetching = true;
+                            effect = effect.push(AsyncTask::new_future_try(
+                                GetSongThumbnail { thumbnail_url: thumb_url, thumbnail_id: thumb_id.clone() },
+                                HandleGetSongThumbnailOk,
+                                HandleGetSongThumbnailError(thumb_id),
+                                None,
+                            ).map_frontend(|this: &mut Self| this));
+                        } else if let Some(ref album_name) = album_name {
                             if !api_key.is_empty() {
                                 self.album_art_fetching = true;
                                 self.album_art_fetching_name = Some(album_name.clone());
                                 effect = effect.push(AsyncTask::new_future_try(
-                                    crate::app::server::FetchAlbumArt(artist, album_name, api_key, release_mbid),
+                                    crate::app::server::FetchAlbumArt(artist, album_name.clone(), api_key, release_mbid),
                                     HandleFetchAlbumArtOk,
                                     HandleFetchAlbumArtErr,
                                     None,
@@ -1731,12 +1750,10 @@ impl Playlist {
                     let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                     let album = song.album.as_ref().map(|a| a.name.clone());
                     let title = song.title.clone();
-                    let album_art = song.album_art.clone();
                     let actual_dur = song.actual_duration;
-                    let release_mbid = song.release_mbid.clone();
-                    (artist, album, title, album_art, actual_dur, song.artists.first().map(|a| a.name.clone()), release_mbid)
+                    (artist, album, title, actual_dur, song.artists.first().map(|a| a.name.clone()))
                 });
-                if let Some((song_artist, song_album, song_title, song_album_art, actual_dur, album_artist, song_release_mbid)) = song_data {
+                if let Some((song_artist, song_album, song_title, actual_dur, album_artist)) = song_data {
                     let album = self.canonical_album_name.clone().or_else(|| song_album.clone());
                     let dur = actual_dur.unwrap_or(std::time::Duration::from_secs(240));
                     let state = crate::app::scrobbler::ScrobbleState::new(
@@ -1748,24 +1765,45 @@ impl Playlist {
                     tokio::spawn(async move {
                         crate::app::scrobbler::submit_now_playing(&cfg, &state).await;
                     });
-                    // Trigger FetchAlbumArt if track has no art yet
-                    let should_fetch = matches!(song_album_art, crate::app::structures::AlbumArtState::None | AlbumArtState::Init)
-                        && !self.album_art_fetching;
-                    if should_fetch {
-                        if let Some(ref alb_name) = song_album {
-                            let art_artist = song_artist;
-                            let art_album = alb_name.clone();
-                            let api_key = self.scrobbling_config.api_key.clone();
-                            if !api_key.is_empty() && !art_artist.is_empty() && !art_album.is_empty() {
-                                self.album_art_fetching = true;
-                                self.album_art_fetching_name = Some(art_album.clone());
-                                effect = effect.push(AsyncTask::new_future_try(
-                                    crate::app::server::FetchAlbumArt(art_artist, art_album, api_key, song_release_mbid),
-                                    HandleFetchAlbumArtOk,
-                                    HandleFetchAlbumArtErr,
-                                    None,
-                                ).map_frontend(|this: &mut Self| this));
-                            }
+                }
+            }
+            // Try YTM thumbnails first (available for all API-fetched songs),
+            // fall back to FetchAlbumArt (Last.fm / CAA) when no thumbnails.
+            if let Some(song) = self.get_song_from_idx(song_index) {
+                let should_get_art = matches!(song.album_art, AlbumArtState::None | AlbumArtState::Init)
+                    && !self.album_art_fetching;
+                if should_get_art {
+                    let ytm_thumb_url = song.thumbnails.as_ref()
+                        .iter()
+                        .max_by_key(|t| t.height * t.width)
+                        .map(|t| t.url.clone());
+                    let thumbnail_id = ytm_thumb_url.as_ref().map(|_| {
+                        SongThumbnailID::from(song as &ListSong).into_owned()
+                    });
+                    let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                    let album_name = song.album.as_ref().map(|a| a.name.clone());
+                    let api_key = self.scrobbling_config.api_key.clone();
+                    let release_mbid = song.release_mbid.clone();
+                    if let Some(thumb_url) = ytm_thumb_url {
+                        let thumb_url = upgrade_thumbnail_url(&thumb_url);
+                        let thumb_id = thumbnail_id.unwrap();
+                        self.album_art_fetching = true;
+                        effect = effect.push(AsyncTask::new_future_try(
+                            GetSongThumbnail { thumbnail_url: thumb_url, thumbnail_id: thumb_id.clone() },
+                            HandleGetSongThumbnailOk,
+                            HandleGetSongThumbnailError(thumb_id),
+                            None,
+                        ).map_frontend(|this: &mut Self| this));
+                    } else if let Some(ref album_name) = album_name {
+                        if !api_key.is_empty() {
+                            self.album_art_fetching = true;
+                            self.album_art_fetching_name = Some(album_name.clone());
+                            effect = effect.push(AsyncTask::new_future_try(
+                                crate::app::server::FetchAlbumArt(artist, album_name.clone(), api_key, release_mbid),
+                                HandleFetchAlbumArtOk,
+                                HandleFetchAlbumArtErr,
+                                None,
+                            ).map_frontend(|this: &mut Self| this));
                         }
                     }
                 }
