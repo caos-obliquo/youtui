@@ -1314,15 +1314,27 @@ impl Scrollable for LibraryBrowser {
                 }
                 LibraryCategory::Playlists => {
                     if self.show_playlist_tracks {
-                        let max = if !self.local_filter_text.is_empty() || !self.tracks_filter.filter_commands.is_empty() || !self.tracks_sort.sort_commands.is_empty() {
+                        let has_filter = !self.local_filter_text.is_empty()
+                            || !self.tracks_filter.filter_commands.is_empty()
+                            || !self.tracks_sort.sort_commands.is_empty();
+                        let max = if has_filter {
                             self.get_tracks_filtered_list_iter().count().saturating_sub(1)
                         } else {
                             self.playlist_tracks.len().saturating_sub(1)
                         };
-                        self.playlist_tracks_selected = self
-                            .playlist_tracks_selected
-                            .saturating_add_signed(amount)
-                            .min(max);
+                        if has_filter {
+                            let matching: Vec<usize> = self.get_tracks_filtered_list_iter()
+                                .filter_map(|ls| self.playlist_tracks.iter().position(|p| p.video_id == ls.video_id))
+                                .collect();
+                            self.playlist_tracks_selected = self.snap_filtered(
+                                self.playlist_tracks_selected, amount, max, &matching,
+                            );
+                        } else {
+                            self.playlist_tracks_selected = self
+                                .playlist_tracks_selected
+                                .saturating_add_signed(amount)
+                                .min(max);
+                        }
                     } else {
                         let max = self.playlist_data.len().saturating_sub(1);
                         let matching: Vec<usize> = self.get_playlists_filtered_iter().map(|(i, _)| i).collect();
