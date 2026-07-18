@@ -437,6 +437,13 @@ enum Command {
         #[arg(long)]
         retry: bool,
     },
+    /// Batch-enrich year metadata from file/stdin and persist to SQLite cache.
+    /// Input: one line per track, format "Artist | Title" (pipe-separated).
+    /// Lines starting with # are skipped as comments.
+    EnrichCache {
+        /// Path to input file. If omitted, reads from stdin.
+        file: Option<String>,
+    },
 }
 
 pub struct RuntimeInfo {

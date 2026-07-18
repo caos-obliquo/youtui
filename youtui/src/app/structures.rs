@@ -316,8 +316,8 @@ impl ListSong {
             ListSongDisplayableField::TrackNo => self
                 .track_no
                 .map(|track_no| track_no.to_string())
-                .unwrap_or_default()
-                .into(),
+                .map(Cow::Owned)
+                .unwrap_or(Cow::Borrowed("-")),
             ListSongDisplayableField::Artists => compute_artists_string(&self.artists).into(),
             ListSongDisplayableField::Album => self
                 .album

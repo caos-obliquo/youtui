@@ -123,7 +123,7 @@ impl Action for BrowserLibraryAction {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LibraryEffect {
     SongsLoaded(Vec<ListSong>),
-    SongsEnriched(Vec<(usize, Option<String>, Vec<String>, Vec<String>)>),
+    SongsEnriched(Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, crate::app::server::EnrichTarget),
     PlaylistsLoaded(Vec<LibraryPlaylist>),
 
     ArtistsLoaded(Vec<LibraryArtist>),
@@ -169,36 +169,45 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 target.input_routing = InputRouting::Content;
 
                 if has_enrich {
+                    target.enrich_count = Some(enrich_data.len());
                     return AsyncTask::new_future_try(
-                        EnrichFromMetadataCache(enrich_data),
+                        EnrichFromMetadataCache(enrich_data, crate::app::server::EnrichTarget::LikedSongs),
                         HandleEnrichFromCacheOk,
                         HandleEnrichFromCacheErr,
                         None,
                     );
                 }
             }
-            LibraryEffect::SongsEnriched(results) => {
+            LibraryEffect::SongsEnriched(results, target_route) => {
                 let count = results.len();
-                if target.show_playlist_tracks {
-                    for (idx, year, genres, styles) in results {
-                        if let Some(song) = target.playlist_tracks.get_mut(idx) {
-                            song.year = year.map(Rc::new);
-                            if !genres.is_empty() {
-                                song.genres = genres;
-                            }
-                            if !styles.is_empty() {
-                                song.styles = styles;
+                match target_route {
+                    crate::app::server::EnrichTarget::PlaylistTracks => {
+                        for (idx, year, genres, styles) in results {
+                            if let Some(song) = target.playlist_tracks.get_mut(idx) {
+                                if let Some(y) = year {
+                                    song.year = Some(Rc::new(y));
+                                }
+                                if !genres.is_empty() {
+                                    song.genres = genres;
+                                }
+                                if !styles.is_empty() {
+                                    song.styles = styles;
+                                }
                             }
                         }
+                        info!(count = %count, "Library playlist tracks enriched from cache");
                     }
-                    info!(count = %count, "Library playlist tracks enriched from cache");
-                } else {
-                    for (idx, year, genres, styles) in results {
-                        let year_rc = year.map(Rc::new);
-                        target.song_list.update_song_at(idx, year_rc, genres, styles);
+                    crate::app::server::EnrichTarget::LikedSongs => {
+                        for (idx, year, genres, styles) in results {
+                            let year_rc = year.map(Rc::new);
+                            if year_rc.is_some() {
+                                target.song_list.update_song_at(idx, year_rc, genres, styles);
+                            }
+                        }
+                        info!(count = %count, "Library songs enriched from cache");
                     }
-                    info!(count = %count, "Library songs enriched from cache");
                 }
+                target.enrich_count = None;
             }
             LibraryEffect::PlaylistsLoaded(playlists) => {
                 info!(count = %playlists.len(), "Library playlists loaded");
@@ -233,6 +242,7 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 warn!(error = %msg, "Library category load failed");
                 target.loading = false;
                 target.error = Some(msg);
+                target.enrich_count = None;
             }
             LibraryEffect::RemoveItemsSuccess => {
                 info!("Library playlist items removed successfully");
@@ -408,8 +418,9 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             let has_enrich = self.2;
             let enrich_data = self.3;
             if has_enrich && !enrich_data.is_empty() {
+                target.enrich_count = Some(enrich_data.len());
                 return AsyncTask::new_future_try(
-                    EnrichFromMetadataCache(enrich_data),
+                    EnrichFromMetadataCache(enrich_data, crate::app::server::EnrichTarget::PlaylistTracks),
                     HandleEnrichFromCacheOk,
                     HandleEnrichFromCacheErr,
                     None,
@@ -448,8 +459,11 @@ impl_youtui_task_handler!(HandleLibraryReorderItemsOk, (), LibraryBrowser, |_, _
 impl_youtui_task_handler!(HandleLibraryReorderItemsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     LibraryEffect::ReorderItemsError(err.to_string())
 });
-impl_youtui_task_handler!(HandleEnrichFromCacheOk, Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, LibraryBrowser, |_, results: Vec<(usize, Option<String>, Vec<String>, Vec<String>)>| {
-    LibraryEffect::SongsEnriched(results)
+impl_youtui_task_handler!(HandleEnrichFromCacheOk, Vec<(usize, Option<String>, Vec<String>, Vec<String>, crate::app::server::EnrichTarget)>, LibraryBrowser, |_, results: Vec<(usize, Option<String>, Vec<String>, Vec<String>, crate::app::server::EnrichTarget)>| {
+    let target = results.first().map(|r| r.4).unwrap_or(crate::app::server::EnrichTarget::LikedSongs);
+    // Separate the target from the data
+    let data: Vec<(usize, Option<String>, Vec<String>, Vec<String>)> = results.into_iter().map(|(i, y, g, s, _)| (i, y, g, s)).collect();
+    LibraryEffect::SongsEnriched(data, target)
 });
 impl_youtui_task_handler!(HandleEnrichFromCacheErr, anyhow::Error, LibraryBrowser, |_, _: anyhow::Error| {
     info!("Cache enrichment failed (non-critical): no metadata will be shown in library");
@@ -470,6 +484,7 @@ pub struct LibraryBrowser {
     pub playlist_selected: usize,
     pub playlist_tracks: Vec<ListSong>,
     pub show_playlist_tracks: bool,
+    pub playlist_tracks_name: Option<String>,
     pub playlist_tracks_selected: usize,
     pub liked_playlists: HashSet<PlaylistID<'static>>,
     pub track_set_ids: HashMap<String, String>,
@@ -509,11 +524,14 @@ pub struct LibraryBrowser {
     pub local_filter_text: String,
     pub sort_order: GetLibrarySortOrder,
     pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
+    /// Set to Some(N) while EnrichFromMetadataCache is in-flight, cleared on completion
+    pub enrich_count: Option<usize>,
 }
 
 impl LibraryBrowser {
     pub fn new() -> Self {
         Self {
+            enrich_count: None,
             input_routing: InputRouting::Category,
             category: LibraryCategory::LikedSongs,
             song_list: Default::default(),
@@ -525,6 +543,7 @@ impl LibraryBrowser {
             playlist_selected: 0,
             playlist_tracks: Vec::new(),
             show_playlist_tracks: false,
+            playlist_tracks_name: None,
             playlist_tracks_selected: 0,
             liked_playlists: HashSet::new(),
             track_set_ids: HashMap::new(),
@@ -685,6 +704,7 @@ impl LibraryBrowser {
         let Some(pl) = self.playlist_data.get(self.playlist_selected).cloned() else {
             return AsyncTask::new_no_op();
         };
+        self.playlist_tracks_name = Some(pl.title.clone());
         debug!(playlist = %pl.title, "Library: fetching playlist tracks");
         self.loading = true;
         AsyncTask::new_future_try(
@@ -1070,7 +1090,12 @@ impl TableView for LibraryBrowser {
         let cols: Vec<Vec<Cow<'_, str>>> = if self.show_playlist_tracks {
             self.playlist_tracks
                 .iter()
-                .map(|ls| ls.get_fields(Self::tracks_subcolumns_of_vec()).to_vec())
+                .enumerate()
+                .map(|(i, ls)| {
+                    let mut row = ls.get_fields(Self::tracks_subcolumns_of_vec()).to_vec();
+                    row[0] = Cow::Owned((i + 1).to_string());
+                    row
+                })
                 .collect()
         } else {
             match self.category {
@@ -1194,11 +1219,11 @@ impl AdvancedTableView for LibraryBrowser {
         &self.active_sort().sort_commands
     }
     fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
-        let fields = Self::tracks_subcolumns_of_vec();
         let iter: Box<dyn Iterator<Item = Box<dyn Iterator<Item = Cow<'_, str>> + '_>> + '_> = if self.show_playlist_tracks {
-            Box::new(self.get_tracks_filtered_list_iter().map(move |ls| {
-                let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
-                    Box::new(ls.get_fields(fields).into_iter());
+            Box::new(self.get_tracks_filtered_list_iter().enumerate().map(move |(i, ls)| {
+                let mut row = ls.get_fields(Self::tracks_subcolumns_of_vec()).to_vec();
+                row[0] = Cow::Owned((i + 1).to_string());
+                let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(row.into_iter());
                 v
             }))
         } else {
@@ -1299,7 +1324,13 @@ impl HasTitle for LibraryBrowser {
             } else {
                 String::new()
             };
-            format!("Playlist Tracks - {} tracks{}", total, search_tag).into()
+            let name = self.playlist_tracks_name.as_deref().unwrap_or("Playlist Tracks");
+            let enrich_tag = if self.enrich_count.is_some() {
+                " enriching..."
+            } else {
+                ""
+            };
+            format!("{} - {} tracks{}{}", name, total, search_tag, enrich_tag).into()
         } else {
             let sort_label = match self.sort_order {
                 GetLibrarySortOrder::Default => "",
