@@ -346,6 +346,7 @@ async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<Strin
         .collect();
 
     if pairs.is_empty() {
+        tracing::warn!("enrich-cache: no input lines");
         println!("No input lines found. Provide 'Artist | Title' per line.");
         return Ok(());
     }
@@ -355,18 +356,22 @@ async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<Strin
     let mut completed = 0usize;
     let mut errors = 0usize;
 
+    tracing::info!("enrich-cache: starting batch enrichment for {} songs", total);
     for (artist, title) in &pairs {
         let _permit = semaphore.acquire().await;
+        tracing::debug!("enrich-cache: resolving {} - {}", artist, title);
         match registry.resolve_fast(artist, title, None).await {
             Some(meta) => {
                 completed += 1;
                 let year_str = meta.year.as_deref().unwrap_or("None");
                 let genre_str = if meta.genres.is_empty() { String::new() } else { format!(" [{}]", meta.genres.join(", ")) };
+                tracing::info!("enrich-cache: {} - {} -> year={:?}, genres={}, styles={}", artist, title, meta.year, meta.genres.len(), meta.styles.len());
                 print!("\r[ {completed}/{total} ] {artist} - {title} -> {year_str}{genre_str}");
             }
             None => {
                 errors += 1;
                 completed += 1;
+                tracing::debug!("enrich-cache: {} - {} -> no data", artist, title);
                 print!("\r[ {completed}/{total} ] {artist} - {title} -> None");
             }
         }
@@ -375,6 +380,7 @@ async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<Strin
     }
 
     println!();
+    tracing::info!("enrich-cache: done - {} enriched, {} errors", completed, errors);
     println!("Done. {completed} enriched, {errors} errors");
     Ok(())
 }
