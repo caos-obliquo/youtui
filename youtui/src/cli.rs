@@ -1,9 +1,11 @@
-use crate::{Cli, OAUTH_FILENAME, RuntimeInfo, get_api, get_config_dir};
+use crate::{Cli, OAUTH_FILENAME, RuntimeInfo, get_api, get_config_dir, get_data_dir};
 use anyhow::Result;
 use metadata_provider::MetadataProvider;
 use futures::future::try_join_all;
 use querybuilder::{CliQuery, QueryType, command_to_query};
+use std::io::BufRead;
 use std::path::PathBuf;
+use tokio::sync::Semaphore;
 use ytmapi_rs::{generate_oauth_code_and_url, generate_oauth_token};
 
 mod querybuilder;
@@ -210,6 +212,9 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             }
             return Ok(());
         }
+        Some(crate::Command::EnrichCache { file }) => {
+            return handle_enrich_cache(&config, file).await;
+        }
         _ => {}
     }
     match cli {
@@ -285,6 +290,95 @@ pub async fn get_and_output_oauth_token(
     }
     Ok(())
 }
+async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<String>) -> Result<()> {
+    use crate::app::server::MetadataRegistry;
+
+    let overrides_path = get_config_dir().ok().map(|d| d.join("metadata_overrides.json"));
+    let cache_dir = get_data_dir().ok();
+    let cache_path = cache_dir.clone();
+    let sqlite_path = cache_dir.map(|d| d.join("metadata_cache.db"));
+
+    let http_client = reqwest::Client::builder()
+        .user_agent("Youtui/0.1 (enrich-cache)")
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+
+    let registry = MetadataRegistry::new(
+        http_client,
+        Some(config.scrobbling.api_key.clone()).filter(|s| !s.is_empty()),
+        Some(config.scrobbling.discogs_token.clone()).filter(|s| !s.is_empty()),
+        Some(config.scrobbling.genius_token.clone()).filter(|s| !s.is_empty()),
+        Some(config.scrobbling.listenbrainz_token.clone()).filter(|s| !s.is_empty()),
+        Some(config.scrobbling.musicbrainz_bearer_token.clone()).filter(|s| !s.is_empty()),
+        Some(config.scrobbling.api_key.clone()).filter(|s| !s.is_empty()), // librefm_key
+        overrides_path,
+        cache_path,
+        sqlite_path,
+    );
+
+    let lines: Vec<String> = if let Some(path) = file {
+        let f = std::fs::File::open(path)
+            .map_err(|e| anyhow::anyhow!("Failed to open file '{}': {}", path, e))?;
+        let reader = std::io::BufReader::new(f);
+        reader.lines().filter_map(|l| l.ok()).collect()
+    } else {
+        let stdin = std::io::stdin();
+        stdin.lock().lines().filter_map(|l| l.ok()).collect()
+    };
+
+    let pairs: Vec<(String, String)> = lines
+        .iter()
+        .filter(|l| {
+            let trimmed = l.trim();
+            !trimmed.is_empty() && !trimmed.starts_with('#')
+        })
+        .filter_map(|l| {
+            let trimmed = l.trim();
+            let mut parts = trimmed.splitn(2, '|');
+            let artist = parts.next()?.trim();
+            let title = parts.next()?.trim();
+            if artist.is_empty() || title.is_empty() {
+                None
+            } else {
+                Some((artist.to_string(), title.to_string()))
+            }
+        })
+        .collect();
+
+    if pairs.is_empty() {
+        println!("No input lines found. Provide 'Artist | Title' per line.");
+        return Ok(());
+    }
+
+    let total = pairs.len();
+    let semaphore = Semaphore::new(10);
+    let mut completed = 0usize;
+    let mut errors = 0usize;
+
+    for (artist, title) in &pairs {
+        let _permit = semaphore.acquire().await;
+        match registry.resolve_fast(artist, title, None).await {
+            Some(meta) => {
+                completed += 1;
+                let year_str = meta.year.as_deref().unwrap_or("None");
+                let genre_str = if meta.genres.is_empty() { String::new() } else { format!(" [{}]", meta.genres.join(", ")) };
+                print!("\r[ {completed}/{total} ] {artist} - {title} -> {year_str}{genre_str}");
+            }
+            None => {
+                errors += 1;
+                completed += 1;
+                print!("\r[ {completed}/{total} ] {artist} - {title} -> None");
+            }
+        }
+        use std::io::Write;
+        std::io::stdout().flush().ok();
+    }
+
+    println!();
+    println!("Done. {completed} enriched, {errors} errors");
+    Ok(())
+}
+
 async fn get_oauth_token(client_id: String, client_secret: String) -> Result<String> {
     let client = ytmapi_rs::client::Client::new()?;
     let (code, url) = generate_oauth_code_and_url(&client, &client_id).await?;

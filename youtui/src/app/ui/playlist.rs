@@ -8,7 +8,7 @@ use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::server::{
     AutoplayDecodedSong, DecodeSong, DownloadSong, GetSongThumbnail, IncreaseVolume, Pause,
     PausePlay, PlayDecodedSong, QueueDecodedSong, Resume, Seek, SeekTo, Stop, StopAll,
-    TaskMetadata, ValidateMetadata, AlbumTrack, EnrichFromMetadataCache,
+    TaskMetadata, ValidateMetadata, AlbumTrack,
 };
 use crate::app::structures::{
     fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
@@ -2087,7 +2087,7 @@ impl Playlist {
             .collect();
         if !enrich_data.is_empty() {
             let enrich_task = AsyncTask::new_future_try(
-                EnrichFromMetadataCache(enrich_data),
+                crate::app::server::EnrichQueueYears(enrich_data),
                 HandleQueueEnrichYearsOk,
                 HandleQueueEnrichYearsErr,
                 None,
