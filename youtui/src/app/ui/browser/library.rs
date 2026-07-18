@@ -182,10 +182,12 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 let count = results.len();
                 match target_route {
                     crate::app::server::EnrichTarget::PlaylistTracks => {
+                        let mut years_found = 0u32;
                         for (idx, year, genres, styles) in results {
                             if let Some(song) = target.playlist_tracks.get_mut(idx) {
                                 if let Some(y) = year {
                                     song.year = Some(Rc::new(y));
+                                    years_found += 1;
                                 }
                                 if !genres.is_empty() {
                                     song.genres = genres;
@@ -195,16 +197,18 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                                 }
                             }
                         }
-                        info!(count = %count, "Library playlist tracks enriched from cache");
+                        info!(total = %count, years = %years_found, "Library playlist tracks enriched from cache");
                     }
                     crate::app::server::EnrichTarget::LikedSongs => {
+                        let mut years_found = 0u32;
                         for (idx, year, genres, styles) in results {
                             let year_rc = year.map(Rc::new);
                             if year_rc.is_some() {
                                 target.song_list.update_song_at(idx, year_rc, genres, styles);
+                                years_found += 1;
                             }
                         }
-                        info!(count = %count, "Library songs enriched from cache");
+                        info!(total = %count, years = %years_found, "Library songs enriched from cache");
                     }
                 }
                 target.enrich_count = None;
