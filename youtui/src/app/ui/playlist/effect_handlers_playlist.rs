@@ -918,6 +918,51 @@ impl_youtui_task_handler!(
     }
 );
 
+// Queue batch year enrichment handlers
+#[derive(Debug, PartialEq)]
+pub struct HandleQueueEnrichYearsOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleQueueEnrichYearsErr;
+
+impl_youtui_task_handler!(
+    HandleQueueEnrichYearsOk,
+    Vec<(usize, Option<String>, Vec<String>, Vec<String>)>,
+    Playlist,
+    |_, results: Vec<(usize, Option<String>, Vec<String>, Vec<String>)>| {
+        move |this: &mut Playlist| {
+            use std::collections::HashMap;
+            let year_map: HashMap<usize, Option<String>> = results.into_iter()
+                .map(|(idx, year, _, _)| (idx, year))
+                .collect();
+            let mut applied = 0usize;
+            for (i, song) in this.list.get_list_iter_mut().enumerate() {
+                if let Some(Some(year)) = year_map.get(&i) {
+                    song.year = Some(Rc::new(year.clone()));
+                    applied += 1;
+                }
+            }
+            if applied > 0 {
+                info!("Queue batch enrichment: applied years to {} songs", applied);
+            }
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleQueueEnrichYearsErr,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            warn!("Queue batch year enrichment failed: {}", msg);
+            this.last_error = Some(format!("Year enrichment failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
 // Playlist load from YouTube Music effect handlers
 
 #[derive(Debug, PartialEq)]
