@@ -967,8 +967,16 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
     } else {
         (tracing::Level::INFO, tui_logger::LevelFilter::Info)
     };
-    let context_layer =
-        tracing_subscriber::filter::Targets::new().with_target("youtui", tracing_log_level);
+    let filter = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(tracing_log_level.into())
+        .with_env_var("RUST_LOG")
+        .from_env_lossy()
+        .add_directive(
+            format!("youtui={}", tracing_log_level).parse().unwrap(),
+        )
+        .add_directive(
+            format!("metadata_provider={}", tracing_log_level).parse().unwrap(),
+        );
     if logging {
         let (log_file, log_file_name) = get_limited_sequential_file(
             &get_data_dir()?,
@@ -984,15 +992,13 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
         ));
         tracing_subscriber::registry()
             .with(tui_logger_layer.and_then(log_file_layer))
-            .with(context_layer)
+            .with(filter)
             .init();
         info!("Logging to {:?}.", log_file_name);
     } else {
-        let context_layer =
-            tracing_subscriber::filter::Targets::new().with_target("youtui", tracing_log_level);
         tracing_subscriber::registry()
             .with(tui_logger_layer)
-            .with(context_layer)
+            .with(filter)
             .init();
     }
     tui_logger::init_logger(tui_logger_log_level)
