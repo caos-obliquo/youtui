@@ -183,7 +183,10 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 if target.show_playlist_tracks {
                     for (idx, year, genres, styles) in results {
                         if let Some(song) = target.playlist_tracks.get_mut(idx) {
-                            song.year = year.map(Rc::new);
+                            // Only overwrite year if enrichment found one (preserve album-name-extracted year)
+                            if let Some(y) = year {
+                                song.year = Some(Rc::new(y));
+                            }
                             if !genres.is_empty() {
                                 song.genres = genres;
                             }
@@ -195,8 +198,11 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                     info!(count = %count, "Library playlist tracks enriched from cache");
                 } else {
                     for (idx, year, genres, styles) in results {
+                        // Only overwrite year if enrichment found one
                         let year_rc = year.map(Rc::new);
-                        target.song_list.update_song_at(idx, year_rc, genres, styles);
+                        if year_rc.is_some() {
+                            target.song_list.update_song_at(idx, year_rc, genres, styles);
+                        }
                     }
                     info!(count = %count, "Library songs enriched from cache");
                 }

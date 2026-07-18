@@ -267,6 +267,57 @@ impl MetadataRegistry {
         Ok(ValidatedMetadata::default())
     }
 
+    /// Fast year-only resolve. Skips slow providers (MB, Discogs, Genius)
+    /// via priority filter (only 10/20 = Last.fm). Always caches result.
+    pub async fn resolve_year_fast(
+        &self,
+        artist: &str,
+        title: &str,
+        album: Option<&str>,
+    ) -> Result<Option<String>, anyhow::Error> {
+        let cache_key = format!("{}::{}",
+            util::norm_for_lfm(&artist.to_lowercase()),
+            util::norm_for_lfm(&title.to_lowercase()),
+        );
+        if let Some(overridden) = self.overrides.lock().unwrap().resolve(artist, title) {
+            return Ok(overridden.year);
+        }
+        if let Some(cached) = self.cache.lock().unwrap().get(&cache_key) {
+            return Ok(cached.year.clone());
+        }
+        if let Some(ref sqlite) = self.sqlite_cache {
+            if let Ok(cache) = sqlite.lock() {
+                if let Some(sqlite_meta) = cache.get(&cache_key) {
+                    let domain_meta = domain_meta_from_sqlite(&sqlite_meta);
+                    self.cache.lock().unwrap().put(cache_key.clone(), domain_meta.clone());
+                    return Ok(domain_meta.year);
+                }
+            }
+        }
+        let mut year: Option<String> = None;
+        for provider in &self.providers {
+            let p = provider.priority();
+            // Only Last.fm (10 AlbumSearch, 20 TrackSearch) - skip others
+            if p != 10 && p != 20 { continue; }
+            if let Some(meta) = provider.lookup(artist, title, album, &self.http_client).await {
+                if meta.year.is_some() {
+                    year = meta.year;
+                    break;
+                }
+            }
+        }
+        // Always cache, even None, to prevent re-resolve on every library load
+        let meta = ValidatedMetadata { year: year.clone(), ..ValidatedMetadata::default() };
+        self.cache.lock().unwrap().put(cache_key.clone(), meta.clone());
+        if let Some(ref sqlite) = self.sqlite_cache {
+            if let Ok(cache) = sqlite.lock() {
+                let sqlite_meta = sqlite_meta_from_domain(&meta);
+                let _ = cache.put(&cache_key, &sqlite_meta);
+            }
+        }
+        Ok(year)
+    }
+
     fn cache_file_path(&self) -> Option<PathBuf> {
         self.cache_path.as_ref().map(|p| p.join("metadata_cache.json"))
     }
