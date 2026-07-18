@@ -282,10 +282,12 @@ impl MetadataRegistry {
             util::norm_for_lfm(&title.to_lowercase()),
         );
         if let Some(overridden) = self.overrides.lock().unwrap().resolve(artist, title) {
+            tracing::info!("resolve_fast: user override for {} - {}", artist, title);
             return Some(overridden);
         }
         if let Some(cached) = self.cache.lock().unwrap().get(&cache_key) {
             if cached.year.is_some() || !cached.genres.is_empty() {
+                tracing::debug!("resolve_fast: LRU cache hit for {} - {} (year: {:?}, genres: {})", artist, title, cached.year.as_deref().unwrap_or("none"), cached.genres.len());
                 return Some(cached.clone());
             }
         }
@@ -294,6 +296,7 @@ impl MetadataRegistry {
                 if let Some(sqlite_meta) = cache.get(&cache_key) {
                     let domain_meta = domain_meta_from_sqlite(&sqlite_meta);
                     if domain_meta.year.is_some() || !domain_meta.genres.is_empty() {
+                        tracing::debug!("resolve_fast: SQLite cache hit for {} - {} (year: {:?}, genres: {})", artist, title, domain_meta.year.as_deref().unwrap_or("none"), domain_meta.genres.len());
                         self.cache.lock().unwrap().put(cache_key.clone(), domain_meta.clone());
                         return Some(domain_meta);
                     }
@@ -310,6 +313,8 @@ impl MetadataRegistry {
             // Skip slow providers: MB (7), Discogs (8), Genius (40), MetalApi (5), LibreFM (8)
             if p != 6 && p != 10 && p != 20 { continue; }
             if let Some(meta) = provider.lookup(artist, title, album, &self.http_client).await {
+                let provider_name = match p { 6 => "LB", 10 => "Last.fm Album", 20 => "Last.fm Track", _ => "?" };
+                tracing::debug!("resolve_fast: {} returned for {} - {} (year: {:?}, genres: {}, styles: {})", provider_name, artist, title, meta.year.as_deref().unwrap_or("none"), meta.genres.len(), meta.styles.len());
                 if year.is_none() && meta.year.is_some() {
                     year = meta.year;
                 }
@@ -354,11 +359,13 @@ impl MetadataRegistry {
                 }
             }
         }
-        if year.is_some() || !meta.genres.is_empty() {
-            Some(meta)
+        let found = year.is_some() || !meta.genres.is_empty();
+        if found {
+            tracing::info!("resolve_fast: {} - {} -> year={:?}, genres={}, styles={}", artist, title, year.as_deref().unwrap_or("none"), meta.genres.len(), meta.styles.len());
         } else {
-            None
+            tracing::debug!("resolve_fast: {} - {} -> no data from any fast provider", artist, title);
         }
+        if found { Some(meta) } else { None }
     }
 
     /// Fast year-only resolve. Skips slow providers (MB, Discogs, Genius)

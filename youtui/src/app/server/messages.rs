@@ -409,8 +409,14 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
                     let _permit = sem.acquire().await.unwrap();
                     let album_opt = if album.is_empty() { None } else { Some(album.as_str()) };
                     match reg.resolve_fast(&artist, &title, album_opt).await {
-                        Some(meta) => Some((idx, meta.year, meta.genres, meta.styles, target)),
-                        None => None,
+                        Some(meta) => {
+                            tracing::info!("EnrichFromMetadataCache: {} - {} resolved (year: {:?}, genres: {}, styles: {})", artist, title, meta.year.as_deref().unwrap_or("none"), meta.genres.len(), meta.styles.len());
+                            Some((idx, meta.year, meta.genres, meta.styles, target))
+                        }
+                        None => {
+                            tracing::debug!("EnrichFromMetadataCache: {} - {} no data", artist, title);
+                            None
+                        }
                     }
                 });
                 handles.push(handle);
@@ -470,8 +476,14 @@ impl BackendTask<ArcServer> for EnrichQueueYears {
                     let _permit = sem.acquire().await.unwrap();
                     let album_opt = if album.is_empty() { None } else { Some(album.as_str()) };
                     match reg.resolve_fast(&artist, &title, album_opt).await {
-                        Some(meta) => Some((idx, meta.year, meta.genres, meta.styles)),
-                        None => None,
+                        Some(meta) => {
+                            tracing::info!("EnrichQueueYears: {} - {} resolved (year: {:?}, genres: {}, styles: {})", artist, title, meta.year.as_deref().unwrap_or("none"), meta.genres.len(), meta.styles.len());
+                            Some((idx, meta.year, meta.genres, meta.styles))
+                        }
+                        None => {
+                            tracing::debug!("EnrichQueueYears: {} - {} no data", artist, title);
+                            None
+                        }
                     }
                 });
                 handles.push(handle);
