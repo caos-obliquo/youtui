@@ -9145,6 +9145,7 @@ dependencies = [
  "lrclib-rs",
  "lru 0.12.5",
  "md5 0.7.0",
+ "metadata-cache-sqlite",
  "metadata-provider",
  "pretty_assertions",
  "rand 0.9.4",

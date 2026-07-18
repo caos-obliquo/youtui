@@ -444,6 +444,18 @@ enum Command {
         /// Path to input file. If omitted, reads from stdin.
         file: Option<String>,
     },
+    /// Inspect/manage the SQLite metadata cache (offline year/genre cache).
+    MetadataCache {
+        /// Show cached entries with stats (default if no flags)
+        #[arg(long)]
+        show: bool,
+        /// Show statistics only (count, size, CAA entries)
+        #[arg(long)]
+        stats: bool,
+        /// Clear all cached entries
+        #[arg(long)]
+        clear: bool,
+    },
 }
 
 pub struct RuntimeInfo {

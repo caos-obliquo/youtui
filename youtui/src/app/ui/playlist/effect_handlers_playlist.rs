@@ -3,6 +3,7 @@ use crate::app::server::ValidatedMetadata;
 
 use crate::app::server::{
     ArcServer, TaskMetadata, AddSongsToPlaylist, EnrichRelatedTracks, RemovePlaylistItems, ValidateMetadata,
+    EnrichedPlaylistTracks,
 };
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSong, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
@@ -216,9 +217,10 @@ playlist_err_handler!(HandleRenamePlaylistError, "rename playlist", "Rename fail
 
 impl_youtui_task_handler!(
     HandleOverwriteGetTracks,
-    Vec<PlaylistSong>,
+    EnrichedPlaylistTracks,
     Playlist,
-    |this: HandleOverwriteGetTracks, songs: Vec<PlaylistSong>| {
+    |this: HandleOverwriteGetTracks, tracks: EnrichedPlaylistTracks| {
+        let songs = tracks.songs;
         move |_target: &mut Playlist| {
             let set_ids: Vec<SetVideoID<'static>> = songs.iter()
                 .map(|s| SetVideoID::from_raw(s.video_id.get_raw().to_string()))
@@ -1092,10 +1094,10 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for LoadPlaylistEffect {
 
 impl_youtui_task_handler!(
     HandleGetPlaylistTracksOk,
-    Vec<PlaylistSong>,
+    EnrichedPlaylistTracks,
     Playlist,
-    |_, songs: Vec<PlaylistSong>| {
-        LoadPlaylistEffect::TracksFetched(songs)
+    |_, tracks: EnrichedPlaylistTracks| {
+        LoadPlaylistEffect::TracksFetched(tracks.songs)
     }
 );
 
@@ -1114,10 +1116,10 @@ pub struct HandleGetPlaylistTracksAppendOk;
 
 impl_youtui_task_handler!(
     HandleGetPlaylistTracksAppendOk,
-    Vec<PlaylistSong>,
+    EnrichedPlaylistTracks,
     Playlist,
-    |_, songs: Vec<PlaylistSong>| {
-        LoadPlaylistEffect::TracksAppended(songs)
+    |_, tracks: EnrichedPlaylistTracks| {
+        LoadPlaylistEffect::TracksAppended(tracks.songs)
     }
 );
 

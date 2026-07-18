@@ -30,6 +30,23 @@
 └────────────────────────────────────────────────────────────┘
 ```
 
+## 12 Workspace Crates
+
+| Crate | Tests | Description |
+|---|---|---|
+| `async-callback-manager` | 14 | Async task dispatch for callback architecture |
+| `audio-player` | 0 | Async rodio-based audio playback (ALSA/CoreAudio/OSS). Extracted from `async_rodio_sink.rs` |
+| `genius-rs` | 18 | Genius lyrics and annotations API client |
+| `genre-db-sqlite` | 27 | SQLite-backed genre hierarchy. Seeded from MusicBee (3,729 genres), Discogs, RYM (6,163 genres). `GenreDb::global()` singleton with `normalise()`, `expand_parent()`, `is_known_genre()`, `find_genre()`, `get_ancestors()`. Replaces in-memory `genre_map.rs` |
+| `json-crawler` | 2 | JSON path expression parser |
+| `lrclib-rs` | 4 | LRCLIB lyrics provider |
+| `metadata-cache-sqlite` | 20 | Persistent SQLite cache for metadata results (year/genres/styles/MBID). LRU in-memory (200 entries) + SQLite fallback via `lookup_cache()`. Background flush 60s + on-quit |
+| `metadata-provider` | 110 | Metadata trait + 6 provider impls (MusicBrainz, Discogs, Last.fm Album/Track, Metal-API, Genius) |
+| `rym-genre-data` | 10 | RYM genre/descriptor hierarchy from pre-scraped GitHub data |
+| `vi-text-editor` | 67 | Vim text editor widget for popups |
+| `ytmapi-rs` | 82 (lib) | YT Music API client |
+| `youtui` | 180 | Main TUI application binary |
+
 ## 3-Layer Callback Architecture
 
 ```
