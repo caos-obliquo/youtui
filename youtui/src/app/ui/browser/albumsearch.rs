@@ -113,8 +113,18 @@ impl AlbumSearchBrowser {
                 duration: album_item.youtube_duration.unwrap_or_else(|| "0:00".to_string()),
                 plays: String::new(),
                 explicit: ytmapi_rs::common::Explicit::NotExplicit,
-                video_id: album_item.youtube_video_id.unwrap(),
+                video_id: match album_item.youtube_video_id.clone() {
+                    Some(vid) => vid,
+                    None => {
+                        tracing::warn!(
+                            "play_selected_album: YouTube album '{}' has no video_id, skipping",
+                            album_item.album.title
+                        );
+                        return (AsyncTask::new_no_op(), None);
+                    }
+                },
                 thumbnails: vec![],
+                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
             };
             let mut temp_list = BrowserSongsList::default();
             temp_list.add_raw_search_result_song(song);

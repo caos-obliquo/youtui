@@ -1260,6 +1260,7 @@ impl BackendTask<ArcServer> for SearchSongs {
                         explicit: ytmapi_rs::common::Explicit::NotExplicit,
                         video_id: vid,
                         thumbnails: vec![],
+                        like_status: ytmapi_rs::common::LikeStatus::Indifferent,
                     })
                 })
                 .collect();
@@ -1318,15 +1319,16 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
         let client = backend.http_client.clone();
         async move {
             // Check SQLite CAA cache first
-            let cached_image: Option<Vec<u8>> = mbid.as_ref().filter(|m| !m.is_empty()).and_then(|m| {
-                let sqlite = backend.metadata_registry.get_sqlite_cache()?;
-                let cache = sqlite.lock().ok()?;
-                cache.get_caa_art(m).ok()?
-            });
-            if let Some(image_data) = cached_image {
-                tracing::info!("FetchAlbumArt: CAA cache hit for {}", mbid.as_ref().unwrap());
+            let cached: Option<(Vec<u8>, String)> =
+                mbid.as_ref().filter(|m| !m.is_empty()).and_then(|m| {
+                    let sqlite = backend.metadata_registry.get_sqlite_cache()?;
+                    let cache = sqlite.lock().ok()?;
+                    cache.get_caa_art(m).ok()?.map(|img| (img, m.clone()))
+                });
+            if let Some((image_data, mbid_str)) = cached {
+                tracing::info!("FetchAlbumArt: CAA cache hit for {}", mbid_str);
                 let thumb_id = SongThumbnailID::Album(ytmapi_rs::common::AlbumID::from_raw(
-                    format!("caa:{}", mbid.as_ref().unwrap()),
+                    format!("caa:{}", mbid_str),
                 ));
                 match backend
                     .song_thumbnail_downloader

@@ -1447,6 +1447,7 @@ impl Playlist {
             explicit: ytmapi_rs::common::Explicit::NotExplicit,
             video_id,
             thumbnails: vec![],
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
         };
         let old_count = self.list.get_list_iter().count();
         let id = self.list.append_raw_search_result_songs(vec![song]);
