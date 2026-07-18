@@ -939,7 +939,7 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteAll)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('I')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('i')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ViewSongInfo)),
                     ),
                     (
