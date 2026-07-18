@@ -1086,7 +1086,12 @@ impl TableView for LibraryBrowser {
         let cols: Vec<Vec<Cow<'_, str>>> = if self.show_playlist_tracks {
             self.playlist_tracks
                 .iter()
-                .map(|ls| ls.get_fields(Self::tracks_subcolumns_of_vec()).to_vec())
+                .enumerate()
+                .map(|(i, ls)| {
+                    let mut row = ls.get_fields(Self::tracks_subcolumns_of_vec()).to_vec();
+                    row[0] = Cow::Owned((i + 1).to_string());
+                    row
+                })
                 .collect()
         } else {
             match self.category {
@@ -1210,11 +1215,11 @@ impl AdvancedTableView for LibraryBrowser {
         &self.active_sort().sort_commands
     }
     fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
-        let fields = Self::tracks_subcolumns_of_vec();
         let iter: Box<dyn Iterator<Item = Box<dyn Iterator<Item = Cow<'_, str>> + '_>> + '_> = if self.show_playlist_tracks {
-            Box::new(self.get_tracks_filtered_list_iter().map(move |ls| {
-                let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
-                    Box::new(ls.get_fields(fields).into_iter());
+            Box::new(self.get_tracks_filtered_list_iter().enumerate().map(move |(i, ls)| {
+                let mut row = ls.get_fields(Self::tracks_subcolumns_of_vec()).to_vec();
+                row[0] = Cow::Owned((i + 1).to_string());
+                let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> = Box::new(row.into_iter());
                 v
             }))
         } else {
