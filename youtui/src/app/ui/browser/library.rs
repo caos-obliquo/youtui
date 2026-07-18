@@ -123,7 +123,7 @@ impl Action for BrowserLibraryAction {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LibraryEffect {
     SongsLoaded(Vec<ListSong>),
-    SongsEnriched(Vec<(usize, Option<String>, Vec<String>, Vec<String>)>),
+    SongsEnriched(Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, crate::app::server::EnrichTarget),
     PlaylistsLoaded(Vec<LibraryPlaylist>),
 
     ArtistsLoaded(Vec<LibraryArtist>),
@@ -171,40 +171,41 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 if has_enrich {
                     target.enrich_count = Some(enrich_data.len());
                     return AsyncTask::new_future_try(
-                        EnrichFromMetadataCache(enrich_data),
+                        EnrichFromMetadataCache(enrich_data, crate::app::server::EnrichTarget::LikedSongs),
                         HandleEnrichFromCacheOk,
                         HandleEnrichFromCacheErr,
                         None,
                     );
                 }
             }
-            LibraryEffect::SongsEnriched(results) => {
+            LibraryEffect::SongsEnriched(results, target_route) => {
                 let count = results.len();
-                if target.show_playlist_tracks {
-                    for (idx, year, genres, styles) in results {
-                        if let Some(song) = target.playlist_tracks.get_mut(idx) {
-                            // Only overwrite year if enrichment found one (preserve album-name-extracted year)
-                            if let Some(y) = year {
-                                song.year = Some(Rc::new(y));
-                            }
-                            if !genres.is_empty() {
-                                song.genres = genres;
-                            }
-                            if !styles.is_empty() {
-                                song.styles = styles;
+                match target_route {
+                    crate::app::server::EnrichTarget::PlaylistTracks => {
+                        for (idx, year, genres, styles) in results {
+                            if let Some(song) = target.playlist_tracks.get_mut(idx) {
+                                if let Some(y) = year {
+                                    song.year = Some(Rc::new(y));
+                                }
+                                if !genres.is_empty() {
+                                    song.genres = genres;
+                                }
+                                if !styles.is_empty() {
+                                    song.styles = styles;
+                                }
                             }
                         }
+                        info!(count = %count, "Library playlist tracks enriched from cache");
                     }
-                    info!(count = %count, "Library playlist tracks enriched from cache");
-                } else {
-                    for (idx, year, genres, styles) in results {
-                        // Only overwrite year if enrichment found one
-                        let year_rc = year.map(Rc::new);
-                        if year_rc.is_some() {
-                            target.song_list.update_song_at(idx, year_rc, genres, styles);
+                    crate::app::server::EnrichTarget::LikedSongs => {
+                        for (idx, year, genres, styles) in results {
+                            let year_rc = year.map(Rc::new);
+                            if year_rc.is_some() {
+                                target.song_list.update_song_at(idx, year_rc, genres, styles);
+                            }
                         }
+                        info!(count = %count, "Library songs enriched from cache");
                     }
-                    info!(count = %count, "Library songs enriched from cache");
                 }
                 target.enrich_count = None;
             }
@@ -419,7 +420,7 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             if has_enrich && !enrich_data.is_empty() {
                 target.enrich_count = Some(enrich_data.len());
                 return AsyncTask::new_future_try(
-                    EnrichFromMetadataCache(enrich_data),
+                    EnrichFromMetadataCache(enrich_data, crate::app::server::EnrichTarget::PlaylistTracks),
                     HandleEnrichFromCacheOk,
                     HandleEnrichFromCacheErr,
                     None,
@@ -458,8 +459,11 @@ impl_youtui_task_handler!(HandleLibraryReorderItemsOk, (), LibraryBrowser, |_, _
 impl_youtui_task_handler!(HandleLibraryReorderItemsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     LibraryEffect::ReorderItemsError(err.to_string())
 });
-impl_youtui_task_handler!(HandleEnrichFromCacheOk, Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, LibraryBrowser, |_, results: Vec<(usize, Option<String>, Vec<String>, Vec<String>)>| {
-    LibraryEffect::SongsEnriched(results)
+impl_youtui_task_handler!(HandleEnrichFromCacheOk, Vec<(usize, Option<String>, Vec<String>, Vec<String>, crate::app::server::EnrichTarget)>, LibraryBrowser, |_, results: Vec<(usize, Option<String>, Vec<String>, Vec<String>, crate::app::server::EnrichTarget)>| {
+    let target = results.first().map(|r| r.4).unwrap_or(crate::app::server::EnrichTarget::LikedSongs);
+    // Separate the target from the data
+    let data: Vec<(usize, Option<String>, Vec<String>, Vec<String>)> = results.into_iter().map(|(i, y, g, s, _)| (i, y, g, s)).collect();
+    LibraryEffect::SongsEnriched(data, target)
 });
 impl_youtui_task_handler!(HandleEnrichFromCacheErr, anyhow::Error, LibraryBrowser, |_, _: anyhow::Error| {
     info!("Cache enrichment failed (non-critical): no metadata will be shown in library");
