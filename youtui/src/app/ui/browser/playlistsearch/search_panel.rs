@@ -17,8 +17,8 @@ use ytmapi_rs::parse::SearchResultPlaylist;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum PlaylistInputRouting {
-    #[default]
     Search,
+    #[default]
     List,
 }
 
