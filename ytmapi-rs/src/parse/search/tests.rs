@@ -1,4 +1,5 @@
 use crate::auth::BrowserToken;
+use crate::common::LikeStatus;
 use crate::parse::SearchResults;
 use crate::process_json;
 use crate::query::search::{
@@ -282,4 +283,37 @@ async fn test_search_profiles() {
         SearchQuery::new("").with_filter(ProfilesFilter),
         BrowserToken
     );
+}
+
+#[tokio::test]
+// likeStatus parsed from search song menu; absent -> Indifferent, present -> Liked.
+async fn test_search_song_like_status() {
+    let source_path = Path::new("./test_json/search_songs_20231226.json");
+    let source = tokio::fs::read_to_string(source_path)
+        .await
+        .expect("Expect file read to pass during tests");
+    let mut json: serde_json::Value = serde_json::from_str(&source).unwrap();
+    // Inject LIKE into the first song's menu like button.
+    let songs = json
+        .pointer_mut(
+            "/contents/tabbedSearchResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents",
+        )
+        .unwrap()
+        .as_array_mut()
+        .unwrap();
+    let song_shelf = songs
+        .iter_mut()
+        .find(|c| c.pointer("/musicShelfRenderer").is_some())
+        .unwrap();
+    let first_item = song_shelf
+        .pointer_mut("/musicShelfRenderer/contents/0/musicResponsiveListItemRenderer")
+        .unwrap();
+    first_item["menu"]["menuRenderer"]["topLevelButtons"] = serde_json::json!([
+        { "likeButtonRenderer": { "likeStatus": "LIKE" } }
+    ]);
+    let source = serde_json::to_string(&json).unwrap();
+    let query = SearchQuery::new("").with_filter(SongsFilter);
+    let output = process_json::<_, BrowserToken>(source, query).unwrap();
+    assert_eq!(output[0].like_status, LikeStatus::Liked);
+    assert_eq!(output[1].like_status, LikeStatus::Indifferent);
 }
