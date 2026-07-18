@@ -9122,7 +9122,7 @@ dependencies = [
 
 [[package]]
 name = "youtui"
-version = "1.0.4"
+version = "1.0.6"
 dependencies = [
  "anyhow",
  "async-callback-manager",

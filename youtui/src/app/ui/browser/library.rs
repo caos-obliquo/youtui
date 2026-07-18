@@ -169,6 +169,7 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 target.input_routing = InputRouting::Content;
 
                 if has_enrich {
+                    target.enrich_count = Some(enrich_data.len());
                     return AsyncTask::new_future_try(
                         EnrichFromMetadataCache(enrich_data),
                         HandleEnrichFromCacheOk,
@@ -199,6 +200,7 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                     }
                     info!(count = %count, "Library songs enriched from cache");
                 }
+                target.enrich_count = None;
             }
             LibraryEffect::PlaylistsLoaded(playlists) => {
                 info!(count = %playlists.len(), "Library playlists loaded");
@@ -233,6 +235,7 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 warn!(error = %msg, "Library category load failed");
                 target.loading = false;
                 target.error = Some(msg);
+                target.enrich_count = None;
             }
             LibraryEffect::RemoveItemsSuccess => {
                 info!("Library playlist items removed successfully");
@@ -408,6 +411,7 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             let has_enrich = self.2;
             let enrich_data = self.3;
             if has_enrich && !enrich_data.is_empty() {
+                target.enrich_count = Some(enrich_data.len());
                 return AsyncTask::new_future_try(
                     EnrichFromMetadataCache(enrich_data),
                     HandleEnrichFromCacheOk,
@@ -470,6 +474,7 @@ pub struct LibraryBrowser {
     pub playlist_selected: usize,
     pub playlist_tracks: Vec<ListSong>,
     pub show_playlist_tracks: bool,
+    pub playlist_tracks_name: Option<String>,
     pub playlist_tracks_selected: usize,
     pub liked_playlists: HashSet<PlaylistID<'static>>,
     pub track_set_ids: HashMap<String, String>,
@@ -509,11 +514,14 @@ pub struct LibraryBrowser {
     pub local_filter_text: String,
     pub sort_order: GetLibrarySortOrder,
     pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
+    /// Set to Some(N) while EnrichFromMetadataCache is in-flight, cleared on completion
+    pub enrich_count: Option<usize>,
 }
 
 impl LibraryBrowser {
     pub fn new() -> Self {
         Self {
+            enrich_count: None,
             input_routing: InputRouting::Category,
             category: LibraryCategory::LikedSongs,
             song_list: Default::default(),
@@ -525,6 +533,7 @@ impl LibraryBrowser {
             playlist_selected: 0,
             playlist_tracks: Vec::new(),
             show_playlist_tracks: false,
+            playlist_tracks_name: None,
             playlist_tracks_selected: 0,
             liked_playlists: HashSet::new(),
             track_set_ids: HashMap::new(),
@@ -685,6 +694,7 @@ impl LibraryBrowser {
         let Some(pl) = self.playlist_data.get(self.playlist_selected).cloned() else {
             return AsyncTask::new_no_op();
         };
+        self.playlist_tracks_name = Some(pl.title.clone());
         debug!(playlist = %pl.title, "Library: fetching playlist tracks");
         self.loading = true;
         AsyncTask::new_future_try(
@@ -1299,7 +1309,13 @@ impl HasTitle for LibraryBrowser {
             } else {
                 String::new()
             };
-            format!("Playlist Tracks - {} tracks{}", total, search_tag).into()
+            let name = self.playlist_tracks_name.as_deref().unwrap_or("Playlist Tracks");
+            let enrich_tag = if self.enrich_count.is_some() {
+                " enriching..."
+            } else {
+                ""
+            };
+            format!("{} - {} tracks{}{}", name, total, search_tag, enrich_tag).into()
         } else {
             let sort_label = match self.sort_order {
                 GetLibrarySortOrder::Default => "",
