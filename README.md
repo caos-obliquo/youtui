@@ -2,7 +2,7 @@
 
 Vim-driven TUI for YouTube Music. Originally forked from [nick42d/youtui](https://github.com/nick42d/youtui), now independently maintained. yt-dlp audio, minimal F-keys (F1 search, F2/F3 toggle, F11 logs).
 
-**Upstream diff**: this fork adds native scrobbling, album splitting with metadata enrichment, vim playlist editor, 6-provider metadata pipeline, context menu, sixel album art, lyrics with annotations, suckless codebase (-630 lines). Drifted significantly - we own the feature set now.
+**Upstream diff**: this fork adds native scrobbling, album splitting with metadata enrichment, vim playlist editor, 8-provider metadata pipeline, context menu, sixel album art, lyrics with annotations, suckless codebase (-630 lines). Drifted significantly - we own the feature set now.
 
 ## Workspace
 
@@ -12,12 +12,14 @@ Vim-driven TUI for YouTube Music. Originally forked from [nick42d/youtui](https:
 | `ytmapi-rs` | Async YouTube Music API (generic over auth) |
 | `json-crawler` | JSON traversal utilities |
 | `async-callback-manager` | Task/effect framework connecting UI to backend |
-| `metadata-provider` | 6 metadata providers (MusicBrainz, Discogs, Last.fm, Genius, etc.) |
+| `metadata-provider` | 8 metadata providers (see docs/06-subsystems/validation.md) |
 | `audio-player` | Async rodio-based audio player (extracted from youtui) |
 | `vi-text-editor` | Vim text editor widget (used in playlist/notes/config popups) |
 | `genius-rs` | Genius lyrics + annotations API client |
 | `lrclib-rs` | LRCLIB lyrics provider (free, no API key) |
 | `rym-genre-data` | RYM genre/descriptor hierarchy for metadata enrichment |
+| `genre-db-sqlite` | SQLite genre hierarchy with MusicBee, Discogs, and RYM seed data |
+| `metadata-cache-sqlite` | SQLite cache for enriched song/album metadata |
 
 ## Install
 
@@ -117,7 +119,14 @@ Full keybinds by context: `docs/05-keybindings.md`
 - **yt-dlp audio** - streams with `android_vr` extractor-args, no PO token needed
 - **Album splitting** - full-album detection, track metadata enrichment, gapless playback
 - **Native scrobbling** - Last.fm with persistent offline cache, retry on startup + 5-min background loop
-- **Metadata pipeline** - 6 providers (MusicBrainz, Discogs, Last.fm, Genius, LRCLIB, RYM) with scoring
+- **Metadata pipeline** - 8 providers with scoring (see docs/06-subsystems/validation.md)
+- **Genre DB & Hierarchy** - genre-db-sqlite crate, seeded from MusicBee + Discogs + RYM hierarchy
+- **MB OAuth2 + Genre Fetch** - device flow auth, auto-refresh, release group genre retrieval
+- **Genre Merge Engine** - cumulative weighted voting (MB=3, LB=2, rest=1), year merge
+- **LB Genre Validation** - is_known_genre extended with RYM hierarchy
+- **MB Cover Art Archive** - CAA fallback pipeline before Last.fm for album art
+- **Queue Year Enrichment** - EnrichSongYear on queue-add + batch EnrichQueueYears + resolve_fast
+- **CLI Tools** - test-scrobble, scrobble-cache, test-musicbrainz, test-caa, test-listenbrainz, test-validate-metadata, enrich-cache
 - **Lyrics** - Genius annotations + LRCLIB fallback, romaji toggle, vim navigation
 - **Sixel album art** - footer thumbnail + full-size popup (`o.v`)
 - **Playlist management** - create from queue, add to existing, rename, delete, merge, details, privacy, vim-driven editor
@@ -127,7 +136,7 @@ Full keybinds by context: `docs/05-keybindings.md`
 
 ## Known Issues
 
-- **ytmapi-rs (YouTube Music API)**: Google changes internal API format frequently. yt-dlp is the primary/reliable backend for audio streaming. ytmapi-rs lib tests pass (82/82) but 54 integration tests need a browser cookie and may fail without notice.
+- **ytmapi-rs (YouTube Music API)**: Google changes internal API format frequently. yt-dlp is the primary/reliable backend for audio streaming. ytmapi-rs lib tests pass (82/82) but 51 integration tests need a browser cookie and may fail without notice.
 - **Playlist creation**: write operations require an active authenticated session (need fresh cookie).
 - **Year metadata**: Some tracks show `None` when no provider returns data and album/song title has no `(YYYY)`.
 - **Libre.fm scrobble**: fails silently - no retry on HTTP failure.
@@ -139,7 +148,8 @@ Full keybinds by context: `docs/05-keybindings.md`
 cargo build --release
 ./target/release/youtui
 
-cargo test --workspace --release --exclude ytmapi-rs   # 181 tests
+cargo test --release -p youtui                      # 180 pass (4 ignored)
+cargo test --workspace --release                    # 564 pass (4 ignored)
 cargo clippy --workspace -- -A warnings                # lint (0 warnings)
 ```
 

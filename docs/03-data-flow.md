@@ -198,3 +198,71 @@ User presses ] in lyrics popup
   → audio adjusts playback position
   → auto-advance logic checks if near track end
 ```
+
+### Metadata Enrichment Flow
+
+Songs enter the metadata enrichment pipeline when added to the queue or loaded in the Library. The pipeline adds year, genre, and style metadata from external providers.
+
+**Library Liked Songs flow:**
+```
+HandleLibrarySongsOk → build enrich_data (songs with year=None)
+  → EnrichFromMetadataCache(EnrichTarget::LikedSongs)
+    → for each uncached song: resolve_fast() (LB + Last.fm)
+      → lookup_cache() checks LRU → SQLite fallback
+      → HTTP fetch if neither cache has the result
+      → cache to LRU + SQLite (even None results)
+  → HandleEnrichFromCacheOk
+    → LibraryEffect::SongsEnriched(LikedSongs)
+      → song_list.update_song_at(idx, year, genres, styles)
+```
+
+**Library Playlist Tracks flow:**
+```
+HandleLibraryPlaylistTracksOk → build enrich_data
+  → PopulateSetIds (sets ids on playlist_tracks)
+  → EnrichFromMetadataCache(EnrichTarget::PlaylistTracks)
+    → resolve_fast() per song
+  → SongsEnriched(PlaylistTracks)
+    → playlist_tracks[idx].year = ...
+```
+
+**Queue enrichment flow:**
+```
+push_song_list → enrich_data built from songs with year=None
+  → EnrichQueueYears → resolve_fast() per song
+  → HandleQueueEnrichYearsOk
+    → apply years to queue songs via index map
+    → needs_redraw = true
+```
+
+**Per-song enrichment (on play):**
+```
+play_song_id / autoplay_song_id → if year is None:
+  → EnrichSongYear(ListSongID)
+    → resolve_fast() by artist + title
+    → if year found: song.year = Some(Rc::new(year))
+    → stale-guard: skip if song_id/artist changed
+    → rate-limited: 1 per 2 seconds
+```
+
+**Cache architecture:**
+```
+lookup_cache(key):
+  1. LRU.get(key) → hit? return
+  2. SQLite.get(key) → hit? populate LRU, return
+  3. return None (triggers HTTP fetch)
+
+Background flush (every 60s + on quit):
+  flush_cache_to_sqlite():
+    for (key, value) in LRU:
+      SQLite.upsert(key, value)
+```
+
+**Album art fallback chain:**
+```
+get_album_art(song):
+  1. song.thumbnails has YTM URL? → SongThumbnailDownloader.download (disk cache)
+  2. song.release_mbid is Some? → coverartarchive.org/release-group/{mbid}/front
+  3. → FetchAlbumArt (Last.fm, requires matching album name)
+  4. → None (no art available)
+```

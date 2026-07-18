@@ -257,7 +257,8 @@ impl MetadataRegistry {
                     }
                 }
             }
-            if score >= 20 {
+            // Only write JSON as fallback when SQLite cache is not available
+            if score >= 20 && self.sqlite_cache.is_none() {
                 self.save_cache();
             }
             return Ok(meta);
@@ -285,20 +286,26 @@ impl MetadataRegistry {
             return Some(overridden);
         }
         if let Some(cached) = self.cache.lock().unwrap().get(&cache_key) {
-            if cached.year.is_some() || !cached.genres.is_empty() {
-                tracing::debug!("resolve_fast: LRU cache hit for {} - {} (year: {:?}, genres: {})", artist, title, cached.year.as_deref().unwrap_or("none"), cached.genres.len());
+            if cached.year.is_some() {
+                tracing::debug!("resolve_fast: LRU cache hit for {} - {} (year: {:?})", artist, title, cached.year.as_deref().unwrap_or("none"));
                 return Some(cached.clone());
             }
+            // Cached without year — fast providers have no year for this entry.
+            // Return None to avoid re-resolve waste; EnrichFromMetadataCache
+            // will skip this entry (handler filters by year presence).
+            return None;
         }
         if let Some(ref sqlite) = self.sqlite_cache {
             if let Ok(cache) = sqlite.lock() {
                 if let Some(sqlite_meta) = cache.get(&cache_key) {
                     let domain_meta = domain_meta_from_sqlite(&sqlite_meta);
-                    if domain_meta.year.is_some() || !domain_meta.genres.is_empty() {
-                        tracing::debug!("resolve_fast: SQLite cache hit for {} - {} (year: {:?}, genres: {})", artist, title, domain_meta.year.as_deref().unwrap_or("none"), domain_meta.genres.len());
+                    if domain_meta.year.is_some() {
+                        tracing::debug!("resolve_fast: SQLite cache hit for {} - {} (year: {:?})", artist, title, domain_meta.year.as_deref().unwrap_or("none"));
                         self.cache.lock().unwrap().put(cache_key.clone(), domain_meta.clone());
                         return Some(domain_meta);
                     }
+                    // Same: cached without year, don't re-resolve
+                    return None;
                 }
             }
         }
@@ -349,7 +356,8 @@ impl MetadataRegistry {
         if !meta.genres.is_empty() || !meta.styles.is_empty() {
             crate::genre_map::expand_parent_genres(&mut meta.genres, &mut meta.styles);
         }
-        // Always cache, even sparse
+        // Always cache, even without year (serves as "already tried" flag to
+        // prevent infinite re-resolve on every library load).
         self.cache.lock().unwrap().put(cache_key.clone(), meta.clone());
         if let Some(ref sqlite) = self.sqlite_cache {
             if let Ok(cache) = sqlite.lock() {
@@ -358,13 +366,13 @@ impl MetadataRegistry {
                 }
             }
         }
-        let found = year.is_some() || !meta.genres.is_empty();
-        if found {
+        let found_year = year.is_some();
+        if found_year {
             tracing::info!("resolve_fast: {} - {} -> year={:?}, genres={}, styles={}", artist, title, year.as_deref().unwrap_or("none"), meta.genres.len(), meta.styles.len());
         } else {
-            tracing::debug!("resolve_fast: {} - {} -> no data from any fast provider", artist, title);
+            tracing::debug!("resolve_fast: {} - {} -> no year from fast providers (genres: {}, styles: {})", artist, title, meta.genres.len(), meta.styles.len());
         }
-        if found { Some(meta) } else { None }
+        if found_year { Some(meta) } else { None }
     }
 
     /// Fast year-only resolve. Skips slow providers (MB, Discogs, Genius)
@@ -464,16 +472,32 @@ impl MetadataRegistry {
         let Some(ref sqlite) = self.sqlite_cache else { return; };
         let cache = self.cache.lock().unwrap();
         let Ok(sqlite_cache) = sqlite.lock() else { return; };
-        for (key, meta) in cache.iter() {
-            let sqlite_meta = sqlite_meta_from_domain(meta);
-            if let Err(e) = sqlite_cache.put(&key, &sqlite_meta) {
-                tracing::warn!("Failed to import cache entry to SQLite: {}", e);
-            }
+        let batch: Vec<(&str, metadata_cache_sqlite::ValidatedMetadata)> = cache
+            .iter()
+            .map(|(key, meta)| (key.as_str(), sqlite_meta_from_domain(meta)))
+            .collect();
+        let refs: Vec<(&str, &metadata_cache_sqlite::ValidatedMetadata)> = batch
+            .iter()
+            .map(|(key, meta)| (*key, meta))
+            .collect();
+        if let Err(e) = sqlite_cache.put_batch(&refs) {
+            tracing::warn!("Failed to import cache entries to SQLite: {}", e);
         }
     }
 
     fn import_json_to_sqlite(&self) {
         self.flush_cache_to_sqlite();
+        // Rename JSON to .bak after SQLite import to prevent re-import on restart
+        if let Some(path) = self.cache_file_path() {
+            if path.exists() {
+                let bak = path.with_extension("json.bak");
+                if let Err(e) = std::fs::rename(&path, &bak) {
+                    tracing::warn!("Failed to rename metadata cache to .bak: {}", e);
+                } else {
+                    tracing::info!("Renamed metadata cache to .bak");
+                }
+            }
+        }
     }
 
     fn save_cache(&self) {
