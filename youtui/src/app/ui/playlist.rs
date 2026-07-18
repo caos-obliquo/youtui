@@ -27,6 +27,7 @@ use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleRateSongOk, HandleRateSongErr,
     HandleFetchAlbumArtOk, HandleFetchAlbumArtErr,
     HandleEnrichSongYearOk, HandleEnrichSongYearErr,
+    HandleQueueEnrichYearsOk, HandleQueueEnrichYearsErr,
 };
 use crate::app::ui::draw_media_controls::upgrade_thumbnail_url;
 use crate::app::ui::{AppCallback, WindowContext};
@@ -2056,7 +2057,7 @@ impl Playlist {
         }
 
         // Spawn metadata validation for first added song (enables album splitting)
-        if let Some(song) = self.get_song_from_id(first_id) {
+        let base_effect = if let Some(song) = self.get_song_from_id(first_id) {
             let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
             if !artist.is_empty() {
                 let clean_title = Self::clean_title_for_metadata(&artist, &song.title);
@@ -2068,10 +2069,32 @@ impl Playlist {
                     HandleMetadataValidationError,
                     None,
                 );
-                return (first_id, effect.push(validation_task));
+                effect.push(validation_task)
+            } else {
+                effect
             }
+        } else {
+            effect
+        };
+
+        // Batch enrich missing years from cache for all queue songs
+        let enrich_data: Vec<(usize, String, String, Option<String>)> = self.list.get_list_iter().enumerate()
+            .filter_map(|(i, s)| {
+                if s.year.is_some() { return None; }
+                let artist = s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                if artist.is_empty() { None } else { Some((i, artist, s.title.clone(), s.album.as_ref().map(|a| a.name.clone()))) }
+            })
+            .collect();
+        if !enrich_data.is_empty() {
+            let enrich_task = AsyncTask::new_future_try(
+                crate::app::server::EnrichQueueYears(enrich_data),
+                HandleQueueEnrichYearsOk,
+                HandleQueueEnrichYearsErr,
+                None,
+            );
+            return (first_id, base_effect.push(enrich_task));
         }
-        (first_id, effect)
+        (first_id, base_effect)
     }
 
     pub fn insert_next_song_list(

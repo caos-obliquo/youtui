@@ -267,6 +267,151 @@ impl MetadataRegistry {
         Ok(ValidatedMetadata::default())
     }
 
+    /// Fast year/genre/style resolve. Queries LB (priority 6) + Last.fm (10, 20).
+    /// LB returns year+genres+styles in one HTTP call, no rate limit.
+    /// Last.fm adds year+genres fallback. Skip MB/Discogs/Genius (too slow for batch).
+    /// Always caches result (even None) to prevent re-resolve.
+    pub async fn resolve_fast(
+        &self,
+        artist: &str,
+        title: &str,
+        album: Option<&str>,
+    ) -> Option<ValidatedMetadata> {
+        let cache_key = format!("{}::{}",
+            util::norm_for_lfm(&artist.to_lowercase()),
+            util::norm_for_lfm(&title.to_lowercase()),
+        );
+        if let Some(overridden) = self.overrides.lock().unwrap().resolve(artist, title) {
+            return Some(overridden);
+        }
+        if let Some(cached) = self.cache.lock().unwrap().get(&cache_key) {
+            if cached.year.is_some() || !cached.genres.is_empty() {
+                return Some(cached.clone());
+            }
+        }
+        if let Some(ref sqlite) = self.sqlite_cache {
+            if let Ok(cache) = sqlite.lock() {
+                if let Some(sqlite_meta) = cache.get(&cache_key) {
+                    let domain_meta = domain_meta_from_sqlite(&sqlite_meta);
+                    if domain_meta.year.is_some() || !domain_meta.genres.is_empty() {
+                        self.cache.lock().unwrap().put(cache_key.clone(), domain_meta.clone());
+                        return Some(domain_meta);
+                    }
+                }
+            }
+        }
+        // Collect results from fast providers: LB (6), Last.fm Album (10), Last.fm Track (20)
+        let mut year: Option<String> = None;
+        let mut genres: Vec<String> = Vec::new();
+        let mut styles: Vec<String> = Vec::new();
+        let mut mbid: Option<String> = None;
+        for provider in &self.providers {
+            let p = provider.priority();
+            // Skip slow providers: MB (7), Discogs (8), Genius (40), MetalApi (5), LibreFM (8)
+            if p != 6 && p != 10 && p != 20 { continue; }
+            if let Some(meta) = provider.lookup(artist, title, album, &self.http_client).await {
+                if year.is_none() && meta.year.is_some() {
+                    year = meta.year;
+                }
+                for g in meta.genres {
+                    if !genres.contains(&g) {
+                        genres.push(g);
+                    }
+                }
+                for s in meta.styles {
+                    if !styles.contains(&s) {
+                        styles.push(s);
+                    }
+                }
+                if mbid.is_none() && meta.musicbrainz_release_group_id.is_some() {
+                    mbid = meta.musicbrainz_release_group_id;
+                }
+            }
+        }
+        // Normalize and expand genres
+        if !genres.is_empty() {
+            genres = crate::genre_map::normalize_genres(&genres);
+        }
+        if !styles.is_empty() {
+            styles = crate::genre_map::normalize_genres(&styles);
+        }
+        let mut meta = ValidatedMetadata {
+            year: year.clone(),
+            genres,
+            styles,
+            musicbrainz_release_group_id: mbid,
+            ..ValidatedMetadata::default()
+        };
+        if !meta.genres.is_empty() || !meta.styles.is_empty() {
+            crate::genre_map::expand_parent_genres(&mut meta.genres, &mut meta.styles);
+        }
+        // Always cache, even sparse
+        self.cache.lock().unwrap().put(cache_key.clone(), meta.clone());
+        if let Some(ref sqlite) = self.sqlite_cache {
+            if let Ok(cache) = sqlite.lock() {
+                if let Err(e) = cache.put(&cache_key, &sqlite_meta_from_domain(&meta)) {
+                    tracing::warn!("Failed to write SQLite cache in resolve_fast: {}", e);
+                }
+            }
+        }
+        if year.is_some() || !meta.genres.is_empty() {
+            Some(meta)
+        } else {
+            None
+        }
+    }
+
+    /// Fast year-only resolve. Skips slow providers (MB, Discogs, Genius)
+    /// via priority filter (only 10/20 = Last.fm). Always caches result.
+    pub async fn resolve_year_fast(
+        &self,
+        artist: &str,
+        title: &str,
+        album: Option<&str>,
+    ) -> Result<Option<String>, anyhow::Error> {
+        let cache_key = format!("{}::{}",
+            util::norm_for_lfm(&artist.to_lowercase()),
+            util::norm_for_lfm(&title.to_lowercase()),
+        );
+        if let Some(overridden) = self.overrides.lock().unwrap().resolve(artist, title) {
+            return Ok(overridden.year);
+        }
+        if let Some(cached) = self.cache.lock().unwrap().get(&cache_key) {
+            return Ok(cached.year.clone());
+        }
+        if let Some(ref sqlite) = self.sqlite_cache {
+            if let Ok(cache) = sqlite.lock() {
+                if let Some(sqlite_meta) = cache.get(&cache_key) {
+                    let domain_meta = domain_meta_from_sqlite(&sqlite_meta);
+                    self.cache.lock().unwrap().put(cache_key.clone(), domain_meta.clone());
+                    return Ok(domain_meta.year);
+                }
+            }
+        }
+        let mut year: Option<String> = None;
+        for provider in &self.providers {
+            let p = provider.priority();
+            // Only Last.fm (10 AlbumSearch, 20 TrackSearch) - skip others
+            if p != 10 && p != 20 { continue; }
+            if let Some(meta) = provider.lookup(artist, title, album, &self.http_client).await {
+                if meta.year.is_some() {
+                    year = meta.year;
+                    break;
+                }
+            }
+        }
+        // Always cache, even None, to prevent re-resolve on every library load
+        let meta = ValidatedMetadata { year: year.clone(), ..ValidatedMetadata::default() };
+        self.cache.lock().unwrap().put(cache_key.clone(), meta.clone());
+        if let Some(ref sqlite) = self.sqlite_cache {
+            if let Ok(cache) = sqlite.lock() {
+                let sqlite_meta = sqlite_meta_from_domain(&meta);
+                let _ = cache.put(&cache_key, &sqlite_meta);
+            }
+        }
+        Ok(year)
+    }
+
     fn cache_file_path(&self) -> Option<PathBuf> {
         self.cache_path.as_ref().map(|p| p.join("metadata_cache.json"))
     }

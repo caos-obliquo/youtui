@@ -357,13 +357,82 @@ impl BackendTask<ArcServer> for GetAllLibraryAlbums {
 use ytmapi_rs::parse::PlaylistSong;
 use ytmapi_rs::parse::WatchPlaylistTrack;
 
+/// Identifies which view dispatched an enrichment, so completion routes correctly.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EnrichTarget {
+    LikedSongs,
+    PlaylistTracks,
+}
+
 /// Cache-only enrichment for library songs - no HTTP.
 /// Input: (index_in_browser, artist, title)
 /// Output: (index, year, genres, styles) for cache hits only.
 #[derive(Debug, PartialEq)]
-pub struct EnrichFromMetadataCache(pub Vec<(usize, String, String, Option<String>)>);
+pub struct EnrichFromMetadataCache(pub Vec<(usize, String, String, Option<String>)>, pub EnrichTarget);
 
 impl BackendTask<ArcServer> for EnrichFromMetadataCache {
+    type Output = Result<Vec<(usize, Option<String>, Vec<String>, Vec<String>, EnrichTarget)>, anyhow::Error>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let registry = backend.metadata_registry.clone();
+        let total = self.0.len();
+        let target = self.1;
+        async move {
+            let mut results = Vec::new();
+            let mut misses: Vec<(usize, String, String, String)> = Vec::new();
+
+            // First pass: cache lookups
+            for (idx, artist, title, album) in &self.0 {
+                let key = format!("{}::{}",
+                    metadata_provider::util::norm_for_lfm(&artist.to_lowercase()),
+                    metadata_provider::util::norm_for_lfm(&title.to_lowercase()),
+                );
+                if let Some(cached) = registry.lookup_cache(&key) {
+                    results.push((*idx, cached.year, cached.genres, cached.styles, target));
+                } else {
+                    misses.push((*idx, artist.clone(), title.clone(), album.clone().unwrap_or_default()));
+                }
+            }
+
+            // Second pass: bounded resolve via resolve_fast (LB + Last.fm, year+genres+styles)
+            let hit_count = results.len();
+            let resolve_count = misses.len();
+            let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
+            let mut handles = Vec::with_capacity(resolve_count);
+            for (idx, artist, title, album) in misses.into_iter() {
+                let reg = registry.clone();
+                let sem = semaphore.clone();
+                let handle = tokio::spawn(async move {
+                    let _permit = sem.acquire().await.unwrap();
+                    let album_opt = if album.is_empty() { None } else { Some(album.as_str()) };
+                    match reg.resolve_fast(&artist, &title, album_opt).await {
+                        Some(meta) => Some((idx, meta.year, meta.genres, meta.styles, target)),
+                        None => None,
+                    }
+                });
+                handles.push(handle);
+            }
+
+            for handle in handles {
+                if let Ok(Some(r)) = handle.await {
+                    results.push(r);
+                }
+            }
+
+            tracing::info!(hits = %hit_count, resolves = %resolve_count, total = %total, "Cache enrichment done");
+            Ok(results)
+        }
+    }
+}
+
+/// Queue batch year enrichment (same as EnrichFromMetadataCache but without EnrichTarget routing).
+#[derive(Debug, PartialEq)]
+pub struct EnrichQueueYears(pub Vec<(usize, String, String, Option<String>)>);
+
+impl BackendTask<ArcServer> for EnrichQueueYears {
     type Output = Result<Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, anyhow::Error>;
     type MetadataType = TaskMetadata;
     fn into_future(
@@ -389,7 +458,7 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
                 }
             }
 
-            // Second pass: bounded resolve for cache misses (max 5 concurrent)
+            // Second pass: bounded resolve via resolve_fast
             let hit_count = results.len();
             let resolve_count = misses.len();
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
@@ -399,21 +468,22 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
                 let sem = semaphore.clone();
                 let handle = tokio::spawn(async move {
                     let _permit = sem.acquire().await.unwrap();
-                    match reg.resolve(&artist, &title, if album.is_empty() { None } else { Some(&album) }).await {
-                        Ok(meta) => Some((idx, meta.year, meta.genres, meta.styles)),
-                        Err(_) => None,
+                    let album_opt = if album.is_empty() { None } else { Some(album.as_str()) };
+                    match reg.resolve_fast(&artist, &title, album_opt).await {
+                        Some(meta) => Some((idx, meta.year, meta.genres, meta.styles)),
+                        None => None,
                     }
                 });
                 handles.push(handle);
             }
 
             for handle in handles {
-                if let Ok(Some((idx, year, genres, styles))) = handle.await {
-                    results.push((idx, year, genres, styles));
+                if let Ok(Some(r)) = handle.await {
+                    results.push(r);
                 }
             }
 
-            tracing::info!(hits = %hit_count, resolves = %resolve_count, total = %total, "Cache enrichment done");
+            tracing::info!(hits = %hit_count, resolves = %resolve_count, total = %total, "Queue enrichment done");
             Ok(results)
         }
     }
