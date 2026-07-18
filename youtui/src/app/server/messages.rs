@@ -389,7 +389,7 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
                 }
             }
 
-            // Second pass: bounded resolve for cache misses (max 5 concurrent)
+            // Second pass: bounded year-only resolve (skips slow providers)
             let hit_count = results.len();
             let resolve_count = misses.len();
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
@@ -399,8 +399,8 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
                 let sem = semaphore.clone();
                 let handle = tokio::spawn(async move {
                     let _permit = sem.acquire().await.unwrap();
-                    match reg.resolve(&artist, &title, if album.is_empty() { None } else { Some(&album) }).await {
-                        Ok(meta) => Some((idx, meta.year, meta.genres, meta.styles)),
+                    match reg.resolve_year_fast(&artist, &title, if album.is_empty() { None } else { Some(&album) }).await {
+                        Ok(year) => Some((idx, year, Vec::new(), Vec::new())),
                         Err(_) => None,
                     }
                 });
