@@ -489,8 +489,24 @@ impl MetadataRegistry {
     /// Cache-only lookup - no HTTP, no provider resolution.
     /// Returns None if not in LRU cache or if result is sparse (no album/year).
     pub fn lookup_cache(&self, key: &str) -> Option<ValidatedMetadata> {
-        self.cache.lock().unwrap().get(key).cloned()
-            .filter(|m| m.album.is_some() || m.year.is_some())
+        // Check LRU first
+        if let Some(m) = self.cache.lock().unwrap().get(key).cloned()
+            .filter(|m| m.album.is_some() || m.year.is_some()) {
+            return Some(m);
+        }
+        // Fallback to SQLite — populate LRU for next time
+        if let Some(ref sqlite) = self.sqlite_cache {
+            if let Ok(cache) = sqlite.lock() {
+                if let Some(sqlite_meta) = cache.get(key) {
+                    let domain_meta = domain_meta_from_sqlite(&sqlite_meta);
+                    if domain_meta.album.is_some() || domain_meta.year.is_some() {
+                        self.cache.lock().unwrap().put(key.to_string(), domain_meta.clone());
+                        return Some(domain_meta);
+                    }
+                }
+            }
+        }
+        None
     }
 
     pub fn get_sqlite_cache(&self) -> Option<&Mutex<SqliteCache>> {
