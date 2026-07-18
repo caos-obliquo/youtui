@@ -28,6 +28,7 @@ use lru::LruCache;
 use metadata_cache_sqlite::SqliteCache;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::Mutex;
 
 pub trait MetadataProvider: Send + Sync {
@@ -247,18 +248,16 @@ impl MetadataRegistry {
                 }
             }
             crate::genre_map::expand_parent_genres(&mut meta.genres, &mut meta.styles);
-            // Only cache meaningful results (score >= 20: album match + artist or better)
-            if score >= 20 {
-                self.cache.lock().unwrap().put(cache_key.clone(), meta.clone());
-                // Write-through to SQLite
-                if let Some(ref sqlite) = self.sqlite_cache {
-                    if let Ok(cache) = sqlite.lock() {
-                        let sqlite_meta = sqlite_meta_from_domain(&meta);
-                        if let Err(e) = cache.put(&cache_key, &sqlite_meta) {
-                            tracing::warn!("Failed to write to SQLite cache: {}", e);
-                        }
+            self.cache.lock().unwrap().put(cache_key.clone(), meta.clone());
+            if let Some(ref sqlite) = self.sqlite_cache {
+                if let Ok(cache) = sqlite.lock() {
+                    let sqlite_meta = sqlite_meta_from_domain(&meta);
+                    if let Err(e) = cache.put(&cache_key, &sqlite_meta) {
+                        tracing::warn!("Failed to write to SQLite cache: {}", e);
                     }
                 }
+            }
+            if score >= 20 {
                 self.save_cache();
             }
             return Ok(meta);
@@ -449,7 +448,19 @@ impl MetadataRegistry {
         }
     }
 
-    fn import_json_to_sqlite(&self) {
+    /// Start a background thread that flushes LRU cache to SQLite every 60s.
+    pub fn start_background_flush(self: Arc<Self>) {
+        std::thread::spawn(move || {
+            let interval = std::time::Duration::from_secs(60);
+            loop {
+                std::thread::sleep(interval);
+                self.flush_cache_to_sqlite();
+            }
+        });
+    }
+
+    /// Flush in-memory cache to SQLite. Safe to call on quit.
+    pub fn flush_cache_to_sqlite(&self) {
         let Some(ref sqlite) = self.sqlite_cache else { return; };
         let cache = self.cache.lock().unwrap();
         let Ok(sqlite_cache) = sqlite.lock() else { return; };
@@ -459,6 +470,10 @@ impl MetadataRegistry {
                 tracing::warn!("Failed to import cache entry to SQLite: {}", e);
             }
         }
+    }
+
+    fn import_json_to_sqlite(&self) {
+        self.flush_cache_to_sqlite();
     }
 
     fn save_cache(&self) {

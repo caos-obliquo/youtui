@@ -67,6 +67,7 @@ impl Server {
             cache_path,
             sqlite_path,
         ));
+        metadata_registry.clone().start_background_flush();
         Server {
             api,
             player,

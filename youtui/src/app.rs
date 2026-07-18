@@ -366,6 +366,7 @@ impl Youtui {
                     }
                 }
                 AppStatus::Exiting(s) => {
+                    self.server.metadata_registry.flush_cache_to_sqlite();
                     destruct_terminal()?;
                     println!("{s}");
                     break;

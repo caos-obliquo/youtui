@@ -66,14 +66,15 @@ impl SqliteCache {
     /// Open (or create) the SQLite database at `path` and ensure tables exist.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, CacheError> {
         let conn = Connection::open(path.as_ref())?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
         let cache = Self { conn };
         cache.create_tables()?;
         Ok(cache)
     }
 
-    /// Open an in-memory SQLite database (for testing).
     pub fn open_in_memory() -> Result<Self, CacheError> {
         let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
         let cache = Self { conn };
         cache.create_tables()?;
         Ok(cache)
