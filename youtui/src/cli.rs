@@ -1,5 +1,6 @@
 use crate::{Cli, OAUTH_FILENAME, RuntimeInfo, get_api, get_config_dir, get_data_dir};
 use anyhow::Result;
+use metadata_cache_sqlite::SqliteCache;
 use metadata_provider::MetadataProvider;
 use futures::future::try_join_all;
 use querybuilder::{CliQuery, QueryType, command_to_query};
@@ -215,6 +216,37 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
         Some(crate::Command::EnrichCache { file }) => {
             return handle_enrich_cache(&config, file).await;
         }
+        Some(crate::Command::MetadataCache { show: _show, stats, clear }) => {
+            let sqlite_path = crate::get_data_dir()?.join("metadata_cache.db");
+            let cache = SqliteCache::open(&sqlite_path)?;
+            if *clear {
+                cache.clear()?;
+                println!("Metadata cache cleared.");
+                return Ok(());
+            }
+            if *stats {
+                let count = cache.len()?;
+                let file_size = std::fs::metadata(&sqlite_path)?.len();
+                println!("Metadata cache entries: {}", count);
+                println!("Database file size: {} bytes", file_size);
+                return Ok(());
+            }
+            // Default (--show or no flags): list entries
+            let entries = cache.iter()?;
+            if entries.is_empty() {
+                println!("Metadata cache is empty.");
+            } else {
+                println!("Metadata cache ({} entries):", entries.len());
+                for (key, meta) in &entries {
+                    let year = meta.year.as_deref().unwrap_or("None");
+                    let artist = meta.artist.as_deref().unwrap_or("?");
+                    let album = meta.album.as_deref().unwrap_or("?");
+                    println!("  {}: year={}, artist={}, album={}, genres={}, styles={}",
+                        key, year, artist, album, meta.genres.len(), meta.styles.len());
+                }
+            }
+            return Ok(());
+        }
         _ => {}
     }
     match cli {
@@ -346,6 +378,7 @@ async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<Strin
         .collect();
 
     if pairs.is_empty() {
+        tracing::warn!("enrich-cache: no input lines");
         println!("No input lines found. Provide 'Artist | Title' per line.");
         return Ok(());
     }
@@ -355,18 +388,22 @@ async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<Strin
     let mut completed = 0usize;
     let mut errors = 0usize;
 
+    tracing::info!("enrich-cache: starting batch enrichment for {} songs", total);
     for (artist, title) in &pairs {
         let _permit = semaphore.acquire().await;
+        tracing::debug!("enrich-cache: resolving {} - {}", artist, title);
         match registry.resolve_fast(artist, title, None).await {
             Some(meta) => {
                 completed += 1;
                 let year_str = meta.year.as_deref().unwrap_or("None");
                 let genre_str = if meta.genres.is_empty() { String::new() } else { format!(" [{}]", meta.genres.join(", ")) };
+                tracing::info!("enrich-cache: {} - {} -> year={:?}, genres={}, styles={}", artist, title, meta.year, meta.genres.len(), meta.styles.len());
                 print!("\r[ {completed}/{total} ] {artist} - {title} -> {year_str}{genre_str}");
             }
             None => {
                 errors += 1;
                 completed += 1;
+                tracing::debug!("enrich-cache: {} - {} -> no data", artist, title);
                 print!("\r[ {completed}/{total} ] {artist} - {title} -> None");
             }
         }
@@ -375,6 +412,7 @@ async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<Strin
     }
 
     println!();
+    tracing::info!("enrich-cache: done - {} enriched, {} errors", completed, errors);
     println!("Done. {completed} enriched, {errors} errors");
     Ok(())
 }

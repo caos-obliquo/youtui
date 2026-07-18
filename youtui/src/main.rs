@@ -444,6 +444,18 @@ enum Command {
         /// Path to input file. If omitted, reads from stdin.
         file: Option<String>,
     },
+    /// Inspect/manage the SQLite metadata cache (offline year/genre cache).
+    MetadataCache {
+        /// Show cached entries with stats (default if no flags)
+        #[arg(long)]
+        show: bool,
+        /// Show statistics only (count, size, CAA entries)
+        #[arg(long)]
+        stats: bool,
+        /// Clear all cached entries
+        #[arg(long)]
+        clear: bool,
+    },
 }
 
 pub struct RuntimeInfo {
@@ -508,6 +520,12 @@ async fn try_main() -> anyhow::Result<()> {
     // Config and API key files will be in OS directories.
     // Create them if they don't exist.
     initialise_directories().await?;
+    // Init tracing for CLI commands (TUI mode inits its own subscriber in app.rs)
+    if cli.command.is_some() {
+        tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .init();
+    }
     let mut config = config::Config::new(debug).await?;
     // Command line flag for auth_type should override config for auth_type.
     if let Some(auth_type) = auth_type {

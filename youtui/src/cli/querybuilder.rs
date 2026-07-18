@@ -733,6 +733,9 @@ pub async fn command_to_query(
         Command::EnrichCache { .. } => {
             anyhow::bail!("EnrichCache is a standalone CLI command, not an API query")
         }
+        Command::MetadataCache { .. } => {
+            anyhow::bail!("MetadataCache is a standalone CLI command, not an API query")
+        }
     }
 }
 

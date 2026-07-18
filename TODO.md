@@ -23,7 +23,13 @@
 - **CLI tools**: test-musicbrainz, test-caa, test-listenbrainz, test-validate-metadata
 - **metadata-cache-sqlite crate**: SQLite metadata cache (+16 tests)
 - **LibreFM provider**: new metadata provider (+355 lines)
-- 105 new tests, 531 total pass, 0 warnings
+- **SQLite MBID**: `musicbrainz_release_group_id` column in DDL + PRAGMA user_version migration + put/get/iter
+- **LB provider MBID**: `release_group_mbid` extracted in triple destructure
+- **SQLite batch flush**: `put_batch()` with explicit transaction, CAA cache wire
+- **Instant year enrichment**: cache check inline in GetPlaylistTracks + GetAllLibrarySongs — years appear instantly on Library open
+- **CLI metadata-cache**: `--show/--clear/--stats` subcommand
+- **CAA cache**: SQLite check before HTTP, save on success/404 (7-day TTL for not-found)
+- 20 metadata-cache-sqlite tests (+4: roundtrip mbid, migration, put_batch), 538 total pass, 0 warnings
 
 ## Low Priority
 - **Native streaming** - symphonia/basic-tcp-streaming prototype

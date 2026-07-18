@@ -9122,7 +9122,7 @@ dependencies = [
 
 [[package]]
 name = "youtui"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "anyhow",
  "async-callback-manager",
@@ -9145,6 +9145,7 @@ dependencies = [
  "lrclib-rs",
  "lru 0.12.5",
  "md5 0.7.0",
+ "metadata-cache-sqlite",
  "metadata-provider",
  "pretty_assertions",
  "rand 0.9.4",
