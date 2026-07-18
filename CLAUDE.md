@@ -52,7 +52,7 @@ If things break, rollback and re-apply one-by-one.
 cargo test --release -p youtui                      # 180 pass, 4 ignore
 cargo test --release -p metadata-provider           # 110 pass (+62 new)
 cargo test --release -p vi-text-editor              # 67 pass
-cargo test --release -p ytmapi-rs --lib             # 82 pass (no auth)
+cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
 cargo test --release -p ytmapi-rs                   # 29/51 auth (needs cookie)
 cargo test --release -p genre-db-sqlite             # 27 pass (new crate)
 cargo test --release -p metadata-cache-sqlite       # 20 pass
@@ -62,7 +62,7 @@ cargo test --release -p json-crawler                # 2 pass
 cargo test --release -p lrclib-rs                   # 4 pass
 cargo test --release -p rym-genre-data              # 10 pass
 ```
-Total: **~538/538 pass, 0 fail, 4 ignored, 0 warnings** (180+4 + 110 + 67 + 82 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 538)
+Total: **~539/539 pass, 0 fail, 4 ignored, 0 warnings** (180+4 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 539)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -183,7 +183,8 @@ ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli removed 
 7. ✅ **CLI tools** - test-musicbrainz, test-caa, test-listenbrainz, test-validate-metadata
 8. ✅ **SQLite metadata cache** - MBID column, streaming flush, CLI tool, CAA cache wire
 9. ✅ **Instant year enrichment** - cache check inline in GetPlaylistTracks + GetAllLibrarySongs
-10. **Low**: OAuth refresh, native streaming, liked songs tables, artist pagination
+10. ✅ **Cleanup Q3** - liked songs column (SearchResultSong like_status), CHANGELOG.md, unwrap/expect audit (2 fixed), ytmapi-rs format-drift ignore (5 tests)
+11. **Low**: OAuth refresh, native streaming, artist pagination
 
 ## Platform Compatibility (Current Status)
 All 6 platform-specific items fixed. Youtui compiles on Linux (Wayland/X11) and macOS. Windows builds fail at compile-time with a clear error.
@@ -211,16 +212,16 @@ See `docs/` for full reference (4.1k lines, 31 files).
 | Crate | Status | Tests |
 |---|---|---|
 | `youtui` | Main binary | 180 |
-| `ytmapi-rs` | YT Music API client | 82 lib + 29/51 auth |
+| `ytmapi-rs` | YT Music API client | 83 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 67 |
-| `metadata-provider` | Metadata trait + impls | 110 |
+| `metadata-provider` | Metadata trait + 6 provider impls | 110 |
 | `genius-rs` | Genius lyrics/annotations | 18 |
 | `async-callback-manager` | Async task dispatch | 14 |
 | `json-crawler` | JSON path parser | 2 |
 | `lrclib-rs` | LRCLIB lyrics provider | 4 |
 | `rym-genre-data` | RYM genre/descriptor hierarchy | 10 |
 | `genre-db-sqlite` | SQLite genre hierarchy + seed | 27 |
-| `metadata-cache-sqlite` | SQLite metadata cache (MBID, streaming flush) | 20 |
+| `metadata-cache-sqlite` | SQLite metadata cache + MBID | 20 |
 | `audio-player` | Async rodio-based audio player | 0 |
 
 ## 5 Browser Tabs Fully Wired
