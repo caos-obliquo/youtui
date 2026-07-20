@@ -233,6 +233,7 @@ impl SearchBlock {
     // Ask the UI for search suggestions for the current query
     fn fetch_search_suggestions(&mut self) -> ComponentEffect<Self> {
         let text = self.search_contents.get_text().to_owned();
+        tracing::debug!("fetch_search_suggestions: text='{:?}' len={} mode={:?}", text, text.len(), self.search_contents.mode);
         if text.is_empty() {
             self.search_suggestions.clear();
             return AsyncTask::new_no_op();
@@ -250,6 +251,9 @@ impl SearchBlock {
         search: String,
     ) {
         if self.get_text() == Some(&search) {
+            if !search_suggestions.is_empty() {
+                tracing::debug!("replace_search_suggestions: got {} for '{}'", search_suggestions.len(), search);
+            }
             self.search_suggestions = search_suggestions;
             self.suggestions_cur = None;
         }
