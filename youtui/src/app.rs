@@ -217,6 +217,7 @@ pub enum AppCallback {
     SubscribeToArtistFromLibrary(ArtistChannelID<'static>),
     UnsubscribeFromArtistFromLibrary(Vec<ArtistChannelID<'static>>),
     AddPlaylistToPlaylistFromLibrary(PlaylistID<'static>, PlaylistID<'static>),
+    ToggleLoggerFullscreen,
 }
 
 impl Youtui {
@@ -906,6 +907,9 @@ impl Youtui {
             AppCallback::OpenUrl(url) => {
                 let effect = self.window_state.play_yt_url(url);
                 self.task_manager.spawn_task(&self.server, effect);
+            }
+            AppCallback::ToggleLoggerFullscreen => {
+                self.window_state.toggle_logger_fullscreen();
             }
         }
     }

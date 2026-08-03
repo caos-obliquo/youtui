@@ -99,8 +99,15 @@ pub struct YoutuiWindow {
     pub sixel_rect: Option<ratatui::layout::Rect>,
     pub cached_album_protocol: Option<ratatui_image::protocol::Protocol>,
     pub cached_album_chunk: Option<ratatui::layout::Rect>,
+    pub logger_fullscreen: bool,
 }
 impl_youtui_component!(YoutuiWindow);
+
+impl YoutuiWindow {
+    pub fn toggle_logger_fullscreen(&mut self) {
+        self.logger_fullscreen = !self.logger_fullscreen;
+    }
+}
 
 pub struct HelpMenu {
     pub shown: bool,
@@ -628,6 +635,7 @@ impl YoutuiWindow {
             sixel_rect: None,
             cached_album_protocol: None,
             cached_album_chunk: None,
+            logger_fullscreen: false,
         };
         let initial_effect = url.map(|u| this.play_yt_url(u));
         let mut combined = task.map_frontend(|this: &mut Self| &mut this.playlist);

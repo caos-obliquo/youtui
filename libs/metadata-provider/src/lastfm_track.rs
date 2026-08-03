@@ -14,6 +14,7 @@ impl TrackSearchProvider {
 
 impl MetadataProvider for TrackSearchProvider {
     fn priority(&self) -> u8 { 20 }
+    fn name(&self) -> &'static str { "Last.fm Track" }
 
     fn lookup<'a>(
         &'a self,

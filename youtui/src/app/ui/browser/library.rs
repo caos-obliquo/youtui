@@ -126,7 +126,7 @@ pub enum LibraryEffect {
     SongsEnriched(Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, crate::app::server::EnrichTarget),
     PlaylistsLoaded(Vec<LibraryPlaylist>),
 
-    ArtistsLoaded(Vec<LibraryArtist>),
+    ArtistsLoaded(Vec<LibraryArtist>, Vec<ArtistChannelID<'static>>),
     AlbumsLoaded(Vec<SearchResultAlbum>),
     RemoveItemsSuccess,
     RemoveItemsError(String),
@@ -229,13 +229,14 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 // show_playlist_tracks preserved across refreshes
                 // Only DismissTracks action closes it
             }
-            LibraryEffect::ArtistsLoaded(artists) => {
-                info!(count = %artists.len(), "Library artists loaded");
+            LibraryEffect::ArtistsLoaded(artists, subs) => {
+                info!(count = %artists.len(), subs = %subs.len(), "Library artists loaded");
                 target.loading = false;
                 target.error = None;
                 target.artists_fetched = true;
                 target.artist_data = artists;
                 target.artist_selected = 0;
+                target.subscribed_artists = subs.into_iter().collect();
                 target.input_routing = InputRouting::Content;
             }
             LibraryEffect::AlbumsLoaded(albums) => {
@@ -482,8 +483,9 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksErr, anyhow::Error, Library
     tracing::error!("Error loading playlist tracks: {}", err);
     LibraryEffect::LoadError(err.to_string())
 });
-impl_youtui_task_handler!(HandleLibraryArtistsOk, Vec<LibraryArtist>, LibraryBrowser, |_, a: Vec<LibraryArtist>| {
-    LibraryEffect::ArtistsLoaded(a)
+impl_youtui_task_handler!(HandleLibraryArtistsOk, (Vec<LibraryArtist>, Vec<ArtistChannelID<'static>>), LibraryBrowser, |_, result| {
+    let (a, subs) = result;
+    LibraryEffect::ArtistsLoaded(a, subs)
 });
 impl_youtui_task_handler!(HandleLibraryArtistsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     LibraryEffect::LoadError(err.to_string())
@@ -965,10 +967,16 @@ impl LibraryBrowser {
 
     fn build_artist_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
         self.artist_data.iter().enumerate().map(|(i, a)| {
+            let subs_icon = if self.subscribed_artists.contains(&a.channel_id) {
+                Cow::Borrowed("\u{f02e}")
+            } else {
+                Cow::Borrowed("")
+            };
             vec![
                 Cow::<'_, str>::Owned((i + 1).to_string()),
                 Cow::Borrowed(a.artist.as_str()),
                 Cow::Borrowed(a.byline.as_str()),
+                subs_icon,
             ]
         }).collect()
     }
@@ -1161,7 +1169,7 @@ impl TableView for LibraryBrowser {
             match self.category {
                 LibraryCategory::LikedSongs => &["#", "Artist", "Album", "Song", "Duration", "Year", "Liked"],
                 LibraryCategory::Playlists => &["#", "Title", "Tracks", "Author"],
-                LibraryCategory::Artists => &["#", "Artist", "Byline"],
+                LibraryCategory::Artists => &["#", "Artist", "Byline", "Subs"],
                 LibraryCategory::Albums => &["#", "Artist", "Album", "Year", "Type"],
             }
         };
@@ -1623,6 +1631,12 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
                     }
                 }
+                BrowserSongsAction::ViewSongInfo => {
+                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                    if let Some(song) = songs.get(self.cur_selected) {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song: song.clone() }));
+                    }
+                }
                 _ => warn!("Unsupported song action for liked songs: {:?}", action),
             },
             #[allow(unreachable_patterns)]
@@ -1667,6 +1681,13 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
                             let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                             return (AsyncTask::new_no_op(), Some(AppCallback::ViewLyrics { artist, title: song.title.clone() }));
+                        }
+                    }
+                }
+                BrowserSongsAction::ViewSongInfo => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song: song.clone() }));
                         }
                     }
                 }

@@ -1227,6 +1227,10 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('i')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::ViewSongInfo)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('f')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::GetPlaylistDetails)),
                     ),
                     (
@@ -1391,6 +1395,12 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
                             BrowserArtistSongsAction::GetRelatedTracks,
                         )),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('i')),
+                        KeyActionTree::new_key(AppAction::BrowserArtistSongs(
+                            BrowserArtistSongsAction::ViewSongInfo,
+                        )),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
@@ -1482,6 +1492,12 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('r')),
                         KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
                             BrowserPlaylistSongsAction::GetRelatedTracks,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('i')),
+                        KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
+                            BrowserPlaylistSongsAction::ViewSongInfo,
                         )),
                     ),
                 ],
@@ -1593,6 +1609,12 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('S')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(
                             BrowserSongsAction::ToggleSubscribeArtist,
+                        )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('i')),
+                        KeyActionTree::new_key(AppAction::BrowserSongs(
+                            BrowserSongsAction::ViewSongInfo,
                         )),
                     ),
                 ],
@@ -1776,11 +1798,19 @@ fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('k')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::PageUp)),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::Up)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('j')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::PageDown)),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::Down)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Up),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::Up)),
+        ),
+        (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Down),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::Down)),
         ),
         (
             Keybind::new(crossterm::event::KeyCode::Char('u'), KeyModifiers::CONTROL),
@@ -1795,12 +1825,8 @@ fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             KeyActionTree::new_key(AppAction::Log(LoggerAction::ToggleHideFiltered)),
         ),
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Esc),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::ExitPageMode)),
-        ),
-        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('f')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::ToggleTargetFocus)),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::ToggleFullscreen)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
@@ -1808,15 +1834,7 @@ fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::First)),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::ToggleTargetSelector)),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::First)),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::ChordG)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('G')),

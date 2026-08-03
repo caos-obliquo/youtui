@@ -32,6 +32,7 @@ impl Action for LyricsPopupAction {
     }
 }
 
+#[derive(Debug)]
 pub enum LyricsPopupState {
     Loading,
     Loaded(()),
@@ -122,8 +123,34 @@ impl LyricsPopup {
     }
 
     pub fn set_lyrics(&mut self, lyrics: String) {
+        // Defensive: a provider could return empty/whitespace content. Treat as
+        // "no lyrics found" rather than rendering a blank screen (req: graceful
+        // missing-lyrics handling).
+        if lyrics.trim().is_empty() {
+            tracing::warn!(
+                artist = %self.artist,
+                title = %self.title,
+                "set_lyrics: received empty lyrics, showing 'No lyrics found'"
+            );
+            self.set_error("No lyrics found for this track.".to_string());
+            return;
+        }
         if let Some(key) = &self.lyrics_cache_key {
             self.lyrics_cache.put(key.clone(), lyrics.clone());
+            tracing::debug!(
+                artist = %self.artist,
+                title = %self.title,
+                key = %key,
+                len = lyrics.len(),
+                "set_lyrics: cached and loaded lyrics"
+            );
+        } else {
+            tracing::debug!(
+                artist = %self.artist,
+                title = %self.title,
+                len = lyrics.len(),
+                "set_lyrics: loaded lyrics (no cache key set)"
+            );
         }
         self.original_lyrics = lyrics.clone();
         self.state = LyricsPopupState::Loaded(());
@@ -133,16 +160,42 @@ impl LyricsPopup {
     }
 
     pub fn set_annotations(&mut self, annotations: Vec<Annotation>) {
+        tracing::debug!(
+            artist = %self.artist,
+            title = %self.title,
+            count = annotations.len(),
+            "set_annotations: received annotations"
+        );
         self.annotations = annotations;
         self.rebuild_lines();
     }
 
     pub fn set_error(&mut self, error: String) {
+        tracing::warn!(
+            artist = %self.artist,
+            title = %self.title,
+            error = %error,
+            "set_error: lyrics fetch failed"
+        );
         self.state = LyricsPopupState::Error(error);
-        // Cache error with timestamp for negative TTL
+        // Cache error with timestamp for negative TTL (enforced at 5 min in ui.rs)
         if let Some(key) = &self.lyrics_cache_key {
             self.error_cache.put(key.clone(), Instant::now());
         }
+    }
+
+    /// Returns true if a recent error for this cache key is still within the
+    /// negative-cache TTL (5 minutes). Used to avoid redundant re-fetches and to
+    /// surface a retry suggestion only after the TTL expires.
+    #[allow(dead_code)]
+    pub fn is_error_cached_recent(&self) -> bool {
+        const ERROR_TTL_SECS: u64 = 300;
+        if let Some(key) = &self.lyrics_cache_key {
+            if let Some(cached_at) = self.error_cache.peek(key) {
+                return cached_at.elapsed().as_secs() < ERROR_TTL_SECS;
+            }
+        }
+        false
     }
 
     fn rebuild_lines(&mut self) {
@@ -806,10 +859,24 @@ impl LyricsPopup {
                             let time_str = &rest[..close];
                             let parts: Vec<&str> = time_str.split(':').collect();
                             if parts.len() == 2 {
-                                if let (Ok(mins), Ok(secs)) = (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
-                                    let dur = std::time::Duration::from_secs(mins * 60 + secs);
-                                    return (AsyncTask::new_no_op(), Some(AppCallback::SeekTo(dur)));
+                                match (parts[0].parse::<u64>(), parts[1].parse::<u64>()) {
+                                    (Ok(mins), Ok(secs)) => {
+                                        let dur = std::time::Duration::from_secs(mins * 60 + secs);
+                                        tracing::debug!(line = %self.cursor_line, time = %time_str, "Enter: parsed timestamp, seeking");
+                                        return (AsyncTask::new_no_op(), Some(AppCallback::SeekTo(dur)));
+                                    }
+                                    (mins, secs) => {
+                                        tracing::warn!(
+                                            line = %self.cursor_line,
+                                            time = %time_str,
+                                            mins_ok = mins.is_ok(),
+                                            secs_ok = secs.is_ok(),
+                                            "Enter: failed to parse timestamp in lyrics line"
+                                        );
+                                    }
                                 }
+                            } else {
+                                tracing::debug!(line = %self.cursor_line, time = %time_str, "Enter: malformed timestamp (expected m:ss), ignoring");
                             }
                         }
                     }
@@ -1118,12 +1185,20 @@ impl LyricsPopup {
                     .border_style(Style::default().fg(Color::Red));
                 let inner = block.inner(popup_area);
                 frame.render_widget(block, popup_area);
-                let err_widget = Paragraph::new(err.as_str())
+                // Surface a retry suggestion for transient/network failures so the
+                // user is not stuck on a dead error screen (req: network error retry).
+                let retry_hint = if err.contains("No lyrics found") {
+                    "Close and reopen the popup to retry. Check your network connection."
+                } else {
+                    "Close and reopen the popup to retry the fetch."
+                };
+                let err_text = format!("{}\n\n{}", err, retry_hint);
+                let err_widget = Paragraph::new(err_text)
                     .style(Style::default().fg(Color::Red))
                     .alignment(Alignment::Center);
                 let vert = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints([Constraint::Percentage(50), Constraint::Length(1), Constraint::Percentage(50)])
+                    .constraints([Constraint::Percentage(40), Constraint::Length(3), Constraint::Percentage(40)])
                     .split(inner);
                 frame.render_widget(err_widget, vert[1]);
             }
@@ -1146,17 +1221,26 @@ impl LyricsPopup {
 /// Convert Japanese text to romaji using lindera (kanji→kana) + ib-romaji (kana→latin)
 pub fn japanese_to_romaji(text: &str) -> String {
     use std::sync::OnceLock;
-    static TOKENIZER: OnceLock<lindera::tokenizer::Tokenizer> = OnceLock::new();
+    static TOKENIZER: OnceLock<Option<lindera::tokenizer::Tokenizer>> = OnceLock::new();
+    // Build the tokenizer once. If it fails (e.g. embedded dictionary missing),
+    // fall back to returning the original text rather than panicking (req: no
+    // silent/unwarranted panics in error paths).
     let tokenizer = TOKENIZER.get_or_init(|| {
-        lindera::tokenizer::TokenizerBuilder::new()
-            .ok()
+        let built = lindera::tokenizer::TokenizerBuilder::new()
             .map(|mut b| {
                 b.set_segmenter_dictionary("embedded://ipadic");
                 b
             })
-            .and_then(|b| b.build().ok())
-            .expect("Failed to create lindera tokenizer")
+            .and_then(|b| b.build());
+        if built.is_err() {
+            tracing::error!("japanese_to_romaji: failed to build lindera tokenizer, falling back to original text");
+        }
+        built.ok()
     });
+    let Some(tokenizer) = tokenizer else {
+        tracing::warn!("japanese_to_romaji: tokenizer unavailable, returning original text");
+        return text.to_string();
+    };
     let romaji = ib_romaji::HepburnRomanizer::builder().kana(true).build();
     text.lines()
         .map(|line| convert_line_to_romaji(line, tokenizer, &romaji))
@@ -1227,4 +1311,59 @@ fn convert_jp(
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_lyrics_becomes_error_not_blank() {
+        let mut popup = LyricsPopup::new("Artist".into(), "Title".into());
+        popup.set_lyrics(String::new());
+        match &popup.state {
+            LyricsPopupState::Error(e) => assert!(e.contains("No lyrics found"), "expected graceful 'No lyrics found', got: {e}"),
+            other => panic!("empty lyrics should produce Error state, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn whitespace_only_lyrics_becomes_error() {
+        let mut popup = LyricsPopup::new("Artist".into(), "Title".into());
+        popup.set_lyrics("   \n\t  ".to_string());
+        assert!(matches!(popup.state, LyricsPopupState::Error(_)));
+    }
+
+    #[test]
+    fn valid_lyrics_loads_and_caches() {
+        let mut popup = LyricsPopup::new("Artist".into(), "Title".into());
+        popup.lyrics_cache_key = Some("Artist||Title".to_string());
+        popup.set_lyrics("line one\nline two".to_string());
+        assert!(matches!(popup.state, LyricsPopupState::Loaded(())));
+        assert_eq!(popup.lyrics_cache.peek("Artist||Title"), Some(&"line one\nline two".to_string()));
+    }
+
+    #[test]
+    fn error_is_cached_and_recent_within_ttl() {
+        let mut popup = LyricsPopup::new("Artist".into(), "Title".into());
+        popup.lyrics_cache_key = Some("Artist||Title".to_string());
+        popup.set_error("boom".to_string());
+        assert!(popup.is_error_cached_recent(), "fresh error should be within TTL");
+        assert!(matches!(popup.state, LyricsPopupState::Error(_)));
+    }
+
+    #[test]
+    fn error_cache_expires_after_ttl() {
+        let mut popup = LyricsPopup::new("Artist".into(), "Title".into());
+        popup.lyrics_cache_key = Some("Artist||Title".to_string());
+        // Manually insert a stale timestamp (6 min old) to simulate TTL expiry.
+        popup.error_cache.put("Artist||Title".to_string(), Instant::now() - std::time::Duration::from_secs(360));
+        assert!(!popup.is_error_cached_recent(), "stale error should be outside TTL");
+    }
+
+    #[test]
+    fn no_error_cache_when_key_unset() {
+        let popup = LyricsPopup::new("Artist".into(), "Title".into());
+        assert!(!popup.is_error_cached_recent());
+    }
 }

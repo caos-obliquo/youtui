@@ -3,7 +3,7 @@ use crate::app::structures::{ListSong, ListSongArtist, MaybeRc, ListSongAlbum, A
 use crate::app::ui::AppCallback;
 use ytmapi_rs::common::YoutubeID;
 use async_callback_manager::AsyncTask;
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::rc::Rc;
 use metadata_provider::genre_map;
-use std::collections::HashSet;
+use crate::app::structures::copy_to_clipboard;
 
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -42,12 +42,22 @@ enum Field {
 }
 
 const FIELDS: &[Field] = &[Field::Title, Field::Artist, Field::Album, Field::Year, Field::Genre];
+const DISPLAY_LINES: usize = 8; // Title, Artist, Album, Year, Genre, Track, Time, ID
+
+#[derive(Clone, Copy, PartialEq)]
+enum PopupMode {
+    Normal,
+    VisualLine,
+}
 
 pub struct SongInfoPopup {
     pub song: ListSong,
     selected_field: usize,
     editing: bool,
     edit_buffer: String,
+    genre_scroll: usize,
+    mode: PopupMode,
+    visual_start: usize,
 }
 
 impl_youtui_component!(SongInfoPopup);
@@ -69,15 +79,35 @@ impl SongInfoPopup {
             selected_field: 0,
             editing: false,
             edit_buffer: String::new(),
+            genre_scroll: 0,
+            mode: PopupMode::Normal,
+            visual_start: 0,
         }
+    }
+
+    fn visual_range(&self) -> (usize, usize) {
+        let s = self.visual_start.min(self.selected_field);
+        let e = self.visual_start.max(self.selected_field);
+        (s, e)
     }
 
     pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
         if self.editing {
             return self.handle_edit_key(event);
         }
+        // q always closes, regardless of mode
+        if event.code == KeyCode::Char('q') {
+            return (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup));
+        }
+        match self.mode {
+            PopupMode::Normal => self.handle_normal_key(event),
+            PopupMode::VisualLine => self.handle_visual_key(event),
+        }
+    }
+
+    fn handle_normal_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
         match event.code {
-            KeyCode::Esc | KeyCode::Char('q') => {
+            KeyCode::Esc => {
                 (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
             }
             KeyCode::Char('e') => {
@@ -85,23 +115,144 @@ impl SongInfoPopup {
                 self.edit_buffer = self.field_value(self.selected_field);
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('V') => {
+                self.mode = PopupMode::VisualLine;
+                self.visual_start = self.selected_field;
+                (AsyncTask::new_no_op(), None)
+            }
             KeyCode::Tab => {
                 self.selected_field = (self.selected_field + 1) % FIELDS.len();
+                self.genre_scroll = 0;
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::BackTab => {
                 self.selected_field = if self.selected_field == 0 { FIELDS.len() - 1 } else { self.selected_field - 1 };
+                self.genre_scroll = 0;
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('j') | KeyCode::Down => {
-                self.selected_field = (self.selected_field + 1) % FIELDS.len();
+                if self.selected_field == 4 {
+                    let page = if event.modifiers.contains(KeyModifiers::CONTROL) { 10 } else { 1 };
+                    self.genre_scroll = self.genre_scroll.saturating_add(page);
+                } else {
+                    self.selected_field = (self.selected_field + 1) % FIELDS.len();
+                    self.genre_scroll = 0;
+                }
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.selected_field = if self.selected_field == 0 { FIELDS.len() - 1 } else { self.selected_field - 1 };
+                if self.selected_field == 4 {
+                    let page = if event.modifiers.contains(KeyModifiers::CONTROL) { 10 } else { 1 };
+                    self.genre_scroll = self.genre_scroll.saturating_sub(page);
+                } else {
+                    self.selected_field = if self.selected_field == 0 { FIELDS.len() - 1 } else { self.selected_field - 1 };
+                    self.genre_scroll = 0;
+                }
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Home => {
+                if self.selected_field == 4 {
+                    self.genre_scroll = 0;
+                }
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::End => {
+                if self.selected_field == 4 {
+                    self.genre_scroll = 9999;
+                }
                 (AsyncTask::new_no_op(), None)
             }
             _ => (AsyncTask::new_no_op(), None),
+        }
+    }
+
+    fn handle_visual_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        match event.code {
+            KeyCode::Esc | KeyCode::Char('V') => {
+                self.mode = PopupMode::Normal;
+                self.selected_field = self.selected_field.min(FIELDS.len() - 1);
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.selected_field = (self.selected_field + 1).min(DISPLAY_LINES - 1);
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.selected_field = self.selected_field.saturating_sub(1);
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('y') => {
+                let (vs, ve) = self.visual_range();
+                let raw = self.build_display_lines();
+                let yanked: Vec<&str> = raw[vs..=ve].iter().map(|l| l.as_str()).collect();
+                copy_to_clipboard(&yanked.join("\n"));
+                self.mode = PopupMode::Normal;
+                self.selected_field = self.selected_field.min(FIELDS.len() - 1);
+                (AsyncTask::new_no_op(), None)
+            }
+            KeyCode::Char('d') => {
+                let (vs, ve) = self.visual_range();
+                for i in vs..=ve {
+                    if i < FIELDS.len() {
+                        self.clear_field(i);
+                    }
+                }
+                self.selected_field = vs.min(FIELDS.len() - 1);
+                self.mode = PopupMode::Normal;
+                (AsyncTask::new_no_op(), Some(AppCallback::UpdateSongInfo {
+                    id: self.song.id,
+                    song: self.song.clone(),
+                }))
+            }
+            _ => (AsyncTask::new_no_op(), None),
+        }
+    }
+
+    fn clear_field(&mut self, idx: usize) {
+        match FIELDS[idx] {
+            Field::Title => self.song.title.clear(),
+            Field::Artist => {
+                self.song.artists = MaybeRc::Owned(Vec::new());
+            }
+            Field::Album => self.song.album = None,
+            Field::Year => self.song.year = None,
+            Field::Genre => {
+                self.song.genres.clear();
+                self.song.styles.clear();
+            }
+        }
+    }
+
+    fn build_display_lines(&self) -> Vec<String> {
+        let artist = self.song.artists.iter()
+            .map(|a| a.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let album = self.song.album.as_ref()
+            .map(|a| a.name.as_str())
+            .unwrap_or("-");
+        let year = self.song.year.as_ref().map(|y| y.as_str()).unwrap_or("-");
+        let track_no = self.song.track_no.map(|t| t.to_string()).unwrap_or_else(|| "-".to_string());
+        let genre_str = self.build_genre_str();
+        vec![
+            format!("Title: {}", self.song.title),
+            format!("Artist: {}", artist),
+            format!("Album: {}", album),
+            format!("Year: {}", year),
+            format!("Genre: {}", genre_str),
+            format!("Track: {}", track_no),
+            format!("Time: {}", self.song.duration_string),
+            format!("ID: {}", self.song.video_id.get_raw()),
+        ]
+    }
+
+    fn build_genre_str(&self) -> String {
+        let g: Vec<&str> = self.song.styles.iter().map(|s| s.as_str()).collect();
+        if g.is_empty() || (g.len() == 1 && g[0].is_empty()) {
+            let filtered: Vec<&str> = self.song.genres.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+            if filtered.is_empty() { "-".to_string() } else { filtered.join(", ") }
+        } else {
+            g.join(", ")
         }
     }
 
@@ -145,8 +296,12 @@ impl SongInfoPopup {
                 .map(|y| y.as_str().to_string())
                 .unwrap_or_default(),
             Field::Genre => {
-                let mut parts = self.song.styles.clone();
-                if parts.is_empty() { parts = self.song.genres.clone(); }
+                let parts: Vec<&str> = {
+                    let g: Vec<&str> = self.song.styles.iter().map(|s| s.as_str()).collect();
+                    if g.is_empty() || (g.len() == 1 && g[0].is_empty()) {
+                        self.song.genres.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect()
+                    } else { g }
+                };
                 parts.join(", ")
             }
         }
@@ -221,62 +376,66 @@ impl SongInfoPopup {
         let track_no = self.song.track_no.map(|t| t.to_string()).unwrap_or_else(|| "-".to_string());
         let duration = &self.song.duration_string;
         let source = self.song.video_id.get_raw();
-        let genre_str = {
-            let g = self.song.styles.join(", ");
-            if g.is_empty() { self.song.genres.join(", ") } else { g }
+        let genre_list: Vec<&str> = {
+            let g = self.song.styles.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+            if g.is_empty() || (g.len() == 1 && g[0].is_empty()) {
+                self.song.genres.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect()
+            } else { g }
         };
-        let genre_display = if genre_str.is_empty() { "-" } else { genre_str.as_str() };
-
-        // Look up RYM genre descriptions
-        let genre_descriptions: Vec<String> = if !genre_str.is_empty() {
-            let mut seen = HashSet::new();
-            genre_str.split(',')
-                .map(|g| g.trim())
-                .filter_map(|g| rym_genre_data::find_genre(g))
-                .filter_map(|g| g.description.clone())
-                .filter(|d| seen.insert(d.clone()))
-                .map(|d| if d.len() > 120 { format!("{}...", &d[..117]) } else { d })
-                .collect()
+        let genre_str = if genre_list.is_empty() {
+            "-".to_string()
         } else {
-            Vec::new()
+            genre_list.join(", ")
         };
-
         let raw_lines = vec![
             ("Title", self.song.title.as_str()),
             ("Artist", &artist),
             ("Album", album),
             ("Year", year),
-            ("Genre", genre_display),
+            ("Genre", genre_str.as_str()),
             ("Track", &track_no),
             ("Time", duration),
             ("ID", source),
         ];
 
+        let (vs, ve) = if self.mode == PopupMode::VisualLine { self.visual_range() } else { (0, 0) };
         let mut display = String::new();
         for (i, (label, value)) in raw_lines.iter().enumerate() {
             let is_editable = i < FIELDS.len();
-            let marker = if is_editable && i == self.selected_field {
-                if self.editing {
-                    format!("> {}: {}█", label, self.edit_buffer)
-                } else {
-                    format!("> {}: {}", label, value)
+            let marker = match self.mode {
+                PopupMode::VisualLine => {
+                    let in_sel = i >= vs && i <= ve;
+                    if i == self.selected_field && in_sel {
+                        format!("\u{2588} {}: {}", label, value)
+                    } else if in_sel {
+                        format!("\u{2590} {}: {}", label, value)
+                    } else {
+                        format!("  {}: {}", label, value)
+                    }
                 }
-            } else {
-                format!("  {}: {}", label, value)
+                PopupMode::Normal => {
+                    if is_editable && i == self.selected_field {
+                        if self.editing {
+                            format!("\u{258c} {}: {}\u{2588}", label, self.edit_buffer)
+                        } else {
+                            format!("\u{258c} {}: {}", label, value)
+                        }
+                    } else {
+                        format!("  {}: {}", label, value)
+                    }
+                }
             };
             display.push_str(&marker);
             display.push('\n');
-            // Show RYM descriptions when Genre field is selected
-            if i == 4 && !genre_descriptions.is_empty() && self.selected_field == 4 {
-                for desc in &genre_descriptions {
-                    display.push_str(&format!("         {}\n", desc));
-                }
-            }
+
+            // Just show the raw genre string from metadata. RYM tree expansion
+            // adds noise — no per-song relevance signal available.
         }
 
         let info_widget = Paragraph::new(display)
             .style(Style::default().fg(Color::White))
-            .wrap(Wrap { trim: false });
+            .wrap(Wrap { trim: false })
+            .scroll((self.genre_scroll as u16, 0));
         frame.render_widget(info_widget, chunks[0]);
 
         // Genre auto-suggest: show matching canonical genres when editing Genre field
@@ -306,10 +465,11 @@ impl SongInfoPopup {
             }
         }
 
-        let hint = if self.editing {
-            "Enter: Save | Esc: Cancel"
-        } else {
-            "j/k: Select | e: Edit | Tab: Next | q: Close"
+        let hint = match self.mode {
+            PopupMode::VisualLine => "[V] j/k: Extend | y: Yank | d: Clear | Esc/V: Normal",
+            PopupMode::Normal if self.editing => "Enter: Save | Esc: Cancel",
+            PopupMode::Normal if self.selected_field == 4 => "j/k: Scroll | e: Edit | V: Visual | q: Close",
+            PopupMode::Normal => "j/k: Select | e: Edit | V: Visual | Tab: Next | q: Close",
         };
         let hint_widget = Paragraph::new(hint)
             .style(Style::default().fg(Color::DarkGray))

@@ -136,12 +136,14 @@ impl ActionHandler<BrowserArtistsAction> for ArtistSearchBrowser {
             BrowserArtistsAction::SubscribeToArtist => {
                 let selected = self.artist_search_panel.get_selected_item();
                 if let Some(artist) = self.artist_search_panel.list.get(selected) {
+                    self.artist_search_panel.subscribed_artists.insert(artist.browse_id.clone());
                     return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(artist.browse_id.clone()))).into();
                 }
             }
             BrowserArtistsAction::UnsubscribeFromArtist => {
                 let selected = self.artist_search_panel.get_selected_item();
                 if let Some(artist) = self.artist_search_panel.list.get(selected) {
+                    self.artist_search_panel.subscribed_artists.remove(&artist.browse_id);
                     return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![artist.browse_id.clone()]))).into();
                 }
             }
@@ -188,6 +190,7 @@ impl ActionHandler<BrowserArtistSongsAction> for ArtistSearchBrowser {
             BrowserArtistSongsAction::GoToArtist => return self.go_to_artist().into(),
             BrowserArtistSongsAction::GoToAlbum => return self.go_to_album().into(),
             BrowserArtistSongsAction::GetRelatedTracks => return self.get_related_tracks().into(),
+            BrowserArtistSongsAction::ViewSongInfo => return self.view_song_info().into(),
             BrowserArtistSongsAction::ToggleCategoryFilter => {
                 self.album_songs_panel.handle_toggle_category_filter();
             }
@@ -430,6 +433,13 @@ impl ArtistSearchBrowser {
         let cur_idx = self.album_songs_panel.get_selected_item();
         if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
             return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn view_song_info(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.album_songs_panel.get_selected_item();
+        if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
+            return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song: song.clone() }));
         }
         (AsyncTask::new_no_op(), None)
     }

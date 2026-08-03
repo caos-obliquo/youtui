@@ -106,6 +106,7 @@ This bypasses any partial corruption in sixel state tracking that accumulated du
 |-------|------|-------------|
 | Year metadata: rare None edge cases | metadata providers | Some tracks show `None` for year when no provider returns data and album has no `(YYYY)`. Fallbacks exist: provider → album name → song title parenthetical. |
 | **Wrong album in footer** | `footer.rs` | Song displays incorrect album name. Root cause: YTM song metadata may have stale/wrong album association (e.g. song from split/EP shows parent album). Track which `AlbumRef` YTM returns vs expected. Manual override via playlist editor may fix. |
+| **Genre subgenres: RYM tree has no per-song relevance** | `song_info_popup.rs` | Metadata providers return flat genre strings (e.g. ["Punk", "Hardcore Punk"]). `get_subgenres("Punk")` dumps EVERY RYM child regardless of song — no way to know which subgenres actually apply. The genre hierarchy only encodes parent-child relationships, not per-artist relevance. Subgenres shown via `expand_parent_genres` are ancestors (broader context), not song-specific sub-genres. **Album-level genre metadata is more stable/meaningful** (MB release groups, Discogs), so subgenre listing is prioritized for album tracks. See TODO in roadmap for implementation. |
 
 ## External
 

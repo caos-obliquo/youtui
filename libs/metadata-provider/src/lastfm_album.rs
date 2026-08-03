@@ -14,6 +14,7 @@ impl AlbumSearchProvider {
 
 impl MetadataProvider for AlbumSearchProvider {
     fn priority(&self) -> u8 { 10 }
+    fn name(&self) -> &'static str { "Last.fm Album" }
 
     fn lookup<'a>(
         &'a self,

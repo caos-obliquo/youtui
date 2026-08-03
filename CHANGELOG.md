@@ -15,6 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Library enrichment status indicator and queue batch enrichment
 - SQLite metadata cache: MBID column, batch flush, CAA cache, instant year enrichment, and a CLI tool
 - Library `#` column now shows position index
+- Genre DB CLI subcommand: `youtui genre-db --list/--lookup/--stats` with persistent SQLite
+- Progress bars (indicatif) on batch CLI commands (EnrichCache, TestValidateMetadata, MetadataCache, GenreDb, ScrobbleCache)
+- `with_timeout`/`with_timeout_opt` helpers with consistent error reporting across all CLI subcommands
+- Data-driven nav hint bar reading keybind config (lowercased labels, DarkGray centered)
+- Footer plain Unicode thumbsup icon for liked tracks (replaces Nerd Font heart)
+- Footer Nerd Font MDI level-based volume icons (mute/low/medium/high)
+- SongInfoPopup enriched display with genres, styles, and descriptors
+- Logger ToggleFullscreen + chord keybind (`gg`/`G`)
+- `open_persistent()` and `get_subgenres_with_descriptions()` on genre-db-sqlite
 
 ### Changed
 - Album splitting now only triggers for channel uploads or YTM tracks missing metadata; regular YTM tracks keep their correct structure
@@ -23,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enrichment results autosave to SQLite instantly and persist across restarts via `sqlite_path`
 - Tracing subscriber initialized for CLI commands; `EnvFilter` lets `RUST_LOG` control TUI log output
 - Build now ships actual data files instead of absolute symlinks
+- Header collapsed to 1 line (TAB_ROWS=1) with solid black background and chip-style command keys
+- Nav hint bar replaced old hardcoded context strings with data-driven keybind config lookup
+- Removed dead `draw_nav_hint` function (fully replaced by `draw_nav_hint_bar`)
+- Metadata provider timeouts: 30s per provider across all 8 providers
+- All CLI subcommands: consistent `with_timeout` + error message + progress indicator pattern
+- ytmapi-rs library.rs parse improvements (VL prefix, library tracks)
+- Footer volume display replaced from text (Vol N%) to Nerd Font level-based icons
 
 ### Fixed
 - Stale `album_tracks` leaking split track names into the next song's scrobble
@@ -34,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `resolve_year_fast` for enrichment speed; year overwrite fix
 - Unconditional DCS clear removed from the album art popup (prevents sixel flash)
 - Build: absolute symlinks replaced with actual data files
+- Lyrics empty state: `set_lyrics` handles empty → Error transition properly
+- Lyrics Japanese romanization: graceful fallback on parse failure instead of panic
+- Lyrics error draw: retry hint shown in error display
+- Lyrics timestamp parse: runtime logging for debug
+- TestValidateMetadata: removed double-fetch (per-provider loop then `registry.resolve`)
 
 ## [v1.0.3] - 2026-06-27
 

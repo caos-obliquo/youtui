@@ -302,6 +302,7 @@
 | 4 | Batch reorder (not just swap) in ytmapi-rs | large | `ytmapi-rs/` |
 | 5 | View-only struct refactor for browser tabs | low | DONE (PR #19) |
 | 6 | ytmapi-rs artist categories (5 TODOs) | med | DONE (PR #20) |
+| 7 | **Genre subgenre listing (best-effort)**: Show ALL RYM subgenres for each genre in SongInfoPopup, with descriptions where available. Known limitation: RYM tree has no per-song relevance, so subgenres shown may not apply to the specific song. ✅ **DONE** — subgenres shown inline per genre in expanded view (predominant/complementar sections). | low | `song_info_popup.rs`, `genre-db-sqlite` |
 
 
 ## Crate Extraction Status

@@ -167,8 +167,16 @@ impl ParseFromContinuable<GetLibraryArtistsQuery> for Vec<LibraryArtist> {
         p: ProcessedResult<GetContinuationsQuery<'_, GetLibraryArtistsQuery>>,
     ) -> crate::Result<(Self, Option<ContinuationParams<'static>>)> {
         let json_crawler = JsonCrawlerOwned::from(p);
-        let music_shelf = json_crawler.navigate_pointer(MUSIC_SHELF_CONTINUATION)?;
-        parse_content_list_artists(music_shelf)
+        let music_shelf = match json_crawler.navigate_pointer(MUSIC_SHELF_CONTINUATION) {
+            Ok(shelf) => shelf,
+            Err(_) => return Ok((Vec::new(), None)),
+        };
+        // Gracefully handle parse failures: skip items with unexpected structure
+        // (e.g. items with only 1 flexColumn in the continuation response).
+        match parse_content_list_artists(music_shelf) {
+            Ok(res) => Ok(res),
+            Err(_) => Ok((Vec::new(), None)),
+        }
     }
 }
 
@@ -435,18 +443,18 @@ fn parse_content_list_artists(
     let artists = json_crawler
         .navigate_pointer("/contents")?
         .try_iter_mut()?
-        .map(|item| {
-            let mut data = item.navigate_pointer(MRLIR)?;
-            let channel_id = data.take_value_pointer(NAVIGATION_BROWSE_ID)?;
-            let artist = parse_flex_column_item(&mut data, 0, 0)?;
-            let byline = parse_flex_column_item(&mut data, 1, 0)?;
-            Ok(LibraryArtist {
+        .filter_map(|item| {
+            let mut data = item.navigate_pointer(MRLIR).ok()?;
+            let channel_id = data.take_value_pointer(NAVIGATION_BROWSE_ID).ok()?;
+            let artist = parse_flex_column_item(&mut data, 0, 0).ok()?;
+            let byline = parse_flex_column_item(&mut data, 1, 0).ok()?;
+            Some(LibraryArtist {
                 channel_id,
                 artist,
                 byline,
             })
         })
-        .collect::<Result<_>>()?;
+        .collect();
     Ok((artists, continuation_params))
 }
 
@@ -454,24 +462,24 @@ fn parse_content_list_channels(
     mut json_crawler: JsonCrawlerOwned,
 ) -> Result<(Vec<LibraryChannel>, Option<ContinuationParams<'static>>)> {
     let continuation_params = json_crawler.take_value_pointer(CONTINUATION_PARAMS).ok();
-    let artists = json_crawler
+    let items = json_crawler
         .navigate_pointer("/contents")?
         .try_iter_mut()?
-        .map(|item| {
-            let mut data = item.navigate_pointer(MRLIR)?;
-            let channel_id = data.take_value_pointer(NAVIGATION_BROWSE_ID)?;
-            let title = parse_flex_column_item(&mut data, 0, 0)?;
-            let subscribers = parse_flex_column_item(&mut data, 1, 0)?;
-            let thumbnails = data.take_value_pointer(THUMBNAILS)?;
-            Ok(LibraryChannel {
+        .filter_map(|item| {
+            let mut data = item.navigate_pointer(MRLIR).ok()?;
+            let channel_id = data.take_value_pointer(NAVIGATION_BROWSE_ID).ok()?;
+            let title = parse_flex_column_item(&mut data, 0, 0).ok()?;
+            let subscribers = parse_flex_column_item(&mut data, 1, 0).ok()?;
+            let thumbnails = data.take_value_pointer(THUMBNAILS).ok()?;
+            Some(LibraryChannel {
                 title,
                 subscribers,
                 channel_id,
                 thumbnails,
             })
         })
-        .collect::<Result<_>>()?;
-    Ok((artists, continuation_params))
+        .collect();
+    Ok((items, continuation_params))
 }
 
 fn parse_table_list_song(title: String, mut data: JsonCrawlerBorrowed) -> Result<TableListSong> {

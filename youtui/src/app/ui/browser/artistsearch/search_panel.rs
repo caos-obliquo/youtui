@@ -11,7 +11,8 @@ use crate::widgets::ScrollingListState;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::iter::Iterator;
-use ytmapi_rs::common::SearchSuggestion;
+use std::collections::HashSet;
+use ytmapi_rs::common::{ArtistChannelID, SearchSuggestion};
 use ytmapi_rs::parse::SearchResultArtist;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -31,6 +32,7 @@ pub struct ArtistSearchPanel {
     pub search: SearchBlock,
     pub widget_state: ScrollingListState,
     pub local_filter_text: String,
+    pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -58,6 +60,7 @@ impl Action for BrowserArtistsAction {
 impl ArtistSearchPanel {
     pub fn new() -> Self {
         Self {
+            subscribed_artists: HashSet::new(),
             list: Default::default(),
             route: Default::default(),
             selected: Default::default(),
@@ -166,7 +169,14 @@ impl ListView for ArtistSearchPanel {
     fn get_items(&self) -> impl ExactSizeIterator<Item = Cow<'_, str>> + '_ {
         self.list
             .iter()
-            .map(|search_result| (&search_result.artist).into())
+            .map(|search_result| {
+                let prefix = if self.subscribed_artists.contains(&search_result.browse_id) {
+                    "\u{f02e} "
+                } else {
+                    "  "
+                };
+                Cow::Owned(format!("{}{}", prefix, search_result.artist))
+            })
     }
 }
 impl HasTitle for ArtistSearchPanel {

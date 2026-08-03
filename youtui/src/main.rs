@@ -456,6 +456,15 @@ enum Command {
         #[arg(long)]
         clear: bool,
     },
+    /// Query the local genre database.
+    GenreDb {
+        /// List all genres with their subgenres and descriptions.
+        #[arg(long)]
+        list: bool,
+        /// Lookup a specific genre and print its subgenres with descriptions.
+        #[arg(long)]
+        lookup: Option<String>,
+    },
 }
 
 pub struct RuntimeInfo {
@@ -472,7 +481,7 @@ pub struct RuntimeInfo {
 async fn main() -> ExitCode {
     // Using try block to print error using Display instead of Debug.
     if let Err(e) = try_main().await {
-        println!("{e:?}");
+        eprintln!("[ERROR] {e}");
         return ExitCode::FAILURE;
     };
     ExitCode::SUCCESS
@@ -522,8 +531,14 @@ async fn try_main() -> anyhow::Result<()> {
     initialise_directories().await?;
     // Init tracing for CLI commands (TUI mode inits its own subscriber in app.rs)
     if cli.command.is_some() {
+        let env_filter = std::env::var("RUST_LOG")
+            .ok()
+            .and_then(|s| s.parse::<tracing_subscriber::EnvFilter>().ok())
+            .unwrap_or_else(|| tracing_subscriber::EnvFilter::new("info"));
         tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_env_filter(env_filter)
+            .with_target(true)
+            .with_timer(tracing_subscriber::fmt::time::SystemTime)
             .init();
     }
     let mut config = config::Config::new(debug).await?;
@@ -549,32 +564,34 @@ async fn try_main() -> anyhow::Result<()> {
         }
         path.map(|p| p.to_string_lossy().to_string())
     };
-    // Auto-refresh cookie from browser session via yt-dlp
+    // Auto-refresh cookie from browser session via yt-dlp (background)
     if let Some(ref cp) = cookie_path {
-        // yt-dlp --cookies FILE creates the file if it doesn't exist,
-        // reads/merges if it does. Use a temp path so we always get fresh output.
-        let tmp = format!("{cp}.tmp");
-        let _ = std::fs::remove_file(&tmp);
-        let child = std::process::Command::new("yt-dlp")
-            .args([
-                "--cookies-from-browser",
-                &config.cookie_browser,
-                "--cookies",
-                &tmp,
-                "--skip-download",
-                "https://youtu.be/dQw4w9WgXcQ",
-            ])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-        if let Ok(mut child) = child {
-            if child.wait().map_or(false, |s| s.success())
-                && std::path::Path::new(&tmp).exists()
+        let cp = cp.clone();
+        let cookie_browser = config.cookie_browser.clone();
+        tokio::spawn(async move {
+            let tmp = format!("{cp}.tmp");
+            let _ = tokio::fs::remove_file(&tmp).await;
+            match tokio::process::Command::new("yt-dlp")
+                .args([
+                    "--cookies-from-browser",
+                    &cookie_browser,
+                    "--cookies",
+                    &tmp,
+                    "--skip-download",
+                    "https://youtu.be/dQw4w9WgXcQ",
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .await
             {
-                let _ = std::fs::rename(&tmp, cp);
-                info!("Auto-refreshed cookie from browser session");
+                Ok(status) if status.success() && std::path::Path::new(&tmp).exists() => {
+                    let _ = tokio::fs::rename(&tmp, &cp).await;
+                    info!("Auto-refreshed cookie from browser session");
+                }
+                _ => {}
             }
-        }
+        });
     }
     let rt = RuntimeInfo {
         debug,

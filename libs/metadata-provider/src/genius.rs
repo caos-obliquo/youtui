@@ -13,6 +13,7 @@ impl GeniusProvider {
 
 impl MetadataProvider for GeniusProvider {
     fn priority(&self) -> u8 { 40 }
+    fn name(&self) -> &'static str { "Genius" }
 
     fn lookup<'a>(
         &'a self,

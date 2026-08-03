@@ -14,6 +14,7 @@ impl LibreFMProvider {
 
 impl MetadataProvider for LibreFMProvider {
     fn priority(&self) -> u8 { 8 }
+    fn name(&self) -> &'static str { "Libre.fm" }
 
     fn lookup<'a>(
         &'a self,

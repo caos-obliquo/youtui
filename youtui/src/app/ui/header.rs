@@ -9,21 +9,21 @@ use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
-const TAB_ROWS: u16 = 2;
+const TAB_ROWS: u16 = 1;
 
 /// Helper to dynamically resize header based on content.
 /// Currently hardcoded as the logic is simple - but in future should be more
 /// dynamic, perhaps creating header as a widget.
-pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
-    if matches!(w.context, WindowContext::Browser) {
-        4
-    } else {
-        3
-    }
+pub fn header_required_height(_w: &super::YoutuiWindow) -> u16 {
+    3
 }
 
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
-    let keybinds = get_global_keybinds_as_readable_iter(w.get_active_keybinds(&w.config));
+    let keybinds = get_global_keybinds_as_readable_iter(w.get_active_keybinds(&w.config))
+        .filter(|k| {
+            let d = k.description.as_ref();
+            d == "Toggle Search" || d == "Toggle Browser" || d == "Toggle Playlist" || d == "Go Back"
+        });
 
     let mut spans: Vec<Span> = Vec::new();
 

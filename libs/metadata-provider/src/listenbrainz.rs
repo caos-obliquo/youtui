@@ -40,6 +40,7 @@ impl MetadataProvider for ListenBrainzProvider {
     fn priority(&self) -> u8 {
         6
     }
+    fn name(&self) -> &'static str { "ListenBrainz" }
 
     fn lookup<'a>(
         &'a self,

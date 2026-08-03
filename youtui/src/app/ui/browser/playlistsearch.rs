@@ -181,6 +181,7 @@ impl ActionHandler<BrowserPlaylistSongsAction> for PlaylistSearchBrowser {
             BrowserPlaylistSongsAction::GoToArtist => return self.go_to_artist().into(),
             BrowserPlaylistSongsAction::GoToAlbum => return self.go_to_album().into(),
             BrowserPlaylistSongsAction::GetRelatedTracks => return self.get_related_tracks().into(),
+            BrowserPlaylistSongsAction::ViewSongInfo => return self.view_song_info().into(),
         }
         YoutuiEffect::new_no_op()
     }
@@ -415,6 +416,13 @@ impl PlaylistSearchBrowser {
         let cur_idx = self.playlist_songs_panel.get_selected_item();
         if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
             return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
+        }
+        (AsyncTask::new_no_op(), None)
+    }
+    pub fn view_song_info(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.playlist_songs_panel.get_selected_item();
+        if let Some(song) = self.playlist_songs_panel.get_song_from_idx(cur_idx) {
+            return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song: song.clone() }));
         }
         (AsyncTask::new_no_op(), None)
     }

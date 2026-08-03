@@ -55,6 +55,7 @@ impl MusicBrainzProvider {
 
 impl MetadataProvider for MusicBrainzProvider {
     fn priority(&self) -> u8 { 7 }
+    fn name(&self) -> &'static str { "MusicBrainz" }
 
     fn lookup<'a>(
         &'a self,

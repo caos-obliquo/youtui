@@ -408,6 +408,10 @@ struct MockProvider {
 }
 
 impl metadata_provider::MetadataProvider for MockProvider {
+    fn name(&self) -> &'static str {
+        "mock"
+    }
+
     fn priority(&self) -> u8 {
         self.priority_val
     }

@@ -32,6 +32,8 @@ pub enum LoggerAction {
     ViewBrowser,
     First,
     Last,
+    ToggleFullscreen,
+    ChordG,
 }
 impl Action for LoggerAction {
     fn context(&self) -> Cow<'_, str> {
@@ -54,16 +56,26 @@ impl Action for LoggerAction {
             LoggerAction::ExitPageMode => "Exit Page Mode".into(),
             LoggerAction::First => "Go to First".into(),
             LoggerAction::Last => "Go to Last".into(),
+            LoggerAction::ToggleFullscreen => "Toggle Fullscreen".into(),
+            LoggerAction::ChordG => "Chord Prefix g".into(),
         }
     }
 }
 pub struct Logger {
     logger_state: tui_logger::TuiWidgetState,
+    awaiting_second_char: bool,
+    second_char: Option<char>,
+    last_key_press: std::time::Instant,
 }
 impl_youtui_component!(Logger);
 
 impl ActionHandler<LoggerAction> for Logger {
     fn apply_action(&mut self, action: LoggerAction) -> impl Into<YoutuiEffect<Self>> {
+        // Any non-chord action cancels a pending 'g' prefix before processing.
+        if !matches!(action, LoggerAction::ChordG) && self.awaiting_second_char {
+            self.awaiting_second_char = false;
+            self.second_char = None;
+        }
         match action {
             LoggerAction::ToggleTargetSelector => self.handle_toggle_target_selector(),
             LoggerAction::ToggleTargetFocus => self.handle_toggle_target_focus(),
@@ -80,6 +92,8 @@ impl ActionHandler<LoggerAction> for Logger {
             LoggerAction::ViewBrowser => return self.handle_view_browser(),
             LoggerAction::First => self.handle_first(),
             LoggerAction::Last => self.handle_last(),
+            LoggerAction::ToggleFullscreen => return self.handle_toggle_fullscreen(),
+            LoggerAction::ChordG => self.handle_chord_g(),
         }
         AsyncTask::new_no_op().into()
     }
@@ -128,6 +142,9 @@ impl Logger {
     pub fn new() -> Self {
         Self {
             logger_state: tui_logger::TuiWidgetState::default(),
+            awaiting_second_char: false,
+            second_char: None,
+            last_key_press: std::time::Instant::now(),
         }
     }
     fn handle_view_browser(&mut self) -> YoutuiEffect<Self> {
@@ -173,7 +190,27 @@ impl Logger {
     fn handle_first(&mut self) {
         // Scroll to oldest entry via repeated page-up
         for _ in 0..10000 {
-            self.logger_state.transition(TuiWidgetEvent::NextPageKey);
+            self.logger_state.transition(TuiWidgetEvent::PrevPageKey);
+        }
+    }
+    fn handle_toggle_fullscreen(&mut self) -> YoutuiEffect<Self> {
+        (
+            AsyncTask::new_no_op(),
+            Some(AppCallback::ToggleLoggerFullscreen),
+        )
+            .into()
+    }
+    fn handle_chord_g(&mut self) {
+        // gg chord: two 'g' presses in succession -> First.
+        // Any other action clears the chord state before processing (see apply_action).
+        if self.awaiting_second_char && self.second_char == Some('g') {
+            self.awaiting_second_char = false;
+            self.second_char = None;
+            self.handle_first();
+        } else {
+            self.awaiting_second_char = true;
+            self.second_char = Some('g');
+            self.last_key_press = std::time::Instant::now();
         }
     }
     fn handle_last(&mut self) {

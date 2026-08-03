@@ -14,6 +14,7 @@ impl DiscogsProvider {
 
 impl MetadataProvider for DiscogsProvider {
     fn priority(&self) -> u8 { 8 }
+    fn name(&self) -> &'static str { "Discogs" }
 
     fn lookup<'a>(
         &'a self,

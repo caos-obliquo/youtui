@@ -33,6 +33,8 @@ use std::sync::Mutex;
 
 pub trait MetadataProvider: Send + Sync {
     fn priority(&self) -> u8;
+    /// Human-readable provider name used for CLI error context and logging.
+    fn name(&self) -> &'static str;
     fn lookup<'a>(
         &'a self,
         artist: &'a str,
@@ -693,6 +695,10 @@ mod tests {
     }
 
     impl MetadataProvider for MockProvider {
+        fn name(&self) -> &'static str {
+            "mock"
+        }
+
         fn priority(&self) -> u8 {
             self.priority_val
         }
