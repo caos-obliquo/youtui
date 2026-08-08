@@ -40,3 +40,10 @@
 
 ## Blocked
 - **54 ytmapi-rs integration tests** - YT API format drift (gridRenderer, musicShelfRenderer). Needs network captures.
+
+## Ideas
+- **Cast/share to SmartTV** - share/cast playback directly from youtui to a SmartTV on the same network, like native YouTube cast/share to TV
+- **Persistent lyric editing** - edit lyrics in the TUI with the saved version persisting permanently across restarts
+- **Similar songs** - similar-songs feature comparable to YouTube Music's "Similar songs"
+- **Genres/subgenres completion** - finish the genres/subgenres implementation using MusicBrainz, ListenBrainz, LibreFM, LastFM or any other useful API/data source
+- **Bug: year metadata** - year metadata not persistent when running a playlist (resets on close/reopen and starts "running" again); many incorrect artists in the metadata
