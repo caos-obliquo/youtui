@@ -1,0 +1,6 @@
+target/
+session-*.md
+*.m4a
+*.webm
+.env
+musixmatch_session.json
