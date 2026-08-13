@@ -197,14 +197,6 @@ pub fn get_visible_keybinds_as_readable_iter<'a, A: Action + 'static>(
         .map(|(kb, kt)| DisplayableKeyAction::from_keybind_and_action_tree(kb, kt))
 }
 /// Get a context-specific list of all keybinds marked global.
-pub fn get_global_keybinds_as_readable_iter<'a, A: Action + 'static>(
-    keybinds: impl Iterator<Item = &'a Keymap<A>> + 'a,
-) -> impl Iterator<Item = DisplayableKeyAction<'a>> + 'a {
-    keybinds
-        .flat_map(|keymap| keymap.iter())
-        .filter(|(_, kt)| (*kt).get_visibility() == KeyActionVisibility::Global)
-        .map(|(kb, kt)| DisplayableKeyAction::from_keybind_and_action_tree(kb, kt))
-}
 /// A component of the application that handles text entry, currently designed
 /// to wrap rat_text::TextInputState.
 pub trait TextHandler: Component {

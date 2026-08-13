@@ -196,6 +196,7 @@ pub enum PlaylistAction {
     GoToAlbum,
     GetRelatedTracks,
     ToggleLike,
+    ToggleDislike,
     ViewAlbumCover,
     ContextActions,
     SortQueue,
@@ -246,6 +247,7 @@ impl Action for PlaylistAction {
             PlaylistAction::GoToAlbum => "Go to Album",
             PlaylistAction::GetRelatedTracks => "Get Related Tracks",
             PlaylistAction::ToggleLike => "Like / Unlike",
+            PlaylistAction::ToggleDislike => "Dislike / Undislike",
             PlaylistAction::ViewAlbumCover => "View Album Cover",
             PlaylistAction::ContextActions => "Context Actions",
             PlaylistAction::SortQueue => "Sort Queue",
@@ -421,12 +423,13 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 }
                 (AsyncTask::new_no_op(), None)
             },
-            PlaylistAction::ToggleLike => {
+            PlaylistAction::ToggleLike | PlaylistAction::ToggleDislike => {
+                let dislike = matches!(action, PlaylistAction::ToggleDislike);
                 // Guard: splitted album tracks cannot be liked
                 if self.album_tracks.is_some() {
                     if let Some(song) = self.list.get_list_iter().nth(self.cur_selected) {
                         if song.track_no.is_some() {
-                            self.last_error = Some("Cannot like splitted album tracks yet".to_string());
+                            self.last_error = Some("Cannot rate splitted album tracks yet".to_string());
                             return (AsyncTask::new_no_op(), None);
                         }
                     }
@@ -434,9 +437,16 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 if let Some(song) = self.list.get_list_iter_mut().nth(actual_index) {
                     use ytmapi_rs::common::LikeStatus;
-                    let new_status = match song.like_status {
-                        LikeStatus::Liked => LikeStatus::Indifferent,
-                        _ => LikeStatus::Liked,
+                    let new_status = if dislike {
+                        match song.like_status {
+                            LikeStatus::Disliked => LikeStatus::Indifferent,
+                            _ => LikeStatus::Disliked,
+                        }
+                    } else {
+                        match song.like_status {
+                            LikeStatus::Liked => LikeStatus::Indifferent,
+                            _ => LikeStatus::Liked,
+                        }
                     };
                     song.like_status = new_status.clone();
                     let video_id = song.video_id.clone();
@@ -2479,12 +2489,19 @@ impl Playlist {
         self.get_cur_playing_id()
             .and_then(|id| self.get_index_from_id(id))
     }
-    pub fn go_to_first(&mut self) {
-        self.cur_selected = 0;
+    pub fn go_to_first(&mut self) {        self.cur_selected = 0;
     }
 
     pub fn go_to_last(&mut self) {
         self.cur_selected = self.list.get_list_iter().len().saturating_sub(1);
+    }
+
+    /// Jump to a song by its visual index (as shown on screen).
+    pub fn jump_to_visual(&mut self, visual_idx: usize) {
+        self.cur_selected = visual_idx.min(self.get_max_visual_index());
+    }
+    pub fn search_indices_len(&self) -> usize {
+        self.search_indices.len()
     }
 }
 
@@ -2928,7 +2945,7 @@ impl Playlist {
     }
 
     // FIX: When search is active, ignore shuffle and use search_indices directly
-    fn visual_to_actual_index(&self, visual_index: usize) -> usize {
+    pub fn visual_to_actual_index(&self, visual_index: usize) -> usize {
         let list_len = self.list.get_list_iter().count();
         if list_len == 0 {
             return 0;

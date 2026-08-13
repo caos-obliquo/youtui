@@ -36,6 +36,7 @@ pub enum AppAction {
     SeekForward,
     SeekBack,
     ToggleHelp,
+    FuzzyFinder,
     ViewLogs,
     PlayPause,
     NoOp,
@@ -131,6 +132,7 @@ impl Action for AppAction {
             | AppAction::SeekForward
             | AppAction::SeekBack
             | AppAction::ToggleHelp
+            | AppAction::FuzzyFinder
             | AppAction::Quit
             | AppAction::ViewLogs
             | AppAction::NoOp
@@ -169,6 +171,7 @@ impl Action for AppAction {
             AppAction::VolUp => format!("Vol Up {VOL_TICK}").into(),
             AppAction::VolDown => format!("Vol Down {VOL_TICK}").into(),
             AppAction::ToggleHelp => "Toggle Help".into(),
+            AppAction::FuzzyFinder => "Fuzzy Find".into(),
             AppAction::ToggleBrowser => "Toggle Browser".into(),
             AppAction::TogglePlaylist => "Toggle Playlist".into(),
             AppAction::ViewLogs => "View Logs".into(),

@@ -2,7 +2,7 @@ use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffec
 use crate::app::structures::{ListSong, ListSongArtist, MaybeRc, ListSongAlbum, AlbumOrUploadAlbumID};
 use crate::app::ui::AppCallback;
 use ytmapi_rs::common::YoutubeID;
-use async_callback_manager::AsyncTask;
+use async_callback_manager::{AsyncTask, BackendTask};
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Style};
@@ -496,3 +496,50 @@ impl SongInfoPopup {
             .split(popup_layout[1])[1]
     }
 }
+
+/// Resolve genres/styles for a single song (used when opening song info for a
+/// song that has no enrichment yet).
+#[derive(Debug, PartialEq)]
+pub struct ResolveSongGenres {
+    pub artist: String,
+    pub title: String,
+    pub album: Option<String>,
+}
+
+impl BackendTask<crate::app::server::ArcServer> for ResolveSongGenres {
+    type Output = std::result::Result<(Vec<String>, Vec<String>), anyhow::Error>;
+    type MetadataType = crate::app::server::TaskMetadata;
+    fn into_future(self, backend: &crate::app::server::ArcServer) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            let album_opt = self.album.filter(|a| !a.is_empty());
+            match backend
+                .metadata_registry
+                .resolve_fast(&self.artist, &self.title, album_opt.as_deref())
+                .await
+            {
+                Some(meta) => Ok((meta.genres, meta.styles)),
+                None => Ok((Vec::new(), Vec::new())),
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct HandleResolveSongGenresOk;
+
+impl_youtui_task_handler!(
+    HandleResolveSongGenresOk,
+    (Vec<String>, Vec<String>),
+    SongInfoPopup,
+    |_, result: (Vec<String>, Vec<String>)| {
+        move |target: &mut SongInfoPopup| {
+            let (genres, styles) = result;
+            if !genres.is_empty() || !styles.is_empty() {
+                target.song.genres = genres;
+                target.song.styles = styles;
+            }
+            AsyncTask::new_no_op()
+        }
+    }
+);

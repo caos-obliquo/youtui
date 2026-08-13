@@ -174,6 +174,11 @@ impl Scrollable for PlaylistSearchPanel {
         self.route == PlaylistInputRouting::List
     }
 }
+impl PlaylistSearchPanel {
+    pub fn jump_to(&mut self, idx: usize) {
+        self.selected = idx.min(self.len().saturating_sub(1));
+    }
+}
 impl ListView for PlaylistSearchPanel {
     fn get_selected_item(&self) -> usize {
         self.selected

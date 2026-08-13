@@ -19,8 +19,12 @@ pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
         .fold(0, |acc, (time, multiplier)| acc + time * multiplier)
 }
 
-pub fn like_icon(_status: ytmapi_rs::common::LikeStatus) -> &'static str {
-    ""
+pub fn like_icon(status: ytmapi_rs::common::LikeStatus) -> &'static str {
+    match status {
+        ytmapi_rs::common::LikeStatus::Liked => " \u{EC14}",
+        ytmapi_rs::common::LikeStatus::Disliked => " \u{EC13}",
+        _ => "",
+    }
 }
 
 pub const ALBUM_ART_WIDTH: u16 = 7;
@@ -190,27 +194,21 @@ pub fn draw_footer(
             }
         }
     };
-    let [song_line, album_line_chunk] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ]).areas(right_area);
+    let [footer_line] = Layout::vertical([Constraint::Length(1)]).areas(right_area);
     let status_prefix = format!(" {} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
     let mut song_spans: Vec<Span> = Vec::new();
     song_spans.push(Span::raw(song_artist_line));
+    if !album_line.is_empty() {
+        song_spans.push(Span::styled(
+            format!(" · {album_line}"),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
     song_spans.push(Span::raw(status_prefix));
     if !heart.is_empty() {
         song_spans.push(Span::raw(heart));
     }
-    f.render_widget(Paragraph::new(Line::from(song_spans)), song_line);
-    if !album_line.is_empty() {
-        f.render_widget(
-            Paragraph::new(Line::from(vec![Span::styled(
-                album_line,
-                Style::default().fg(Color::DarkGray),
-            )])),
-            album_line_chunk,
-        );
-    }
+    f.render_widget(Paragraph::new(Line::from(song_spans)), footer_line);
     f.render_widget(block, chunk);
 }
 
@@ -220,7 +218,7 @@ mod tests {
 
     #[test]
     fn like_icon_liked() {
-        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Liked), "");
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Liked), " \u{EC14}");
     }
 
     #[test]
@@ -230,7 +228,7 @@ mod tests {
 
     #[test]
     fn like_icon_disliked() {
-        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Disliked), "");
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Disliked), " \u{EC13}");
     }
 
     /// Regression: AlbumArtState::None must NOT clear sixel_data (PR #29, #36, #37).

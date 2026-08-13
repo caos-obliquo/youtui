@@ -84,6 +84,9 @@ impl ArtistSearchPanel {
     pub fn go_to_last(&mut self) {
         self.selected = self.list.len().saturating_sub(1);
     }
+    pub fn jump_to(&mut self, idx: usize) {
+        self.selected = idx.min(self.list.len().saturating_sub(1));
+    }
 }
 impl Component for ArtistSearchPanel {
     type Bkend = ArcServer;

@@ -102,6 +102,10 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             Constraint::Length(5),
         ])
         .areas(f.area());
+    if w.fuzzy_finder.shown {
+        super::fuzzy_finder::draw_fuzzy_finder(f, &mut w.fuzzy_finder, f.area());
+        return;
+    }
     let [content_chunk, nav_hint_chunk] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])

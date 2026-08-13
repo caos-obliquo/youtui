@@ -30,7 +30,7 @@ use crate::config::keymap::Keymap;
 use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
 use crate::widgets::ScrollingTableState;
 use action::{AppAction, ListAction, PAGE_KEY_LINES, SEEK_AMOUNT, TextEntryAction};
-use async_callback_manager::{AsyncTask, Constraint};
+use async_callback_manager::{AsyncTask, Constraint, NoOpHandler};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use itertools::Either;
 use std::time::Duration;
@@ -40,6 +40,7 @@ pub mod browser;
 pub mod draw;
 pub mod draw_media_controls;
 mod footer;
+mod fuzzy_finder;
 mod header;
 pub mod logger;
 pub mod playlist;
@@ -85,6 +86,7 @@ pub struct YoutuiWindow {
     pub config: Config,
     pub key_stack: Vec<KeyEvent>,
     pub help: HelpMenu,
+    pub fuzzy_finder: fuzzy_finder::FuzzyFinder,
     pub tick: u64,
     pub quit_confirm: bool,
     pub command_mode: bool,
@@ -479,6 +481,15 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                 return self.handle_seek(SEEK_AMOUNT, SeekDirection::Back).into();
             }
             AppAction::ToggleHelp => self.toggle_help(),
+            AppAction::FuzzyFinder => {
+                if self.fuzzy_finder.shown {
+                    self.fuzzy_finder.close();
+                } else {
+                    self.fuzzy_finder.open();
+                    self.fuzzy_finder
+                        .set_entries(fuzzy_finder::build_corpus(self.context, self));
+                }
+            }
             AppAction::Quit => {
                 self.quit_confirm = true;
                 return AsyncTask::new_no_op().into();
@@ -621,6 +632,7 @@ impl YoutuiWindow {
             delete_confirm: None,
             key_stack: Vec::new(),
             help: HelpMenu::new(),
+            fuzzy_finder: fuzzy_finder::FuzzyFinder::new(),
             tick: 0,
             quit_confirm: false,
             command_mode: false,
@@ -727,6 +739,62 @@ impl YoutuiWindow {
                             self.quit_confirm = false;
                         }
                         _ => {}
+                    }
+                }
+            }
+            return AsyncTask::new_no_op().into();
+        }
+
+        // Fuzzy finder (/ prompt) intercepts all keys while shown
+        if self.fuzzy_finder.shown {
+            if let Event::Key(k) = event {
+                if k.kind == crossterm::event::KeyEventKind::Press {
+                    use crossterm::event::KeyCode;
+                    match k.code {
+                        KeyCode::Esc => {
+                            self.fuzzy_finder.close();
+                            return AsyncTask::new_no_op().into();
+                        }
+                        KeyCode::Enter => {
+                            let jump = self.fuzzy_finder.selected().map(|e| e.kind);
+                            self.fuzzy_finder.close();
+                            if let Some(kind) = jump {
+                                return self.fuzzy_jump(kind).into();
+                            }
+                            return AsyncTask::new_no_op().into();
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            self.fuzzy_finder.move_selection(-1);
+                            return AsyncTask::new_no_op().into();
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            self.fuzzy_finder.move_selection(1);
+                            return AsyncTask::new_no_op().into();
+                        }
+                        KeyCode::Char(c)
+                            if k.modifiers
+                                == crossterm::event::KeyModifiers::CONTROL
+                                && (c == 'n' || c == 'p') =>
+                        {
+                            self.fuzzy_finder
+                                .move_selection(if c == 'n' { 1 } else { -1 });
+                            return AsyncTask::new_no_op().into();
+                        }
+                        KeyCode::Backspace => {
+                            self.fuzzy_finder
+                                .editor
+                                .handle_key(KeyCode::Backspace, false, false);
+                            self.fuzzy_finder.recompute();
+                            return AsyncTask::new_no_op().into();
+                        }
+                        KeyCode::Char(c) => {
+                            self.fuzzy_finder
+                                .editor
+                                .handle_key(KeyCode::Char(c), false, false);
+                            self.fuzzy_finder.recompute();
+                            return AsyncTask::new_no_op().into();
+                        }
+                        _ => return AsyncTask::new_no_op().into(),
                     }
                 }
             }
@@ -996,6 +1064,7 @@ impl YoutuiWindow {
                     self.album_art_popup = None;
                     self.config_editor_popup = None;
                     self.command_mode = false;
+                    self.fuzzy_finder.close();
                     self.help.shown = false;
                     self.last_esc_time = None;
                     return YoutuiEffect::new_no_op();
@@ -1287,8 +1356,41 @@ impl YoutuiWindow {
         self.cached_album_protocol = None;
         self.cached_album_chunk = None;
     }
-    pub fn toggle_help(&mut self) {
-        if self.help.shown {
+    /// Execute a fuzzy-finder jump target.
+    pub fn fuzzy_jump(&mut self, kind: fuzzy_finder::FuzzyKind) -> ComponentEffect<Self> {
+        use fuzzy_finder::FuzzyKind;
+        match kind {
+            FuzzyKind::Playlist(visual_idx) => {
+                if self.context != WindowContext::Playlist {
+                    self.handle_toggle_playlist();
+                }
+                self.playlist.jump_to_visual(visual_idx);
+            }
+            FuzzyKind::Browser(tab, item) => {
+                if self.context != WindowContext::Browser {
+                    self.prev_context = self.context;
+                    self.context = WindowContext::Browser;
+                }
+                if let Some(task) = self.browser.switch_to_tab(tab) {
+                    let t = task.map_frontend(|this: &mut Self| &mut this.browser);
+                    self.browser.jump_to_item(tab, item);
+                    return t;
+                }
+                self.browser.jump_to_item(tab, item);
+            }
+            FuzzyKind::OpenTab(tab) => {
+                if self.context != WindowContext::Browser {
+                    self.prev_context = self.context;
+                    self.context = WindowContext::Browser;
+                }
+                if let Some(task) = self.browser.switch_to_tab(tab) {
+                    return task.map_frontend(|this: &mut Self| &mut this.browser);
+                }
+            }
+        }
+        AsyncTask::new_no_op()
+    }
+    pub fn toggle_help(&mut self) {        if self.help.shown {
             self.help.shown = false;
         } else {
             self.help.shown = true;
@@ -1331,6 +1433,9 @@ impl YoutuiWindow {
     }
     fn dismiss_search(&mut self) {
         self.browser.dismiss_search();
+        if self.fuzzy_finder.shown {
+            self.fuzzy_finder.close();
+        }
     }
     pub fn open_playlist_save_popup(&mut self, video_ids: Vec<ytmapi_rs::common::VideoID<'static>>) {
         self.playlist_save_popup = Some(PlaylistSavePopup::new(video_ids));
@@ -1524,10 +1629,32 @@ impl YoutuiWindow {
     }
 
     pub fn open_song_info_popup(&mut self, song: crate::app::structures::ListSong) -> ComponentEffect<Self> {
+        use self::playlist::song_info_popup::{ResolveSongGenres, HandleResolveSongGenresOk};
+        let needs_enrich = song.genres.is_empty() && song.styles.is_empty();
+        let artist = song
+            .artists
+            .iter()
+            .map(|a| a.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let title = song.title.clone();
+        let album = song.album.as_ref().map(|a| a.name.clone());
         self.song_info_popup = Some(SongInfoPopup::new(song));
         self.prev_context = self.context;
         self.context = WindowContext::SongInfo;
-        AsyncTask::new_no_op()
+        if needs_enrich {
+            AsyncTask::new_future_try(
+                ResolveSongGenres { artist, title, album },
+                HandleResolveSongGenresOk,
+                NoOpHandler,
+                None,
+            )
+            .map_frontend(|this: &mut Self| {
+                this.song_info_popup.as_mut().expect("just set")
+            })
+        } else {
+            AsyncTask::new_no_op()
+        }
     }
 
     pub fn close_popup(&mut self) {

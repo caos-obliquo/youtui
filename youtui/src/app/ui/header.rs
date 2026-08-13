@@ -1,8 +1,6 @@
-use crate::app::component::actionhandler::{KeyRouter, get_global_keybinds_as_readable_iter};
 use crate::app::ui::WindowContext;
 use crate::app::view::HasTabs;
 use crate::drawutils::{BUTTON_BG_COLOUR, BUTTON_FG_COLOUR};
-use crate::keyaction::DisplayableKeyAction;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
@@ -11,23 +9,22 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
 const TAB_ROWS: u16 = 1;
 
-/// Helper to dynamically resize header based on content.
-/// Currently hardcoded as the logic is simple - but in future should be more
-/// dynamic, perhaps creating header as a widget.
+/// Minimal header: only F1/F2/F3, o menu and ? help are shown inline.
+/// Everything else is discoverable via the ? help menu.
 pub fn header_required_height(_w: &super::YoutuiWindow) -> u16 {
     3
 }
 
-pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
-    let keybinds = get_global_keybinds_as_readable_iter(w.get_active_keybinds(&w.config))
-        .filter(|k| {
-            let d = k.description.as_ref();
-            d == "Toggle Search" || d == "Toggle Browser" || d == "Toggle Playlist" || d == "Go Back"
-        });
+fn button_span(label: &str) -> Span<'static> {
+    Span::styled(
+        label.to_string(),
+        Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
+    )
+}
 
+pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     let mut spans: Vec<Span> = Vec::new();
 
-    // Prepend vi mode indicator at the very start - always visible
     let vi_mode: Option<String> = if w.command_mode {
         Some(w.command_editor.mode_char().to_string())
     } else if let Some(ref popup) = w.config_editor_popup {
@@ -44,37 +41,20 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
         spans.push(Span::raw(" "));
     }
 
-    spans.extend(keybinds.flat_map(
-        |DisplayableKeyAction {
-             keybinds,
-             description,
-             ..
-         }| {
-            let label = if description.is_empty() {
-                "Action".to_string()
-            } else {
-                description.into_owned()
-            };
-            vec![
-                Span::styled(
-                    keybinds,
-                    Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
-                ),
-                Span::raw(" ("),
-                Span::raw(label),
-                Span::raw(")"),
-                Span::raw(" "),
-            ]
-        },
-    ));
-    // Append 'o (Menu)' hint for contexts with context menu support
+    // Minimal command surface. Full list lives in ? help.
+    spans.push(button_span("F1"));
+    spans.push(Span::raw(" (Search) "));
+    spans.push(button_span("F2"));
+    spans.push(Span::raw(" (Browser) "));
+    spans.push(button_span("F3"));
+    spans.push(Span::raw(" (Playlist) "));
     if matches!(w.context, WindowContext::Playlist | WindowContext::Browser) {
-        spans.push(Span::styled(
-            "o",
-            Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
-        ));
+        spans.push(button_span("o"));
         spans.push(Span::raw(" (Menu) "));
     }
+    spans.push(button_span("?"));
+    spans.push(Span::raw(" (Help) "));
+
     let help_string = Line::from_iter(spans);
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
     let commands_widget = Paragraph::new(help_string).wrap(Wrap { trim: true });
@@ -92,7 +72,6 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
         .highlight_style(Style::new().fg(BUTTON_FG_COLOUR).bg(BUTTON_BG_COLOUR));
     let [commands_chunk, tabs_chunk] = Layout::horizontal([
         Constraint::Min(0),
-        // Add two to accommodate block
         Constraint::Max(tabs_widget.required_width().try_into().unwrap_or(u16::MAX) + 2),
     ])
     .areas(chunk);

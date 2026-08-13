@@ -811,6 +811,13 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::FuzzyFinder,
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('?')),
             KeyActionTree::new_key_with_visibility(
                 AppAction::ToggleHelp,
@@ -832,13 +839,6 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
 }
 fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Playlist(PlaylistAction::ToggleSearch),
-                KeyActionVisibility::Global,
-            ),
-        ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('y')),
             KeyActionTree::new_key_with_visibility(
@@ -896,6 +896,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleDislike)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('x')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::DeleteSelected)),
                     ),
                     (
@@ -1023,13 +1027,6 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
 fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
     FromIterator::from_iter([
         (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
-            KeyActionTree::new_key_with_visibility(
-                AppAction::Browser(BrowserAction::LocalFilter),
-                KeyActionVisibility::Global,
-            ),
-        ),
-        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
             KeyActionTree::new_key(AppAction::Browser(BrowserAction::Left)),
         ),
@@ -1112,10 +1109,6 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
             KeyActionTree::new_key(AppAction::BrowserLibrary(BrowserLibraryAction::ActivateSelected)),
-        ),
-        (
-            Keybind::new_unmodified(crossterm::event::KeyCode::Char('/')),
-            KeyActionTree::new_key(AppAction::Browser(BrowserAction::LocalFilter)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Esc),
