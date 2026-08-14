@@ -24,6 +24,17 @@ fn button_span(label: &str) -> Span<'static> {
 }
 
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
+    // Fuzzy finder active: show search input in header
+    if w.fuzzy_finder.shown {
+        let filter_block = Block::default().borders(Borders::ALL).title(" / ").border_style(Style::default().fg(Color::Cyan));
+        let display = w.fuzzy_finder.editor.render_simple("/");
+        let inner = filter_block.inner(chunk);
+        f.render_widget(Clear, chunk);
+        f.render_widget(filter_block, chunk);
+        f.render_widget(Paragraph::new(display).style(Style::default().fg(Color::Cyan)), inner);
+        f.set_cursor_position((inner.x + w.fuzzy_finder.editor.cursor as u16, inner.y));
+        return;
+    }
     // Browser local filter active: show filter input in header
     if matches!(w.context, WindowContext::Browser) && w.browser.filter_active() {
         let editor = w.browser.filter_editor();

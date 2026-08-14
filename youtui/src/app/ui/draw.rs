@@ -106,54 +106,92 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         super::fuzzy_finder::draw_fuzzy_finder(f, &mut w.fuzzy_finder, f.area());
         return;
     }
+    let [header_chunk, window_chunk, footer_chunk] = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(0)
+        .constraints([
+            Constraint::Length(header::header_required_height(w)),
+            Constraint::Min(2),
+            Constraint::Length(5),
+        ])
+        .areas(f.area());
     let [content_chunk, nav_hint_chunk] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .areas(window_chunk);
     header::draw_header(f, w, header_chunk);
-    let context_selected = !w.help.shown && !w.key_pending();
-    match w.context {
-        WindowContext::Browser => {
-            // Set current playing video ID for all browser playing indicators
-            if let Some(id) = w.playlist.get_cur_playing_id() {
-                if let Some(song) = w.playlist.get_song_from_id(id) {
-                    w.browser.set_cur_playing_video_id(Some(song.video_id.clone()));
+    
+    // Draw fuzzy finder dropdown below header when active
+    if w.fuzzy_finder.shown {
+        let dropdown_height = (w.fuzzy_finder.matches.len() as u16).min(10);
+        if dropdown_height > 0 {
+            let dropdown_chunk = Rect {
+                x: content_chunk.x,
+                y: content_chunk.y,
+                width: content_chunk.width,
+                height: dropdown_height,
+            };
+            super::fuzzy_finder::draw_fuzzy_finder_dropdown(f, &mut w.fuzzy_finder, dropdown_chunk);
+            // Adjust content chunk to start below dropdown
+            let adjusted_content = Rect {
+                x: content_chunk.x,
+                y: content_chunk.y + dropdown_height,
+                width: content_chunk.width,
+                height: content_chunk.height.saturating_sub(dropdown_height),
+            };
+            let context_selected = !w.help.shown && !w.key_pending();
+            match w.context {
+                WindowContext::Browser => w.browser.draw_mut_chunk(f, adjusted_content, context_selected, w.tick),
+                WindowContext::Logs => w.logger.draw_chunk(f, adjusted_content, context_selected),
+                WindowContext::Playlist | WindowContext::PlaylistEditor => w.playlist.draw_mut_chunk(f, adjusted_content, context_selected, w.tick),
+                _ => {}
+            }
+        }
+    } else {
+        let context_selected = !w.help.shown && !w.key_pending();
+        match w.context {
+            WindowContext::Browser => {
+                // Set current playing video ID for all browser playing indicators
+                if let Some(id) = w.playlist.get_cur_playing_id() {
+                    if let Some(song) = w.playlist.get_song_from_id(id) {
+                        w.browser.set_cur_playing_video_id(Some(song.video_id.clone()));
+                    } else {
+                        w.browser.set_cur_playing_video_id(None);
+                    }
                 } else {
                     w.browser.set_cur_playing_video_id(None);
                 }
-            } else {
-                w.browser.set_cur_playing_video_id(None);
+                w.browser
+                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
             }
-            w.browser
-                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
-        }
-        WindowContext::Logs => w.logger.draw_chunk(f, content_chunk, context_selected),
-        WindowContext::Playlist | WindowContext::PlaylistEditor => {
-            w.playlist
-                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
-        }
-        WindowContext::PlaylistSavePopup => {
-            w.playlist
-                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
-        }
-        WindowContext::PlaylistUpdatePopup => {
-            w.playlist
-                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
-        }
-        WindowContext::Lyrics => {
-            w.playlist
-                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
-        }
-        WindowContext::SongInfo => {
-            w.playlist
-                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
-        }
-        WindowContext::PlaylistRenamePopup
-        | WindowContext::PlaylistEditPopup
-        | WindowContext::PlaylistDetailsPopup
-        | WindowContext::Notes => {
-            w.playlist
-                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+            WindowContext::Logs => w.logger.draw_chunk(f, content_chunk, context_selected),
+            WindowContext::Playlist | WindowContext::PlaylistEditor => {
+                w.playlist
+                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+            }
+            WindowContext::PlaylistSavePopup => {
+                w.playlist
+                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+            }
+            WindowContext::PlaylistUpdatePopup => {
+                w.playlist
+                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+            }
+            WindowContext::Lyrics => {
+                w.playlist
+                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+            }
+            WindowContext::SongInfo => {
+                w.playlist
+                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+            }
+            WindowContext::PlaylistRenamePopup
+            | WindowContext::PlaylistEditPopup
+            | WindowContext::PlaylistDetailsPopup
+            | WindowContext::Notes => {
+                w.playlist
+                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+            }
         }
     }
     draw_nav_hint_bar(f, w, nav_hint_chunk);

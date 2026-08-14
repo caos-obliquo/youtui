@@ -161,6 +161,40 @@ pub fn draw_fuzzy_finder(f: &mut Frame, finder: &mut FuzzyFinder, chunk: Rect) {
     }
 }
 
+/// Draw only the dropdown portion of the fuzzy finder (for rendering below header).
+/// Assumes the input line is already rendered by the header.
+pub fn draw_fuzzy_finder_dropdown(f: &mut Frame, finder: &mut FuzzyFinder, chunk: Rect) {
+    let shown_count = finder.matches.len();
+    if shown_count == 0 {
+        return;
+    }
+    let dropdown_height = (shown_count as u16).min(10);
+    let list_chunk = Rect {
+        x: chunk.x,
+        y: chunk.y,
+        width: chunk.width,
+        height: dropdown_height.min(chunk.height),
+    };
+    let mut list_state = ListState::default().with_selected(Some(finder.cur));
+    let items: Vec<ListItem> = finder
+        .matches
+        .iter()
+        .take(10)
+        .map(|&i| {
+            let e = &finder.entries[i];
+            ListItem::new(Line::from(Span::raw(&e.label)))
+        })
+        .collect();
+    let list = List::new(items)
+        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)),
+        );
+    f.render_stateful_widget(list, list_chunk, &mut list_state);
+}
+
 /// Build the fuzzy-finder corpus for the current window context.
 /// Browser tab indices: 0=Artists, 1=Albums, 2=Songs, 3=Playlists, 4=Library.
 pub fn build_corpus(
