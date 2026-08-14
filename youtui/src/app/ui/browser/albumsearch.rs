@@ -21,6 +21,7 @@ use super::shared_components::{
 use super::songsearch::BrowserSongsAction;
 use anyhow::{Result, bail};
 use async_callback_manager::{AsyncTask, BackendTask};
+use itertools::Either;
 use lru::LruCache;
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
@@ -113,8 +114,18 @@ impl AlbumSearchBrowser {
                 duration: album_item.youtube_duration.unwrap_or_else(|| "0:00".to_string()),
                 plays: String::new(),
                 explicit: ytmapi_rs::common::Explicit::NotExplicit,
-                video_id: album_item.youtube_video_id.unwrap(),
+                video_id: match album_item.youtube_video_id.clone() {
+                    Some(vid) => vid,
+                    None => {
+                        tracing::warn!(
+                            "play_selected_album: YouTube album '{}' has no video_id, skipping",
+                            album_item.album.title
+                        );
+                        return (AsyncTask::new_no_op(), None);
+                    }
+                },
                 thumbnails: vec![],
+                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
             };
             let mut temp_list = BrowserSongsList::default();
             temp_list.add_raw_search_result_song(song);
@@ -177,10 +188,10 @@ impl AlbumSearchBrowser {
     pub fn handle_toggle_search(&mut self) {
         if self.search_popped {
             self.search_popped = false;
-            self.search = SearchBlock::default();
+            self.input_routing = InputRouting::List;
         } else {
             self.search_popped = true;
-            self.search = SearchBlock::default();
+            self.input_routing = InputRouting::Search;
         }
     }
 
@@ -315,10 +326,11 @@ impl TableView for AlbumSearchBrowser {
     fn get_layout(&self) -> &[BasicConstraint] {
         &[
             BasicConstraint::Length(6),
-            BasicConstraint::Percentage(Percentage(75)),
+            BasicConstraint::Percentage(Percentage(70)),
             BasicConstraint::Length(8),
             BasicConstraint::Length(5),
             BasicConstraint::Length(4),
+            BasicConstraint::Length(5),
         ]
     }
     fn get_highlighted_row(&self) -> Option<usize> {
@@ -327,12 +339,23 @@ impl TableView for AlbumSearchBrowser {
         })
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
+        let artist_id = self.album_artists.first().and_then(|a| a.id.as_ref());
+        let subscribed = artist_id.map_or(false, |id| self.subscribed_artists.contains(id));
+        let subs_val: Cow<'_, str> = if subscribed {
+            Cow::Borrowed("\u{f02e}")
+        } else {
+            Cow::Borrowed("")
+        };
         self.track_list
             .get_list_iter()
-            .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
+            .map(move |ls| {
+                let mut fields: Vec<Cow<'_, str>> = ls.get_fields(Self::subcolumns_of_vec()).to_vec();
+                fields.push(subs_val.clone());
+                fields.into_iter()
+            })
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        ["#", "Song", "Duration", "Year", "Liked"].into_iter()
+        ["#", "Song", "Duration", "Year", "Liked", "Subs"].into_iter()
     }
 }
 impl AdvancedTableView for AlbumSearchBrowser {
@@ -373,8 +396,19 @@ impl AdvancedTableView for AlbumSearchBrowser {
         self.sort.cur
     }
     fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
+        let artist_id = self.album_artists.first().and_then(|a| a.id.as_ref());
+        let subscribed = artist_id.map_or(false, |id| self.subscribed_artists.contains(id));
+        let subs_val: Cow<'static, str> = if subscribed {
+            Cow::Borrowed("\u{f02e}")
+        } else {
+            Cow::Borrowed("")
+        };
         self.get_filtered_list_iter()
-            .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
+            .map(move |ls| {
+                let mut fields: Vec<Cow<'_, str>> = ls.get_fields(Self::subcolumns_of_vec()).to_vec();
+                fields.push(subs_val.clone());
+                fields.into_iter()
+            })
     }
     fn sort_popup_shown(&self) -> bool {
         self.sort.shown
@@ -453,6 +487,11 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
                     info!("Copied URL: {url}");
                 }
                 return (AsyncTask::new_no_op(), None);
+            }
+            BrowserSongsAction::ViewSongInfo => {
+                if let Some(song) = self.track_list.get_list_iter().nth(cur) {
+                    return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song: song.clone() }));
+                }
             }
             BrowserSongsAction::GoToArtist => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
@@ -541,10 +580,30 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
 
 impl KeyRouter<AppAction> for AlbumSearchBrowser {
     fn get_all_keybinds<'a>(&self, config: &'a Config) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
-        [&config.keybinds.browser_songs, &config.keybinds.list].into_iter()
+        let iter: Box<dyn Iterator<Item = &'a Keymap<AppAction>>> = Box::new(
+            [&config.keybinds.browser_songs, &config.keybinds.browser_search, &config.keybinds.list].into_iter(),
+        );
+        iter
     }
     fn get_active_keybinds<'a>(&self, config: &'a Config) -> impl Iterator<Item = &'a Keymap<AppAction>> + 'a {
-        [&config.keybinds.browser_songs, &config.keybinds.list].into_iter()
+        let iter: Box<dyn Iterator<Item = &'a Keymap<AppAction>>> = match self.input_routing {
+            InputRouting::Search => {
+                Box::new(std::iter::once(&config.keybinds.browser_search))
+            }
+            _ => {
+                let search_iter = if self.search_popped {
+                    Either::Left(std::iter::once(&config.keybinds.browser_search))
+                } else {
+                    Either::Right(std::iter::empty())
+                };
+                Box::new(
+                    search_iter
+                        .chain(std::iter::once(&config.keybinds.browser_songs))
+                        .chain(std::iter::once(&config.keybinds.list)),
+                )
+            }
+        };
+        iter
     }
 }
 

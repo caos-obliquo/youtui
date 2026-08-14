@@ -62,11 +62,55 @@ fn parse_sort_order(s: Option<String>) -> GetLibrarySortOrder {
     }
 }
 
+/// Validate max_pages arguments on commands that accept them. Returns an error
+/// if any max_pages value is 0 (which would fetch nothing / risk an infinite loop).
+fn validate_command_max_pages(command: &Command) -> anyhow::Result<()> {
+    use crate::Command as C;
+    let check = |name: &str, v: usize| -> anyhow::Result<()> {
+        if v == 0 {
+            Err(anyhow::anyhow!(
+                "[ERROR] argument validation: '{}' must be >= 1 (got 0)",
+                name
+            ))
+        } else {
+            Ok(())
+        }
+    };
+    match command {
+        C::GetPlaylistTracks { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryPlaylists { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryArtists { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibrarySongs { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryAlbums { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryArtistSubscriptions { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryPodcasts { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryChannels { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchArtists { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchAlbums { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchSongs { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchPlaylists { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchCommunityPlaylists { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchFeaturedPlaylists { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchVideos { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchEpisodes { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchProfiles { max_pages, .. } => check("max_pages", *max_pages),
+        C::SearchPodcasts { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryUploadSongs { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryUploadArtists { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryUploadAlbums { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetLibraryUploadArtist { max_pages, .. } => check("max_pages", *max_pages),
+        C::GetWatchPlaylist { max_pages, .. } => check("max_pages", *max_pages),
+        _ => Ok(()),
+    }
+}
+
 pub async fn command_to_query(
     command: Command,
     cli_query: CliQuery,
     yt: DynamicYtMusic,
 ) -> anyhow::Result<String> {
+    // Validate max_pages arguments before any network call (0 would fetch nothing).
+    validate_command_max_pages(&command)?;
     match command {
         Command::GetSearchSuggestions { query } => {
             get_string_output_of_query(yt, GetSearchSuggestionsQuery::from(query), cli_query).await
@@ -732,6 +776,12 @@ pub async fn command_to_query(
         }
         Command::EnrichCache { .. } => {
             anyhow::bail!("EnrichCache is a standalone CLI command, not an API query")
+        }
+        Command::MetadataCache { .. } => {
+            anyhow::bail!("MetadataCache is a standalone CLI command, not an API query")
+        }
+        Command::GenreDb { .. } => {
+            anyhow::bail!("GenreDb is a standalone CLI command, not an API query")
         }
     }
 }

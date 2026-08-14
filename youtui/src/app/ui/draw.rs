@@ -7,7 +7,7 @@ use crate::drawutils::{SELECTED_BORDER_COLOUR, TEXT_COLOUR, left_bottom_corner_r
 use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
 use std::borrow::Cow;
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::prelude::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
@@ -102,6 +102,14 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             Constraint::Length(5),
         ])
         .areas(f.area());
+    if w.fuzzy_finder.shown {
+        super::fuzzy_finder::draw_fuzzy_finder(f, &mut w.fuzzy_finder, f.area());
+        return;
+    }
+    let [content_chunk, nav_hint_chunk] = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .areas(window_chunk);
     header::draw_header(f, w, header_chunk);
     let context_selected = !w.help.shown && !w.key_pending();
     match w.context {
@@ -117,37 +125,38 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                 w.browser.set_cur_playing_video_id(None);
             }
             w.browser
-                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
         }
-        WindowContext::Logs => w.logger.draw_chunk(f, window_chunk, context_selected),
+        WindowContext::Logs => w.logger.draw_chunk(f, content_chunk, context_selected),
         WindowContext::Playlist | WindowContext::PlaylistEditor => {
             w.playlist
-                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
         }
         WindowContext::PlaylistSavePopup => {
             w.playlist
-                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
         }
         WindowContext::PlaylistUpdatePopup => {
             w.playlist
-                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
         }
         WindowContext::Lyrics => {
             w.playlist
-                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
         }
         WindowContext::SongInfo => {
             w.playlist
-                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
         }
         WindowContext::PlaylistRenamePopup
         | WindowContext::PlaylistEditPopup
         | WindowContext::PlaylistDetailsPopup
         | WindowContext::Notes => {
             w.playlist
-                .draw_mut_chunk(f, window_chunk, context_selected, w.tick);
+                .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
         }
     }
+    draw_nav_hint_bar(f, w, nav_hint_chunk);
     if w.help.shown {
         draw_help(f, w, window_chunk);
     }
@@ -345,6 +354,26 @@ fn draw_popup(f: &mut Frame, w: &YoutuiWindow, chunk: Rect) {
     );
     f.render_widget(Clear, area);
     f.render_widget(block, area);
+}
+
+fn draw_nav_hint_bar(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
+    // Context-aware: music-player commands always; nav keys follow context.
+    let nav_key = match w.context {
+        WindowContext::Browser => "h/l",
+        _ => "j/k",
+    };
+    #[rustfmt::skip]
+    let hints = [
+        (nav_key, "Nav"),
+        ("- / +", "Vol"),
+        ("[ ]", "Seek"),
+        ("< >", "Prev/Next"),
+        ("Space", "Play/Pause"),
+    ];
+    let hint = Paragraph::new(hints.map(|(k, a)| format!("{k} {a}")).join("  |  "))
+        .style(Style::default().fg(Color::DarkGray))
+        .alignment(Alignment::Center);
+    f.render_widget(hint, chunk);
 }
 
 /// Draw the help page. The help page should show all visible commands for the

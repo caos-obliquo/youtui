@@ -35,6 +35,7 @@ const LOCAL_PROXY: &str = "http://localhost:5000";
 
 impl MetadataProvider for MetalApiProvider {
     fn priority(&self) -> u8 { 5 }
+    fn name(&self) -> &'static str { "Metal Archives" }
 
     fn lookup<'a>(
         &'a self, artist: &'a str, title: &'a str, _album: Option<&'a str>, client: &'a reqwest::Client,

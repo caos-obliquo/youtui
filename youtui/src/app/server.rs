@@ -34,7 +34,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(api_key: ApiKey, po_token: Option<String>, cookie_path: Option<String>, config: &Config, overrides_path: Option<PathBuf>, cache_path: Option<PathBuf>) -> Server {
+    pub fn new(api_key: ApiKey, po_token: Option<String>, cookie_path: Option<String>, config: &Config, overrides_path: Option<PathBuf>, cache_path: Option<PathBuf>, sqlite_path: Option<PathBuf>) -> Server {
         let client = reqwest::Client::builder()
             .use_rustls_tls()
             .pool_max_idle_per_host(8)
@@ -65,8 +65,9 @@ impl Server {
             None, // librefm_key
             overrides_path,
             cache_path,
-            None, // sqlite_path
+            sqlite_path,
         ));
+        metadata_registry.clone().start_background_flush();
         Server {
             api,
             player,

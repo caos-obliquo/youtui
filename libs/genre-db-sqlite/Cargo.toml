@@ -1,6 +1,6 @@
 [package]
 name = "genre-db-sqlite"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "SQLite-backed genre database with MusicBee + RYM genre data"
 license = "MIT"

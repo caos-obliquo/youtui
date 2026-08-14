@@ -1,14 +1,94 @@
 use crate::{Cli, OAUTH_FILENAME, RuntimeInfo, get_api, get_config_dir, get_data_dir};
-use anyhow::Result;
+use anyhow::{Context, Result};
+use metadata_cache_sqlite::SqliteCache;
 use metadata_provider::MetadataProvider;
 use futures::future::try_join_all;
 use querybuilder::{CliQuery, QueryType, command_to_query};
 use std::io::BufRead;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::sync::Semaphore;
+use indicatif::{ProgressBar, ProgressStyle};
 use ytmapi_rs::{generate_oauth_code_and_url, generate_oauth_token};
 
 mod querybuilder;
+
+/// Default network timeout for any single async CLI operation.
+const CLI_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Wrap a Result-returning async operation in a 30s timeout.
+async fn with_timeout<F, T>(ctx: &str, fut: F) -> Result<T>
+where
+    F: std::future::Future<Output = Result<T>>,
+{
+    match tokio::time::timeout(CLI_TIMEOUT, fut).await {
+        Ok(res) => res,
+        Err(_) => Err(anyhow::anyhow!(
+            "[ERROR] {}: operation timed out after {}s (network failure or unresponsive server)",
+            ctx,
+            CLI_TIMEOUT.as_secs()
+        )),
+    }
+}
+
+/// Wrap an Option-returning async operation in a 30s timeout. On timeout the
+/// operation is treated as having returned no data (None) with a logged error.
+async fn with_timeout_opt<F, T>(ctx: &str, fut: F) -> Option<T>
+where
+    F: std::future::Future<Output = Option<T>>,
+{
+    match tokio::time::timeout(CLI_TIMEOUT, fut).await {
+        Ok(Some(res)) => Some(res),
+        Ok(None) => None,
+        Err(_) => {
+            eprintln!("[ERROR] {}: operation timed out after {}s", ctx, CLI_TIMEOUT.as_secs());
+            None
+        }
+    }
+}
+
+fn make_progress_bar(total: u64, msg: &str) -> ProgressBar {
+    let pb = ProgressBar::new(total);
+    pb.set_style(
+        ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    pb.set_message(msg.to_string());
+    pb
+}
+
+/// Validate that a required string argument is non-empty.
+fn require_non_empty(arg: &str, name: &str) -> Result<()> {
+    if arg.trim().is_empty() {
+        Err(anyhow::anyhow!(
+            "[ERROR] argument validation: '{}' must not be empty",
+            name
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Validate a UUID v4-shaped string (used for release-group IDs etc).
+fn validate_uuid(arg: &str, name: &str) -> Result<()> {
+    let s = arg.trim();
+    let parts: Vec<&str> = s.split('-').collect();
+    let lens = [8, 4, 4, 4, 12];
+    if parts.len() != 5 || !parts.iter().zip(lens.iter()).all(|(p, l)| p.len() == *l) {
+        return Err(anyhow::anyhow!(
+            "[ERROR] argument validation: '{}' is not a valid UUID (expected xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)",
+            name
+        ));
+    }
+    if !s.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+        return Err(anyhow::anyhow!(
+            "[ERROR] argument validation: '{}' contains non-hex characters",
+            name
+        ));
+    }
+    Ok(())
+}
 
 pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
     let config = rt.config;
@@ -17,6 +97,8 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
         Some(crate::Command::TestScrobble { artist, track, album, duration }) => {
             use crate::app::scrobbler::{ScrobbleState, submit_scrobble_inner};
             use std::time::Duration;
+            require_non_empty(artist, "artist")?;
+            require_non_empty(track, "track")?;
             let state = ScrobbleState::new(
                 artist.clone(),
                 track.clone(),
@@ -32,7 +114,14 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             println!("API_SECRET_PRESENT={}", !config.scrobbling.api_secret.is_empty());
             println!("SESSION_KEY={}", config.scrobbling.session_key);
             eprintln!("--- Sending scrobble request ---");
-            match submit_scrobble_inner(&config.scrobbling, &state).await {
+            let res = match tokio::time::timeout(CLI_TIMEOUT, submit_scrobble_inner(&config.scrobbling, &state)).await {
+                Ok(r) => r,
+                Err(_) => {
+                    eprintln!("[ERROR] TestScrobble: operation timed out after {}s", CLI_TIMEOUT.as_secs());
+                    crate::app::scrobbler::ScrobbleResult::Failure
+                }
+            };
+            match res {
                 crate::app::scrobbler::ScrobbleResult::Success => {
                     println!("RESULT=OK (scrobble accepted)");
                 }
@@ -54,20 +143,24 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             }
             if *retry {
                 println!("Retrying cached scrobbles...");
-                crate::app::scrobbler::retry_failed_scrobbles(&config.scrobbling).await;
+                if tokio::time::timeout(CLI_TIMEOUT, crate::app::scrobbler::retry_failed_scrobbles(&config.scrobbling)).await.is_err() {
+                    eprintln!("[ERROR] ScrobbleCache retry timed out after {}s", CLI_TIMEOUT.as_secs());
+                }
                 println!("Retry complete.");
                 return Ok(());
             }
             match read_scrobble_cache_entries() {
                 Some(entries) if !entries.is_empty() => {
-                    println!("Scrobble cache ({} entries):", entries.len());
+                    let pb = make_progress_bar(entries.len() as u64, "listing entries");
                     for (i, e) in entries.iter().enumerate() {
                         let artist = e["artist"].as_str().unwrap_or("?");
                         let track = e["track"].as_str().unwrap_or("?");
                         let album = e["album"].as_str().unwrap_or("");
                         let retries = e["retry_count"].as_u64().unwrap_or(0);
-                        println!("  {}. {} - {} ({}) retries={}", i + 1, artist, track, album, retries);
+                        pb.println(format!("  {}. {} - {} ({}) retries={}", i + 1, artist, track, album, retries));
+                        pb.inc(1);
                     }
+                    pb.finish_with_message(format!("Scrobble cache: {} entries", entries.len()));
                 }
                 _ => println!("Scrobble cache is empty."),
             }
@@ -75,8 +168,11 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
         }
         Some(crate::Command::TestValidateMetadata { artist, title, album }) => {
             use crate::app::server::MetadataRegistry;
+            require_non_empty(artist, "artist")?;
+            require_non_empty(title, "title")?;
             let http_client = reqwest::Client::builder()
                 .user_agent("Youtui/0.1 (metadata-test)")
+                .timeout(CLI_TIMEOUT)
                 .build()?;
             let registry = MetadataRegistry::new(
                 http_client,
@@ -94,37 +190,42 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             if let Some(a) = album {
                 println!("Album hint: {}", a);
             }
-            match registry.resolve(artist, title, album.as_deref()).await {
-                Ok(meta) => {
-                    println!("--- RESULT ---");
-                    println!("Artist:    {:?}", meta.artist);
-                    println!("Album:     {:?}", meta.album);
-                    println!("Year:      {:?}", meta.year);
-                    println!("Track no:  {:?}", meta.track_no);
-                    println!("Tracks:    {}", meta.album_tracks.len());
-                    println!("Genres:    {:?}", meta.genres);
-                    println!("Styles:    {:?}", meta.styles);
-                    for (i, t) in meta.album_tracks.iter().enumerate() {
-                        println!("  {}. {} ({:.0}s) {:?}", i + 1, t.title, t.duration_secs, t.artist);
-                    }
-                }
-                Err(e) => println!("ERROR: {}", e),
+            let pb = make_progress_bar(1, "resolving metadata");
+            pb.set_message("querying all providers...");
+            let meta = with_timeout("TestValidateMetadata", registry.resolve(artist, title, album.as_deref()))
+                .await
+                .context("metadata resolution failed")?;
+            pb.finish_and_clear();
+            println!("--- RESULT ---");
+            println!("Artist:    {:?}", meta.artist);
+            println!("Album:     {:?}", meta.album);
+            println!("Year:      {:?}", meta.year);
+            println!("Track no:  {:?}", meta.track_no);
+            println!("Tracks:    {}", meta.album_tracks.len());
+            println!("Genres:    {:?}", meta.genres);
+            println!("Styles:    {:?}", meta.styles);
+            for (i, t) in meta.album_tracks.iter().enumerate() {
+                println!("  {}. {} ({:.0}s) {:?}", i + 1, t.title, t.duration_secs, t.artist);
             }
             return Ok(());
         }
         Some(crate::Command::TestListenbrainz { artist, title }) => {
             use metadata_provider::listenbrainz::ListenBrainzProvider;
+            require_non_empty(artist, "artist")?;
+            require_non_empty(title, "title")?;
             let token = config.scrobbling.listenbrainz_token.clone();
             if token.is_empty() {
-                println!("ERROR: listenbrainz_token not configured in [scrobbling] section");
+                println!("[ERROR] TestListenbrainz: listenbrainz_token not configured in [scrobbling] section");
                 return Ok(());
             }
             let provider = ListenBrainzProvider::new(token);
             let client = reqwest::Client::builder()
                 .user_agent("Youtui/0.1 (listenbrainz-test)")
+                .timeout(CLI_TIMEOUT)
                 .build()?;
             println!("Querying ListenBrainz: {} - {}", artist, title);
-            match provider.lookup(artist, title, None, &client).await {
+            let meta = with_timeout_opt("TestListenbrainz", provider.lookup(artist, title, None, &client)).await;
+            match meta {
                 Some(meta) => {
                     println!("Artist: {:?}", meta.artist);
                     println!("Album:  {:?}", meta.album);
@@ -139,8 +240,11 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
         }
         Some(crate::Command::TestMusicbrainz { artist, title }) => {
             use metadata_provider::musicbrainz::MusicBrainzProvider;
+            require_non_empty(artist, "artist")?;
+            require_non_empty(title, "title")?;
             let client = reqwest::Client::builder()
                 .user_agent("Youtui/0.1 (musicbrainz-test)")
+                .timeout(CLI_TIMEOUT)
                 .build()?;
             let client_id = Some(config.scrobbling.musicbrainz_client_id.clone())
                 .filter(|s| !s.is_empty());
@@ -150,7 +254,8 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 .filter(|s| !s.is_empty());
             let provider = MusicBrainzProvider::new(client_id, client_secret, bearer);
             println!("Querying MusicBrainz: {} - {}", artist, title);
-            match provider.lookup(artist, title, None, &client).await {
+            let meta = with_timeout_opt("TestMusicbrainz", provider.lookup(artist, title, None, &client)).await;
+            match meta {
                 Some(meta) => {
                     println!("Artist: {:?}", meta.artist);
                     println!("Album:  {:?}", meta.album);
@@ -170,10 +275,14 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
         Some(crate::Command::TestCaa { release_group_id, artist, title }) => {
             let http = reqwest::Client::builder()
                 .user_agent("Youtui/0.1 (caa-test)")
+                .timeout(CLI_TIMEOUT)
                 .build()?;
             let mbid = if let Some(rgid) = release_group_id {
+                validate_uuid(rgid, "release_group_id")?;
                 rgid.clone()
             } else if let (Some(a), Some(t)) = (artist, title) {
+                require_non_empty(a, "artist")?;
+                require_non_empty(t, "title")?;
                 println!("Resolving MBID for {} - {}...", a, t);
                 use metadata_provider::musicbrainz::MusicBrainzProvider;
                 let client_id = Some(config.scrobbling.musicbrainz_client_id.clone())
@@ -183,37 +292,147 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 let bearer = Some(config.scrobbling.musicbrainz_bearer_token.clone())
                     .filter(|s| !s.is_empty());
                 let provider = MusicBrainzProvider::new(client_id, client_secret, bearer);
-                match provider.lookup(&a, &t, None, &http).await {
+                match with_timeout_opt("TestCaa MBID resolve", provider.lookup(&a, &t, None, &http)).await {
                     Some(meta) => match meta.musicbrainz_release_group_id {
                         Some(id) => id,
-                        None => { println!("No MBID found"); return Ok(()); }
+                        None => { println!("[ERROR] TestCaa: no MBID found for {} - {}", a, t); return Ok(()); }
                     },
-                    None => { println!("MusicBrainz lookup failed"); return Ok(()); }
+                    None => { println!("[ERROR] TestCaa: MusicBrainz lookup failed for {} - {}", a, t); return Ok(()); }
                 }
             } else {
-                println!("Provide --release-group-id OR --artist + --title");
+                println!("[ERROR] TestCaa: provide --release-group-id OR --artist + --title");
                 return Ok(());
             };
             println!("Fetching CAA for release-group: {}", mbid);
             let url = format!("https://coverartarchive.org/release-group/{}/front", mbid);
-            match http.get(&url).send().await {
-                Ok(resp) if resp.status().is_success() => {
-                    let bytes = resp.bytes().await.unwrap_or_default();
-                    let len = bytes.len();
-                    let path = std::env::temp_dir().join(format!("caa_{}.jpg", mbid));
-                    if let Err(e) = std::fs::write(&path, &bytes) {
-                        println!("Failed to write image: {}", e);
-                    } else {
-                        println!("OK: {} bytes -> {}", len, path.display());
-                    }
+            let resp = with_timeout("TestCaa fetch", async { http.get(&url).send().await.map_err(anyhow::Error::from) }).await?;
+            if resp.status().is_success() {
+                let bytes = with_timeout("TestCaa read body", async { resp.bytes().await.map_err(anyhow::Error::from) }).await?;
+                let len = bytes.len();
+                let path = std::env::temp_dir().join(format!("caa_{}.jpg", mbid));
+                if let Err(e) = std::fs::write(&path, &bytes) {
+                    println!("[ERROR] TestCaa: failed to write image: {}", e);
+                } else {
+                    println!("OK: {} bytes -> {}", len, path.display());
                 }
-                Ok(resp) => println!("CAA returned HTTP {}", resp.status()),
-                Err(e) => println!("CAA request failed: {}", e),
+            } else {
+                println!("[ERROR] TestCaa: CAA returned HTTP {}", resp.status());
             }
             return Ok(());
         }
         Some(crate::Command::EnrichCache { file }) => {
             return handle_enrich_cache(&config, file).await;
+        }
+        Some(crate::Command::MetadataCache { show: _show, stats, clear }) => {
+            let sqlite_path = crate::get_data_dir()?.join("metadata_cache.db");
+            let cache = SqliteCache::open(&sqlite_path)
+                .with_context(|| format!("[ERROR] MetadataCache: failed to open cache at {}", sqlite_path.display()))?;
+            if *clear {
+                cache.clear().with_context(|| "[ERROR] MetadataCache: failed to clear cache")?;
+                println!("Metadata cache cleared.");
+                return Ok(());
+            }
+            if *stats {
+                let count = cache.len().with_context(|| "[ERROR] MetadataCache: failed to count entries")?;
+                let file_size = std::fs::metadata(&sqlite_path)?.len();
+                println!("Metadata cache entries: {}", count);
+                println!("Database file size: {} bytes", file_size);
+                return Ok(());
+            }
+            // Default (--show or no flags): list entries
+            let entries = cache.iter().with_context(|| "[ERROR] MetadataCache: failed to iterate entries")?;
+            if entries.is_empty() {
+                println!("Metadata cache is empty.");
+            } else {
+                let pb = make_progress_bar(entries.len() as u64, "listing entries");
+                for (key, meta) in &entries {
+                    let year = meta.year.as_deref().unwrap_or("None");
+                    let artist = meta.artist.as_deref().unwrap_or("?");
+                    let album = meta.album.as_deref().unwrap_or("?");
+                    pb.println(format!("  {}: year={}, artist={}, album={}, genres={}, styles={}",
+                        key, year, artist, album, meta.genres.len(), meta.styles.len()));
+                    pb.inc(1);
+                }
+                pb.finish_with_message(format!("Metadata cache: {} entries", entries.len()));
+            }
+            return Ok(());
+        }
+        Some(crate::Command::GenreDb { list, lookup }) => {
+            let db_path = crate::get_data_dir()?.join("genre_db.db");
+            let db = genre_db_sqlite::GenreDb::open_persistent(&db_path)
+                .with_context(|| format!("[ERROR] GenreDb: failed to open database at {}", db_path.display()))?;
+            if let Some(name) = lookup {
+                let info = db.find_genre(name);
+                let subgenres = db.get_subgenres_with_descriptions(name);
+                match info {
+                    Some(g) => {
+                        println!("{} (source: {})", g.name, g.source);
+                        if let Some(ref desc) = g.description {
+                            println!("  Description: {}", desc);
+                        }
+                        if let Some(ref parent) = g.parent_name {
+                            println!("  Parent: {}", parent);
+                        }
+                        if !subgenres.is_empty() {
+                            println!("  Subgenres ({}):", subgenres.len());
+                            for (sub, desc) in &subgenres {
+                                print!("    - {}", sub);
+                                if let Some(d) = desc {
+                                    print!(" — {}", d);
+                                }
+                                println!();
+                            }
+                        } else {
+                            println!("  (no subgenres)");
+                        }
+                    }
+                    None => {
+                        println!("Genre '{}' not found.", name);
+                        // Try fuzzy suggestions
+                        let all = db.all_genres();
+                        let lowered = name.to_lowercase();
+                        let suggestions: Vec<&String> = all.iter()
+                            .filter(|g| g.to_lowercase().contains(&lowered))
+                            .take(5)
+                            .collect();
+                        if !suggestions.is_empty() {
+                            println!("  Did you mean:");
+                            for s in suggestions {
+                                println!("    - {}", s);
+                            }
+                        }
+                    }
+                }
+                return Ok(());
+            }
+            if *list {
+                let all = db.all_genres();
+                let pb = make_progress_bar(all.len() as u64, "listing genres");
+                for genre in &all {
+                    let subgenres = db.get_subgenres_with_descriptions(genre);
+                    if subgenres.is_empty() {
+                        pb.println(format!("  {} (leaf)", genre));
+                    } else {
+                        pb.println(format!("  {} ({} subgenres):", genre, subgenres.len()));
+                        for (sub, desc) in &subgenres {
+                            let mut line = format!("    - {}", sub);
+                            if let Some(d) = desc {
+                                line.push_str(&format!(" — {}", d));
+                            }
+                            pb.println(line);
+                        }
+                    }
+                    pb.inc(1);
+                }
+                pb.finish_with_message(format!("Genres: {} total", all.len()));
+                return Ok(());
+            }
+            // Default: stats
+            let all = db.all_genres();
+            let descriptors = db.all_descriptors();
+            println!("Genre database: {} genres, {} descriptors", all.len(), descriptors.len());
+            println!("Database path: {}", db_path.display());
+            return Ok(());
         }
         _ => {}
     }
@@ -246,7 +465,9 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 show_source,
             };
             let api = get_api(&config).await?;
-            let res = command_to_query(command, cli_query, api).await?;
+            let res = with_timeout("API command", command_to_query(command, cli_query, api))
+                .await
+                .context("YTM API command failed")?;
             println!("{res}");
         }
         Cli {
@@ -259,7 +480,9 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 show_source,
             };
             let api = get_api(&config).await?;
-            let res = command_to_query(command, cli_query, api).await?;
+            let res = with_timeout("API command", command_to_query(command, cli_query, api))
+                .await
+                .context("YTM API command failed")?;
             println!("{res}");
         }
     }
@@ -300,7 +523,7 @@ async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<Strin
 
     let http_client = reqwest::Client::builder()
         .user_agent("Youtui/0.1 (enrich-cache)")
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(CLI_TIMEOUT)
         .build()?;
 
     let registry = MetadataRegistry::new(
@@ -346,6 +569,7 @@ async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<Strin
         .collect();
 
     if pairs.is_empty() {
+        tracing::warn!("enrich-cache: no input lines");
         println!("No input lines found. Provide 'Artist | Title' per line.");
         return Ok(());
     }
@@ -354,28 +578,35 @@ async fn handle_enrich_cache(config: &crate::config::Config, file: &Option<Strin
     let semaphore = Semaphore::new(10);
     let mut completed = 0usize;
     let mut errors = 0usize;
+    let pb = make_progress_bar(total as u64, "enriching");
 
+    tracing::info!("enrich-cache: starting batch enrichment for {} songs", total);
     for (artist, title) in &pairs {
         let _permit = semaphore.acquire().await;
-        match registry.resolve_fast(artist, title, None).await {
-            Some(meta) => {
-                completed += 1;
-                let year_str = meta.year.as_deref().unwrap_or("None");
-                let genre_str = if meta.genres.is_empty() { String::new() } else { format!(" [{}]", meta.genres.join(", ")) };
-                print!("\r[ {completed}/{total} ] {artist} - {title} -> {year_str}{genre_str}");
-            }
+        tracing::debug!("enrich-cache: resolving {} - {}", artist, title);
+        let meta = match with_timeout_opt(
+            &format!("EnrichCache resolve {} - {}", artist, title),
+            registry.resolve_fast(artist, title, None),
+        )
+        .await
+        {
+            Some(m) => m,
             None => {
                 errors += 1;
                 completed += 1;
-                print!("\r[ {completed}/{total} ] {artist} - {title} -> None");
+                pb.set_message(format!("{artist} - {title} -> ERROR"));
+                pb.inc(1);
+                continue;
             }
-        }
-        use std::io::Write;
-        std::io::stdout().flush().ok();
+        };
+        completed += 1;
+        let year_str = meta.year.as_deref().unwrap_or("None");
+        let genre_str = if meta.genres.is_empty() { String::new() } else { format!(" [{}]", meta.genres.join(", ")) };
+        tracing::info!("enrich-cache: {} - {} -> year={:?}, genres={}, styles={}", artist, title, meta.year, meta.genres.len(), meta.styles.len());
+        pb.set_message(format!("{artist} - {title} -> {year_str}{genre_str}"));
+        pb.inc(1);
     }
-
-    println!();
-    println!("Done. {completed} enriched, {errors} errors");
+    pb.finish_with_message(format!("Done. {completed} enriched, {errors} errors"));
     Ok(())
 }
 

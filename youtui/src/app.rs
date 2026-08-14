@@ -217,6 +217,7 @@ pub enum AppCallback {
     SubscribeToArtistFromLibrary(ArtistChannelID<'static>),
     UnsubscribeFromArtistFromLibrary(Vec<ArtistChannelID<'static>>),
     AddPlaylistToPlaylistFromLibrary(PlaylistID<'static>, PlaylistID<'static>),
+    ToggleLoggerFullscreen,
 }
 
 impl Youtui {
@@ -274,7 +275,7 @@ impl Youtui {
                     task.type_debug, task.type_id, task.constraint
                 )
             });
-        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config, crate::get_config_dir().ok().map(|d| d.join("metadata_overrides.json")), crate::get_data_dir().ok().map(|d| d.to_path_buf())));
+        let server = Arc::new(server::Server::new(api_key, po_token, cookie_path.clone(), &config, crate::get_config_dir().ok().map(|d| d.join("metadata_overrides.json")), crate::get_data_dir().ok().map(|d| d.to_path_buf()), crate::get_data_dir().ok().map(|d| d.join("metadata_cache.db"))));
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
         // The docs for this function state that it must be run after entering alternate
@@ -366,6 +367,7 @@ impl Youtui {
                     }
                 }
                 AppStatus::Exiting(s) => {
+                    self.server.metadata_registry.flush_cache_to_sqlite();
                     destruct_terminal()?;
                     println!("{s}");
                     break;
@@ -906,6 +908,9 @@ impl Youtui {
                 let effect = self.window_state.play_yt_url(url);
                 self.task_manager.spawn_task(&self.server, effect);
             }
+            AppCallback::ToggleLoggerFullscreen => {
+                self.window_state.toggle_logger_fullscreen();
+            }
         }
     }
 
@@ -967,8 +972,16 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
     } else {
         (tracing::Level::INFO, tui_logger::LevelFilter::Info)
     };
-    let context_layer =
-        tracing_subscriber::filter::Targets::new().with_target("youtui", tracing_log_level);
+    let filter = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(tracing_log_level.into())
+        .with_env_var("RUST_LOG")
+        .from_env_lossy()
+        .add_directive(
+            format!("youtui={}", tracing_log_level).parse().unwrap(),
+        )
+        .add_directive(
+            format!("metadata_provider={}", tracing_log_level).parse().unwrap(),
+        );
     if logging {
         let (log_file, log_file_name) = get_limited_sequential_file(
             &get_data_dir()?,
@@ -984,15 +997,13 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
         ));
         tracing_subscriber::registry()
             .with(tui_logger_layer.and_then(log_file_layer))
-            .with(context_layer)
+            .with(filter)
             .init();
         info!("Logging to {:?}.", log_file_name);
     } else {
-        let context_layer =
-            tracing_subscriber::filter::Targets::new().with_target("youtui", tracing_log_level);
         tracing_subscriber::registry()
             .with(tui_logger_layer)
-            .with(context_layer)
+            .with(filter)
             .init();
     }
     tui_logger::init_logger(tui_logger_log_level)

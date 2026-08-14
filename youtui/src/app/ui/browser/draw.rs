@@ -159,8 +159,7 @@ pub fn draw_album_search_browser(
     let left_selected = selected && !show_tracks;
     let right_selected = selected && show_tracks;
 
-    // Left panel: search box + album list below (when searching), or just album list
-    let left_album_chunk = if browser.search_popped {
+    let (left_album_chunk, search_box_chunk) = if browser.search_popped {
         let [search_box_chunk, rest_chunk] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(3), Constraint::Min(0)])
@@ -174,12 +173,9 @@ pub fn draw_album_search_browser(
         f.render_widget(Clear, search_box_chunk);
         f.render_widget(search_block, search_box_chunk);
         f.render_widget(Paragraph::new(display).style(Style::default().fg(TEXT_COLOUR)), text_chunk);
-        if browser.has_search_suggestions() {
-            draw_search_suggestions(f, &browser.search, search_box_chunk, left_chunk);
-        }
-        rest_chunk
+        (rest_chunk, Some(search_box_chunk))
     } else {
-        left_chunk
+        (left_chunk, None)
     };
 
     // Left panel: album list with count
@@ -208,6 +204,12 @@ pub fn draw_album_search_browser(
             left_inner,
             &mut browser.album_list_state,
         );
+    }
+
+    if let Some(search_box_chunk) = search_box_chunk {
+        if browser.has_search_suggestions() {
+            draw_search_suggestions(f, &browser.search, search_box_chunk, left_chunk);
+        }
     }
 
     // Right panel: tracks via advanced table, even when no album selected

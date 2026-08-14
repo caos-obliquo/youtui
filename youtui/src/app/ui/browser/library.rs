@@ -8,7 +8,7 @@ use crate::app::structures::{AlbumOrUploadAlbumID, ListSongAlbum};
 
 use crate::app::server::{
     GetAllLibrarySongs, GetAllLibraryPlaylists, GetAllLibraryArtists, GetAllLibraryAlbums,
-    GetPlaylistTracks, EnrichFromMetadataCache,
+    GetPlaylistTracks, EnrichFromMetadataCache, EnrichedPlaylistTracks, EnrichedLibrarySongs,
 };
 use crate::app::structures::{
     BrowserSongsList, ListSong, ListSongArtist, ListSongDisplayableField, ListStatus, MaybeRc,
@@ -29,8 +29,8 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use ytmapi_rs::common::{PlaylistID, YoutubeID, LikeStatus, ArtistChannelID};
-use ytmapi_rs::parse::PlaylistSong;
-use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum, TableListSong};
+
+use ytmapi_rs::parse::{LibraryPlaylist, LibraryArtist, SearchResultAlbum};
 use ytmapi_rs::query::library::GetLibrarySortOrder;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -126,7 +126,7 @@ pub enum LibraryEffect {
     SongsEnriched(Vec<(usize, Option<String>, Vec<String>, Vec<String>)>, crate::app::server::EnrichTarget),
     PlaylistsLoaded(Vec<LibraryPlaylist>),
 
-    ArtistsLoaded(Vec<LibraryArtist>),
+    ArtistsLoaded(Vec<LibraryArtist>, Vec<ArtistChannelID<'static>>),
     AlbumsLoaded(Vec<SearchResultAlbum>),
     RemoveItemsSuccess,
     RemoveItemsError(String),
@@ -145,7 +145,8 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
         match self {
             LibraryEffect::SongsLoaded(songs) => {
                 info!(count = %songs.len(), "Liked songs loaded");
-                // Build enrichment data BEFORE consuming songs
+                // Build enrichment data BEFORE consuming songs.
+                // Skip songs already enriched (year from album name extraction).
                 let enrich_data: Vec<(usize, String, String, Option<String>)> = songs.iter().enumerate()
                     .filter_map(|(i, s)| {
                         let artist: String = s.artists.iter()
@@ -153,7 +154,11 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                             .collect::<Vec<_>>()
                             .join(", ");
                         let album = s.album.as_ref().map(|a| a.as_ref().name.clone());
-                        if artist.is_empty() { None } else { Some((i, artist, s.title.clone(), album)) }
+                        if artist.is_empty() || s.year.is_some() {
+                            None
+                        } else {
+                            Some((i, artist, s.title.clone(), album))
+                        }
                     })
                     .collect();
                 let has_enrich = !enrich_data.is_empty();
@@ -182,10 +187,12 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 let count = results.len();
                 match target_route {
                     crate::app::server::EnrichTarget::PlaylistTracks => {
+                        let mut years_found = 0u32;
                         for (idx, year, genres, styles) in results {
                             if let Some(song) = target.playlist_tracks.get_mut(idx) {
                                 if let Some(y) = year {
                                     song.year = Some(Rc::new(y));
+                                    years_found += 1;
                                 }
                                 if !genres.is_empty() {
                                     song.genres = genres;
@@ -195,16 +202,18 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                                 }
                             }
                         }
-                        info!(count = %count, "Library playlist tracks enriched from cache");
+                        info!(total = %count, years = %years_found, "Library playlist tracks enriched from cache");
                     }
                     crate::app::server::EnrichTarget::LikedSongs => {
+                        let mut years_found = 0u32;
                         for (idx, year, genres, styles) in results {
                             let year_rc = year.map(Rc::new);
                             if year_rc.is_some() {
                                 target.song_list.update_song_at(idx, year_rc, genres, styles);
+                                years_found += 1;
                             }
                         }
-                        info!(count = %count, "Library songs enriched from cache");
+                        info!(total = %count, years = %years_found, "Library songs enriched from cache");
                     }
                 }
                 target.enrich_count = None;
@@ -220,13 +229,14 @@ impl FrontendEffect<LibraryBrowser, crate::app::server::ArcServer, crate::app::T
                 // show_playlist_tracks preserved across refreshes
                 // Only DismissTracks action closes it
             }
-            LibraryEffect::ArtistsLoaded(artists) => {
-                info!(count = %artists.len(), "Library artists loaded");
+            LibraryEffect::ArtistsLoaded(artists, subs) => {
+                info!(count = %artists.len(), subs = %subs.len(), "Library artists loaded");
                 target.loading = false;
                 target.error = None;
                 target.artists_fetched = true;
                 target.artist_data = artists;
                 target.artist_selected = 0;
+                target.subscribed_artists = subs.into_iter().collect();
                 target.input_routing = InputRouting::Content;
             }
             LibraryEffect::AlbumsLoaded(albums) => {
@@ -298,18 +308,25 @@ pub struct HandleEnrichFromCacheOk;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandleEnrichFromCacheErr;
 
-impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrowser, |_, raw: Vec<TableListSong>| {
-    let songs: Vec<ListSong> = raw.into_iter().map(|ts| {
+impl_youtui_task_handler!(HandleLibrarySongsOk, EnrichedLibrarySongs, LibraryBrowser, |_, data: EnrichedLibrarySongs| {
+    let songs: Vec<ListSong> = data.songs.into_iter().enumerate().map(|(i, ts)| {
         use crate::app::structures::ListSongID;
         use crate::app::structures::ListSongArtist;
         use crate::app::structures::ArtistOrUploadArtistID;
         use ytmapi_rs::common::AlbumID;
-        // YTM library song has no year field - extract from album name parenthetical
-        let year = ts.album.as_ref()
-            .and_then(|a| a.name.split('(').last())
-            .and_then(|s| s.get(..4))
-            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-            .map(|y| std::rc::Rc::new(y.to_string()));
+        // Use cached enrichment data if available
+        let cached = data.enriched.iter().find(|(idx, _, _, _)| *idx == i);
+        let year = cached.and_then(|(_, y, _, _)| y.clone().map(|y| std::rc::Rc::new(y)))
+            .or_else(|| {
+                // Fallback: extract year from album name parenthetical
+                ts.album.as_ref()
+                    .and_then(|a| a.name.split('(').last())
+                    .and_then(|s| s.get(..4))
+                    .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                    .map(|y| std::rc::Rc::new(y.to_string()))
+            });
+        let genres = cached.map(|(_, _, g, _)| g.clone()).unwrap_or_default();
+        let styles = cached.map(|(_, _, _, s)| s.clone()).unwrap_or_default();
         ListSong {
             video_id: ts.video_id,
             track_no: None,
@@ -322,8 +339,8 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, Vec<TableListSong>, LibraryBrows
             actual_duration: None,
             start_offset: None,
             year,
-            genres: Vec::new(),
-            styles: Vec::new(),
+            genres,
+            styles,
             album_art: AlbumArtState::None,
             artists: MaybeRc::Owned(ts.artists.into_iter().map(|a| ListSongArtist {
                 name: a.name,
@@ -354,22 +371,41 @@ impl_youtui_task_handler!(HandleLibraryPlaylistsErr, anyhow::Error, LibraryBrows
 struct HandleLibraryPlaylistTracksOk;
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct HandleLibraryPlaylistTracksErr;
-impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, LibraryBrowser, |_, songs: Vec<PlaylistSong>| {
+impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, EnrichedPlaylistTracks, LibraryBrowser, |_, tracks: EnrichedPlaylistTracks| {
     use std::rc::Rc;
     use crate::app::structures::ListSongID;
-    // Build enrichment data BEFORE consuming songs (like SongsLoaded pattern)
+    let songs = tracks.songs;
+    let enriched_cache = tracks.enriched;
+    // Build set of indices that have cached enrichment data
+    let enriched_indices: std::collections::HashSet<usize> = enriched_cache.iter().map(|(i, _, _, _)| *i).collect();
+
+    // Build enrichment data ONLY for uncached songs (not in enriched_cache)
+    // Skip songs with year extractable from album name (avoid re-enrich).
     let enrich_data: Vec<(usize, String, String, Option<String>)> = songs.iter().enumerate()
         .filter_map(|(i, s)| {
+            if enriched_indices.contains(&i) { return None; }
             let artist: String = s.artists.iter()
                 .map(|a| a.name.as_str())
                 .collect::<Vec<_>>()
                 .join(", ");
-            if artist.is_empty() { None } else { Some((i, artist, s.title.clone(), Some(s.album.name.clone()))) }
+            if artist.is_empty() { return None; }
+            // Skip if year already present in album name parenthetical (YYYY)
+            let has_year = s.album.name.split('(').last()
+                .and_then(|s| s.get(..4))
+                .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                .is_some();
+            if has_year { return None; }
+            Some((i, artist, s.title.clone(), Some(s.album.name.clone())))
         })
         .collect();
     let has_enrich = !enrich_data.is_empty();
+
+    // Build a lookup for cached enrichment by index
+    use std::collections::HashMap;
+    let enrich_lookup: HashMap<usize, &(usize, Option<String>, Vec<String>, Vec<String>)> = enriched_cache.iter().map(|e| (e.0, e)).collect();
+
     let mut set_id_map = HashMap::new();
-    let list_songs: Vec<ListSong> = songs.into_iter().map(|s| {
+    let list_songs: Vec<ListSong> = songs.into_iter().enumerate().map(|(i, s)| {
         let vid = s.video_id.get_raw().to_string();
         // Always use the raw video_id as the setVideoId - the API returns a
         // separate setVideoId but removal also works with just the video_id
@@ -379,9 +415,20 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             name: s.album.name.clone(),
             id: AlbumOrUploadAlbumID::Album(s.album.id),
         }));
-        let year = s.album.name.split('(').last().and_then(|s| s.get(..4))
-            .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
-            .map(|y| y.to_string());
+        // Use cached year if available, else fall back to album name extraction
+        let year = enrich_lookup.get(&i)
+            .and_then(|e| e.1.clone())
+            .or_else(|| {
+                s.album.name.split('(').last().and_then(|s| s.get(..4))
+                    .filter(|y| y.chars().all(|c| c.is_ascii_digit()))
+                    .map(|y| y.to_string())
+            });
+        let genres: Vec<String> = enrich_lookup.get(&i)
+            .map(|e| e.2.clone())
+            .unwrap_or_default();
+        let styles: Vec<String> = enrich_lookup.get(&i)
+            .map(|e| e.3.clone())
+            .unwrap_or_default();
         ListSong {
             video_id: s.video_id,
             track_no: Some(s.track_no),
@@ -395,8 +442,8 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             start_offset: None,
             year: year.map(Rc::new),
             album_art: AlbumArtState::None,
-            genres: Vec::new(),
-            styles: Vec::new(),
+            genres,
+            styles,
             artists,
             thumbnails: MaybeRc::Owned(s.thumbnails),
             album,
@@ -417,6 +464,7 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, Vec<PlaylistSong>, Libr
             target.track_set_ids = self.1;
             let has_enrich = self.2;
             let enrich_data = self.3;
+            // Only fire enrichment for uncached tracks
             if has_enrich && !enrich_data.is_empty() {
                 target.enrich_count = Some(enrich_data.len());
                 return AsyncTask::new_future_try(
@@ -435,8 +483,9 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksErr, anyhow::Error, Library
     tracing::error!("Error loading playlist tracks: {}", err);
     LibraryEffect::LoadError(err.to_string())
 });
-impl_youtui_task_handler!(HandleLibraryArtistsOk, Vec<LibraryArtist>, LibraryBrowser, |_, a: Vec<LibraryArtist>| {
-    LibraryEffect::ArtistsLoaded(a)
+impl_youtui_task_handler!(HandleLibraryArtistsOk, (Vec<LibraryArtist>, Vec<ArtistChannelID<'static>>), LibraryBrowser, |_, result| {
+    let (a, subs) = result;
+    LibraryEffect::ArtistsLoaded(a, subs)
 });
 impl_youtui_task_handler!(HandleLibraryArtistsErr, anyhow::Error, LibraryBrowser, |_, err: anyhow::Error| {
     LibraryEffect::LoadError(err.to_string())
@@ -918,10 +967,16 @@ impl LibraryBrowser {
 
     fn build_artist_columns(&self) -> Vec<Vec<Cow<'_, str>>> {
         self.artist_data.iter().enumerate().map(|(i, a)| {
+            let subs_icon = if self.subscribed_artists.contains(&a.channel_id) {
+                Cow::Borrowed("\u{f02e}")
+            } else {
+                Cow::Borrowed("")
+            };
             vec![
                 Cow::<'_, str>::Owned((i + 1).to_string()),
                 Cow::Borrowed(a.artist.as_str()),
                 Cow::Borrowed(a.byline.as_str()),
+                subs_icon,
             ]
         }).collect()
     }
@@ -1114,7 +1169,7 @@ impl TableView for LibraryBrowser {
             match self.category {
                 LibraryCategory::LikedSongs => &["#", "Artist", "Album", "Song", "Duration", "Year", "Liked"],
                 LibraryCategory::Playlists => &["#", "Title", "Tracks", "Author"],
-                LibraryCategory::Artists => &["#", "Artist", "Byline"],
+                LibraryCategory::Artists => &["#", "Artist", "Byline", "Subs"],
                 LibraryCategory::Albums => &["#", "Artist", "Album", "Year", "Type"],
             }
         };
@@ -1230,9 +1285,12 @@ impl AdvancedTableView for LibraryBrowser {
             match self.category {
                 LibraryCategory::LikedSongs => {
                     let fields = Self::liked_songs_subcolumns_of_vec();
-                    Box::new(self.get_liked_songs_filtered_iter().map(move |ls| {
+                    let filtered_iter = self.get_liked_songs_filtered_iter();
+                    Box::new(filtered_iter.enumerate().map(move |(i, ls)| {
+                        let mut row = ls.get_fields(fields).to_vec();
+                        row[0] = Cow::Owned((i + 1).to_string());
                         let v: Box<dyn Iterator<Item = Cow<'_, str>> + '_> =
-                            Box::new(ls.get_fields(fields).into_iter());
+                            Box::new(row.into_iter());
                         v
                     }))
                 }
@@ -1573,6 +1631,12 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
                     }
                 }
+                BrowserSongsAction::ViewSongInfo => {
+                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                    if let Some(song) = songs.get(self.cur_selected) {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song: song.clone() }));
+                    }
+                }
                 _ => warn!("Unsupported song action for liked songs: {:?}", action),
             },
             #[allow(unreachable_patterns)]
@@ -1617,6 +1681,13 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                         if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
                             let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                             return (AsyncTask::new_no_op(), Some(AppCallback::ViewLyrics { artist, title: song.title.clone() }));
+                        }
+                    }
+                }
+                BrowserSongsAction::ViewSongInfo => {
+                    if self.show_playlist_tracks {
+                        if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
+                            return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song: song.clone() }));
                         }
                     }
                 }

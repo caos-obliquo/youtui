@@ -10,9 +10,10 @@ use crate::app::component::actionhandler::{
 };
 use crate::app::server::{HandleApiError, SearchSongs};
 use crate::app::structures::{
-    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent,
+    ArtistOrUploadArtistID, BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus,
+    Percentage, SongListComponent,
 };
-use ytmapi_rs::common::YoutubeID;
+use ytmapi_rs::common::{ArtistChannelID, YoutubeID};
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{
     AdvancedTableView, BasicConstraint, FilterString, HasTitle, Loadable, SortDirection,
@@ -27,6 +28,7 @@ use async_callback_manager::{AsyncTask, Constraint, NoOpHandler};
 use itertools::Either;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use tracing::warn;
 use ytmapi_rs::common::SearchSuggestion;
 use ytmapi_rs::parse::SearchResultSong;
@@ -43,6 +45,7 @@ pub struct SongSearchBrowser {
     pub filter: FilterManager,
     pub local_filter_text: String,
     pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
+    pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
 }
 impl_youtui_component!(SongSearchBrowser);
 
@@ -80,6 +83,7 @@ pub enum BrowserSongsAction {
     DeleteToTop,
     DeleteToBottom,
     OpenPlaylistEditor,
+    ViewSongInfo,
 }
 
 impl Action for BrowserSongsAction {
@@ -119,6 +123,7 @@ impl Action for BrowserSongsAction {
             BrowserSongsAction::DeleteToTop => "Delete to Top",
             BrowserSongsAction::DeleteToBottom => "Delete to Bottom",
             BrowserSongsAction::OpenPlaylistEditor => "Edit Tracks (Vim)",
+            BrowserSongsAction::ViewSongInfo => "View Song Info",
         }
         .into()
     }
@@ -133,7 +138,9 @@ impl BrowserSongsAction {
     pub fn is_valid_for_category(&self, category: crate::app::ui::browser::library::LibraryCategory) -> bool {
         use crate::app::ui::browser::library::LibraryCategory;
         match category {
-            LibraryCategory::Playlists => true,
+            LibraryCategory::Playlists => !matches!(self,
+                BrowserSongsAction::ViewSongInfo
+            ),
             LibraryCategory::LikedSongs => !matches!(self,
                 BrowserSongsAction::DeletePlaylist
                 | BrowserSongsAction::RenamePlaylist
@@ -315,10 +322,27 @@ impl ActionHandler<BrowserSongsAction> for SongSearchBrowser {
             BrowserSongsAction::InsertNext => return self.insert_next().into(),
             BrowserSongsAction::QueueSong => return self.queue_song().into(),
             BrowserSongsAction::ViewLyrics => return self.view_lyrics().into(),
+            BrowserSongsAction::ViewSongInfo => return self.view_song_info().into(),
             BrowserSongsAction::CopySongUrl => return self.copy_song_url().into(),
             BrowserSongsAction::GoToArtist => return self.go_to_artist().into(),
             BrowserSongsAction::GoToAlbum => return self.go_to_album().into(),
             BrowserSongsAction::GetRelatedTracks => return self.get_related_tracks().into(),
+            BrowserSongsAction::ToggleSubscribeArtist => {
+                if let Some(song) = self.get_song_from_idx(self.get_selected_item()) {
+                    if let Some(cid) = song.artists.iter().find_map(|a| match &a.id {
+                        Some(ArtistOrUploadArtistID::Artist(cid)) => Some(cid.clone()),
+                        _ => None,
+                    }) {
+                        if self.subscribed_artists.contains(&cid) {
+                            self.subscribed_artists.remove(&cid);
+                            return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![cid]))).into();
+                        } else {
+                            self.subscribed_artists.insert(cid.clone());
+                            return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(cid))).into();
+                        }
+                    }
+                }
+            }
             _ => warn!("Unsupported action: {:?}", action),
         }
         YoutuiEffect::new_no_op()
@@ -369,11 +393,12 @@ impl TableView for SongSearchBrowser {
     }
     fn get_layout(&self) -> &[crate::app::view::BasicConstraint] {
         &[
-            BasicConstraint::Percentage(Percentage(40)),
-            BasicConstraint::Percentage(Percentage(30)),
-            BasicConstraint::Percentage(Percentage(30)),
+            BasicConstraint::Percentage(Percentage(38)),
+            BasicConstraint::Percentage(Percentage(28)),
+            BasicConstraint::Percentage(Percentage(28)),
             BasicConstraint::Length(8),
             BasicConstraint::Length(10),
+            BasicConstraint::Length(4),
             BasicConstraint::Length(4),
         ]
     }
@@ -390,15 +415,16 @@ impl TableView for SongSearchBrowser {
         self.view_indices
             .iter()
             .map(move |&idx| {
-                self.song_list
+                let song = self.song_list
                     .get_song_from_idx(idx)
-                    .expect("view_indices entries valid")
-                    .get_fields(subcolumns)
-                    .into_iter()
+                    .expect("view_indices entries valid");
+                let mut fields: Vec<Cow<'_, str>> = song.get_fields(subcolumns).to_vec();
+                fields.push(Self::subs_icon_for_song(song, &self.subscribed_artists));
+                fields.into_iter()
             })
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        ["Song", "Artist", "Album", "Duration", "Plays", "Liked"].into_iter()
+        ["Song", "Artist", "Album", "Duration", "Plays", "Liked", "Subs"].into_iter()
     }
     fn get_mut_state(&mut self) -> &mut ScrollingTableState {
         &mut self.widget_state
@@ -466,7 +492,11 @@ impl AdvancedTableView for SongSearchBrowser {
     fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
         // We are doing a lot here every draw cycle!
         self.get_filtered_list_iter()
-            .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
+            .map(|ls| {
+                let mut fields: Vec<Cow<'_, str>> = ls.get_fields(Self::subcolumns_of_vec()).to_vec();
+                fields.push(Self::subs_icon_for_song(ls, &self.subscribed_artists));
+                fields.into_iter()
+            })
     }
     fn sort_popup_shown(&self) -> bool {
         self.sort.shown
@@ -529,6 +559,7 @@ impl SongSearchBrowser {
             cur_selected: Default::default(),
             local_filter_text: String::new(),
             cur_playing_video_id: None,
+            subscribed_artists: HashSet::new(),
         }
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
@@ -540,6 +571,24 @@ impl SongSearchBrowser {
             ListSongDisplayableField::Plays,
             ListSongDisplayableField::LikeStatus,
         ]
+    }
+    // Subs column: bookmark icon when any song artist is subscribed.
+    fn subs_icon_for_song(
+        song: &ListSong,
+        subscribed: &HashSet<ArtistChannelID<'static>>,
+    ) -> Cow<'static, str> {
+        let is_subscribed = song.artists.iter().any(|a| {
+            a.id.as_ref()
+                .is_some_and(|id| match id {
+                    ArtistOrUploadArtistID::Artist(cid) => subscribed.contains(cid),
+                    ArtistOrUploadArtistID::UploadArtist(_) => false,
+                })
+        });
+        if is_subscribed {
+            Cow::Borrowed("\u{f02e}")
+        } else {
+            Cow::Borrowed("")
+        }
     }
     /// Re-apply all sort commands in the stack in the order they were stored.
     pub fn apply_all_sort_commands(&mut self) -> Result<()> {
@@ -836,6 +885,13 @@ impl SongSearchBrowser {
         }
         (AsyncTask::new_no_op(), None)
     }
+    pub fn view_song_info(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
+        let cur_idx = self.get_selected_item();
+        if let Some(song) = self.get_song_from_idx(cur_idx) {
+            return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song: song.clone() }));
+        }
+        (AsyncTask::new_no_op(), None)
+    }
     pub fn copy_song_url(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
         if let Some(song) = self.get_song_from_idx(cur_idx) {
@@ -884,6 +940,11 @@ impl SongSearchBrowser {
                 warn!("go_to_first called while in search/filter mode");
             }
         }
+    }
+    /// Jump to a song by its filtered-list index (as shown on screen).
+    pub fn jump_to(&mut self, idx: usize) {
+        self.input_routing = InputRouting::List;
+        self.cur_selected = idx.min(self.get_filtered_list_iter().count().saturating_sub(1));
     }
     pub fn go_to_last(&mut self) {
         match self.input_routing {

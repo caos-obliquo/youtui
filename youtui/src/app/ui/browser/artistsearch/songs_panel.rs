@@ -67,6 +67,7 @@ pub enum BrowserArtistSongsAction {
     GoToArtist,
     GoToAlbum,
     GetRelatedTracks,
+    ViewSongInfo,
 }
 
 impl Action for BrowserArtistSongsAction {
@@ -89,6 +90,7 @@ impl Action for BrowserArtistSongsAction {
             BrowserArtistSongsAction::GoToArtist => "Go to Artist",
             BrowserArtistSongsAction::GoToAlbum => "Go to Album",
             BrowserArtistSongsAction::GetRelatedTracks => "Get Related Tracks",
+            BrowserArtistSongsAction::ViewSongInfo => "View Song Info",
         }
         .into()
     }

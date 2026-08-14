@@ -40,6 +40,7 @@ impl MetadataProvider for ListenBrainzProvider {
     fn priority(&self) -> u8 {
         6
     }
+    fn name(&self) -> &'static str { "ListenBrainz" }
 
     fn lookup<'a>(
         &'a self,
@@ -94,7 +95,7 @@ impl MetadataProvider for ListenBrainzProvider {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
-            let (album_name, year) = metadata
+            let (album_name, year, release_group_mbid) = metadata
                 .get("release")
                 .map(|release| {
                     let name = release
@@ -105,9 +106,13 @@ impl MetadataProvider for ListenBrainzProvider {
                         .get("year")
                         .and_then(|v| v.as_i64())
                         .map(|y| y.to_string());
-                    (name, year)
+                    let mbid = release
+                        .get("release_group_mbid")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+                    (name, year, mbid)
                 })
-                .unwrap_or((None, None));
+                .unwrap_or((None, None, None));
 
             let mut genres = Vec::new();
             let mut styles = Vec::new();
@@ -178,7 +183,7 @@ impl MetadataProvider for ListenBrainzProvider {
                 album_tracks: Vec::new(),
                 genres,
                 styles,
-                musicbrainz_release_group_id: None,
+                musicbrainz_release_group_id: release_group_mbid,
             })
         })
     }
@@ -195,7 +200,8 @@ mod tests {
                 "artist_credit_name": "Metallica",
                 "release": {
                     "name": "Master of Puppets",
-                    "year": 1986
+                    "year": 1986,
+                    "release_group_mbid": "abc-def-ghi"
                 },
                 "tag": {
                     "recording": [
@@ -230,6 +236,13 @@ mod tests {
         assert_eq!(artist, Some("Metallica".to_string()));
         assert_eq!(album, Some("Master of Puppets".to_string()));
         assert_eq!(year, Some("1986".to_string()));
+
+        let release_group_mbid = metadata
+            .get("release")
+            .and_then(|r| r.get("release_group_mbid"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        assert_eq!(release_group_mbid, Some("abc-def-ghi".to_string()));
 
         // Parse tags
         let mut genres = Vec::new();

@@ -1,33 +1,34 @@
-use crate::app::component::actionhandler::{KeyRouter, get_global_keybinds_as_readable_iter};
 use crate::app::ui::WindowContext;
 use crate::app::view::HasTabs;
 use crate::drawutils::{BUTTON_BG_COLOUR, BUTTON_FG_COLOUR};
-use crate::keyaction::DisplayableKeyAction;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph};
 
-const TAB_ROWS: u16 = 2;
-
-/// Helper to dynamically resize header based on content.
-/// Currently hardcoded as the logic is simple - but in future should be more
-/// dynamic, perhaps creating header as a widget.
+/// Header height. When a key mode is pending (e.g. `o` context menu), the
+/// Commands block grows to list the menu items; otherwise one line.
 pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
-    if matches!(w.context, WindowContext::Browser) {
-        4
-    } else {
-        3
+    if w.key_pending() {
+        if let Some(mode) = w.get_cur_displayable_mode() {
+            let n = mode.displayable_commands.count();
+            return (n as u16 + 2).min(45); // borders + items
+        }
     }
+    3
+}
+
+fn button_span(label: &str) -> Span<'static> {
+    Span::styled(
+        label.to_string(),
+        Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
+    )
 }
 
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
-    let keybinds = get_global_keybinds_as_readable_iter(w.get_active_keybinds(&w.config));
-
     let mut spans: Vec<Span> = Vec::new();
 
-    // Prepend vi mode indicator at the very start - always visible
     let vi_mode: Option<String> = if w.command_mode {
         Some(w.command_editor.mode_char().to_string())
     } else if let Some(ref popup) = w.config_editor_popup {
@@ -44,56 +45,97 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
         spans.push(Span::raw(" "));
     }
 
-    spans.extend(keybinds.flat_map(
-        |DisplayableKeyAction {
-             keybinds,
-             description,
-             ..
-         }| {
-            let label = if description.is_empty() {
-                "Action".to_string()
-            } else {
-                description.into_owned()
-            };
-            vec![
-                Span::styled(
-                    keybinds,
-                    Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
-                ),
-                Span::raw(" ("),
-                Span::raw(label),
-                Span::raw(")"),
-                Span::raw(" "),
-            ]
-        },
-    ));
-    // Append 'o (Menu)' hint for contexts with context menu support
+    spans.push(button_span("F1"));
+    spans.push(Span::raw(" (Toggle Search) "));
+    spans.push(button_span("F2"));
+    spans.push(Span::raw(" (Toggle Browser) "));
+    spans.push(button_span("F3"));
+    spans.push(Span::raw(" (Toggle Playlist) "));
     if matches!(w.context, WindowContext::Playlist | WindowContext::Browser) {
-        spans.push(Span::styled(
-            "o",
-            Style::default().bg(BUTTON_BG_COLOUR).fg(BUTTON_FG_COLOUR),
-        ));
-        spans.push(Span::raw(" (Menu) "));
+        spans.push(button_span("o"));
+        spans.push(Span::raw(" (Context Menu) "));
     }
-    let help_string = Line::from_iter(spans);
+    spans.push(button_span("?"));
+    spans.push(Span::raw(" (Toggle Help) "));
+
+    // When a key mode is pending (o → context menu etc), expand the Commands
+    // block with the menu items so the header's empty space is used.
+    let menu_lines: Vec<Line> = if w.key_pending() {
+        w.get_cur_displayable_mode()
+            .map(|mode| {
+                let title = mode.description;
+                let mut lines = vec![Line::from(Span::styled(
+                    format!(" {} ", title),
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ))];
+                lines.extend(mode.displayable_commands.map(|c| {
+                    Line::from(vec![
+                        Span::styled(
+                            format!(" {:6} ", c.keybinds),
+                            Style::default()
+                                .fg(BUTTON_FG_COLOUR)
+                                .bg(BUTTON_BG_COLOUR),
+                        ),
+                        Span::raw(format!(" {}", c.description)),
+                    ])
+                }));
+                lines
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Top line: mode indicator + minimal commands.
+    let mut all_lines: Vec<Line> = Vec::new();
+    if menu_lines.is_empty() {
+        all_lines.push(Line::from(spans));
+    } else {
+        // First line: the pending key + description; then the items.
+        let mut it = menu_lines.into_iter();
+        if let Some(first) = it.next() {
+            all_lines.push(first);
+        }
+        all_lines.extend(it);
+    }
+
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
-    let commands_widget = Paragraph::new(help_string).wrap(Wrap { trim: true });
+    let commands_widget = Paragraph::new(all_lines.clone());
     if !matches!(w.context, WindowContext::Browser) {
         f.render_widget(commands_widget, commands_block.inner(chunk));
         f.render_widget(commands_block, chunk);
         return;
     }
+
     let title = w.browser.tabs_block_title();
-    let items = w.browser.tab_items();
     let selected_item = w.browser.selected_tab_idx();
+    let mut tab_spans: Vec<Span> = Vec::new();
+    for (i, item) in w.browser.tab_items().into_iter().enumerate() {
+        let label: std::borrow::Cow<'_, str> = item.into();
+        if i == selected_item {
+            tab_spans.push(Span::styled(
+                label,
+                Style::default()
+                    .fg(BUTTON_FG_COLOUR)
+                    .bg(BUTTON_BG_COLOUR)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        } else {
+            tab_spans.push(Span::styled(label, Style::default().fg(Color::DarkGray)));
+        }
+        tab_spans.push(Span::raw("  "));
+    }
     let tabs_block = Block::default().borders(Borders::ALL).title(title);
-    let tabs_widget = crate::widgets::TabGrid::new_with_max_rows(items, TAB_ROWS)
-        .select(selected_item)
-        .highlight_style(Style::new().fg(BUTTON_FG_COLOUR).bg(BUTTON_BG_COLOUR));
+
+    let tab_width: u16 = tab_spans
+        .iter()
+        .map(|s| s.content.len() as u16)
+        .sum::<u16>()
+        .max(20);
+    let tabs_widget = Paragraph::new(Line::from(tab_spans));
     let [commands_chunk, tabs_chunk] = Layout::horizontal([
         Constraint::Min(0),
-        // Add two to accommodate block
-        Constraint::Max(tabs_widget.required_width().try_into().unwrap_or(u16::MAX) + 2),
+        Constraint::Max(tab_width + 2),
     ])
     .areas(chunk);
     f.render_widget(commands_widget, commands_block.inner(commands_chunk));

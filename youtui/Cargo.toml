@@ -33,7 +33,9 @@ vi-text-editor = { path = "../libs/vi-text-editor" }
 genius-rs = { path = "../libs/genius-rs" }
 lrclib-rs = { path = "../libs/lrclib-rs" }
 metadata-provider = { path = "../libs/metadata-provider" }
+metadata-cache-sqlite = { path = "../libs/metadata-cache-sqlite" }
 rym-genre-data = { path = "../libs/rym-genre-data" }
+genre-db-sqlite = { path = "../libs/genre-db-sqlite" }
 audio-player = { path = "../libs/audio-player" }
 reqwest = { version = "0.11", default-features = false, features = ["json", "gzip", "blocking"] }
 lru = "0.12"
@@ -55,6 +57,7 @@ tokio-stream = { version = "0.1.18", features = ["fs"] }
 async_cell = "0.2.3"
 bytes = "1.11.1"
 anyhow = "1.0.102"
+indicatif = "0.17"
 chrono = { version = "0.4.44", features = ["serde"] }
 souvlaki = { version = "0.8.3", default-features = false, features = [
   "use_zbus",

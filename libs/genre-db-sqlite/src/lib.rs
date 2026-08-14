@@ -2,6 +2,7 @@ mod schema;
 mod seed;
 
 use rusqlite::Connection;
+use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 /// Thread-safe genre database backed by in-memory SQLite.
@@ -53,6 +54,25 @@ impl GenreDb {
     pub fn open_seeded() -> Result<Self, DbError> {
         let conn = Connection::open_in_memory()?;
         seed::seed_all(&conn)?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// Open or create a persistent on-disk genre database.
+    /// Auto-seeds from embedded data if the schema is missing.
+    pub fn open_persistent(path: &Path) -> Result<Self, DbError> {
+        let conn = Connection::open(path)?;
+        let is_seeded: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='genres')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+        if !is_seeded {
+            seed::seed_all(&conn)?;
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -379,6 +399,37 @@ impl GenreDb {
         rows.filter_map(|r| r.ok()).collect()
     }
 
+    /// Direct children (subgenres) for a genre.
+    pub fn get_subgenres(&self, name: &str) -> Vec<String> {
+        let conn = self.conn.lock().unwrap();
+        let lowered = name.to_lowercase();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT g.name FROM genres g
+             JOIN genres p ON g.parent_id = p.id
+             WHERE p.name_lower = ?1
+             ORDER BY g.name"
+        ) else { return vec![]; };
+        let Ok(rows) = stmt.query_map(rusqlite::params![lowered], |row| row.get::<_, String>(0))
+            else { return vec![]; };
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    /// Direct children with their RYM descriptions.
+    pub fn get_subgenres_with_descriptions(&self, name: &str) -> Vec<(String, Option<String>)> {
+        let conn = self.conn.lock().unwrap();
+        let lowered = name.to_lowercase();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT g.name, g.description FROM genres g
+             JOIN genres p ON g.parent_id = p.id
+             WHERE p.name_lower = ?1
+             ORDER BY g.name"
+        ) else { return vec![]; };
+        let Ok(rows) = stmt.query_map(rusqlite::params![lowered], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        }) else { return vec![]; };
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
     /// RYM description for a genre (if available).
     pub fn get_description(&self, name: &str) -> Option<String> {
         let conn = self.conn.lock().unwrap();
@@ -412,6 +463,24 @@ impl GenreDb {
     }
 
     /// All descriptors in a category.
+    /// All descriptors, grouped by descriptor_type (e.g. tone/rhythm/theme).
+    pub fn all_descriptors(&self) -> Vec<DescriptorInfo> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT name, category, descriptor_type FROM descriptors ORDER BY descriptor_type, name")
+            .unwrap();
+        stmt.query_map([], |row| {
+            Ok(DescriptorInfo {
+                name: row.get(0)?,
+                category: row.get(1)?,
+                descriptor_type: row.get(2)?,
+            })
+        })
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect()
+    }
+
     pub fn descriptors_by_category(&self, category: &str) -> Vec<DescriptorInfo> {
         let conn = self.conn.lock().unwrap();
         let lower_cat = category.to_lowercase();

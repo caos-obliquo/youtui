@@ -22,6 +22,7 @@ use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,14 +67,16 @@ impl SqliteCache {
     /// Open (or create) the SQLite database at `path` and ensure tables exist.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, CacheError> {
         let conn = Connection::open(path.as_ref())?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
         let cache = Self { conn };
         cache.create_tables()?;
+        cache.migrate()?;
         Ok(cache)
     }
 
-    /// Open an in-memory SQLite database (for testing).
     pub fn open_in_memory() -> Result<Self, CacheError> {
         let conn = Connection::open_in_memory()?;
+        conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
         let cache = Self { conn };
         cache.create_tables()?;
         Ok(cache)
@@ -89,6 +92,7 @@ impl SqliteCache {
                 genres      TEXT,
                 styles      TEXT,
                 album_tracks TEXT,
+                musicbrainz_release_group_id TEXT,
                 created_at  INT NOT NULL,
                 accessed_at INT NOT NULL
             );
@@ -107,6 +111,23 @@ impl SqliteCache {
                 fetched_at   INT NOT NULL
             );",
         )?;
+        Ok(())
+    }
+
+    fn migrate(&self) -> Result<(), CacheError> {
+        let has_column: bool = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('metadata_cache') WHERE name = 'musicbrainz_release_group_id'",
+                [],
+                |r| r.get(0),
+            )?;
+        if !has_column {
+            self.conn.execute_batch(
+                "ALTER TABLE metadata_cache ADD COLUMN musicbrainz_release_group_id TEXT;
+                 PRAGMA user_version = 2;",
+            )?;
+        }
         Ok(())
     }
 
@@ -176,45 +197,60 @@ impl SqliteCache {
     /// Retrieve cached metadata by cache key. Returns None if not found.
     pub fn get(&self, key: &str) -> Option<ValidatedMetadata> {
         let now = now_secs();
-        let row: SqlResult<(String, Option<String>, Option<String>, Option<String>,
-                           Option<String>, Option<String>, Option<String>, i64, i64)> =
-            self.conn.query_row(
-                "SELECT cache_key, artist, album, year, genres, styles, album_tracks,
-                        created_at, accessed_at
-                 FROM metadata_cache WHERE cache_key = ?1",
-                params![key],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                        row.get(5)?,
-                        row.get(6)?,
-                        row.get(7)?,
-                        row.get(8)?,
-                    ))
-                },
-            );
+        let row: SqlResult<(
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            i64,
+            i64,
+        )> = self.conn.query_row(
+            "SELECT cache_key, artist, album, year, genres, styles, album_tracks,
+                    musicbrainz_release_group_id, created_at, accessed_at
+             FROM metadata_cache WHERE cache_key = ?1",
+            params![key],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
+                    row.get(7)?,
+                    row.get(8)?,
+                    row.get(9)?,
+                ))
+            },
+        );
 
         match row {
-            Ok((_, artist, album, year, genres_json, styles_json, tracks_json, _created, _accessed)) => {
+            Ok((
+                _,
+                artist,
+                album,
+                year,
+                genres_json,
+                styles_json,
+                tracks_json,
+                mbid,
+                _created,
+                _accessed,
+            )) => {
                 // Update accessed_at
                 let _ = self.conn.execute(
                     "UPDATE metadata_cache SET accessed_at = ?1 WHERE cache_key = ?2",
                     params![now, key],
                 );
 
-                let genres: Vec<String> = genres_json
-                    .and_then(|j| serde_json::from_str(&j).ok())
-                    .unwrap_or_default();
-                let styles: Vec<String> = styles_json
-                    .and_then(|j| serde_json::from_str(&j).ok())
-                    .unwrap_or_default();
-                let album_tracks: Vec<AlbumTrack> = tracks_json
-                    .and_then(|j| serde_json::from_str(&j).ok())
-                    .unwrap_or_default();
+                let genres: Vec<String> = Self::deserialize_json_vec(genres_json);
+                let styles: Vec<String> = Self::deserialize_json_vec(styles_json);
+                let album_tracks: Vec<AlbumTrack> = Self::deserialize_json_vec(tracks_json);
 
                 Some(ValidatedMetadata {
                     artist,
@@ -224,11 +260,14 @@ impl SqliteCache {
                     album_tracks,
                     genres,
                     styles,
-                    musicbrainz_release_group_id: None,
+                    musicbrainz_release_group_id: mbid,
                 })
             }
             Err(rusqlite::Error::QueryReturnedNoRows) => None,
-            Err(_) => None,
+            Err(e) => {
+                tracing::error!("SQLite get() failed: {}", e);
+                None
+            }
         }
     }
 
@@ -241,8 +280,9 @@ impl SqliteCache {
 
         self.conn.execute(
             "INSERT OR REPLACE INTO metadata_cache
-             (cache_key, artist, album, year, genres, styles, album_tracks, created_at, accessed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+             (cache_key, artist, album, year, genres, styles, album_tracks,
+              musicbrainz_release_group_id, created_at, accessed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
             params![
                 key,
                 meta.artist,
@@ -251,9 +291,40 @@ impl SqliteCache {
                 genres_json,
                 styles_json,
                 tracks_json,
+                meta.musicbrainz_release_group_id,
                 now,
             ],
         )?;
+        Ok(())
+    }
+
+    /// Insert or replace multiple metadata entries in a single transaction.
+    pub fn put_batch(&self, entries: &[(&str, &ValidatedMetadata)]) -> Result<(), CacheError> {
+        let now = now_secs();
+        self.conn.execute_batch("BEGIN")?;
+        for (key, meta) in entries {
+            let genres_json = serde_json::to_string(&meta.genres)?;
+            let styles_json = serde_json::to_string(&meta.styles)?;
+            let tracks_json = serde_json::to_string(&meta.album_tracks)?;
+            self.conn.execute(
+                "INSERT OR REPLACE INTO metadata_cache
+                 (cache_key, artist, album, year, genres, styles, album_tracks,
+                  musicbrainz_release_group_id, created_at, accessed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+                params![
+                    key,
+                    meta.artist,
+                    meta.album,
+                    meta.year,
+                    genres_json,
+                    styles_json,
+                    tracks_json,
+                    meta.musicbrainz_release_group_id,
+                    now,
+                ],
+            )?;
+        }
+        self.conn.execute_batch("COMMIT")?;
         Ok(())
     }
 
@@ -286,7 +357,8 @@ impl SqliteCache {
     /// Iterate over all (cache_key, metadata) pairs.
     pub fn iter(&self) -> Result<Vec<(String, ValidatedMetadata)>, CacheError> {
         let mut stmt = self.conn.prepare(
-            "SELECT cache_key, artist, album, year, genres, styles, album_tracks
+            "SELECT cache_key, artist, album, year, genres, styles, album_tracks,
+                    musicbrainz_release_group_id
              FROM metadata_cache",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -297,16 +369,11 @@ impl SqliteCache {
             let genres_json: Option<String> = row.get(4)?;
             let styles_json: Option<String> = row.get(5)?;
             let tracks_json: Option<String> = row.get(6)?;
+            let mbid: Option<String> = row.get(7)?;
 
-            let genres: Vec<String> = genres_json
-                .and_then(|j| serde_json::from_str(&j).ok())
-                .unwrap_or_default();
-            let styles: Vec<String> = styles_json
-                .and_then(|j| serde_json::from_str(&j).ok())
-                .unwrap_or_default();
-            let album_tracks: Vec<AlbumTrack> = tracks_json
-                .and_then(|j| serde_json::from_str(&j).ok())
-                .unwrap_or_default();
+            let genres: Vec<String> = Self::deserialize_json_vec(genres_json);
+            let styles: Vec<String> = Self::deserialize_json_vec(styles_json);
+            let album_tracks: Vec<AlbumTrack> = Self::deserialize_json_vec(tracks_json);
 
             Ok((
                 key,
@@ -318,7 +385,7 @@ impl SqliteCache {
                     album_tracks,
                     genres,
                     styles,
-                    musicbrainz_release_group_id: None,
+                    musicbrainz_release_group_id: mbid,
                 },
             ))
         })?;
@@ -328,6 +395,11 @@ impl SqliteCache {
             results.push(row?);
         }
         Ok(results)
+    }
+
+    fn deserialize_json_vec<T: serde::de::DeserializeOwned>(json: Option<String>) -> Vec<T> {
+        json.and_then(|j| serde_json::from_str(&j).ok())
+            .unwrap_or_default()
     }
 
     /// Close the database connection.
@@ -505,6 +577,145 @@ mod tests {
         assert_eq!(got.artist, Some("B".to_string()));
         assert_eq!(got.album, Some("Second".to_string()));
         assert_eq!(got.album_tracks.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // musicbrainz_release_group_id tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn sqlite_roundtrip_mbid() {
+        let cache = SqliteCache::open_in_memory().unwrap();
+        let key = "artist::title";
+        let mut meta = ValidatedMetadata {
+            artist: None,
+            album: None,
+            year: None,
+            track_no: None,
+            album_tracks: Vec::new(),
+            genres: Vec::new(),
+            styles: Vec::new(),
+            musicbrainz_release_group_id: None,
+        };
+        meta.artist = Some("Test Artist".to_string());
+        meta.album = Some("Test Album".to_string());
+        meta.year = Some("2024".to_string());
+        meta.musicbrainz_release_group_id = Some("abc-def-ghi".to_string());
+        cache.put(key, &meta).unwrap();
+        let got = cache.get(key).unwrap();
+        assert_eq!(
+            got.musicbrainz_release_group_id,
+            Some("abc-def-ghi".to_string())
+        );
+        assert_eq!(got.artist, Some("Test Artist".to_string()));
+    }
+
+    #[test]
+    fn sqlite_roundtrip_no_mbid() {
+        let cache = SqliteCache::open_in_memory().unwrap();
+        let key = "artist2::title2";
+        let meta = ValidatedMetadata {
+            artist: None,
+            album: None,
+            year: None,
+            track_no: None,
+            album_tracks: Vec::new(),
+            genres: Vec::new(),
+            styles: Vec::new(),
+            musicbrainz_release_group_id: None,
+        };
+        cache.put(key, &meta).unwrap();
+        let got = cache.get(key).unwrap();
+        assert_eq!(got.musicbrainz_release_group_id, None);
+    }
+
+    #[test]
+    fn sqlite_migration() {
+        // Create a pre-v2 database (no mbid column, user_version = 1)
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE metadata_cache (
+                cache_key   TEXT PRIMARY KEY,
+                artist      TEXT,
+                album       TEXT,
+                year        TEXT,
+                genres      TEXT,
+                styles      TEXT,
+                album_tracks TEXT,
+                created_at  INT NOT NULL,
+                accessed_at INT NOT NULL
+            );
+            PRAGMA user_version = 1;
+            INSERT INTO metadata_cache (cache_key, artist, created_at, accessed_at)
+            VALUES (\"k1\", \"Old Artist\", 100, 100);",
+        )
+        .unwrap();
+
+        // Construct cache without create_tables to simulate pre-v2 DB
+        let cache = SqliteCache { conn };
+        cache.migrate().unwrap();
+
+        // Old data should have None mbid
+        let got = cache.get("k1").unwrap();
+        assert_eq!(got.artist, Some("Old Artist".to_string()));
+        assert_eq!(got.musicbrainz_release_group_id, None);
+
+        // New entry should accept mbid
+        let mut meta = ValidatedMetadata {
+            artist: None,
+            album: None,
+            year: None,
+            track_no: None,
+            album_tracks: Vec::new(),
+            genres: Vec::new(),
+            styles: Vec::new(),
+            musicbrainz_release_group_id: None,
+        };
+        meta.artist = Some("New Artist".to_string());
+        meta.musicbrainz_release_group_id = Some("new-mbid".to_string());
+        cache.put("k2", &meta).unwrap();
+        let got2 = cache.get("k2").unwrap();
+        assert_eq!(
+            got2.musicbrainz_release_group_id,
+            Some("new-mbid".to_string())
+        );
+    }
+
+    #[test]
+    fn sqlite_put_batch() {
+        let cache = SqliteCache::open_in_memory().unwrap();
+        let mut m1 = ValidatedMetadata {
+            artist: None,
+            album: None,
+            year: None,
+            track_no: None,
+            album_tracks: Vec::new(),
+            genres: Vec::new(),
+            styles: Vec::new(),
+            musicbrainz_release_group_id: None,
+        };
+        m1.artist = Some("Artist 1".to_string());
+        m1.musicbrainz_release_group_id = Some("mbid-1".to_string());
+        let mut m2 = ValidatedMetadata {
+            artist: None,
+            album: None,
+            year: None,
+            track_no: None,
+            album_tracks: Vec::new(),
+            genres: Vec::new(),
+            styles: Vec::new(),
+            musicbrainz_release_group_id: None,
+        };
+        m2.artist = Some("Artist 2".to_string());
+        // No mbid for m2
+
+        let entries: Vec<(&str, &ValidatedMetadata)> = vec![("k1", &m1), ("k2", &m2)];
+        cache.put_batch(&entries).unwrap();
+
+        let g1 = cache.get("k1").unwrap();
+        assert_eq!(g1.musicbrainz_release_group_id, Some("mbid-1".to_string()));
+        let g2 = cache.get("k2").unwrap();
+        assert_eq!(g2.musicbrainz_release_group_id, None);
     }
 
     // -----------------------------------------------------------------------

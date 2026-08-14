@@ -17,8 +17,8 @@ use ytmapi_rs::parse::SearchResultPlaylist;
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum PlaylistInputRouting {
-    #[default]
     Search,
+    #[default]
     List,
 }
 
@@ -172,6 +172,11 @@ impl Scrollable for PlaylistSearchPanel {
     }
     fn is_scrollable(&self) -> bool {
         self.route == PlaylistInputRouting::List
+    }
+}
+impl PlaylistSearchPanel {
+    pub fn jump_to(&mut self, idx: usize) {
+        self.selected = idx.min(self.len().saturating_sub(1));
     }
 }
 impl ListView for PlaylistSearchPanel {

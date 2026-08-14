@@ -2,7 +2,8 @@ use crate::app::component::actionhandler::{
     Action, ComponentEffect, KeyRouter, Scrollable, TextHandler,
 };
 use crate::app::structures::{
-    BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, SongListComponent, fuzzy_match,
+    ArtistOrUploadArtistID, BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus,
+    Percentage, SongListComponent, fuzzy_match,
 };
 use crate::app::ui::action::AppAction;
 use crate::app::ui::browser::get_sort_keybinds;
@@ -21,8 +22,10 @@ use anyhow::{Result, bail};
 use itertools::Either;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::iter::{ExactSizeIterator, Iterator};
 use tracing::warn;
+use ytmapi_rs::common::ArtistChannelID;
 use ytmapi_rs::parse::PlaylistItem;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -44,6 +47,7 @@ pub struct PlaylistSongsPanel {
     pub widget_state: ScrollingTableState,
     pub local_filter_text: String,
     pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
+    pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
 }
 impl_youtui_component!(PlaylistSongsPanel);
 
@@ -61,6 +65,7 @@ pub enum BrowserPlaylistSongsAction {
     GoToArtist,
     GoToAlbum,
     GetRelatedTracks,
+    ViewSongInfo,
 }
 
 impl Action for BrowserPlaylistSongsAction {
@@ -80,6 +85,7 @@ impl Action for BrowserPlaylistSongsAction {
             BrowserPlaylistSongsAction::GoToArtist => "Go to Artist",
             BrowserPlaylistSongsAction::GoToAlbum => "Go to Album",
             BrowserPlaylistSongsAction::GetRelatedTracks => "Get Related Tracks",
+            BrowserPlaylistSongsAction::ViewSongInfo => "View Song Info",
         }
         .into()
     }
@@ -96,6 +102,7 @@ impl PlaylistSongsPanel {
             widget_state: Default::default(),
             local_filter_text: String::new(),
             cur_playing_video_id: None,
+            subscribed_artists: HashSet::new(),
         }
     }
     pub fn clear_songs(&mut self) {
@@ -116,6 +123,24 @@ impl PlaylistSongsPanel {
             ListSongDisplayableField::Duration,
             ListSongDisplayableField::LikeStatus,
         ]
+    }
+    // Subs column: bookmark icon when any song artist is subscribed.
+    fn subs_icon_for_song(
+        song: &ListSong,
+        subscribed: &HashSet<ArtistChannelID<'static>>,
+    ) -> Cow<'static, str> {
+        let is_subscribed = song.artists.iter().any(|a| {
+            a.id.as_ref()
+                .is_some_and(|id| match id {
+                    ArtistOrUploadArtistID::Artist(cid) => subscribed.contains(cid),
+                    ArtistOrUploadArtistID::UploadArtist(_) => false,
+                })
+        });
+        if is_subscribed {
+            Cow::Borrowed("\u{f02e}")
+        } else {
+            Cow::Borrowed("")
+        }
     }
     /// Re-apply all sort commands in the stack in the order they were stored.
     pub fn apply_all_sort_commands(&mut self) -> Result<()> {
@@ -358,10 +383,11 @@ impl TableView for PlaylistSongsPanel {
     fn get_layout(&self) -> &[BasicConstraint] {
         &[
             BasicConstraint::Length(6),
-            BasicConstraint::Percentage(Percentage(25)),
-            BasicConstraint::Percentage(Percentage(30)),
-            BasicConstraint::Percentage(Percentage(45)),
+            BasicConstraint::Percentage(Percentage(24)),
+            BasicConstraint::Percentage(Percentage(29)),
+            BasicConstraint::Percentage(Percentage(43)),
             BasicConstraint::Length(8),
+            BasicConstraint::Length(4),
             BasicConstraint::Length(4),
         ]
     }
@@ -370,15 +396,16 @@ impl TableView for PlaylistSongsPanel {
         self.view_indices
             .iter()
             .map(move |&idx| {
-                self.list
+                let song = self.list
                     .get_song_from_idx(idx)
-                    .expect("view_indices entries valid")
-                    .get_fields(subcolumns)
-                    .into_iter()
+                    .expect("view_indices entries valid");
+                let mut fields: Vec<Cow<'_, str>> = song.get_fields(subcolumns).to_vec();
+                fields.push(Self::subs_icon_for_song(song, &self.subscribed_artists));
+                fields.into_iter()
             })
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        ["#", "Artist", "Album", "Song", "Duration", "Liked"].into_iter()
+        ["#", "Artist", "Album", "Song", "Duration", "Liked", "Subs"].into_iter()
     }
     fn get_highlighted_row(&self) -> Option<usize> {
         let vid = self.cur_playing_video_id.as_ref()?;
@@ -443,7 +470,11 @@ impl AdvancedTableView for PlaylistSongsPanel {
     fn get_filtered_items(&self) -> impl Iterator<Item = impl Iterator<Item = Cow<'_, str>> + '_> {
         // We are doing a lot here every draw cycle!
         self.get_filtered_list_iter()
-            .map(|ls| ls.get_fields(Self::subcolumns_of_vec()).into_iter())
+            .map(|ls| {
+                let mut fields: Vec<Cow<'_, str>> = ls.get_fields(Self::subcolumns_of_vec()).to_vec();
+                fields.push(Self::subs_icon_for_song(ls, &self.subscribed_artists));
+                fields.into_iter()
+            })
     }
     fn get_filterable_columns(&self) -> &[usize] {
         &[1, 2, 3]

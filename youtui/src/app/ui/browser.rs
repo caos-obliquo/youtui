@@ -606,6 +606,80 @@ impl Browser {
     pub fn is_library(&self) -> bool {
         matches!(self.variant, BrowserVariant::LibraryPlaylist)
     }
+    pub fn artist_browser(&self) -> &ArtistSearchBrowser {
+        &self.artist_search_browser
+    }
+    pub fn album_browser(&self) -> &AlbumSearchBrowser {
+        &self.album_search_browser
+    }
+    pub fn song_browser(&self) -> &SongSearchBrowser {
+        &self.song_search_browser
+    }
+    pub fn playlist_browser(&self) -> &PlaylistSearchBrowser {
+        &self.playlist_search_browser
+    }
+    pub fn library_browser_ref(&self) -> &LibraryBrowser {
+        &self.library_browser
+    }
+    /// Switch to a browser tab by index (0=Artists, 1=Albums, 2=Songs,
+    /// 3=Playlists, 4=Library). Returns an effect if a fetch is needed.
+    pub fn switch_to_tab(
+        &mut self,
+        tab: usize,
+    ) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
+        use BrowserVariant::*;
+        let target = match tab {
+            0 => Artist,
+            1 => Album,
+            2 => Song,
+            3 => PlaylistSearch,
+            _ => LibraryPlaylist,
+        };
+        if self.variant == target {
+            return None;
+        }
+        self.variant = target;
+        if target == LibraryPlaylist {
+            Some(
+                self.library_browser
+                    .fetch_current_category()
+                    .map_frontend(|this: &mut Self| &mut this.library_browser),
+            )
+        } else {
+            None
+        }
+    }
+    /// Jump the selection of the current variant to `item_idx` (visual index).
+    pub fn jump_to_item(&mut self, tab: usize, item_idx: usize) {
+        use BrowserVariant::*;
+        // Make sure we're on the right tab first.
+        let _ = self.switch_to_tab(tab);
+        match self.variant {
+            Artist => self.artist_search_browser.artist_search_panel.jump_to(item_idx),
+            Album => {
+                if self.album_search_browser.show_tracks {
+                    self.album_search_browser.track_selected = item_idx;
+                } else {
+                    self.album_search_browser.album_selected = item_idx;
+                }
+            }
+            Song => self.song_search_browser.jump_to(item_idx),
+            PlaylistSearch => {
+                self.playlist_search_browser
+                    .playlist_search_panel
+                    .jump_to(item_idx)
+            }
+            LibraryPlaylist => {
+                use crate::app::ui::browser::library::LibraryCategory;
+                match self.library_browser.category {
+                    LibraryCategory::LikedSongs => self.library_browser.cur_selected = item_idx,
+                    LibraryCategory::Playlists => self.library_browser.playlist_selected = item_idx,
+                    LibraryCategory::Artists => self.library_browser.artist_selected = item_idx,
+                    LibraryCategory::Albums => self.library_browser.album_selected = item_idx,
+                }
+            }
+        }
+    }
     /// Check if a BrowserSongsAction should be visible in the context menu
     /// for the current browser variant and sub-state.
     pub fn is_song_action_visible(&self, action: &BrowserSongsAction) -> bool {

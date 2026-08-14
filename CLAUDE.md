@@ -49,20 +49,20 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui                      # 177 pass, 4 ignore
+cargo test --release -p youtui                      # 180 pass, 4 ignore
 cargo test --release -p metadata-provider           # 110 pass (+62 new)
 cargo test --release -p vi-text-editor              # 67 pass
-cargo test --release -p ytmapi-rs --lib             # 82 pass (no auth)
+cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
 cargo test --release -p ytmapi-rs                   # 29/51 auth (needs cookie)
 cargo test --release -p genre-db-sqlite             # 27 pass (new crate)
-cargo test --release -p metadata-cache-sqlite       # 16 pass (new crate)
+cargo test --release -p metadata-cache-sqlite       # 20 pass
 cargo test --release -p genius-rs                   # 18 pass
 cargo test --release -p async-callback-manager      # 14 pass
 cargo test --release -p json-crawler                # 2 pass
 cargo test --release -p lrclib-rs                   # 4 pass
 cargo test --release -p rym-genre-data              # 10 pass
 ```
-Total: **~531/531 pass, 0 fail, 4 ignored, 0 warnings** (177+4 + 110 + 67 + 82 + 27 + 16 + 18 + 14 + 2 + 4 + 10 = 531)
+Total: **~539/539 pass, 0 fail, 4 ignored, 0 warnings** (180+4 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 539)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -147,6 +147,25 @@ ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli removed 
 - **README docs cross-ref**: Pointed to docs/README.md instead of duplicating setup commands
 - **`.gitignore`**: Added `session-*.md` to prevent log file commits
 
+### MetadataCache CLI Subcommand
+- `youtui metadata-cache --show/--clear/--stats`
+- `--show` (default): iterates all entries with key/year/artist/album/genres/styles
+- `--clear`: truncates metadata_cache table
+- `--stats`: entry count + DB file size
+- Reads `~/.local/share/youtui/metadata_cache.db`
+
+### SQLite Cache Architecture
+- Two-layer cache: LRU (200 entries) + SQLite disk fallback
+- `musicbrainz_release_group_id` column in SQLite (DDL + PRAGMA user_version migration v1→v2)
+- Batch `put_batch()` with explicit transaction for background flush perf
+- CAA cache: check SQLite before HTTP, save on success/404
+- Background flush every 60s + on quit
+
+### Instant Year Enrichment
+- `GetPlaylistTracks` and `GetAllLibrarySongs` check SQLite cache inline
+- Years appear instantly on Library open, no async enrichment spinner
+- Uncache tracks still dispatch `EnrichFromMetadataCache` asynchronously
+
 ### ScrobbleCache CLI Subcommand
 - New CLI subcommand: `youtui scrobble-cache [--show] [--clear] [--retry]`
 - Reads/manages `~/.config/youtui/scrobble_cache.json`
@@ -162,7 +181,10 @@ ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli removed 
 5. ✅ **MB Cover Art Archive** - fallback pipeline before Last.fm
 6. ✅ **Queue year enrichment** - EnrichSongYear on queue-add, rate-limited
 7. ✅ **CLI tools** - test-musicbrainz, test-caa, test-listenbrainz, test-validate-metadata
-8. **Low**: OAuth refresh, native streaming, liked songs tables, artist pagination
+8. ✅ **SQLite metadata cache** - MBID column, streaming flush, CLI tool, CAA cache wire
+9. ✅ **Instant year enrichment** - cache check inline in GetPlaylistTracks + GetAllLibrarySongs
+10. ✅ **Cleanup Q3** - liked songs column (SearchResultSong like_status), CHANGELOG.md, unwrap/expect audit (2 fixed), ytmapi-rs format-drift ignore (5 tests)
+11. **Low**: OAuth refresh, native streaming, artist pagination
 
 ## Platform Compatibility (Current Status)
 All 6 platform-specific items fixed. Youtui compiles on Linux (Wayland/X11) and macOS. Windows builds fail at compile-time with a clear error.
@@ -189,17 +211,17 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## 12 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 164 |
-| `ytmapi-rs` | YT Music API client | 82 lib + 29/51 auth |
+| `youtui` | Main binary | 180 |
+| `ytmapi-rs` | YT Music API client | 83 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 67 |
-| `metadata-provider` | Metadata trait + impls | 48 |
+| `metadata-provider` | Metadata trait + 6 provider impls | 110 |
 | `genius-rs` | Genius lyrics/annotations | 18 |
 | `async-callback-manager` | Async task dispatch | 14 |
 | `json-crawler` | JSON path parser | 2 |
 | `lrclib-rs` | LRCLIB lyrics provider | 4 |
 | `rym-genre-data` | RYM genre/descriptor hierarchy | 10 |
 | `genre-db-sqlite` | SQLite genre hierarchy + seed | 27 |
-| `metadata-cache-sqlite` | SQLite metadata cache | 16 |
+| `metadata-cache-sqlite` | SQLite metadata cache + MBID | 20 |
 | `audio-player` | Async rodio-based audio player | 0 |
 
 ## 5 Browser Tabs Fully Wired
@@ -214,11 +236,11 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## Key Files
 | File | Lines | Purpose |
 |---|---|---|
-| `youtui/src/app/server/messages.rs` | ~1698 | All backend tasks |
+| `youtui/src/app/server/messages.rs` | ~1895 | All backend tasks |
 | `youtui/src/app/ui/playlist.rs` | ~3104 | Queue, playback, album splitting, visual mode |
 | `youtui/src/app/ui/browser.rs` | ~1012 | Browser routing, 5-tab dispatch |
 | `youtui/src/app/ui/browser/draw.rs` | ~517 | All browser draw functions |
-| `youtui/src/app/ui/browser/library.rs` | ~2123 | Library (4th tab) with inline tracks view |
+| `youtui/src/app/ui/browser/library.rs` | ~2214 | Library (4th tab) with inline tracks view, instant years |
 | `youtui/src/app/ui/browser/albumsearch.rs` | ~731 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
 | `youtui/src/config/keymap.rs` | ~2142 | All keybindings by context |
 | `youtui/src/app/ui.rs` | ~1779 | Main window, event routing |

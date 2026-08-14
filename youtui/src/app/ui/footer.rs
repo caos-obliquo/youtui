@@ -1,17 +1,14 @@
 use crate::app::structures::{AlbumArtState, PlayState};
 use tracing::warn;
-use crate::drawutils::{
-    BUTTON_BG_COLOUR, BUTTON_FG_COLOUR, PROGRESS_BG_COLOUR, PROGRESS_FG_COLOUR, middle_of_rect,
-};
+use crate::drawutils::middle_of_rect;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui_image::Image;
 use ratatui_image::picker::Picker;
-use std::time::Duration;
 
 pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
     time_string
@@ -24,24 +21,13 @@ pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
 
 pub fn like_icon(status: ytmapi_rs::common::LikeStatus) -> &'static str {
     match status {
-        ytmapi_rs::common::LikeStatus::Liked => "  󰋑",
-        _ => "  ♥",
+        ytmapi_rs::common::LikeStatus::Liked => " \u{EC14}",
+        ytmapi_rs::common::LikeStatus::Disliked => " \u{EC13}",
+        _ => "",
     }
 }
 
 pub const ALBUM_ART_WIDTH: u16 = 7;
-
-pub fn secs_to_time_string(secs: usize) -> String {
-    // Naive implementation
-    let hours = secs / 3600;
-    let rem_mins = (secs - (hours * 3600)) / 60;
-    let rem_secs = secs - (hours * 3600 + rem_mins * 60);
-    if hours > 0 {
-        format!("{hours}:{rem_mins:02}:{rem_secs:02}")
-    } else {
-        format!("{rem_mins:02}:{rem_secs:02}")
-    }
-}
 
 pub fn draw_footer(
     f: &mut Frame,
@@ -49,26 +35,6 @@ pub fn draw_footer(
     chunk: Rect,
     terminal_image_capabilities: &Picker,
 ) {
-    let mut duration = 0;
-    let mut progress = Duration::default();
-    let play_ratio = match &w.playlist.play_status {
-        PlayState::Playing(id) | PlayState::Paused(id) => {
-            duration = w
-                .playlist
-                .get_song_from_id(*id)
-                .map(|s| &s.duration_string)
-                .map(parse_simple_time_to_secs)
-                .unwrap_or(0);
-            progress = w.playlist.cur_played_dur.unwrap_or_default();
-            if duration == 0 { 0.0 }
-            else { (progress.as_secs_f64() / duration as f64).clamp(0.0, 1.0) }
-        }
-        _ => 0.0,
-    };
-    let progress_str = secs_to_time_string(progress.as_secs() as usize);
-    let duration_str = secs_to_time_string(duration);
-    let bar_str = format!("{progress_str}/{duration_str}");
-
     let cur_active_song = match w.playlist.play_status {
         PlayState::Error(id)
         | PlayState::Playing(id)
@@ -104,37 +70,17 @@ pub fn draw_footer(
     } else { "" };
     let album_art = cur_active_song.map(|s| &s.album_art);
     let heart = cur_active_song.map(|s| like_icon(s.like_status.clone())).unwrap_or("");
-    let bar = Gauge::default()
-        .label(bar_str)
-        .gauge_style(
-            Style::default()
-                .fg(PROGRESS_FG_COLOUR)
-                .bg(PROGRESS_BG_COLOUR),
-        )
-        .ratio(play_ratio);
-    let left_arrow = Paragraph::new(Line::from(vec![
-        Span::styled(
-            "< [",
-            Style::new()
-                .fg(BUTTON_FG_COLOUR)
-                .bg(BUTTON_BG_COLOUR)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(" "),
-    ]));
-    let right_arrow = Paragraph::new(Line::from(vec![
-        Span::raw(" "),
-        Span::styled(
-            "] >",
-            Style::new()
-                .fg(BUTTON_FG_COLOUR)
-                .bg(BUTTON_BG_COLOUR)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]));
+    // Nerd Font MDI volume icons: mute / low / medium / high (footer MDI exception).
+    let volume_icon = match w.playlist.volume.0 {
+        0 => "\u{f075f}",
+        1..=33 => "\u{f057f}",
+        34..=66 => "\u{f0580}",
+        _ => "\u{f057e}",
+    };
+    let volume_pct = format!("{} {}%", volume_icon, w.playlist.volume.0);
     let block = Block::default()
         .title("Status")
-        .title(Line::from("Youtui").right_aligned())
+        .title(Line::from(volume_pct).right_aligned())
         .borders(Borders::ALL);
     let block_inner = block.inner(chunk);
     let [album_art_chunk, _, right_area] = Layout::horizontal([
@@ -248,38 +194,21 @@ pub fn draw_footer(
             }
         }
     };
-    let [line1, album_icons_line, bar_chunk] = Layout::vertical([
-        Constraint::Length(1),
-        Constraint::Length(1),
-        Constraint::Length(1),
-    ]).areas(right_area);
-    let [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk] = Layout::horizontal([
-        Constraint::Max(4),
-        Constraint::Min(1),
-        Constraint::Max(4),
-    ]).areas(bar_chunk);
-    f.render_widget(bar, mid_bar_chunk);
-    f.render_widget(left_arrow, left_arrow_chunk);
-    f.render_widget(right_arrow, right_arrow_chunk);
-    f.render_widget(Paragraph::new(Line::from(song_artist_line)), line1);
-    let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
-    let mut album_spans = Vec::new();
+    let [footer_line] = Layout::vertical([Constraint::Length(1)]).areas(right_area);
+    let status_prefix = format!(" {} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
+    let mut song_spans: Vec<Span> = Vec::new();
+    song_spans.push(Span::raw(song_artist_line));
     if !album_line.is_empty() {
-        let avail = album_icons_line.width.saturating_sub(3) as usize;
-        if album_line.len() > avail {
-            let mut s = format!("   {}", &album_line[..avail.saturating_sub(6).max(1)]);
-            s.push_str("...");
-            album_spans.push(Span::styled(s, Style::default().fg(Color::DarkGray)));
-        } else {
-            album_spans.push(Span::styled(
-                format!("   {}", album_line),
-                Style::default().fg(Color::DarkGray),
-            ));
-        }
+        song_spans.push(Span::styled(
+            format!(" · {album_line}"),
+            Style::default().fg(Color::DarkGray),
+        ));
     }
-    album_spans.push(Span::raw(status_prefix));
-    album_spans.push(Span::styled(heart, Style::default().fg(Color::Red)));
-    f.render_widget(Paragraph::new(Line::from(album_spans)), album_icons_line);
+    song_spans.push(Span::raw(status_prefix));
+    if !heart.is_empty() {
+        song_spans.push(Span::raw(heart));
+    }
+    f.render_widget(Paragraph::new(Line::from(song_spans)), footer_line);
     f.render_widget(block, chunk);
 }
 
@@ -289,17 +218,17 @@ mod tests {
 
     #[test]
     fn like_icon_liked() {
-        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Liked), "  󰋑");
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Liked), " \u{EC14}");
     }
 
     #[test]
     fn like_icon_indifferent() {
-        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Indifferent), "  ♥");
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Indifferent), "");
     }
 
     #[test]
     fn like_icon_disliked() {
-        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Disliked), "  ♥");
+        assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Disliked), " \u{EC13}");
     }
 
     /// Regression: AlbumArtState::None must NOT clear sixel_data (PR #29, #36, #37).

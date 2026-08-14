@@ -246,7 +246,7 @@ pub struct GetAllLibrarySongs {
 }
 
 impl BackendTask<ArcServer> for GetAllLibrarySongs {
-    type Output = Result<Vec<TableListSong>>;
+    type Output = Result<EnrichedLibrarySongs>;
     type MetadataType = TaskMetadata;
     fn into_future(
         self,
@@ -261,11 +261,46 @@ impl BackendTask<ArcServer> for GetAllLibrarySongs {
             let api_guard = backend.api.get_api().await?;
             let query = GetLibrarySongsQuery::new(sort_order);
 
+            let t0 = std::time::Instant::now();
             match stream_api_with_retry_n(&api_guard, &query, 10).await {
                 Ok(pages) => {
                     let songs: Vec<_> = pages.into_iter().flatten().collect();
-                    tracing::info!(count = %songs.len(), "GetAllLibrarySongs done");
-                    Ok(songs)
+                    tracing::info!(count = %songs.len(), elapsed_ms = %t0.elapsed().as_millis(), "GetAllLibrarySongs done");
+
+                    // Check metadata cache for each song to provide instant enrichment
+                    let registry = backend.metadata_registry.clone();
+                    let enriched: Vec<(usize, Option<String>, Vec<String>, Vec<String>)> = songs
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, s)| {
+                            let artist: String = s.artists.iter()
+                                .map(|a| a.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            if artist.is_empty() { return None; }
+                            let key = format!("{}::{}",
+                                metadata_provider::util::norm_for_lfm(&artist.to_lowercase()),
+                                metadata_provider::util::norm_for_lfm(&s.title.to_lowercase()),
+                            );
+                            registry.lookup_cache(&key).map(|cached| {
+                                (i, cached.year, cached.genres, cached.styles)
+                            })
+                        })
+                        .collect();
+                    if enriched.is_empty() {
+                        tracing::warn!(
+                            total = %songs.len(),
+                            "GetAllLibrarySongs: ZERO cache hits — all songs will enrich async"
+                        );
+                    } else {
+                        tracing::info!(
+                            enriched_count = %enriched.len(),
+                            total = %songs.len(),
+                            "GetAllLibrarySongs cache check"
+                        );
+                    }
+
+                    Ok(EnrichedLibrarySongs { songs, enriched })
                 }
                 Err(e) => {
                     tracing::warn!("GetLibrarySongsQuery failed: {}. Library songs require browser auth (cookies) or OAuth.", e);
@@ -284,7 +319,7 @@ pub struct GetAllLibraryArtists {
 }
 
 impl BackendTask<ArcServer> for GetAllLibraryArtists {
-    type Output = Result<Vec<LibraryArtist>>;
+    type Output = Result<(Vec<LibraryArtist>, Vec<ArtistChannelID<'static>>)>;
     type MetadataType = TaskMetadata;
     fn into_future(
         self,
@@ -293,25 +328,40 @@ impl BackendTask<ArcServer> for GetAllLibraryArtists {
         let backend = backend.clone();
         let sort_order = self.sort_order;
         async move {
-            use ytmapi_rs::query::GetLibraryArtistsQuery;
+            use ytmapi_rs::query::{GetLibraryArtistsQuery, GetLibraryArtistSubscriptionsQuery};
             use crate::app::server::api::stream_api_with_retry_n;
 
             let api_guard = backend.api.get_api().await?;
-            let query = GetLibraryArtistsQuery::new(sort_order);
+            let artists_query = GetLibraryArtistsQuery::new(sort_order);
 
-            match stream_api_with_retry_n(&api_guard, &query, 10).await {
+            let artists = match stream_api_with_retry_n(&api_guard, &artists_query, 10).await {
                 Ok(pages) => {
                     let artists: Vec<_> = pages.into_iter().flatten().collect();
                     tracing::info!(count = %artists.len(), "GetAllLibraryArtists done");
-                    Ok(artists)
+                    artists
                 }
                 Err(e) => {
                     tracing::warn!("GetLibraryArtistsQuery failed: {}. Library artists require browser auth (cookies) or OAuth.", e);
-                    Err(anyhow::anyhow!(
+                    return Err(anyhow::anyhow!(
                         "Library artists unavailable. Configure cookies or OAuth in config. Error: {}", e
-                    ))
+                    ));
                 }
-            }
+            };
+
+            // Fetch subscriptions to populate the Subs column
+            let sub_query = GetLibraryArtistSubscriptionsQuery::new(Default::default());
+            let subscribed_ids: Vec<ArtistChannelID<'static>> = match stream_api_with_retry_n(&api_guard, &sub_query, 10).await {
+                Ok(subs) => {
+                    tracing::info!(count = %subs.len(), "GetLibraryArtistSubscriptions done");
+                    subs.into_iter().flatten().map(|s| s.channel_id).collect()
+                }
+                Err(e) => {
+                    tracing::warn!("GetLibraryArtistSubscriptionsQuery failed: {}", e);
+                    Vec::new()
+                }
+            };
+
+            Ok((artists, subscribed_ids))
         }
     }
 }
@@ -409,8 +459,14 @@ impl BackendTask<ArcServer> for EnrichFromMetadataCache {
                     let _permit = sem.acquire().await.unwrap();
                     let album_opt = if album.is_empty() { None } else { Some(album.as_str()) };
                     match reg.resolve_fast(&artist, &title, album_opt).await {
-                        Some(meta) => Some((idx, meta.year, meta.genres, meta.styles, target)),
-                        None => None,
+                        Some(meta) => {
+                            tracing::info!("EnrichFromMetadataCache: {} - {} resolved (year: {:?}, genres: {}, styles: {})", artist, title, meta.year.as_deref().unwrap_or("none"), meta.genres.len(), meta.styles.len());
+                            Some((idx, meta.year, meta.genres, meta.styles, target))
+                        }
+                        None => {
+                            tracing::debug!("EnrichFromMetadataCache: {} - {} no data", artist, title);
+                            None
+                        }
                     }
                 });
                 handles.push(handle);
@@ -470,8 +526,14 @@ impl BackendTask<ArcServer> for EnrichQueueYears {
                     let _permit = sem.acquire().await.unwrap();
                     let album_opt = if album.is_empty() { None } else { Some(album.as_str()) };
                     match reg.resolve_fast(&artist, &title, album_opt).await {
-                        Some(meta) => Some((idx, meta.year, meta.genres, meta.styles)),
-                        None => None,
+                        Some(meta) => {
+                            tracing::info!("EnrichQueueYears: {} - {} resolved (year: {:?}, genres: {}, styles: {})", artist, title, meta.year.as_deref().unwrap_or("none"), meta.genres.len(), meta.styles.len());
+                            Some((idx, meta.year, meta.genres, meta.styles))
+                        }
+                        None => {
+                            tracing::debug!("EnrichQueueYears: {} - {} no data", artist, title);
+                            None
+                        }
                     }
                 });
                 handles.push(handle);
@@ -609,10 +671,24 @@ impl BackendTask<ArcServer> for EnrichSongYear {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct EnrichedPlaylistTracks {
+    pub songs: Vec<PlaylistSong>,
+    /// Cached enrichment: (index in songs, year, genres, styles)
+    pub enriched: Vec<(usize, Option<String>, Vec<String>, Vec<String>)>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct EnrichedLibrarySongs {
+    pub songs: Vec<TableListSong>,
+    /// Cached enrichment: (index in songs, year, genres, styles)
+    pub enriched: Vec<(usize, Option<String>, Vec<String>, Vec<String>)>,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct GetPlaylistTracks(pub PlaylistID<'static>);
 
 impl BackendTask<ArcServer> for GetPlaylistTracks {
-    type Output = Result<Vec<PlaylistSong>>;
+    type Output = Result<EnrichedPlaylistTracks>;
     type MetadataType = TaskMetadata;
     fn into_future(
         self,
@@ -627,17 +703,41 @@ impl BackendTask<ArcServer> for GetPlaylistTracks {
             let api_guard = backend.api.get_api().await?;
             let query = GetPlaylistTracksQuery::new(self.0);
 
-            match stream_api_with_retry_n(&api_guard, &query, 50).await {
+            let t0 = std::time::Instant::now();
+            match stream_api_with_retry_n(&api_guard, &query, 10).await {
                 Ok(pages) => {
                     let items: Vec<PlaylistItem> = pages.into_iter().flatten().collect();
-                    tracing::info!(count = %items.len(), "GetPlaylistTracks streaming done");
+                    tracing::info!(count = %items.len(), elapsed_ms = %t0.elapsed().as_millis(), "GetPlaylistTracks streaming done");
                     let songs: Vec<PlaylistSong> = items.into_iter().filter_map(|item| {
                         match item {
                             PlaylistItem::Song(s) => Some(s),
                             _ => None,
                         }
                     }).collect();
-                    Ok(songs)
+
+                    // Check metadata cache for each song to provide instant enrichment
+                    let registry = backend.metadata_registry.clone();
+                    let enriched: Vec<(usize, Option<String>, Vec<String>, Vec<String>)> = songs
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, s)| {
+                            let artist: String = s.artists.iter()
+                                .map(|a| a.name.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            if artist.is_empty() { return None; }
+                            let key = format!("{}::{}",
+                                metadata_provider::util::norm_for_lfm(&artist.to_lowercase()),
+                                metadata_provider::util::norm_for_lfm(&s.title.to_lowercase()),
+                            );
+                            registry.lookup_cache(&key).map(|cached| {
+                                (i, cached.year, cached.genres, cached.styles)
+                            })
+                        })
+                        .collect();
+                    tracing::info!(enriched_count = %enriched.len(), total = %songs.len(), "GetPlaylistTracks cache check");
+
+                    Ok(EnrichedPlaylistTracks { songs, enriched })
                 }
                 Err(e) => {
                     tracing::warn!("GetPlaylistTracks streaming failed: {}", e);
@@ -1177,6 +1277,7 @@ impl BackendTask<ArcServer> for SearchSongs {
                         explicit: ytmapi_rs::common::Explicit::NotExplicit,
                         video_id: vid,
                         thumbnails: vec![],
+                        like_status: ytmapi_rs::common::LikeStatus::Indifferent,
                     })
                 })
                 .collect();
@@ -1234,6 +1335,27 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
         let backend = backend.clone();
         let client = backend.http_client.clone();
         async move {
+            // Check SQLite CAA cache first
+            let cached: Option<(Vec<u8>, String)> =
+                mbid.as_ref().filter(|m| !m.is_empty()).and_then(|m| {
+                    let sqlite = backend.metadata_registry.get_sqlite_cache()?;
+                    let cache = sqlite.lock().ok()?;
+                    cache.get_caa_art(m).ok()?.map(|img| (img, m.clone()))
+                });
+            if let Some((image_data, mbid_str)) = cached {
+                tracing::info!("FetchAlbumArt: CAA cache hit for {}", mbid_str);
+                let thumb_id = SongThumbnailID::Album(ytmapi_rs::common::AlbumID::from_raw(
+                    format!("caa:{}", mbid_str),
+                ));
+                match backend
+                    .song_thumbnail_downloader
+                    .download_song_thumbnail_from_bytes(thumb_id, image_data)
+                    .await
+                {
+                    Ok(thumbnail) => return Ok((thumbnail, None)),
+                    Err(e) => tracing::debug!("FetchAlbumArt: CAA cache thumbnail failed: {}", e),
+                }
+            }
             // MusicBrainz Cover Art Archive: try release-group front image first
             // (no auth required). Falls through to Last.fm on any failure.
             if let Some(ref mbid) = mbid {
@@ -1253,6 +1375,12 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
                                 {
                                     Ok(thumbnail) => {
                                         tracing::info!("FetchAlbumArt: CAA hit for {}", mbid);
+                                            // Cache in SQLite
+                                            if let Some(sqlite) = backend.metadata_registry.get_sqlite_cache() {
+                                                if let Ok(cache) = sqlite.lock() {
+                                                    let _ = cache.set_caa_art(mbid, Some(&bytes));
+                                                }
+                                            }
                                         return Ok((thumbnail, None));
                                     }
                                     Err(e) => tracing::debug!("FetchAlbumArt: CAA save failed: {}", e),
@@ -1260,9 +1388,21 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
                             }
                         } else {
                             tracing::debug!("FetchAlbumArt: CAA returned status {}", resp.status());
+                                // Mark as not found in cache
+                                if let Some(sqlite) = backend.metadata_registry.get_sqlite_cache() {
+                                    if let Ok(cache) = sqlite.lock() {
+                                        let _ = cache.set_caa_art(mbid, None);
+                                    }
+                                }
                         }
                     } else {
                         tracing::debug!("FetchAlbumArt: CAA request failed, falling back to Last.fm");
+                                // Mark as not found in cache
+                                if let Some(sqlite) = backend.metadata_registry.get_sqlite_cache() {
+                                    if let Ok(cache) = sqlite.lock() {
+                                        let _ = cache.set_caa_art(mbid, None);
+                                    }
+                                }
                     }
                 }
             }
