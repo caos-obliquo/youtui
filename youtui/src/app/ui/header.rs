@@ -2,15 +2,13 @@ use crate::app::ui::WindowContext;
 use crate::app::view::HasTabs;
 use crate::drawutils::{BUTTON_BG_COLOUR, BUTTON_FG_COLOUR};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Style};
+use ratatui::layout::Rect;
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph};
 
-const TAB_ROWS: u16 = 1;
-
-/// Minimal header: only F1/F2/F3, o menu and ? help are shown inline.
-/// Everything else is discoverable via the ? help menu.
+/// Minimal header: one line with F1/F2/F3, o menu, ? help, and (in browser)
+/// the tab list inline. Everything else lives in the ? help menu.
 pub fn header_required_height(_w: &super::YoutuiWindow) -> u16 {
     3
 }
@@ -43,40 +41,48 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
 
     // Minimal command surface. Full list lives in ? help.
     spans.push(button_span("F1"));
-    spans.push(Span::raw(" (Search) "));
+    spans.push(Span::raw(" "));
     spans.push(button_span("F2"));
-    spans.push(Span::raw(" (Browser) "));
+    spans.push(Span::raw(" "));
     spans.push(button_span("F3"));
-    spans.push(Span::raw(" (Playlist) "));
+    spans.push(Span::raw(" "));
     if matches!(w.context, WindowContext::Playlist | WindowContext::Browser) {
         spans.push(button_span("o"));
-        spans.push(Span::raw(" (Menu) "));
+        spans.push(Span::raw(" "));
     }
     spans.push(button_span("?"));
-    spans.push(Span::raw(" (Help) "));
+    spans.push(Span::raw(" "));
 
-    let help_string = Line::from_iter(spans);
-    let commands_block = Block::default().borders(Borders::ALL).title("Commands");
-    let commands_widget = Paragraph::new(help_string).wrap(Wrap { trim: true });
-    if !matches!(w.context, WindowContext::Browser) {
-        f.render_widget(commands_widget, commands_block.inner(chunk));
-        f.render_widget(commands_block, chunk);
-        return;
+    // Browser tabs inline, same line.
+    if matches!(w.context, WindowContext::Browser) {
+        spans.push(Span::styled("|", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::raw(" "));
+        let selected = w.browser.selected_tab_idx();
+        for (i, item) in w.browser.tab_items().into_iter().enumerate() {
+            let label: std::borrow::Cow<'_, str> = item.into();
+            if i == selected {
+                spans.push(Span::styled(
+                    label,
+                    Style::default()
+                        .fg(BUTTON_FG_COLOUR)
+                        .bg(BUTTON_BG_COLOUR)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            } else {
+                spans.push(Span::styled(
+                    label,
+                    Style::default().fg(Color::DarkGray),
+                ));
+            }
+            spans.push(Span::raw("  "));
+        }
     }
-    let title = w.browser.tabs_block_title();
-    let items = w.browser.tab_items();
-    let selected_item = w.browser.selected_tab_idx();
-    let tabs_block = Block::default().borders(Borders::ALL).title(title);
-    let tabs_widget = crate::widgets::TabGrid::new_with_max_rows(items, TAB_ROWS)
-        .select(selected_item)
-        .highlight_style(Style::new().fg(BUTTON_FG_COLOUR).bg(BUTTON_BG_COLOUR));
-    let [commands_chunk, tabs_chunk] = Layout::horizontal([
-        Constraint::Min(0),
-        Constraint::Max(tabs_widget.required_width().try_into().unwrap_or(u16::MAX) + 2),
-    ])
-    .areas(chunk);
-    f.render_widget(commands_widget, commands_block.inner(commands_chunk));
-    f.render_widget(commands_block, commands_chunk);
-    f.render_widget(tabs_widget, tabs_block.inner(tabs_chunk));
-    f.render_widget(tabs_block, tabs_chunk);
+
+    let block = Block::default().borders(Borders::ALL);
+    let inner = block.inner(chunk);
+    f.render_widget(block, chunk);
+    f.render_widget(
+        Paragraph::new(Line::from(spans)),
+        inner,
+    );
 }
