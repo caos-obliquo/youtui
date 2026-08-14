@@ -194,19 +194,6 @@ pub fn build_corpus(
             }
         }
         WindowContext::Browser => {
-            let tabs: Vec<String> = window
-                .browser
-                .tab_items()
-                .into_iter()
-                .map(|t| t.into().into_owned())
-                .collect();
-            // Always offer tab switching.
-            for (ti, tab) in tabs.iter().enumerate() {
-                entries.push(FuzzyEntry {
-                    label: format!("[Tab] {tab}"),
-                    kind: FuzzyKind::OpenTab(ti),
-                });
-            }
             let cur_tab = window.browser.selected_tab_idx();
             match cur_tab {
                 // Artists
