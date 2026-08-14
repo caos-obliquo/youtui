@@ -42,6 +42,23 @@ pub fn secs_to_time_string(secs: usize) -> String {
     }
 }
 
+/// Scroll long text horizontally (marquee) so it stays visible in a
+/// fixed-width line. Returns a `max_len`-char window that slides with `tick`.
+fn marquee(text: &str, max_len: usize, tick: u64) -> String {
+    if text.chars().count() <= max_len || max_len == 0 {
+        return text.to_string();
+    }
+    // Slide one char per 4 ticks; loop with a gap so the tail is readable.
+    let period = text.chars().count() + 3;
+    let offset = (tick / 4) as usize % period;
+    let padded: String = text.chars().chain(std::iter::repeat(' ')).take(period).collect();
+    padded
+        .chars()
+        .skip(offset)
+        .take(max_len)
+        .collect::<String>()
+}
+
 pub fn draw_footer(
     f: &mut Frame,
     w: &mut super::YoutuiWindow,
@@ -113,7 +130,7 @@ pub fn draw_footer(
     let volume_pct = format!("{} {}%", volume_icon, w.playlist.volume.0);
     let block = Block::default()
         .title("Status")
-        .title(Line::from(volume_pct).right_aligned())
+        .title(Line::from("youtui").right_aligned())
         .borders(Borders::ALL);
     let block_inner = block.inner(chunk);
     let [album_art_chunk, _, right_area] = Layout::horizontal([
@@ -227,7 +244,7 @@ pub fn draw_footer(
             }
         }
     };
-    let [line1, album_icons_line, bar_chunk] = Layout::vertical([
+    let [line1, album_line_chunk, bar_chunk] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -260,35 +277,45 @@ pub fn draw_footer(
                 .add_modifier(Modifier::BOLD),
         ),
     ]));
+    // Line 3: progress bar with scrobble/status icons + volume on the right.
+    let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
+    let status_str = format!("{status_prefix}{} {volume_pct}", if heart.is_empty() { "" } else { &heart });
+    let status_width = (status_str.len() as u16 + 2).max(20);
+    let [bar_area, status_area] = Layout::horizontal([
+        Constraint::Min(1),
+        Constraint::Max(status_width),
+    ]).areas(bar_chunk);
     let [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk] = Layout::horizontal([
         Constraint::Max(4),
         Constraint::Min(1),
         Constraint::Max(4),
-    ]).areas(bar_chunk);
+    ]).areas(bar_area);
     f.render_widget(bar, mid_bar_chunk);
     f.render_widget(left_arrow, left_arrow_chunk);
     f.render_widget(right_arrow, right_arrow_chunk);
-    f.render_widget(Paragraph::new(Line::from(song_artist_line)), line1);
-    let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
-    let mut album_spans = Vec::new();
-    if !album_line.is_empty() {
-        let avail = album_icons_line.width.saturating_sub(3) as usize;
-        if album_line.len() > avail {
-            let mut s = format!("   {}", &album_line[..avail.saturating_sub(6).max(1)]);
-            s.push_str("...");
-            album_spans.push(Span::styled(s, Style::default().fg(Color::DarkGray)));
-        } else {
-            album_spans.push(Span::styled(
-                format!("   {album_line}"),
-                Style::default().fg(Color::DarkGray),
-            ));
-        }
-    }
-    album_spans.push(Span::raw(status_prefix));
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            status_str,
+            Style::default().fg(Color::DarkGray),
+        ))),
+        status_area,
+    );
+    // Line 1: artist - song (+ like icon at end).
+    let mut song_spans = vec![Span::raw(marquee(&song_artist_line, line1.width as usize, w.tick))];
     if !heart.is_empty() {
-        album_spans.push(Span::raw(heart));
+        song_spans.push(Span::raw(heart));
     }
-    f.render_widget(Paragraph::new(Line::from(album_spans)), album_icons_line);
+    f.render_widget(Paragraph::new(Line::from(song_spans)), line1);
+    // Line 2: album/ep/single only.
+    if !album_line.is_empty() {
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                marquee(&album_line, album_line_chunk.width as usize, w.tick),
+                Style::default().fg(Color::DarkGray),
+            ))),
+            album_line_chunk,
+        );
+    }
     f.render_widget(block, chunk);
 }
 
