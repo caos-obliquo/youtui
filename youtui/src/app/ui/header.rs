@@ -43,17 +43,17 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     }
 
     spans.push(button_span("F1"));
-    spans.push(Span::raw(" "));
+    spans.push(Span::raw(" (Toggle Search) "));
     spans.push(button_span("F2"));
-    spans.push(Span::raw(" "));
+    spans.push(Span::raw(" (Toggle Browser) "));
     spans.push(button_span("F3"));
-    spans.push(Span::raw(" "));
+    spans.push(Span::raw(" (Toggle Playlist) "));
     if matches!(w.context, WindowContext::Playlist | WindowContext::Browser) {
         spans.push(button_span("o"));
-        spans.push(Span::raw(" "));
+        spans.push(Span::raw(" (Menu) "));
     }
     spans.push(button_span("?"));
-    spans.push(Span::raw(" "));
+    spans.push(Span::raw(" (Toggle Help) "));
 
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
     let commands_widget = Paragraph::new(Line::from(spans));
