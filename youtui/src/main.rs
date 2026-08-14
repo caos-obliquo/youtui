@@ -569,6 +569,14 @@ async fn try_main() -> anyhow::Result<()> {
         let cp = cp.clone();
         let cookie_browser = config.cookie_browser.clone();
         tokio::spawn(async move {
+            // Only auto-refresh when there is no existing cookie file. A fresh
+            // yt-dlp merge from a multi-session browser profile can pair SID/
+            // HSID from *different* sessions, which YouTube rejects. A
+            // user-provided cookie.txt (single consistent session) must not be
+            // clobbered by that merge.
+            if tokio::fs::try_exists(&cp).await.unwrap_or(false) {
+                return;
+            }
             let tmp = format!("{cp}.tmp");
             let _ = tokio::fs::remove_file(&tmp).await;
             match tokio::process::Command::new("yt-dlp")
