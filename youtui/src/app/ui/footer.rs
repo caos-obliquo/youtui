@@ -277,19 +277,14 @@ pub fn draw_footer(
                 .add_modifier(Modifier::BOLD),
         ),
     ]));
-    // Line 3: volume (far left) + progress bar.
-    let volume_width = volume_pct.len() as u16;
-    let [volume_chunk, bar_area] = Layout::horizontal([
-        Constraint::Length(volume_width),
+    // Line 3: progress bar with scrobble/status icons + volume on the right.
+    let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
+    let status_str = format!("{status_prefix}{} {volume_pct}", if heart.is_empty() { "" } else { &heart });
+    let status_width = (status_str.len() as u16 + 2).max(20);
+    let [bar_area, status_area] = Layout::horizontal([
         Constraint::Min(1),
+        Constraint::Max(status_width),
     ]).areas(bar_chunk);
-    f.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            volume_pct,
-            Style::default().fg(Color::DarkGray),
-        ))),
-        volume_chunk,
-    );
     let [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk] = Layout::horizontal([
         Constraint::Max(4),
         Constraint::Min(1),
@@ -298,32 +293,29 @@ pub fn draw_footer(
     f.render_widget(bar, mid_bar_chunk);
     f.render_widget(left_arrow, left_arrow_chunk);
     f.render_widget(right_arrow, right_arrow_chunk);
-    // Line 1: artist - song (marquee).
     f.render_widget(
-        Paragraph::new(Line::from(Span::raw(marquee(
-            &song_artist_line,
-            line1.width as usize,
-            w.tick,
-        )))),
-        line1,
-    );
-    // Line 2: album/ep/single + status icons (scrobble/repeat/radio/shuffle/like).
-    let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
-    let mut album_spans = Vec::new();
-    if !album_line.is_empty() {
-        album_spans.push(Span::styled(
-            marquee(&album_line, album_line_chunk.width as usize, w.tick),
+        Paragraph::new(Line::from(Span::styled(
+            status_str,
             Style::default().fg(Color::DarkGray),
-        ));
-    }
-    album_spans.push(Span::styled(
-        status_prefix,
-        Style::default().fg(Color::DarkGray),
-    ));
+        ))),
+        status_area,
+    );
+    // Line 1: artist - song (+ like icon at end).
+    let mut song_spans = vec![Span::raw(marquee(&song_artist_line, line1.width as usize, w.tick))];
     if !heart.is_empty() {
-        album_spans.push(Span::styled(heart, Style::default().fg(Color::DarkGray)));
+        song_spans.push(Span::raw(heart));
     }
-    f.render_widget(Paragraph::new(Line::from(album_spans)), album_line_chunk);
+    f.render_widget(Paragraph::new(Line::from(song_spans)), line1);
+    // Line 2: album/ep/single only.
+    if !album_line.is_empty() {
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                marquee(&album_line, album_line_chunk.width as usize, w.tick),
+                Style::default().fg(Color::DarkGray),
+            ))),
+            album_line_chunk,
+        );
+    }
     f.render_widget(block, chunk);
 }
 
