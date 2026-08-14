@@ -713,6 +713,9 @@ impl Browser {
     pub fn filter_active(&self) -> bool {
         self.filter_active
     }
+    pub fn filter_editor(&self) -> &ViTextEditor {
+        &self.filter_editor
+    }
     pub fn handle_filter_key(&mut self, k: crossterm::event::KeyEvent) {
         use crossterm::event::KeyCode;
         if k.kind != crossterm::event::KeyEventKind::Press {

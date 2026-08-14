@@ -5,7 +5,8 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use vi_text_editor::ViTextEditor;
 
 /// Minimal header: two bordered blocks side by side.
 /// - Commands block: F1/F2/F3, o (Context Menu), ? help only.
@@ -23,6 +24,19 @@ fn button_span(label: &str) -> Span<'static> {
 }
 
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
+    // Browser local filter active: show filter input in header
+    if matches!(w.context, WindowContext::Browser) && w.browser.filter_active() {
+        let editor = w.browser.filter_editor();
+        let filter_block = Block::default().borders(Borders::ALL).title(" Filter ").border_style(Style::default().fg(Color::Cyan));
+        let display = editor.render_simple("/");
+        let inner = filter_block.inner(chunk);
+        f.render_widget(Clear, chunk);
+        f.render_widget(filter_block, chunk);
+        f.render_widget(Paragraph::new(display).style(Style::default().fg(Color::Cyan)), inner);
+        f.set_cursor_position((inner.x + editor.cursor as u16, inner.y));
+        return;
+    }
+
     let mut spans: Vec<Span> = Vec::new();
 
     let vi_mode: Option<String> = if w.command_mode {
