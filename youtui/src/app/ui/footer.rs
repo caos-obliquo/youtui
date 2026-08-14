@@ -244,8 +244,7 @@ pub fn draw_footer(
             }
         }
     };
-    let [line1, album_line_chunk, bar_chunk, status_chunk] = Layout::vertical([
-        Constraint::Length(1),
+    let [line1, album_line_chunk, bar_chunk] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -278,19 +277,14 @@ pub fn draw_footer(
                 .add_modifier(Modifier::BOLD),
         ),
     ]));
-    // Bar line: volume at the far left, then the progress bar.
-    let volume_width = (volume_pct.len() as u16 + 2).max(12);
-    let [volume_chunk, bar_area] = Layout::horizontal([
-        Constraint::Max(volume_width),
+    // Line 3: progress bar with scrobble/status icons + volume on the right.
+    let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
+    let status_str = format!("{status_prefix}{} {volume_pct}", if heart.is_empty() { "" } else { &heart });
+    let status_width = (status_str.len() as u16 + 2).max(20);
+    let [bar_area, status_area] = Layout::horizontal([
         Constraint::Min(1),
+        Constraint::Max(status_width),
     ]).areas(bar_chunk);
-    f.render_widget(
-        Paragraph::new(Line::from(Span::styled(
-            volume_pct,
-            Style::default().fg(Color::DarkGray),
-        ))),
-        volume_chunk,
-    );
     let [left_arrow_chunk, mid_bar_chunk, right_arrow_chunk] = Layout::horizontal([
         Constraint::Max(4),
         Constraint::Min(1),
@@ -299,15 +293,12 @@ pub fn draw_footer(
     f.render_widget(bar, mid_bar_chunk);
     f.render_widget(left_arrow, left_arrow_chunk);
     f.render_widget(right_arrow, right_arrow_chunk);
-    // Status line: scrobble + repeat/radio/shuffle + like.
-    let status_prefix = format!("{} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
-    let status_str = format!("{status_prefix}{}", if heart.is_empty() { "" } else { &heart });
     f.render_widget(
         Paragraph::new(Line::from(Span::styled(
             status_str,
             Style::default().fg(Color::DarkGray),
         ))),
-        status_chunk,
+        status_area,
     );
     // Line 1: artist - song (+ like icon at end).
     let mut song_spans = vec![Span::raw(marquee(&song_artist_line, line1.width as usize, w.tick))];
