@@ -7,11 +7,15 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-/// Minimal header: two bordered blocks side by side.
-/// - Commands block: F1/F2/F3, o menu, ? help only.
-/// - Browser block (browser context): the five tabs on one line.
-/// Everything else lives in the ? help menu.
-pub fn header_required_height(_w: &super::YoutuiWindow) -> u16 {
+/// Header height. When a key mode is pending (e.g. `o` context menu), the
+/// Commands block grows to list the menu items; otherwise one line.
+pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
+    if w.key_pending() {
+        if let Some(mode) = w.get_cur_displayable_mode() {
+            let n = mode.displayable_commands.count();
+            return (n as u16 + 2).min(45); // borders + items
+        }
+    }
     3
 }
 
@@ -23,7 +27,6 @@ fn button_span(label: &str) -> Span<'static> {
 }
 
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
-    // Commands block: minimal surface, full list in ? help.
     let mut spans: Vec<Span> = Vec::new();
 
     let vi_mode: Option<String> = if w.command_mode {
@@ -50,20 +53,60 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     spans.push(Span::raw(" (Toggle Playlist) "));
     if matches!(w.context, WindowContext::Playlist | WindowContext::Browser) {
         spans.push(button_span("o"));
-        spans.push(Span::raw(" (Menu) "));
+        spans.push(Span::raw(" (Context Menu) "));
     }
     spans.push(button_span("?"));
     spans.push(Span::raw(" (Toggle Help) "));
 
+    // When a key mode is pending (o → context menu etc), expand the Commands
+    // block with the menu items so the header's empty space is used.
+    let menu_lines: Vec<Line> = if w.key_pending() {
+        w.get_cur_displayable_mode()
+            .map(|mode| {
+                let title = mode.description;
+                let mut lines = vec![Line::from(Span::styled(
+                    format!(" {} ", title),
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                ))];
+                lines.extend(mode.displayable_commands.map(|c| {
+                    Line::from(vec![
+                        Span::styled(
+                            format!(" {:6} ", c.keybinds),
+                            Style::default()
+                                .fg(BUTTON_FG_COLOUR)
+                                .bg(BUTTON_BG_COLOUR),
+                        ),
+                        Span::raw(format!(" {}", c.description)),
+                    ])
+                }));
+                lines
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Top line: mode indicator + minimal commands.
+    let mut all_lines: Vec<Line> = Vec::new();
+    if menu_lines.is_empty() {
+        all_lines.push(Line::from(spans));
+    } else {
+        // First line: the pending key + description; then the items.
+        let mut it = menu_lines.into_iter();
+        if let Some(first) = it.next() {
+            all_lines.push(first);
+        }
+        all_lines.extend(it);
+    }
+
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
-    let commands_widget = Paragraph::new(Line::from(spans));
+    let commands_widget = Paragraph::new(all_lines.clone());
     if !matches!(w.context, WindowContext::Browser) {
         f.render_widget(commands_widget, commands_block.inner(chunk));
         f.render_widget(commands_block, chunk);
         return;
     }
 
-    // Browser block: the five tabs, one line.
     let title = w.browser.tabs_block_title();
     let selected_item = w.browser.selected_tab_idx();
     let mut tab_spans: Vec<Span> = Vec::new();
@@ -83,7 +126,7 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
         tab_spans.push(Span::raw("  "));
     }
     let tabs_block = Block::default().borders(Borders::ALL).title(title);
-    // Give the tabs block enough width for its content.
+
     let tab_width: u16 = tab_spans
         .iter()
         .map(|s| s.content.len() as u16)
