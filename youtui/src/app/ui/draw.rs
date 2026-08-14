@@ -356,17 +356,21 @@ fn draw_popup(f: &mut Frame, w: &YoutuiWindow, chunk: Rect) {
     f.render_widget(block, area);
 }
 
-fn draw_nav_hint_bar(f: &mut Frame, _w: &mut YoutuiWindow, chunk: Rect) {
+fn draw_nav_hint_bar(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
+    // Context-aware: music-player commands always; nav keys follow context.
+    let nav_key = match w.context {
+        WindowContext::Browser => "h/l",
+        _ => "j/k",
+    };
     #[rustfmt::skip]
     let hints = [
-        ("j/k", "Nav"),
-        ("-/+", "Vol"),
+        (nav_key, "Nav"),
+        ("- / +", "Vol"),
         ("[ ]", "Seek"),
         ("< >", "Prev/Next"),
         ("Space", "Play/Pause"),
-        ("?", "Help"),
     ];
-    let hint = Paragraph::new(hints.map(|(k, a)| format!("{k} {a}")).join(" | "))
+    let hint = Paragraph::new(hints.map(|(k, a)| format!("{k} {a}")).join("  |  "))
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     f.render_widget(hint, chunk);
