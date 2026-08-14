@@ -1387,6 +1387,17 @@ impl YoutuiWindow {
                     return task.map_frontend(|this: &mut Self| &mut this.browser);
                 }
             }
+            // Informational entries - no navigation
+            FuzzyKind::Lyrics(_) |
+            FuzzyKind::SongInfo |
+            FuzzyKind::Logs(_) |
+            FuzzyKind::PlaylistSavePopup |
+            FuzzyKind::PlaylistUpdatePopup(_) |
+            FuzzyKind::PlaylistEditor(_) |
+            FuzzyKind::PlaylistRenamePopup |
+            FuzzyKind::PlaylistEditPopup |
+            FuzzyKind::PlaylistDetailsPopup |
+            FuzzyKind::Notes(_) => {}
         }
         AsyncTask::new_no_op()
     }

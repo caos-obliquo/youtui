@@ -24,6 +24,26 @@ pub enum FuzzyKind {
     Browser(usize, usize),
     /// Open a browser tab (0..4).
     OpenTab(usize),
+    /// Lyrics line index.
+    Lyrics(usize),
+    /// Song info field.
+    SongInfo,
+    /// Logger entry.
+    Logs(usize),
+    /// Playlist save popup.
+    PlaylistSavePopup,
+    /// Playlist update popup.
+    PlaylistUpdatePopup(usize),
+    /// Playlist editor.
+    PlaylistEditor(usize),
+    /// Playlist rename popup.
+    PlaylistRenamePopup,
+    /// Playlist edit popup.
+    PlaylistEditPopup,
+    /// Playlist details popup.
+    PlaylistDetailsPopup,
+    /// Notes popup.
+    Notes(usize),
 }
 
 /// Header-spawned fuzzy finder (neovim-style `/`).
@@ -233,11 +253,30 @@ pub fn build_corpus(
                 // Artists
                 0 => {
                     let b = &window.browser.artist_browser();
-                    for (i, a) in b.artist_search_panel.list.iter().enumerate() {
-                        entries.push(FuzzyEntry {
-                            label: a.artist.clone(),
-                            kind: FuzzyKind::Browser(0, i),
-                        });
+                    use crate::app::ui::browser::artistsearch::InputRouting;
+                    match b.input_routing {
+                        InputRouting::Artist => {
+                            for (i, a) in b.artist_search_panel.list.iter().enumerate() {
+                                entries.push(FuzzyEntry {
+                                    label: a.artist.clone(),
+                                    kind: FuzzyKind::Browser(0, i),
+                                });
+                            }
+                        }
+                        InputRouting::Song => {
+                            for (i, s) in b.album_songs_panel.list.get_list_iter().enumerate() {
+                                let artist = s
+                                    .artists
+                                    .iter()
+                                    .map(|a| a.name.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                entries.push(FuzzyEntry {
+                                    label: format!("{artist} - {}", s.title),
+                                    kind: FuzzyKind::Browser(0, i),
+                                });
+                            }
+                        }
                     }
                 }
                 // Albums
@@ -339,7 +378,114 @@ pub fn build_corpus(
                 _ => {}
             }
         }
-        _ => {}
+        WindowContext::Logs => {}
+        WindowContext::Lyrics => {}
+        WindowContext::SongInfo => {
+            if let Some(popup) = &window.song_info_popup {
+                entries.push(FuzzyEntry {
+                    label: format!("Title: {}", popup.song.title),
+                    kind: FuzzyKind::SongInfo,
+                });
+                entries.push(FuzzyEntry {
+                    label: format!("Artist: {}", popup.song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")),
+                    kind: FuzzyKind::SongInfo,
+                });
+                if let Some(album) = &popup.song.album {
+                    entries.push(FuzzyEntry {
+                        label: format!("Album: {}", album.name),
+                        kind: FuzzyKind::SongInfo,
+                    });
+                }
+                entries.push(FuzzyEntry {
+                    label: format!("Year: {}", popup.song.year.as_ref().map(|y| y.as_str()).unwrap_or("Unknown")),
+                    kind: FuzzyKind::SongInfo,
+                });
+                entries.push(FuzzyEntry {
+                    label: format!("Duration: {}", popup.song.duration_string),
+                    kind: FuzzyKind::SongInfo,
+                });
+            }
+        }
+        WindowContext::PlaylistSavePopup => {
+            if let Some(popup) = &window.playlist_save_popup {
+                // Fields are private, just add placeholder
+                entries.push(FuzzyEntry {
+                    label: "Save Playlist".to_string(),
+                    kind: FuzzyKind::PlaylistSavePopup,
+                });
+            }
+        }
+        WindowContext::PlaylistUpdatePopup => {
+            if let Some(popup) = &window.playlist_update_popup {
+                match &popup.state {
+                    crate::app::ui::playlist::playlist_update_popup::PlaylistUpdatePopupState::Loaded(playlists) => {
+                        for (i, p) in playlists.iter().enumerate() {
+                            entries.push(FuzzyEntry {
+                                label: p.title.clone(),
+                                kind: FuzzyKind::PlaylistUpdatePopup(i),
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        WindowContext::PlaylistEditor => {
+            if let Some(popup) = &window.playlist_editor_popup {
+                for (i, s) in popup.tracks.iter().enumerate() {
+                    let artist = s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
+                    entries.push(FuzzyEntry {
+                        label: format!("{artist} - {}", s.title),
+                        kind: FuzzyKind::PlaylistEditor(i),
+                    });
+                }
+            }
+        }
+        WindowContext::PlaylistEditPopup => {
+            if let Some(_popup) = &window.playlist_edit_popup {
+                entries.push(FuzzyEntry {
+                    label: "Edit Playlist".to_string(),
+                    kind: FuzzyKind::PlaylistEditPopup,
+                });
+            }
+        }
+        WindowContext::PlaylistRenamePopup => {
+            if let Some(popup) = &window.playlist_rename_popup {
+                entries.push(FuzzyEntry {
+                    label: format!("Current: {}", popup.current_title),
+                    kind: FuzzyKind::PlaylistRenamePopup,
+                });
+            }
+        }
+        WindowContext::PlaylistDetailsPopup => {
+            if let Some(popup) = &window.playlist_details_popup {
+                entries.push(FuzzyEntry {
+                    label: format!("Loading: {}", popup.loading_title),
+                    kind: FuzzyKind::PlaylistDetailsPopup,
+                });
+                if let Some(details) = &popup.details {
+                    entries.push(FuzzyEntry {
+                        label: format!("Title: {}", details.title),
+                        kind: FuzzyKind::PlaylistDetailsPopup,
+                    });
+                    if let Some(desc) = &details.description {
+                        entries.push(FuzzyEntry {
+                            label: format!("Description: {}", desc),
+                            kind: FuzzyKind::PlaylistDetailsPopup,
+                        });
+                    }
+                    entries.push(FuzzyEntry {
+                        label: format!("Author: {}", details.author),
+                        kind: FuzzyKind::PlaylistDetailsPopup,
+                    });
+                    entries.push(FuzzyEntry {
+                        label: format!("Privacy: {:?}", details.privacy),
+                        kind: FuzzyKind::PlaylistDetailsPopup,
+                    });
+                }
+            }
+        }
+        WindowContext::Notes => {}
     }
     entries
 }
