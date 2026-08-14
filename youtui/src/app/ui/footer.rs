@@ -1,13 +1,10 @@
-use crate::app::structures::{AlbumArtState, PlayState};
-use tracing::warn;
-use crate::drawutils::middle_of_rect;
+use crate::app::structures::PlayState;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
-use ratatui_image::Image;
 use ratatui_image::picker::Picker;
 
 pub fn parse_simple_time_to_secs<S: AsRef<str>>(time_string: S) -> usize {
@@ -27,13 +24,13 @@ pub fn like_icon(status: ytmapi_rs::common::LikeStatus) -> &'static str {
     }
 }
 
-pub const ALBUM_ART_WIDTH: u16 = 7;
-
+/// Single-line footer: [play icon] artist - title · album [status] [like] and
+/// volume right-aligned in the block title.
 pub fn draw_footer(
     f: &mut Frame,
     w: &mut super::YoutuiWindow,
     chunk: Rect,
-    terminal_image_capabilities: &Picker,
+    _terminal_image_capabilities: &Picker,
 ) {
     let cur_active_song = match w.playlist.play_status {
         PlayState::Error(id)
@@ -68,8 +65,9 @@ pub fn draw_footer(
     let scrobble_indicator = if w.playlist.scrobbling_config.enabled {
         if w.playlist.scrobble_state.is_some() { " [Scrobble]" } else { " [s]" }
     } else { "" };
-    let album_art = cur_active_song.map(|s| &s.album_art);
-    let heart = cur_active_song.map(|s| like_icon(s.like_status.clone())).unwrap_or("");
+    let heart = cur_active_song
+        .map(|s| like_icon(s.like_status.clone()))
+        .unwrap_or("");
     // Nerd Font MDI volume icons: mute / low / medium / high (footer MDI exception).
     let volume_icon = match w.playlist.volume.0 {
         0 => "\u{f075f}",
@@ -83,118 +81,7 @@ pub fn draw_footer(
         .title(Line::from(volume_pct).right_aligned())
         .borders(Borders::ALL);
     let block_inner = block.inner(chunk);
-    let [album_art_chunk, _, right_area] = Layout::horizontal([
-        Constraint::Length(ALBUM_ART_WIDTH),
-        Constraint::Length(1),
-        Constraint::Min(0),
-    ]).areas(block_inner);
-    fn render_album_protocol(
-        f: &mut Frame,
-        w: &mut super::YoutuiWindow,
-        album_art_chunk: Rect,
-        protocol: &ratatui_image::protocol::Protocol,
-    ) {
-        f.render_widget(Image::new(protocol), album_art_chunk);
-        w.sixel_rect = Some(album_art_chunk);
-        if let ratatui_image::protocol::Protocol::Sixel(sixel) = protocol {
-            w.sixel_data = Some(sixel.data.clone());
-        } else {
-            w.sixel_data = None;
-        }
-    }
-    fn encode_album_protocol(
-        album_art_chunk: Rect,
-        img: image::DynamicImage,
-        terminal_image_capabilities: &Picker,
-    ) -> Option<ratatui_image::protocol::Protocol> {
-        match terminal_image_capabilities.new_protocol(img, album_art_chunk, ratatui_image::Resize::Fit(None)) {
-            Ok(p) => Some(p),
-            Err(e) => {
-                warn!("new_protocol failed: {e}, album_art_chunk={album_art_chunk:?}");
-                None
-            }
-        }
-    }
-    // Invalidate protocol cache when chunk dimensions change (terminal resize)
-    let chunk_changed = w.cached_album_chunk.map_or(true, |c| c != album_art_chunk);
-    w.cached_album_chunk = Some(album_art_chunk);
-    match album_art {
-        Some(AlbumArtState::Downloaded(album_art)) => {
-            let art_changed = w.last_album_art.as_ref()
-                .map_or(true, |last| !std::rc::Rc::ptr_eq(last, album_art));
-            w.last_album_art = Some(album_art.clone());
-            if art_changed || chunk_changed || w.cached_album_protocol.is_none() {
-                if let Some(protocol) = encode_album_protocol(
-                    album_art_chunk, album_art.in_mem_image.clone(), terminal_image_capabilities,
-                ) {
-                    w.cached_album_protocol = Some(protocol.clone());
-                    render_album_protocol(f, w, album_art_chunk, &protocol);
-                } else {
-                    w.sixel_data = None;
-                    f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
-                }
-            } else if let Some(protocol) = w.cached_album_protocol.take() {
-                render_album_protocol(f, w, album_art_chunk, &protocol);
-                w.cached_album_protocol = Some(protocol);
-            } else {
-                w.sixel_data = None;
-            }
-        }
-        Some(AlbumArtState::Error) => {
-            w.sixel_data = None;
-            w.cached_album_protocol = None;
-            w.cached_album_chunk = None;
-            f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
-        }
-        Some(AlbumArtState::None) => {
-            // Song has no art yet - show cached fallback while fetch is pending
-            // Do NOT clear sixel_data here — let old art persist if cache miss.
-            // flush_sixel compares last_sixel_data and skips redraw when unchanged.
-            if let Some(cached) = w.cached_album_protocol.take() {
-                render_album_protocol(f, w, album_art_chunk, &cached);
-                w.cached_album_protocol = Some(cached);
-            } else if let Some(ref last) = w.last_album_art {
-                if let Some(protocol) = encode_album_protocol(
-                    album_art_chunk, last.in_mem_image.clone(), terminal_image_capabilities,
-                ) {
-                    w.cached_album_protocol = Some(protocol.clone());
-                    render_album_protocol(f, w, album_art_chunk, &protocol);
-                } else {
-                    f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
-                }
-            } else {
-                f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
-            }
-        }
-        None => {
-            // No song playing - clear stale cache
-            w.sixel_data = None;
-            w.cached_album_protocol = None;
-            w.cached_album_chunk = None;
-            w.last_album_art = None;
-            f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
-        }
-        Some(AlbumArtState::Init) => {
-            // Loading placeholder - show cached old art while fetch pending
-            // Do NOT clear sixel_data here — let old art persist if cache miss.
-            if let Some(cached) = w.cached_album_protocol.take() {
-                render_album_protocol(f, w, album_art_chunk, &cached);
-                w.cached_album_protocol = Some(cached);
-            } else if let Some(ref last) = w.last_album_art {
-                if let Some(protocol) = encode_album_protocol(
-                    album_art_chunk, last.in_mem_image.clone(), terminal_image_capabilities,
-                ) {
-                    w.cached_album_protocol = Some(protocol.clone());
-                    render_album_protocol(f, w, album_art_chunk, &protocol);
-                } else {
-                    f.render_widget(Paragraph::new("").centered(), middle_of_rect(album_art_chunk));
-                }
-            } else {
-                f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
-            }
-        }
-    };
-    let [footer_line] = Layout::vertical([Constraint::Length(1)]).areas(right_area);
+    let [footer_line] = Layout::vertical([Constraint::Length(1)]).areas(block_inner);
     let status_prefix = format!(" {} {}{}{}", scrobble_indicator, repeat_icon, radio_icon, shuffle_icon);
     let mut song_spans: Vec<Span> = Vec::new();
     song_spans.push(Span::raw(song_artist_line));
@@ -231,66 +118,10 @@ mod tests {
         assert_eq!(like_icon(ytmapi_rs::common::LikeStatus::Disliked), " \u{EC13}");
     }
 
-    /// Regression: AlbumArtState::None must NOT clear sixel_data (PR #29, #36, #37).
-    /// Clearing causes sixel flash on track transitions when art fetch is pending.
     #[test]
-    fn album_art_none_preserves_sixel_data() {
-        let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("src/app/ui/footer.rs")
-        ).expect("footer.rs exists");
-        let start = src.find("Some(AlbumArtState::None) => {")
-            .expect("AlbumArtState::None branch");
-        // Find the matching closing brace by counting braces.
-        // The arm ends with two `}` at same level (one for match body, one for outer Some).
-        // We search for `        }\n        None =>` which is the closing of this arm.
-        let arm_text = &src[start..];
-        let end = arm_text.find("\n        None =>")
-            .expect("None => arm follows AlbumArtState::None");
-        let arm = &arm_text[..end];
-        assert!(
-            !arm.contains("sixel_data = None"),
-            "AlbumArtState::None must not clear sixel_data. Found in:\n{}",
-            arm
-        );
-    }
-
-    /// Regression: AlbumArtState::Init must NOT clear sixel_data (PR #29, #36, #37).
-    #[test]
-    fn album_art_init_preserves_sixel_data() {
-        let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("src/app/ui/footer.rs")
-        ).expect("footer.rs exists");
-        let start = src.find("Some(AlbumArtState::Init)")
-            .expect("AlbumArtState::Init branch");
-        let arm = &src[start..];
-        let end = arm.find("};")
-            .expect("semicolon after Init arm");
-        let arm = &arm[..=end];
-        assert!(
-            !arm.contains("sixel_data = None"),
-            "AlbumArtState::Init must not clear sixel_data. Found in:\n{}",
-            arm
-        );
-    }
-
-    /// Regression: AlbumArtState::Error MUST clear sixel_data (rendering failed, no fallback).
-    #[test]
-    fn album_art_error_clears_sixel_data() {
-        let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("src/app/ui/footer.rs")
-        ).expect("footer.rs exists");
-        let start = src.find("Some(AlbumArtState::Error)")
-            .expect("AlbumArtState::Error branch");
-        let arm = &src[start..];
-        let end = arm.find("Some(AlbumArtState::None)")
-            .expect("None branch after Error");
-        let arm = &arm[..end];
-        assert!(
-            arm.contains("sixel_data = None"),
-            "AlbumArtState::Error must clear sixel_data"
-        );
+    fn parse_time() {
+        assert_eq!(parse_simple_time_to_secs("1:30"), 90);
+        assert_eq!(parse_simple_time_to_secs("1:02:03"), 3723);
+        assert_eq!(parse_simple_time_to_secs("0:00"), 0);
     }
 }

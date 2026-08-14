@@ -99,7 +99,7 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         .constraints([
             Constraint::Length(header::header_required_height(w)),
             Constraint::Min(2),
-            Constraint::Length(5),
+            Constraint::Length(3),
         ])
         .areas(f.area());
     if w.fuzzy_finder.shown {
