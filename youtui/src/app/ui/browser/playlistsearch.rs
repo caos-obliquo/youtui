@@ -483,6 +483,15 @@ impl PlaylistSearchBrowser {
         self.prev_input_routing = mem::replace(&mut self.input_routing, input_routing);
     }
 
+    /// Update like_status for a song in this browser.
+    pub fn update_song_like_status(
+        &mut self,
+        video_id: &ytmapi_rs::common::VideoID<'static>,
+        like_status: ytmapi_rs::common::LikeStatus,
+    ) {
+        // Update playlist songs panel
+        self.playlist_songs_panel.update_song_like_status(video_id, like_status);
+    }
 }
 
 #[derive(Debug, PartialEq)]

@@ -151,6 +151,9 @@ pub struct Playlist {
     pub sort_direction: SortDirection,
     /// Set true by playlist mutation handlers to signal library needs refresh
     pub library_playlist_mutated: bool,
+    /// Track last rated song for browser sync
+    pub last_rated_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
+    pub last_rated_like_status: Option<ytmapi_rs::common::LikeStatus>,
     /// Cache of downloaded audio by video_id. Survives reset() so replaying
     /// same song from browser doesn't re-download.
     audio_cache: HashMap<String, Arc<crate::app::server::song_downloader::InMemSong>>,
@@ -450,13 +453,14 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     };
                     song.like_status = new_status.clone();
                     let video_id = song.video_id.clone();
-                    let effect = AsyncTask::new_future_try(
-                        crate::app::server::RateSong(video_id, new_status),
-                        HandleRateSongOk,
-                        HandleRateSongErr,
-                        None,
-                    ).map_frontend(|this: &mut Self| this);
-                    return (effect, None);
+                    self.last_rated_video_id = Some(video_id.clone());
+                    self.last_rated_like_status = Some(new_status.clone());
+                    let effect = self.handle_rate_song(video_id.clone(), new_status.clone());
+                    let callback = Some(crate::app::AppCallback::UpdateSongLikeStatus {
+                        video_id,
+                        like_status: new_status,
+                    });
+                    return (effect, callback);
                 }
                 (AsyncTask::new_no_op(), None)
             },
@@ -973,6 +977,8 @@ impl Playlist {
             sort_column: 0,
             sort_direction: SortDirection::Asc,
             library_playlist_mutated: false,
+            last_rated_video_id: None,
+            last_rated_like_status: None,
             audio_cache: HashMap::new(),
         };
 
@@ -1133,6 +1139,16 @@ impl Playlist {
             }
         }
         None
+    }
+
+    /// Handle ToggleLike/ToggleDislike: rate the currently selected song.
+    fn handle_rate_song(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, like_status: ytmapi_rs::common::LikeStatus) -> ComponentEffect<Playlist> {
+        AsyncTask::<Playlist, crate::app::server::ArcServer, crate::app::server::TaskMetadata>::new_future_try(
+            crate::app::server::RateSong(video_id, like_status),
+            HandleRateSongOk,
+            HandleRateSongErr,
+            None,
+        )
     }
 
     /// Handle ForceSplitAlbum: find/reconstruct parent, clear split tracks, re-validate metadata.

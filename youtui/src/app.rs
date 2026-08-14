@@ -162,6 +162,10 @@ pub enum AppCallback {
         id: ListSongID,
         song: ListSong,
     },
+    UpdateSongLikeStatus {
+        video_id: VideoID<'static>,
+        like_status: ytmapi_rs::common::LikeStatus,
+    },
     ClosePopup,
     LoadPlaylistFromPopup(PlaylistID<'static>),
     AppendPlaylistFromPopup(PlaylistID<'static>),
@@ -642,8 +646,14 @@ impl Youtui {
                     musicbrainz_release_group_id: None,
                 };
                 self.server.metadata_registry.save_override(&artist, &song.title, &meta);
-                self.window_state.playlist.update_song_info(id, song);
+                self.window_state.playlist.update_song_info(id, song.clone());
+                // Also update browser song like status
+                self.window_state.browser.update_song_like_status(&song.video_id, song.like_status.clone());
                 self.window_state.close_popup();
+            }
+            AppCallback::UpdateSongLikeStatus { video_id, like_status } => {
+                // Only update browser song like status (for like/dislike from queue)
+                self.window_state.browser.update_song_like_status(&video_id, like_status);
             }
             AppCallback::LoadPlaylistFromPopup(playlist_id) => {
                 self.window_state.close_popup();

@@ -1,4 +1,4 @@
-use crate::app::component::actionhandler::ComponentEffect;
+use crate::app::component::actionhandler::{ComponentEffect, YoutuiEffect};
 use crate::app::server::ValidatedMetadata;
 
 use crate::app::server::{
@@ -168,18 +168,7 @@ impl_youtui_task_handler!(
         PlaylistEffect::AddSongsSuccess
     }
 );
-
-impl_youtui_task_handler!(
-    HandleRateSongOk,
-    (),
-    Playlist,
-    |_, _: ()| {
-        |_this: &mut Playlist| {
-            info!("Song rated successfully");
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
-        }
-    }
-);
+playlist_ok_handler!(HandleRateSongOk, "Song rated successfully");
 
 impl_youtui_task_handler!(
     HandleRateSongErr,
@@ -187,8 +176,11 @@ impl_youtui_task_handler!(
     Playlist,
     |_, err: anyhow::Error| {
         let msg = err.to_string();
-        move |_this: &mut Playlist| {
+        move |this: &mut Playlist| {
             error!("Failed to rate song: {}", msg);
+            // Clear the pending rating on error
+            this.last_rated_video_id = None;
+            this.last_rated_like_status = None;
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }

@@ -992,6 +992,30 @@ impl LibraryBrowser {
             ]
         }).collect()
     }
+
+    /// Update like_status for a song in this browser.
+    pub fn update_song_like_status(
+        &mut self,
+        video_id: &ytmapi_rs::common::VideoID<'static>,
+        like_status: ytmapi_rs::common::LikeStatus,
+    ) {
+        // Update song list
+        for song in self.song_list.get_list_iter_mut() {
+            if song.video_id == *video_id {
+                song.like_status = like_status.clone();
+                break;
+            }
+        }
+        // Update playlist tracks if showing
+        if self.show_playlist_tracks {
+            for song in self.playlist_tracks.iter_mut() {
+                if song.video_id == *video_id {
+                    song.like_status = like_status.clone();
+                    break;
+                }
+            }
+        }
+    }
 }
 
 // -- Unified TableView (dispatches on show_playlist_tracks + category) --

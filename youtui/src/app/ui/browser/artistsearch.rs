@@ -605,6 +605,15 @@ impl ArtistSearchBrowser {
             InputRouting::Song => self.album_songs_panel.go_to_last(),
         }
     }
+
+    /// Update like_status for a song in the album songs panel.
+    pub fn update_song_like_status(
+        &mut self,
+        video_id: &ytmapi_rs::common::VideoID<'static>,
+        like_status: ytmapi_rs::common::LikeStatus,
+    ) {
+        self.album_songs_panel.update_song_like_status(video_id, like_status);
+    }
 }
 
 #[derive(PartialEq, Debug)]

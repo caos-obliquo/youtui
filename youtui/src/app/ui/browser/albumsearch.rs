@@ -293,6 +293,20 @@ impl AlbumSearchBrowser {
         self.sort.shown = true;
         self.input_routing = InputRouting::Sort;
     }
+
+    /// Update like_status for a song in the track list.
+    pub fn update_song_like_status(
+        &mut self,
+        video_id: &ytmapi_rs::common::VideoID<'static>,
+        like_status: ytmapi_rs::common::LikeStatus,
+    ) {
+        for song in self.track_list.get_list_iter_mut() {
+            if song.video_id == *video_id {
+                song.like_status = like_status;
+                break;
+            }
+        }
+    }
 }
 
 impl Loadable for AlbumSearchBrowser {

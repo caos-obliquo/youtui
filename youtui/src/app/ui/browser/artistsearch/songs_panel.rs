@@ -343,6 +343,20 @@ impl AlbumSongsPanel {
             }
         }
     }
+
+    /// Update like_status for a song in this panel.
+    pub fn update_song_like_status(
+        &mut self,
+        video_id: &ytmapi_rs::common::VideoID<'static>,
+        like_status: ytmapi_rs::common::LikeStatus,
+    ) {
+        for song in self.list.get_list_iter_mut() {
+            if song.video_id == *video_id {
+                song.like_status = like_status;
+                break;
+            }
+        }
+    }
 }
 impl SongListComponent for AlbumSongsPanel {
     fn get_song_from_idx(&self, idx: usize) -> Option<&crate::app::structures::ListSong> {

@@ -1013,6 +1013,25 @@ impl Browser {
             }
         }
     }
+
+    /// Update like_status for a song across all browser panels.
+    /// Called after a successful rate song API call to keep browser in sync.
+    pub fn update_song_like_status(
+        &mut self,
+        video_id: &ytmapi_rs::common::VideoID<'static>,
+        like_status: ytmapi_rs::common::LikeStatus,
+    ) {
+        // Update artist search browser (artist panel and album songs panel)
+        self.artist_search_browser.update_song_like_status(video_id, like_status.clone());
+        // Update song search browser
+        self.song_search_browser.update_song_like_status(video_id, like_status.clone());
+        // Update album search browser
+        self.album_search_browser.update_song_like_status(video_id, like_status.clone());
+        // Update library browser
+        self.library_browser.update_song_like_status(video_id, like_status.clone());
+        // Update playlist search browser
+        self.playlist_search_browser.update_song_like_status(video_id, like_status);
+    }
 }
 
 pub fn get_sort_keybinds(config: &Config) -> impl Iterator<Item = &Keymap<AppAction>> + '_ {
