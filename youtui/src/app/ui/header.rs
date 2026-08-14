@@ -7,15 +7,11 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-/// Header height. When a key mode is pending (e.g. `o` context menu), the
-/// Commands block grows to list the menu items; otherwise one line.
-pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
-    if w.key_pending() {
-        if let Some(mode) = w.get_cur_displayable_mode() {
-            let n = mode.displayable_commands.count();
-            return (n as u16 + 2).min(45); // borders + items
-        }
-    }
+/// Minimal header: two bordered blocks side by side.
+/// - Commands block: F1/F2/F3, o (Context Menu), ? help only.
+/// - Browser block (browser context): the five tabs on one line.
+/// Everything else lives in the ? help menu.
+pub fn header_required_height(_w: &super::YoutuiWindow) -> u16 {
     3
 }
 
@@ -58,49 +54,8 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     spans.push(button_span("?"));
     spans.push(Span::raw(" (Toggle Help) "));
 
-    // When a key mode is pending (o → context menu etc), expand the Commands
-    // block with the menu items so the header's empty space is used.
-    let menu_lines: Vec<Line> = if w.key_pending() {
-        w.get_cur_displayable_mode()
-            .map(|mode| {
-                let title = mode.description;
-                let mut lines = vec![Line::from(Span::styled(
-                    format!(" {} ", title),
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                ))];
-                lines.extend(mode.displayable_commands.map(|c| {
-                    Line::from(vec![
-                        Span::styled(
-                            format!(" {:6} ", c.keybinds),
-                            Style::default()
-                                .fg(BUTTON_FG_COLOUR)
-                                .bg(BUTTON_BG_COLOUR),
-                        ),
-                        Span::raw(format!(" {}", c.description)),
-                    ])
-                }));
-                lines
-            })
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-
-    // Top line: mode indicator + minimal commands.
-    let mut all_lines: Vec<Line> = Vec::new();
-    if menu_lines.is_empty() {
-        all_lines.push(Line::from(spans));
-    } else {
-        // First line: the pending key + description; then the items.
-        let mut it = menu_lines.into_iter();
-        if let Some(first) = it.next() {
-            all_lines.push(first);
-        }
-        all_lines.extend(it);
-    }
-
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
-    let commands_widget = Paragraph::new(all_lines.clone());
+    let commands_widget = Paragraph::new(Line::from(spans));
     if !matches!(w.context, WindowContext::Browser) {
         f.render_widget(commands_widget, commands_block.inner(chunk));
         f.render_widget(commands_block, chunk);
