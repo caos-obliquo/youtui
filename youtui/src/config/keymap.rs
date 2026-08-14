@@ -1155,7 +1155,7 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::PlaySong)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::AddSongToPlaylist)),
                     ),
                     (
@@ -1215,7 +1215,7 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::OpenPlaylistEditor)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('t')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::RatePlaylist)),
                     ),
                     (
@@ -1243,12 +1243,28 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::MergePlaylist)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('k')),
                         KeyActionTree::new_key(AppAction::Sort(SortAction::Close)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('O')),
                         KeyActionTree::new_key(AppAction::BrowserLibrary(BrowserLibraryAction::CycleSortOrder)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleShuffle)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleRepeat)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('t')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleLike)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleDislike)),
                     ),
                 ],
                 "Context Menu".into(),
