@@ -1084,6 +1084,22 @@ fn default_browser_artists_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                             BrowserArtistsAction::UnsubscribeFromArtist,
                         )),
                     ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleShuffle)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleRepeat)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('t')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleLike)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleDislike)),
+                    ),
                 ],
                 "Context Menu".into(),
             ),
@@ -1351,7 +1367,7 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
             KeyActionTree::new_mode(
                 [
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
                         KeyActionTree::new_key(AppAction::BrowserArtistSongs(
                             BrowserArtistSongsAction::AddSongToPlaylist,
                         )),
@@ -1367,6 +1383,22 @@ fn default_browser_artist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<Ap
                         KeyActionTree::new_key(AppAction::BrowserArtistSongs(
                             BrowserArtistSongsAction::PlayAlbum,
                         )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleShuffle)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleRepeat)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('t')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleLike)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleDislike)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Enter),
@@ -1450,10 +1482,26 @@ fn default_browser_playlist_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<
             KeyActionTree::new_mode(
                 [
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
                         KeyActionTree::new_key(AppAction::BrowserPlaylistSongs(
                             BrowserPlaylistSongsAction::AddSongToPlaylist,
                         )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleShuffle)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleRepeat)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('t')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleLike)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleDislike)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
@@ -1549,10 +1597,26 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
             KeyActionTree::new_mode(
                 [
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('g')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(
                             BrowserSongsAction::AddSongToPlaylist,
                         )),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleShuffle)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('z')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleRepeat)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('t')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleLike)),
+                    ),
+                    (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('d')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleDislike)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('p')),
@@ -1609,7 +1673,7 @@ fn default_browser_songs_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction
                         )),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('t')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(
                             BrowserSongsAction::RatePlaylist,
                         )),
