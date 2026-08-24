@@ -42,6 +42,9 @@ use std::future::Future;
 pub mod album;
 #[doc(inline)]
 pub use album::GetAlbumQuery;
+pub mod browse;
+#[doc(inline)]
+pub use browse::BrowseQuery;
 pub mod artist;
 #[doc(inline)]
 pub use artist::{

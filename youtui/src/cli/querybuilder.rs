@@ -39,7 +39,7 @@ use ytmapi_rs::query::{
     GetSearchSuggestionsQuery, GetTasteProfileQuery, GetUserPlaylistsQuery, GetUserQuery,
     GetUserVideosQuery, GetWatchPlaylistQuery, PostQuery, Query, RemoveHistoryItemsQuery,
     RemovePlaylistItemsQuery, SearchQuery, SetTasteProfileQuery, SubscribeArtistQuery,
-    UnsubscribeArtistsQuery,
+    UnsubscribeArtistsQuery, BrowseQuery,
 };
 
 pub struct CliQuery {
@@ -472,6 +472,12 @@ pub async fn command_to_query(
         }
         Command::GetHistory => {
             get_string_output_of_query_browser_or_oauth(yt, GetHistoryQuery, cli_query).await
+        }
+        Command::GetBrowse {
+            browse_id,
+            max_pages: _,
+        } => {
+            get_string_output_of_query(yt, BrowseQuery::new(browse_id), cli_query).await
         }
         Command::RemoveHistoryItems { feedback_tokens } => {
             get_string_output_of_query_browser_or_oauth(
