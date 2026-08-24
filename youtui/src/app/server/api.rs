@@ -67,6 +67,9 @@ impl Api {
         let content = tokio::fs::read_to_string(&cookie_path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed reading refreshed cookie file: {e}"))?;
+        // Trim to YouTube/Google domains so the resulting Cookie header stays
+        // within HTTP size limits (see filter_youtube_cookies).
+        let content = crate::api::filter_youtube_cookies(&content);
         let api_key = ApiKey::BrowserToken(content);
         let new_api = match DynamicYtMusic::new(api_key).await {
             Ok(inner) => Ok(Arc::new(RwLock::new(inner))),

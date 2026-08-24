@@ -470,6 +470,15 @@ enum Command {
     /// Uses the configured cookie_browser and yt_dlp_command. On success the
     /// Library page can be reloaded to pick up the fresh session automatically.
     AuthRefresh,
+    /// Generic browse by browseId. Dumps the raw YTM browse JSON for any page
+    /// (artist, album, playlist, library section, home, charts, etc.).
+    GetBrowse {
+        /// The browseId to browse (e.g. "UCxxxx" for an artist channel).
+        browse_id: String,
+        /// Maximum number of pages that the API is allowed to return.
+        #[arg(default_value_t = 1)]
+        max_pages: usize,
+    },
 }
 
 pub struct RuntimeInfo {
@@ -641,8 +650,13 @@ async fn get_api(config: &Config) -> anyhow::Result<api::DynamicYtMusic> {
         config::AuthType::Browser => {
             let mut cookies_loc = confdir;
             cookies_loc.push(COOKIE_FILENAME);
+            // Read + filter the cookie file so foreign cookies (slack, github,
+            // etc.) never overflow the single Cookie request header the way the
+            // TUI/Server path already does via load_api_key -> filter_youtube_cookies.
+            let raw = tokio::fs::read_to_string(&cookies_loc).await?;
+            let filtered = crate::api::filter_youtube_cookies(&raw);
             let api = ytmapi_rs::builder::YtMusicBuilder::new()
-                .with_browser_token_cookie_file(cookies_loc)
+                .with_browser_token_cookie(filtered)
                 .build()
                 .await?;
             api::DynamicYtMusic::Browser(api)
@@ -736,7 +750,9 @@ async fn initialise_directories() -> anyhow::Result<()> {
 async fn load_api_key(cfg: &Config) -> anyhow::Result<ApiKey> {
     let api_key = match cfg.auth_type {
         config::AuthType::OAuth => ApiKey::OAuthToken(load_oauth_file().await?),
-        config::AuthType::Browser => ApiKey::BrowserToken(load_cookie_file().await?),
+        config::AuthType::Browser => {
+            ApiKey::BrowserToken(crate::api::filter_youtube_cookies(&load_cookie_file().await?))
+        }
         config::AuthType::Unauthenticated => ApiKey::None,
     };
     Ok(api_key)

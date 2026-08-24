@@ -252,7 +252,7 @@ pub async fn refresh_cookie_via_ytdl(yt_dlp_command: &str, cookie_browser: &str)
     // yt-dlp exits non-zero on the unsupported music.youtube.com URL even when
     // it successfully exported cookies, so we do not gate on exit status. The
     // authoritative signal is the exported file containing the session cookie.
-    let content = match tokio::fs::read_to_string(&tmp_path).await {
+    let raw = match tokio::fs::read_to_string(&tmp_path).await {
         Ok(c) => c,
         Err(_) => {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -262,6 +262,9 @@ pub async fn refresh_cookie_via_ytdl(yt_dlp_command: &str, cookie_browser: &str)
             );
         }
     };
+    // yt-dlp exports every browser cookie; trim to YouTube/Google domains so the
+    // resulting Cookie header stays within HTTP size limits.
+    let content = crate::api::filter_youtube_cookies(&raw);
     let has_session = content.contains("SAPISID") || content.contains("__Secure-3PAPISID");
     if content.trim().is_empty() || !has_session {
         let _ = tokio::fs::remove_file(&tmp_path).await;
@@ -271,6 +274,10 @@ pub async fn refresh_cookie_via_ytdl(yt_dlp_command: &str, cookie_browser: &str)
             stderr
         );
     }
+    // Overwrite the raw export with the filtered set, then install atomically.
+    tokio::fs::write(&tmp_path, &content).await.map_err(|e| {
+        anyhow::anyhow!("Failed to write filtered cookie to {}: {e}", tmp_str)
+    })?;
     tokio::fs::rename(&tmp_path, &target).await.map_err(|e| {
         anyhow::anyhow!("Failed to install refreshed cookie to {}: {e}", target_str)
     })?;
