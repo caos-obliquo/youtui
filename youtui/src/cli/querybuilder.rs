@@ -720,6 +720,7 @@ pub async fn command_to_query(
             )
             .await
         }
+
         Command::GetUser { user_channel_id } => {
             get_string_output_of_query(
                 yt,
@@ -782,6 +783,9 @@ pub async fn command_to_query(
         }
         Command::GenreDb { .. } => {
             anyhow::bail!("GenreDb is a standalone CLI command, not an API query")
+        }
+        Command::AuthRefresh => {
+            anyhow::bail!("AuthRefresh is a standalone CLI command, not an API query")
         }
     }
 }

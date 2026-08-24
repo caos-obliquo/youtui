@@ -17,6 +17,7 @@ mod cli;
 mod config;
 mod core;
 mod drawutils;
+
 mod keyaction;
 mod keybind;
 mod widgets;
@@ -465,6 +466,10 @@ enum Command {
         #[arg(long)]
         lookup: Option<String>,
     },
+    /// Re-export cookies from the browser via yt-dlp (renews an expired YTM session).
+    /// Uses the configured cookie_browser and yt_dlp_command. On success the
+    /// Library page can be reloaded to pick up the fresh session automatically.
+    AuthRefresh,
 }
 
 pub struct RuntimeInfo {

@@ -9160,14 +9160,13 @@ dependencies = [
 
 [[package]]
 name = "youtui"
-version = "1.0.22"
+version = "1.0.23"
 dependencies = [
  "anyhow",
  "async-callback-manager",
  "async_cell",
  "audio-player",
  "bytes",
- "chrono",
  "clap",
  "clap_complete",
  "crossterm",

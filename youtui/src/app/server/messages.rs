@@ -25,6 +25,9 @@ use ytmapi_rs::common::{AlbumID, ArtistChannelID, PlaylistID, SearchSuggestion, 
 use ytmapi_rs::query::library::GetLibrarySortOrder;
 use ytmapi_rs::query::playlist::PrivacyStatus;
 use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSong, GetPlaylistDetails};
+use std::path::PathBuf;
+use ytmapi_rs::auth::{BrowserToken, OAuthToken};
+use crate::app::server::api::stream_api_with_retry_n;
 
 #[derive(PartialEq, Debug)]
 pub enum TaskMetadata {
@@ -206,6 +209,136 @@ impl BackendTask<ArcServer> for AddPlaylistToPlaylist {
     }
 }
 
+/// Re-export the browser cookie to the on-disk cookie file via yt-dlp.
+///
+/// Writes to a temp file first, verifies it is non-empty, then atomically
+/// renames over the real cookie so a failed export can never clobber a good
+/// cookie. Only works if the configured browser is still logged into
+/// music.youtube.com.
+pub async fn refresh_cookie_via_ytdl(yt_dlp_command: &str, cookie_browser: &str) -> Result<()> {
+    let target = crate::get_config_dir()
+        .map(|d| d.join(crate::COOKIE_FILENAME))
+        .unwrap_or_else(|_| PathBuf::from(crate::COOKIE_FILENAME));
+    let target_str = target.to_string_lossy().to_string();
+    let tmp_path = target.with_extension("txt.tmp");
+    let tmp_str = tmp_path.to_string_lossy().to_string();
+
+    // Remove a stale temp file from a previously crashed run so yt-dlp starts fresh.
+    let _ = tokio::fs::remove_file(&tmp_path).await;
+
+    tracing::info!(browser = %cookie_browser, tmp = %tmp_str, "Refreshing library cookie via yt-dlp");
+    let spawn = tokio::process::Command::new(yt_dlp_command)
+        .args([
+            "--cookies-from-browser",
+            cookie_browser,
+            "--cookies",
+            &tmp_str,
+            "--simulate",
+            "https://music.youtube.com",
+        ])
+        .kill_on_drop(true)
+        .output();
+    let output = match tokio::time::timeout(std::time::Duration::from_secs(60), spawn).await {
+        Ok(res) => res.map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to spawn yt-dlp for cookie refresh (is '{}' on PATH?): {e}",
+                yt_dlp_command
+            )
+        })?,
+        Err(_) => anyhow::bail!(
+            "yt-dlp timed out after 60s exporting cookies. Your browser profile may be locked or unresponsive."
+        ),
+    };
+    // yt-dlp exits non-zero on the unsupported music.youtube.com URL even when
+    // it successfully exported cookies, so we do not gate on exit status. The
+    // authoritative signal is the exported file containing the session cookie.
+    let content = match tokio::fs::read_to_string(&tmp_path).await {
+        Ok(c) => c,
+        Err(_) => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            anyhow::bail!(
+                "yt-dlp exported no cookie file. Your browser session may be logged out of music.youtube.com. Stderr: {}",
+                stderr
+            );
+        }
+    };
+    let has_session = content.contains("SAPISID") || content.contains("__Secure-3PAPISID");
+    if content.trim().is_empty() || !has_session {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        anyhow::bail!(
+            "yt-dlp exported a cookie file without a session cookie. Your browser is likely not logged into music.youtube.com. Stderr: {}",
+            stderr
+        );
+    }
+    tokio::fs::rename(&tmp_path, &target).await.map_err(|e| {
+        anyhow::anyhow!("Failed to install refreshed cookie to {}: {e}", target_str)
+    })?;
+    tracing::info!("Library cookie refreshed and installed at {}", target_str);
+    Ok(())
+}
+
+/// Accurate, actionable error for library auth failures. Replaces the old
+/// misleading 'Configure cookies or OAuth' text (OAuth is broken for library).
+fn library_auth_error(cookie_browser: &str, detail: &str) -> anyhow::Error {
+    let cookie_path = crate::get_config_dir()
+        .map(|d| d.join(crate::COOKIE_FILENAME).to_string_lossy().to_string())
+        .unwrap_or_else(|_| crate::COOKIE_FILENAME.to_string());
+    anyhow::anyhow!(
+        "Library unavailable: your cookie session expired or is invalid. Re-export a fresh cookie from a browser logged into music.youtube.com with:\n  yt-dlp --cookies-from-browser {} --cookies {} https://music.youtube.com\nIf that still fails, your browser session has logged out. Underlying error: {}",
+        cookie_browser,
+        cookie_path,
+        detail
+    )
+}
+
+/// Run a library query, transparently recovering from a dead-cookie session.
+///
+/// On first failure, re-export the cookie via yt-dlp, rebuild the in-memory API
+/// client from the fresh file, then retry once. Returns the accurate
+/// `library_auth_error` if recovery fails.
+async fn fetch_library_query_with_refresh<Q, O>(backend: &ArcServer, query: &Q) -> Result<Vec<O>>
+where
+    Q: ytmapi_rs::query::Query<BrowserToken, Output = O>,
+    Q: ytmapi_rs::query::Query<OAuthToken, Output = O>,
+    O: ytmapi_rs::continuations::ParseFromContinuable<Q>,
+    Q: ytmapi_rs::query::PostQuery,
+{
+    let api_guard = backend.api.get_api().await?;
+    match stream_api_with_retry_n(&api_guard, query, 10).await {
+        Ok(pages) => Ok(pages),
+        Err(e) => {
+            tracing::warn!("Library query failed, attempting cookie refresh: {e}");
+            match refresh_cookie_via_ytdl(&backend.yt_dlp_command, &backend.cookie_browser).await {
+                Ok(()) => {
+                    if let Err(rebuild_err) = backend.api.rebuild_from_cookie().await {
+                        tracing::warn!("Cookie refreshed on disk but API rebuild failed: {rebuild_err}");
+                        return Err(library_auth_error(
+                            &backend.cookie_browser,
+                            &rebuild_err.to_string(),
+                        ));
+                    }
+                    let api_guard2 = backend.api.get_api().await?;
+                    match stream_api_with_retry_n(&api_guard2, query, 10).await {
+                        Ok(pages) => Ok(pages),
+                        Err(e2) => {
+                            tracing::warn!("Library query still failed after cookie refresh; surfacing raw error: {e2}");
+                            Err(e2)
+                        }
+                    }
+                }
+                Err(refresh_err) => {
+                    tracing::warn!("Cookie refresh failed: {refresh_err}");
+                    Err(library_auth_error(
+                        &backend.cookie_browser,
+                        &refresh_err.to_string(),
+                    ))
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct GetAllLibraryPlaylists;
 
@@ -219,23 +352,11 @@ impl BackendTask<ArcServer> for GetAllLibraryPlaylists {
         let backend = backend.clone();
         async move {
             use ytmapi_rs::query::GetLibraryPlaylistsQuery;
-            use crate::app::server::api::stream_api_with_retry_n;
 
-            let api_guard = backend.api.get_api().await?;
-
-            match stream_api_with_retry_n(&api_guard, &GetLibraryPlaylistsQuery, 10).await {
-                Ok(pages) => {
-                    let playlists: Vec<_> = pages.into_iter().flatten().collect();
-                    tracing::info!(count = %playlists.len(), "GetAllLibraryPlaylists done");
-                    Ok(playlists)
-                }
-                Err(e) => {
-                    tracing::warn!("GetLibraryPlaylistsQuery failed: {}. Library playlists require browser auth (cookies) or OAuth.", e);
-                    Err(anyhow::anyhow!(
-                        "Library playlists unavailable. Configure cookies or OAuth in config. Error: {}", e
-                    ))
-                }
-            }
+            let pages = fetch_library_query_with_refresh(&backend, &GetLibraryPlaylistsQuery).await?;
+            let playlists: Vec<_> = pages.into_iter().flatten().collect();
+            tracing::info!(count = %playlists.len(), "GetAllLibraryPlaylists done");
+            Ok(playlists)
         }
     }
 }
@@ -256,59 +377,48 @@ impl BackendTask<ArcServer> for GetAllLibrarySongs {
         let sort_order = self.sort_order;
         async move {
             use ytmapi_rs::query::GetLibrarySongsQuery;
-            use crate::app::server::api::stream_api_with_retry_n;
 
-            let api_guard = backend.api.get_api().await?;
             let query = GetLibrarySongsQuery::new(sort_order);
 
             let t0 = std::time::Instant::now();
-            match stream_api_with_retry_n(&api_guard, &query, 10).await {
-                Ok(pages) => {
-                    let songs: Vec<_> = pages.into_iter().flatten().collect();
-                    tracing::info!(count = %songs.len(), elapsed_ms = %t0.elapsed().as_millis(), "GetAllLibrarySongs done");
+            let pages = fetch_library_query_with_refresh(&backend, &query).await?;
+            let songs: Vec<_> = pages.into_iter().flatten().collect();
+            tracing::info!(count = %songs.len(), elapsed_ms = %t0.elapsed().as_millis(), "GetAllLibrarySongs done");
 
-                    // Check metadata cache for each song to provide instant enrichment
-                    let registry = backend.metadata_registry.clone();
-                    let enriched: Vec<(usize, Option<String>, Vec<String>, Vec<String>)> = songs
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(i, s)| {
-                            let artist: String = s.artists.iter()
-                                .map(|a| a.name.as_str())
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            if artist.is_empty() { return None; }
-                            let key = format!("{}::{}",
-                                metadata_provider::util::norm_for_lfm(&artist.to_lowercase()),
-                                metadata_provider::util::norm_for_lfm(&s.title.to_lowercase()),
-                            );
-                            registry.lookup_cache(&key).map(|cached| {
-                                (i, cached.year, cached.genres, cached.styles)
-                            })
-                        })
-                        .collect();
-                    if enriched.is_empty() {
-                        tracing::warn!(
-                            total = %songs.len(),
-                            "GetAllLibrarySongs: ZERO cache hits — all songs will enrich async"
-                        );
-                    } else {
-                        tracing::info!(
-                            enriched_count = %enriched.len(),
-                            total = %songs.len(),
-                            "GetAllLibrarySongs cache check"
-                        );
-                    }
-
-                    Ok(EnrichedLibrarySongs { songs, enriched })
-                }
-                Err(e) => {
-                    tracing::warn!("GetLibrarySongsQuery failed: {}. Library songs require browser auth (cookies) or OAuth.", e);
-                    Err(anyhow::anyhow!(
-                        "Library songs unavailable. Configure cookies or OAuth in config. Error: {}", e
-                    ))
-                }
+            // Check metadata cache for each song to provide instant enrichment
+            let registry = backend.metadata_registry.clone();
+            let enriched: Vec<(usize, Option<String>, Vec<String>, Vec<String>)> = songs
+                .iter()
+                .enumerate()
+                .filter_map(|(i, s)| {
+                    let artist: String = s.artists.iter()
+                        .map(|a| a.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    if artist.is_empty() { return None; }
+                    let key = format!("{}::{}",
+                        metadata_provider::util::norm_for_lfm(&artist.to_lowercase()),
+                        metadata_provider::util::norm_for_lfm(&s.title.to_lowercase()),
+                    );
+                    registry.lookup_cache(&key).map(|cached| {
+                        (i, cached.year, cached.genres, cached.styles)
+                    })
+                })
+                .collect();
+            if enriched.is_empty() {
+                tracing::warn!(
+                    total = %songs.len(),
+                    "GetAllLibrarySongs: ZERO cache hits — all songs will enrich async"
+                );
+            } else {
+                tracing::info!(
+                    enriched_count = %enriched.len(),
+                    total = %songs.len(),
+                    "GetAllLibrarySongs cache check"
+                );
             }
+
+            Ok(EnrichedLibrarySongs { songs, enriched })
         }
     }
 }
@@ -331,32 +441,27 @@ impl BackendTask<ArcServer> for GetAllLibraryArtists {
             use ytmapi_rs::query::{GetLibraryArtistsQuery, GetLibraryArtistSubscriptionsQuery};
             use crate::app::server::api::stream_api_with_retry_n;
 
-            let api_guard = backend.api.get_api().await?;
             let artists_query = GetLibraryArtistsQuery::new(sort_order);
 
-            let artists = match stream_api_with_retry_n(&api_guard, &artists_query, 10).await {
-                Ok(pages) => {
-                    let artists: Vec<_> = pages.into_iter().flatten().collect();
-                    tracing::info!(count = %artists.len(), "GetAllLibraryArtists done");
-                    artists
-                }
-                Err(e) => {
-                    tracing::warn!("GetLibraryArtistsQuery failed: {}. Library artists require browser auth (cookies) or OAuth.", e);
-                    return Err(anyhow::anyhow!(
-                        "Library artists unavailable. Configure cookies or OAuth in config. Error: {}", e
-                    ));
-                }
-            };
+            let pages = fetch_library_query_with_refresh(&backend, &artists_query).await?;
+            let artists: Vec<_> = pages.into_iter().flatten().collect();
+            tracing::info!(count = %artists.len(), "GetAllLibraryArtists done");
 
-            // Fetch subscriptions to populate the Subs column
+            // Fetch subscriptions to populate the Subs column (best-effort).
             let sub_query = GetLibraryArtistSubscriptionsQuery::new(Default::default());
-            let subscribed_ids: Vec<ArtistChannelID<'static>> = match stream_api_with_retry_n(&api_guard, &sub_query, 10).await {
-                Ok(subs) => {
-                    tracing::info!(count = %subs.len(), "GetLibraryArtistSubscriptions done");
-                    subs.into_iter().flatten().map(|s| s.channel_id).collect()
-                }
+            let subscribed_ids: Vec<ArtistChannelID<'static>> = match backend.api.get_api().await {
+                Ok(api_guard) => match stream_api_with_retry_n(&api_guard, &sub_query, 10).await {
+                    Ok(subs) => {
+                        tracing::info!(count = %subs.len(), "GetLibraryArtistSubscriptions done");
+                        subs.into_iter().flatten().map(|s| s.channel_id).collect()
+                    }
+                    Err(e) => {
+                        tracing::warn!("GetLibraryArtistSubscriptionsQuery failed: {}", e);
+                        Vec::new()
+                    }
+                },
                 Err(e) => {
-                    tracing::warn!("GetLibraryArtistSubscriptionsQuery failed: {}", e);
+                    tracing::warn!("get_api failed, skipping subscriptions: {}", e);
                     Vec::new()
                 }
             };
@@ -382,24 +487,13 @@ impl BackendTask<ArcServer> for GetAllLibraryAlbums {
         let sort_order = self.sort_order;
         async move {
             use ytmapi_rs::query::GetLibraryAlbumsQuery;
-            use crate::app::server::api::stream_api_with_retry_n;
 
-            let api_guard = backend.api.get_api().await?;
             let query = GetLibraryAlbumsQuery::new(sort_order);
 
-            match stream_api_with_retry_n(&api_guard, &query, 10).await {
-                Ok(pages) => {
-                    let albums: Vec<_> = pages.into_iter().flatten().collect();
-                    tracing::info!(count = %albums.len(), "GetAllLibraryAlbums done");
-                    Ok(albums)
-                }
-                Err(e) => {
-                    tracing::warn!("GetLibraryAlbumsQuery failed: {}. Library albums require browser auth (cookies) or OAuth.", e);
-                    Err(anyhow::anyhow!(
-                        "Library albums unavailable. Configure cookies or OAuth in config. Error: {}", e
-                    ))
-                }
-            }
+            let pages = fetch_library_query_with_refresh(&backend, &query).await?;
+            let albums: Vec<_> = pages.into_iter().flatten().collect();
+            tracing::info!(count = %albums.len(), "GetAllLibraryAlbums done");
+            Ok(albums)
         }
     }
 }
