@@ -6,7 +6,6 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-use vi_text_editor::ViTextEditor;
 
 /// Minimal header: two bordered blocks side by side.
 /// - Commands block: F1/F2/F3, o (Context Menu), ? help only.

@@ -1,3 +1,9 @@
+// `FuzzyKind`'s OpenTab/Lyrics/Logs/Notes variants and `draw_fuzzy_finder` are
+// only exercised by the fuzzy-finder's test surface and optional window
+// contexts; they are intentionally retained. Allow the dead-code lint so the
+// default (non-test) build stays warning-free.
+#![allow(dead_code)]
+
 use crate::app::structures::fuzzy_match;
 use crate::app::ui::WindowContext;
 use crate::app::view::HasTabs;
@@ -407,7 +413,7 @@ pub fn build_corpus(
             }
         }
         WindowContext::PlaylistSavePopup => {
-            if let Some(popup) = &window.playlist_save_popup {
+            if let Some(_popup) = &window.playlist_save_popup {
                 // Fields are private, just add placeholder
                 entries.push(FuzzyEntry {
                     label: "Save Playlist".to_string(),
