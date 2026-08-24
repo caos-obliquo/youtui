@@ -5,14 +5,24 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph};
 
 /// Minimal header: two bordered blocks side by side.
 /// - Commands block: F1/F2/F3, o (Context Menu), ? help only.
 /// - Browser block (browser context): the five tabs on one line.
 /// Everything else lives in the ? help menu.
-pub fn header_required_height(_w: &super::YoutuiWindow) -> u16 {
-    3
+///
+/// When the fuzzy finder or the browser local filter is active we grow the
+/// header by one line so the search query has its own space WITHOUT wiping the
+/// tabs/commands (the previous implementation cleared the whole header).
+pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
+    if w.fuzzy_finder.shown
+        || (matches!(w.context, WindowContext::Browser) && w.browser.filter_active())
+    {
+        4
+    } else {
+        3
+    }
 }
 
 fn button_span(label: &str) -> Span<'static> {
@@ -23,30 +33,43 @@ fn button_span(label: &str) -> Span<'static> {
 }
 
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
-    // Fuzzy finder active: show search input in header
+    // Fuzzy finder active: keep the normal header visible and show the query
+    // on its own line at the bottom of the header block, in the project-rule
+    // `[SEARCH: text (N/M)]` format.
     if w.fuzzy_finder.shown {
-        let filter_block = Block::default().borders(Borders::ALL).title(" / ").border_style(Style::default().fg(Color::Cyan));
-        let display = w.fuzzy_finder.editor.render_simple("/");
-        let inner = filter_block.inner(chunk);
-        f.render_widget(Clear, chunk);
-        f.render_widget(filter_block, chunk);
-        f.render_widget(Paragraph::new(display).style(Style::default().fg(Color::Cyan)), inner);
-        f.set_cursor_position((inner.x + w.fuzzy_finder.editor.cursor as u16, inner.y));
+        let [main_chunk, input_chunk] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(chunk);
+        draw_normal_header(f, w, main_chunk);
+        draw_fuzzy_input(f, w, input_chunk);
         return;
     }
-    // Browser local filter active: show filter input in header
+    // Browser local filter active: same treatment, keep the header intact.
     if matches!(w.context, WindowContext::Browser) && w.browser.filter_active() {
+        let [main_chunk, input_chunk] =
+            Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(chunk);
+        draw_normal_header(f, w, main_chunk);
         let editor = w.browser.filter_editor();
-        let filter_block = Block::default().borders(Borders::ALL).title(" Filter ").border_style(Style::default().fg(Color::Cyan));
-        let display = editor.render_simple("/");
-        let inner = filter_block.inner(chunk);
-        f.render_widget(Clear, chunk);
-        f.render_widget(filter_block, chunk);
-        f.render_widget(Paragraph::new(display).style(Style::default().fg(Color::Cyan)), inner);
-        f.set_cursor_position((inner.x + editor.cursor as u16, inner.y));
+        let text = format!("[FILTER: {}]", editor.get_text());
+        let p = Paragraph::new(text).style(Style::default().fg(Color::Cyan));
+        f.render_widget(p, input_chunk);
+        f.set_cursor_position((input_chunk.x + 9 + editor.cursor as u16, input_chunk.y));
         return;
     }
+    draw_normal_header(f, w, chunk);
+}
 
+fn draw_fuzzy_input(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
+    let q = w.fuzzy_finder.query();
+    let total = w.fuzzy_finder.entries.len();
+    let shown = w.fuzzy_finder.matches.len();
+    let text = format!("[SEARCH: {q} ({shown}/{total})]");
+    let p = Paragraph::new(text).style(Style::default().fg(Color::Cyan));
+    f.render_widget(p, chunk);
+    // Cursor sits right after the typed query (skip the "[SEARCH: " prefix = 9 chars).
+    f.set_cursor_position((chunk.x + 9 + w.fuzzy_finder.editor.cursor as u16, chunk.y));
+}
+
+fn draw_normal_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     let mut spans: Vec<Span> = Vec::new();
 
     let vi_mode: Option<String> = if w.command_mode {
