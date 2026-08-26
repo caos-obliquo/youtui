@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SongInfoPopup enriched display with genres, styles, and descriptors
 - Logger ToggleFullscreen + chord keybind (`gg`/`G`)
 - `open_persistent()` and `get_subgenres_with_descriptions()` on genre-db-sqlite
+- Library cookie auto-recovery via yt-dlp: `auth-refresh` CLI + `rebuild_from_cookie` rebuilds the YTM session from a fresh chromium cookie when the stored cookie expires
+- `get-browse` CLI command wired to ytmapi-rs `BrowseQuery` (raw browse JSON for any browseId)
+- `filter_youtube_cookies` strips foreign cookies before building the hyper header (avoids 64KB header overflow / 431 errors)
 
 ### Changed
 - Album splitting now only triggers for channel uploads or YTM tracks missing metadata; regular YTM tracks keep their correct structure
@@ -39,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All CLI subcommands: consistent `with_timeout` + error message + progress indicator pattern
 - ytmapi-rs library.rs parse improvements (VL prefix, library tracks)
 - Footer volume display replaced from text (Vol N%) to Nerd Font level-based icons
+- `/` fuzzy finder reworked to filter the visible list live (neovim-style): input on header, main list filters in real time; scoped to the active tab and cleared on tab switch / dive-in so it does not leak across views; `j/k` type into the query, `Up`/`Down` navigate the filtered list, `Esc`/`/` clears, `Enter` commits; `[SEARCH: text (N/M)]` indicator shown under the header
 
 ### Fixed
 - Stale `album_tracks` leaking split track names into the next song's scrobble
@@ -55,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lyrics error draw: retry hint shown in error display
 - Lyrics timestamp parse: runtime logging for debug
 - TestValidateMetadata: removed double-fetch (per-provider loop then `registry.resolve`)
+- Footer album-art flicker: skip sixel redraw when the encoded image is unchanged
+- CI security audit: bump `rkyv` 0.8.16→0.8.18 (clears RUSTSEC-2026-0233/0234/0235); ignore `RUSTSEC-2026-0258` (h2 0.3.27, unfixable without reqwest 0.11→0.12 migration)
 
 ## [v1.0.3] - 2026-06-27
 
