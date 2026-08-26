@@ -107,35 +107,20 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .areas(window_chunk);
     header::draw_header(f, w, header_chunk);
-    
-    // Draw fuzzy finder dropdown below header when active
-    if w.fuzzy_finder.shown {
-        let dropdown_height = (w.fuzzy_finder.matches.len() as u16).min(10);
-        if dropdown_height > 0 {
-            let dropdown_chunk = Rect {
-                x: content_chunk.x,
-                y: content_chunk.y,
-                width: content_chunk.width,
-                height: dropdown_height,
-            };
-            super::fuzzy_finder::draw_fuzzy_finder_dropdown(f, &mut w.fuzzy_finder, dropdown_chunk);
-            // Adjust content chunk to start below dropdown
-            let adjusted_content = Rect {
-                x: content_chunk.x,
-                y: content_chunk.y + dropdown_height,
-                width: content_chunk.width,
-                height: content_chunk.height.saturating_sub(dropdown_height),
-            };
-            let context_selected = !w.help.shown && !w.key_pending();
-            match w.context {
-                WindowContext::Browser => w.browser.draw_mut_chunk(f, adjusted_content, context_selected, w.tick),
-                WindowContext::Logs => w.logger.draw_chunk(f, adjusted_content, context_selected),
-                WindowContext::Playlist | WindowContext::PlaylistEditor => w.playlist.draw_mut_chunk(f, adjusted_content, context_selected, w.tick),
-                _ => {}
-            }
-        }
+
+    // `/` fuzzy finder (and F1 filter) show their query on a line directly under
+    // the header (top of the content area), not on the bottom nav bar.
+    let search_active = w.fuzzy_finder.shown
+        || (matches!(w.context, WindowContext::Browser) && w.browser.filter_active());
+    let (search_chunk, list_chunk) = if search_active {
+        let [sc, lc] = Layout::vertical([Constraint::Length(1), Constraint::Min(1)]).areas(content_chunk);
+        (Some(sc), lc)
     } else {
-        let context_selected = !w.help.shown && !w.key_pending();
+        (None, content_chunk)
+    };
+
+    // fuzzy finder now filters the main list in-place via browser.filter_text; no separate dropdown.
+    let context_selected = !w.help.shown && !w.key_pending();
         match w.context {
             WindowContext::Browser => {
                 // Set current playing video ID for all browser playing indicators
@@ -149,37 +134,39 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                     w.browser.set_cur_playing_video_id(None);
                 }
                 w.browser
-                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+                    .draw_mut_chunk(f, list_chunk, context_selected, w.tick);
             }
-            WindowContext::Logs => w.logger.draw_chunk(f, content_chunk, context_selected),
+            WindowContext::Logs => w.logger.draw_chunk(f, list_chunk, context_selected),
             WindowContext::Playlist | WindowContext::PlaylistEditor => {
                 w.playlist
-                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+                    .draw_mut_chunk(f, list_chunk, context_selected, w.tick);
             }
             WindowContext::PlaylistSavePopup => {
                 w.playlist
-                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+                    .draw_mut_chunk(f, list_chunk, context_selected, w.tick);
             }
             WindowContext::PlaylistUpdatePopup => {
                 w.playlist
-                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+                    .draw_mut_chunk(f, list_chunk, context_selected, w.tick);
             }
             WindowContext::Lyrics => {
                 w.playlist
-                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+                    .draw_mut_chunk(f, list_chunk, context_selected, w.tick);
             }
             WindowContext::SongInfo => {
                 w.playlist
-                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+                    .draw_mut_chunk(f, list_chunk, context_selected, w.tick);
             }
             WindowContext::PlaylistRenamePopup
             | WindowContext::PlaylistEditPopup
             | WindowContext::PlaylistDetailsPopup
             | WindowContext::Notes => {
                 w.playlist
-                    .draw_mut_chunk(f, content_chunk, context_selected, w.tick);
+                    .draw_mut_chunk(f, list_chunk, context_selected, w.tick);
             }
         }
+    if let Some(sc) = search_chunk {
+        draw_search_indicator(f, w, sc);
     }
     draw_nav_hint_bar(f, w, nav_hint_chunk);
     if w.help.shown {
@@ -399,6 +386,31 @@ fn draw_nav_hint_bar(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     f.render_widget(hint, chunk);
+}
+
+/// Draw the active `/` search or F1 filter query on a line directly under the
+/// header (top of the content area). Cursor is placed after the typed text.
+fn draw_search_indicator(f: &mut Frame, w: &YoutuiWindow, chunk: Rect) {
+    if w.fuzzy_finder.shown {
+        let q = w.fuzzy_finder.query().to_string();
+        let (shown, total) = if matches!(w.context, WindowContext::Playlist) {
+            (w.playlist.search_indices_len(), w.playlist.list.get_list_iter().count())
+        } else {
+            (w.fuzzy_finder.matches.len(), w.fuzzy_finder.entries.len())
+        };
+        let text = format!("[SEARCH: {q} ({shown}/{total})]");
+        let p = Paragraph::new(text).style(Style::default().fg(Color::Cyan));
+        f.render_widget(p, chunk);
+        f.set_cursor_position((chunk.x + 9 + q.chars().count() as u16, chunk.y));
+        return;
+    }
+    if matches!(w.context, WindowContext::Browser) && w.browser.filter_active() {
+        let editor = w.browser.filter_editor();
+        let text = format!("[FILTER: {}]", editor.get_text());
+        let p = Paragraph::new(text).style(Style::default().fg(Color::Cyan));
+        f.render_widget(p, chunk);
+        f.set_cursor_position((chunk.x + 9 + editor.cursor as u16, chunk.y));
+    }
 }
 
 /// Draw the help page. The help page should show all visible commands for the

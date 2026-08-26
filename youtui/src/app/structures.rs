@@ -903,6 +903,45 @@ pub fn fuzzy_match(query: &str, target: &str) -> Option<u64> {
     Some(score + start_bonus)
 }
 
+/// Fuzzy match that also returns the char indices of the matched characters in
+/// `target` (case-insensitive). Used to highlight matched characters in the
+/// fuzzy-finder dropdown (neovim-style). Indices align with `target.chars()`.
+pub fn fuzzy_match_with_indices(query: &str, target: &str) -> Option<(u64, Vec<usize>)> {
+    if query.is_empty() {
+        return Some((0, Vec::new()));
+    }
+    let qchars: Vec<char> = query.to_lowercase().chars().collect();
+    let tchars: Vec<char> = target.to_lowercase().chars().collect();
+    let mut ti = 0;
+    let mut score: u64 = 0;
+    let mut first_match = None;
+    let mut consecutive = 0;
+    let mut positions = Vec::new();
+    for &qc in &qchars {
+        while ti < tchars.len() && tchars[ti] != qc {
+            consecutive = 0;
+            ti += 1;
+        }
+        if ti >= tchars.len() {
+            return None;
+        }
+        if first_match.is_none() {
+            first_match = Some(ti);
+        }
+        if consecutive > 0 {
+            score += 10;
+        }
+        score += 1;
+        consecutive += 1;
+        positions.push(ti);
+        ti += 1;
+    }
+    let start_bonus = first_match
+        .map(|s| (tchars.len().saturating_sub(s) * 5) as u64)
+        .unwrap_or(0);
+    Some((score + start_bonus, positions))
+}
+
 /// Check if text contains Japanese characters (hiragana, katakana, or kanji)
 pub fn has_japanese(text: &str) -> bool {
     text.chars().any(|c| {

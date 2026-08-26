@@ -434,6 +434,28 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             println!("Database path: {}", db_path.display());
             return Ok(());
         }
+
+        Some(crate::Command::AuthRefresh) => {
+            use crate::app::server::refresh_cookie_via_ytdl;
+            println!("Re-exporting cookies via yt-dlp (browser: {})...", config.cookie_browser);
+            match with_timeout(
+                "AuthRefresh",
+                refresh_cookie_via_ytdl(&config.yt_dlp_command, &config.cookie_browser),
+            )
+            .await
+            {
+                Ok(()) => println!("OK: cookie refreshed. Reload the Library page to pick up the new session."),
+                Err(e) => {
+                    eprintln!("[ERROR] AuthRefresh failed: {e}");
+                    eprintln!(
+                        "[HINT] Ensure you are logged into music.youtube.com in '{}', then re-run.",
+                        config.cookie_browser
+                    );
+                }
+            }
+            return Ok(());
+        }
+
         _ => {}
     }
     match cli {

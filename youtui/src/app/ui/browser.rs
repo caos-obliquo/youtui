@@ -37,7 +37,7 @@ pub mod shared_components;
 pub mod songsearch;
 
 #[derive(Default, Copy, Clone, PartialEq)]
-enum BrowserVariant {
+pub enum BrowserVariant {
     #[default]
     Artist,
     Album,
@@ -621,65 +621,6 @@ impl Browser {
     pub fn library_browser_ref(&self) -> &LibraryBrowser {
         &self.library_browser
     }
-    /// Switch to a browser tab by index (0=Artists, 1=Albums, 2=Songs,
-    /// 3=Playlists, 4=Library). Returns an effect if a fetch is needed.
-    pub fn switch_to_tab(
-        &mut self,
-        tab: usize,
-    ) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
-        use BrowserVariant::*;
-        let target = match tab {
-            0 => Artist,
-            1 => Album,
-            2 => Song,
-            3 => PlaylistSearch,
-            _ => LibraryPlaylist,
-        };
-        if self.variant == target {
-            return None;
-        }
-        self.variant = target;
-        if target == LibraryPlaylist {
-            Some(
-                self.library_browser
-                    .fetch_current_category()
-                    .map_frontend(|this: &mut Self| &mut this.library_browser),
-            )
-        } else {
-            None
-        }
-    }
-    /// Jump the selection of the current variant to `item_idx` (visual index).
-    pub fn jump_to_item(&mut self, tab: usize, item_idx: usize) {
-        use BrowserVariant::*;
-        // Make sure we're on the right tab first.
-        let _ = self.switch_to_tab(tab);
-        match self.variant {
-            Artist => self.artist_search_browser.artist_search_panel.jump_to(item_idx),
-            Album => {
-                if self.album_search_browser.show_tracks {
-                    self.album_search_browser.track_selected = item_idx;
-                } else {
-                    self.album_search_browser.album_selected = item_idx;
-                }
-            }
-            Song => self.song_search_browser.jump_to(item_idx),
-            PlaylistSearch => {
-                self.playlist_search_browser
-                    .playlist_search_panel
-                    .jump_to(item_idx)
-            }
-            LibraryPlaylist => {
-                use crate::app::ui::browser::library::LibraryCategory;
-                match self.library_browser.category {
-                    LibraryCategory::LikedSongs => self.library_browser.cur_selected = item_idx,
-                    LibraryCategory::Playlists => self.library_browser.playlist_selected = item_idx,
-                    LibraryCategory::Artists => self.library_browser.artist_selected = item_idx,
-                    LibraryCategory::Albums => self.library_browser.album_selected = item_idx,
-                }
-            }
-        }
-    }
     /// Check if a BrowserSongsAction should be visible in the context menu
     /// for the current browser variant and sub-state.
     pub fn is_song_action_visible(&self, action: &BrowserSongsAction) -> bool {
@@ -712,6 +653,23 @@ impl Browser {
     }
     pub fn filter_active(&self) -> bool {
         self.filter_active
+    }
+
+    pub fn variant(&self) -> BrowserVariant {
+        self.variant
+    }
+    /// Set the active local filter text (used by the `/` fuzzy finder to filter
+    /// the main list live). Clears `filter_active` so the F1 editor state resets.
+    pub fn set_local_filter(&mut self, text: &str) {
+        self.filter_text = text.to_string();
+        self.filter_active = false;
+        self.sync_local_filter();
+    }
+    /// Clear any active local filter and restore the full list.
+    pub fn clear_local_filter(&mut self) {
+        self.filter_text.clear();
+        self.filter_active = false;
+        self.sync_local_filter();
     }
     pub fn filter_editor(&self) -> &ViTextEditor {
         &self.filter_editor
@@ -753,8 +711,11 @@ impl Browser {
         };
         match self.variant {
             BrowserVariant::Artist => {
+                // Filter both the artist list (left) and the songs panel (right):
+                // `/` should filter the visible items on the Artists tab.
                 self.artist_search_browser.artist_search_panel.local_filter_text = text.clone();
-                self.artist_search_browser.album_songs_panel.local_filter_text = text;
+                self.artist_search_browser.album_songs_panel.local_filter_text = text.clone();
+                self.artist_search_browser.album_songs_panel.rebuild_filtered_cache();
             }
             BrowserVariant::Song => self.song_search_browser.local_filter_text = text,
             BrowserVariant::Album => self.album_search_browser.local_filter_text = text,
@@ -763,8 +724,10 @@ impl Browser {
                 debug!(text = %self.library_browser.local_filter_text, "sync_local_filter: library set");
             }
             BrowserVariant::PlaylistSearch => {
+                // Filter both the playlist list (left) and the songs panel (right):
+                // `/` should filter the visible items on the PlaylistSearch tab.
                 self.playlist_search_browser.playlist_search_panel.local_filter_text = text.clone();
-                self.playlist_search_browser.playlist_songs_panel.local_filter_text = text;
+                self.playlist_search_browser.playlist_songs_panel.local_filter_text = text.clone();
             }
         }
     }
@@ -776,6 +739,11 @@ impl Browser {
         self.playlist_search_browser.playlist_songs_panel.cur_playing_video_id = video_id;
     }
     pub fn navigate_to(&mut self, target: NavTarget) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
+        // Clear any active fuzzy/filter search so it does not drag into the new view.
+        self.filter_text.clear();
+        self.filter_active = false;
+        self.filter_editor.clear();
+        self.sync_local_filter();
         self.push_snapshot();
         match target {
             NavTarget::Artist(name) => {
@@ -958,6 +926,11 @@ impl Browser {
         }
     }
     pub fn handle_change_search_type(&mut self) -> Option<AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>> {
+        // Clear any active fuzzy/filter search so it does not drag to the next tab.
+        self.filter_text.clear();
+        self.filter_active = false;
+        self.filter_editor.clear();
+        self.sync_local_filter();
         self.push_snapshot();
         match self.variant {
             BrowserVariant::Artist => {

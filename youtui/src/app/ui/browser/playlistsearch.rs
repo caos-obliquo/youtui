@@ -295,8 +295,8 @@ impl PlaylistSearchBrowser {
 
         let Some(cur_playlist_id) = self
             .playlist_search_panel
-            .list
-            .get(selected)
+            .get_filtered_list_iter()
+            .nth(selected)
             .cloned()
             .map(|a| a.playlist_id)
         else {

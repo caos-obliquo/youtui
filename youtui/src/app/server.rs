@@ -31,6 +31,8 @@ pub struct Server {
     pub api_error_handler: api_error_handler::ApiErrorHandler,
     pub http_client: ::reqwest::Client,
     pub metadata_registry: Arc<MetadataRegistry>,
+    pub cookie_browser: String,
+    pub yt_dlp_command: String,
 }
 
 impl Server {
@@ -76,6 +78,8 @@ impl Server {
             song_thumbnail_downloader,
             http_client,
             metadata_registry,
+            cookie_browser: config.cookie_browser.clone(),
+            yt_dlp_command: config.yt_dlp_command.clone(),
         }
     }
 }

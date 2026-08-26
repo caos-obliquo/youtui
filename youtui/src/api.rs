@@ -237,3 +237,28 @@ impl DynamicYtMusic {
         })
     }
 }
+
+/// Keep only YouTube/Google cookies from a Netscape cookie file.
+///
+/// `yt-dlp --cookies-from-browser` exports EVERY cookie in the browser profile
+/// (hundreds from unrelated sites such as slack, github, etc). ytmapi-rs forwards
+/// the entire file as a single `Cookie` request header, which overflows the HTTP
+/// header size limit (~64KB) and fails with "Error parsing header". Trimming to
+/// the domains YTM actually needs keeps the header small and valid.
+pub(crate) fn filter_youtube_cookies(netscape: &str) -> String {
+    netscape
+        .lines()
+        .filter(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return true; // preserve header comments and blank lines
+            }
+            if !line.contains('\t') {
+                return false; // malformed line, drop
+            }
+            let domain = line.split('\t').next().unwrap_or("");
+            domain.contains("youtube") || domain.contains("google")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}

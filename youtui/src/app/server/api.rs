@@ -2,7 +2,7 @@ use crate::api::{DynamicApiError, DynamicYtMusic};
 use crate::app::CALLBACK_CHANNEL_SIZE;
 use audio_player::send_or_error;
 use crate::config::ApiKey;
-use crate::{OAUTH_FILENAME, get_config_dir};
+use crate::{OAUTH_FILENAME, COOKIE_FILENAME, get_config_dir};
 use anyhow::{Error, Result};
 use async_callback_manager::PanickingReceiverStream;
 use async_cell::sync::AsyncCell;
@@ -54,6 +54,35 @@ impl Api {
     pub async fn get_api(&self) -> Result<ConcurrentApi, DynamicApiError> {
         // Note that the error, if it exists, is cloned here.
         self.api.get().await
+    }
+    /// Rebuild the in-memory API client from the on-disk cookie file.
+    ///
+    /// The client caches the SAPISID session built from the cookie at startup.
+    /// When `refresh_cookie_via_ytdl` rewrites the cookie file with a fresh
+    /// session, the stale in-memory client would still fail, so a retry after a
+    /// cookie refresh must rebuild from the new file first.
+    pub async fn rebuild_from_cookie(&self) -> Result<()> {
+        let mut cookie_path = get_config_dir()?;
+        cookie_path.push(COOKIE_FILENAME);
+        let content = tokio::fs::read_to_string(&cookie_path)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed reading refreshed cookie file: {e}"))?;
+        // Trim to YouTube/Google domains so the resulting Cookie header stays
+        // within HTTP size limits (see filter_youtube_cookies).
+        let content = crate::api::filter_youtube_cookies(&content);
+        let api_key = ApiKey::BrowserToken(content);
+        let new_api = match DynamicYtMusic::new(api_key).await {
+            Ok(inner) => Ok(Arc::new(RwLock::new(inner))),
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to rebuild API client from refreshed cookie: {e}"
+                ))
+            }
+        };
+        // AsyncCell allows repeated set; waiters (get_api) see the new value.
+        self.api.set(new_api);
+        info!("API client rebuilt from refreshed cookie");
+        Ok(())
     }
     pub async fn get_search_suggestions(
         &self,

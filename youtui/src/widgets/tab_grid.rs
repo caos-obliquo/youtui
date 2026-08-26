@@ -1,3 +1,8 @@
+// `TabGrid` and its constraint/impl surface are currently only exercised by the
+// widget's own tests; retained for future tab-bar rendering. Allow dead-code so
+// the default (non-test) build stays warning-free.
+#![allow(dead_code)]
+
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 use ratatui::text::Line;

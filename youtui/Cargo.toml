@@ -58,11 +58,12 @@ async_cell = "0.2.3"
 bytes = "1.11.1"
 anyhow = "1.0.102"
 indicatif = "0.17"
-chrono = { version = "0.4.44", features = ["serde"] }
+
 souvlaki = { version = "0.8.3", default-features = false, features = [
   "use_zbus",
 ] }
 rand = "0.9"
+
 fs-err = { version = "3.3.0", features=["tokio"] }
 tokio-util = { version = "0.7.18", features = ["io"] }
 # These platforms require an open window to use media controls.
