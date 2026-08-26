@@ -12,17 +12,11 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 /// - Browser block (browser context): the five tabs on one line.
 /// Everything else lives in the ? help menu.
 ///
-/// When the fuzzy finder or the browser local filter is active we grow the
-/// header by one line so the search query has its own space WITHOUT wiping the
-/// tabs/commands (the previous implementation cleared the whole header).
-pub fn header_required_height(w: &super::YoutuiWindow) -> u16 {
-    if w.fuzzy_finder.shown
-        || (matches!(w.context, WindowContext::Browser) && w.browser.filter_active())
-    {
-        4
-    } else {
-        3
-    }
+/// The header is always three lines. The `/` fuzzy finder and the F1 local
+/// filter show their query on the bottom nav-hint bar (see draw_nav_hint_bar),
+/// so the header is never grown or wiped.
+pub fn header_required_height(_w: &super::YoutuiWindow) -> u16 {
+    3
 }
 
 fn button_span(label: &str) -> Span<'static> {
@@ -33,40 +27,10 @@ fn button_span(label: &str) -> Span<'static> {
 }
 
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
-    // Fuzzy finder active: keep the normal header visible and show the query
-    // on its own line at the bottom of the header block, in the project-rule
-    // `[SEARCH: text (N/M)]` format.
-    if w.fuzzy_finder.shown {
-        let [main_chunk, input_chunk] =
-            Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(chunk);
-        draw_normal_header(f, w, main_chunk);
-        draw_fuzzy_input(f, w, input_chunk);
-        return;
-    }
-    // Browser local filter active: same treatment, keep the header intact.
-    if matches!(w.context, WindowContext::Browser) && w.browser.filter_active() {
-        let [main_chunk, input_chunk] =
-            Layout::vertical([Constraint::Length(3), Constraint::Min(1)]).areas(chunk);
-        draw_normal_header(f, w, main_chunk);
-        let editor = w.browser.filter_editor();
-        let text = format!("[FILTER: {}]", editor.get_text());
-        let p = Paragraph::new(text).style(Style::default().fg(Color::Cyan));
-        f.render_widget(p, input_chunk);
-        f.set_cursor_position((input_chunk.x + 9 + editor.cursor as u16, input_chunk.y));
-        return;
-    }
+    // The header is always three lines. The `/` fuzzy finder and the F1 local
+    // filter show their query on the bottom nav-hint bar (see draw_nav_hint_bar),
+    // so the header is never grown or wiped.
     draw_normal_header(f, w, chunk);
-}
-
-fn draw_fuzzy_input(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
-    let q = w.fuzzy_finder.query();
-    let total = w.fuzzy_finder.entries.len();
-    let shown = w.fuzzy_finder.matches.len();
-    let text = format!("[SEARCH: {q} ({shown}/{total})]");
-    let p = Paragraph::new(text).style(Style::default().fg(Color::Cyan));
-    f.render_widget(p, chunk);
-    // Cursor sits right after the typed query (skip the "[SEARCH: " prefix = 9 chars).
-    f.set_cursor_position((chunk.x + 9 + w.fuzzy_finder.editor.cursor as u16, chunk.y));
 }
 
 fn draw_normal_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {

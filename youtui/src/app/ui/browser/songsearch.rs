@@ -941,11 +941,6 @@ impl SongSearchBrowser {
             }
         }
     }
-    /// Jump to a song by its filtered-list index (as shown on screen).
-    pub fn jump_to(&mut self, idx: usize) {
-        self.input_routing = InputRouting::List;
-        self.cur_selected = idx.min(self.get_filtered_list_iter().count().saturating_sub(1));
-    }
     pub fn go_to_last(&mut self) {
         match self.input_routing {
             InputRouting::List => {

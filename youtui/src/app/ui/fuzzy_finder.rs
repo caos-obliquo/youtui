@@ -1,17 +1,11 @@
-// `FuzzyKind`'s OpenTab/Lyrics/Logs/Notes variants and `draw_fuzzy_finder` are
-// only exercised by the fuzzy-finder's test surface and optional window
-// contexts; they are intentionally retained. Allow the dead-code lint so the
-// default (non-test) build stays warning-free.
+// `FuzzyKind`'s Lyrics/Logs/Notes variants are unused (their `WindowContext`
+// arms in `build_corpus` are empty); retained for completeness. Allow the
+// dead-code lint so the default (non-test) build stays warning-free.
 #![allow(dead_code)]
 
-use crate::app::structures::fuzzy_match;
+use crate::app::structures::fuzzy_match_with_indices;
 use crate::app::ui::WindowContext;
-use crate::app::view::HasTabs;
-use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use crate::app::ui::browser::BrowserVariant;
 use vi_text_editor::ViTextEditor;
 
 /// A single fuzzy-finder entry: display label plus a jump target.
@@ -28,8 +22,6 @@ pub enum FuzzyKind {
     Playlist(usize),
     /// Select a browser item: (tab idx, item idx).
     Browser(usize, usize),
-    /// Open a browser tab (0..4).
-    OpenTab(usize),
     /// Lyrics line index.
     Lyrics(usize),
     /// Song info field.
@@ -48,17 +40,14 @@ pub enum FuzzyKind {
     PlaylistEditPopup,
     /// Playlist details popup.
     PlaylistDetailsPopup,
-    /// Notes popup.
-    Notes(usize),
 }
 
 /// Header-spawned fuzzy finder (neovim-style `/`).
 pub struct FuzzyFinder {
     pub editor: ViTextEditor,
     pub entries: Vec<FuzzyEntry>,
-    /// Indices into `entries` that match the current query, best first.
-    pub matches: Vec<usize>,
-    pub cur: usize,
+    /// (entry index, matched char positions) pairs that match the current query, best first.
+    pub matches: Vec<(usize, Vec<usize>)>,
     pub shown: bool,
 }
 
@@ -68,7 +57,6 @@ impl FuzzyFinder {
             editor: ViTextEditor::new(),
             entries: Vec::new(),
             matches: Vec::new(),
-            cur: 0,
             shown: false,
         }
     }
@@ -78,14 +66,12 @@ impl FuzzyFinder {
         self.editor = ViTextEditor::new();
         self.entries.clear();
         self.matches.clear();
-        self.cur = 0;
     }
 
     pub fn close(&mut self) {
         self.shown = false;
         self.entries.clear();
         self.matches.clear();
-        self.cur = 0;
     }
 
     pub fn query(&self) -> &str {
@@ -102,123 +88,23 @@ impl FuzzyFinder {
     pub fn recompute(&mut self) {
         let q = self.query().trim();
         if q.is_empty() {
-            // Show everything (capped) in original order.
-            self.matches = (0..self.entries.len().min(50)).collect();
+            // Show everything (capped) in original order, no highlights.
+            self.matches = (0..self.entries.len().min(50))
+                .map(|i| (i, Vec::new()))
+                .collect();
         } else {
-            let mut scored: Vec<(u64, usize)> = self
+            let mut scored: Vec<(u64, (usize, Vec<usize>))> = self
                 .entries
                 .iter()
                 .enumerate()
-                .filter_map(|(i, e)| fuzzy_match(q, &e.label).map(|score| (score, i)))
+                .filter_map(|(i, e)| {
+                    fuzzy_match_with_indices(q, &e.label).map(|(score, idxs)| (score, (i, idxs)))
+                })
                 .collect();
-            scored.sort_by(|a, b| b.0.cmp(&a.0));
-            self.matches = scored.into_iter().map(|(_, i)| i).take(50).collect();
+            scored.sort_by(|a, b| a.0.cmp(&b.0).reverse());
+            self.matches = scored.into_iter().map(|(_, mi)| mi).take(50).collect();
         }
-        self.cur = 0;
     }
-
-    pub fn move_selection(&mut self, amount: isize) {
-        if self.matches.is_empty() {
-            return;
-        }
-        let max = self.matches.len() as isize - 1;
-        self.cur = (self.cur as isize + amount).clamp(0, max) as usize;
-    }
-
-    pub fn selected(&self) -> Option<&FuzzyEntry> {
-        self.matches.get(self.cur).map(|&i| &self.entries[i])
-    }
-}
-
-/// Draw the fuzzy finder as a header-height overlay: one line for the query,
-/// then a dropdown of matches.
-pub fn draw_fuzzy_finder(f: &mut Frame, finder: &mut FuzzyFinder, chunk: Rect) {
-    let shown_count = finder.matches.len();
-    let input_height = 3u16;
-    let dropdown_height = (shown_count as u16).min(10);
-    let total = input_height + dropdown_height;
-
-    let [input_chunk, list_chunk] = Layout::vertical([
-        Constraint::Length(input_height),
-        Constraint::Length(dropdown_height),
-    ])
-    .areas(Rect {
-        x: chunk.x,
-        y: chunk.y,
-        width: chunk.width,
-        height: total.min(chunk.height),
-    });
-
-    // Input box
-    let block = Block::default()
-        .title(" / ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
-    let inner = block.inner(input_chunk);
-    f.render_widget(Clear, input_chunk);
-    f.render_widget(block, input_chunk);
-    let display = finder.editor.render_simple("/");
-    f.render_widget(
-        Paragraph::new(display).style(Style::default().fg(Color::Cyan)),
-        inner,
-    );
-    f.set_cursor_position((inner.x + finder.editor.cursor as u16, inner.y));
-
-    // Match list
-    if shown_count > 0 {
-        let mut list_state = ListState::default().with_selected(Some(finder.cur));
-        let items: Vec<ListItem> = finder
-            .matches
-            .iter()
-            .take(10)
-            .map(|&i| {
-                let e = &finder.entries[i];
-                ListItem::new(Line::from(Span::raw(&e.label)))
-            })
-            .collect();
-        let list = List::new(items)
-            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::DarkGray)),
-            );
-        f.render_stateful_widget(list, list_chunk, &mut list_state);
-    }
-}
-
-/// Draw only the dropdown portion of the fuzzy finder (for rendering below header).
-/// Assumes the input line is already rendered by the header.
-pub fn draw_fuzzy_finder_dropdown(f: &mut Frame, finder: &mut FuzzyFinder, chunk: Rect) {
-    let shown_count = finder.matches.len();
-    if shown_count == 0 {
-        return;
-    }
-    let dropdown_height = (shown_count as u16).min(10);
-    let list_chunk = Rect {
-        x: chunk.x,
-        y: chunk.y,
-        width: chunk.width,
-        height: dropdown_height.min(chunk.height),
-    };
-    let mut list_state = ListState::default().with_selected(Some(finder.cur));
-    let items: Vec<ListItem> = finder
-        .matches
-        .iter()
-        .take(10)
-        .map(|&i| {
-            let e = &finder.entries[i];
-            ListItem::new(Line::from(Span::raw(&e.label)))
-        })
-        .collect();
-    let list = List::new(items)
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray)),
-        );
-    f.render_stateful_widget(list, list_chunk, &mut list_state);
 }
 
 /// Build the fuzzy-finder corpus for the current window context.
@@ -254,10 +140,10 @@ pub fn build_corpus(
             }
         }
         WindowContext::Browser => {
-            let cur_tab = window.browser.selected_tab_idx();
-            match cur_tab {
+            let v = window.browser.variant();
+            match v {
                 // Artists
-                0 => {
+                BrowserVariant::Artist => {
                     let b = &window.browser.artist_browser();
                     use crate::app::ui::browser::artistsearch::InputRouting;
                     match b.input_routing {
@@ -265,7 +151,7 @@ pub fn build_corpus(
                             for (i, a) in b.artist_search_panel.list.iter().enumerate() {
                                 entries.push(FuzzyEntry {
                                     label: a.artist.clone(),
-                                    kind: FuzzyKind::Browser(0, i),
+                                    kind: FuzzyKind::Browser(v as usize, i),
                                 });
                             }
                         }
@@ -279,14 +165,14 @@ pub fn build_corpus(
                                     .join(", ");
                                 entries.push(FuzzyEntry {
                                     label: format!("{artist} - {}", s.title),
-                                    kind: FuzzyKind::Browser(0, i),
+                                    kind: FuzzyKind::Browser(v as usize, i),
                                 });
                             }
                         }
                     }
                 }
                 // Albums
-                1 => {
+                BrowserVariant::Album => {
                     let b = &window.browser.album_browser();
                     if b.show_tracks {
                         for (i, s) in b.track_list.get_list_iter().enumerate() {
@@ -298,20 +184,20 @@ pub fn build_corpus(
                                 .join(", ");
                             entries.push(FuzzyEntry {
                                 label: format!("{artist} - {}", s.title),
-                                kind: FuzzyKind::Browser(1, i),
+                                kind: FuzzyKind::Browser(v as usize, i),
                             });
                         }
                     } else {
                         for (i, a) in b.albums.iter().enumerate() {
                             entries.push(FuzzyEntry {
                                 label: format!("{} - {}", a.album.artist, a.album.title),
-                                kind: FuzzyKind::Browser(1, i),
+                                kind: FuzzyKind::Browser(v as usize, i),
                             });
                         }
                     }
                 }
                 // Songs
-                2 => {
+                BrowserVariant::Song => {
                     let b = &window.browser.song_browser();
                     for (i, s) in b.get_filtered_list_iter().enumerate() {
                         let artist = s
@@ -322,22 +208,22 @@ pub fn build_corpus(
                             .join(", ");
                         entries.push(FuzzyEntry {
                             label: format!("{artist} - {}", s.title),
-                            kind: FuzzyKind::Browser(2, i),
+                            kind: FuzzyKind::Browser(v as usize, i),
                         });
                     }
                 }
                 // Playlists
-                3 => {
+                BrowserVariant::PlaylistSearch => {
                     let b = &window.browser.playlist_browser();
                     for (i, p) in b.playlist_search_panel.list.iter().enumerate() {
                         entries.push(FuzzyEntry {
                             label: p.title.clone(),
-                            kind: FuzzyKind::Browser(3, i),
+                            kind: FuzzyKind::Browser(v as usize, i),
                         });
                     }
                 }
                 // Library
-                4 => {
+                BrowserVariant::LibraryPlaylist => {
                     use crate::app::ui::browser::library::LibraryCategory;
                     let b = &window.browser.library_browser_ref();
                     match b.category {
@@ -351,7 +237,7 @@ pub fn build_corpus(
                                     .join(", ");
                                 entries.push(FuzzyEntry {
                                     label: format!("{artist} - {}", s.title),
-                                    kind: FuzzyKind::Browser(4, i),
+                                    kind: FuzzyKind::Browser(v as usize, i),
                                 });
                             }
                         }
@@ -359,7 +245,7 @@ pub fn build_corpus(
                             for (i, p) in b.playlist_data.iter().enumerate() {
                                 entries.push(FuzzyEntry {
                                     label: p.title.clone(),
-                                    kind: FuzzyKind::Browser(4, i),
+                                    kind: FuzzyKind::Browser(v as usize, i),
                                 });
                             }
                         }
@@ -367,7 +253,7 @@ pub fn build_corpus(
                             for (i, a) in b.artist_data.iter().enumerate() {
                                 entries.push(FuzzyEntry {
                                     label: a.artist.clone(),
-                                    kind: FuzzyKind::Browser(4, i),
+                                    kind: FuzzyKind::Browser(v as usize, i),
                                 });
                             }
                         }
@@ -375,13 +261,12 @@ pub fn build_corpus(
                             for (i, a) in b.album_data.iter().enumerate() {
                                 entries.push(FuzzyEntry {
                                     label: format!("{} - {}", a.artist, a.title),
-                                    kind: FuzzyKind::Browser(4, i),
+                                    kind: FuzzyKind::Browser(v as usize, i),
                                 });
                             }
                         }
                     }
                 }
-                _ => {}
             }
         }
         WindowContext::Logs => {}

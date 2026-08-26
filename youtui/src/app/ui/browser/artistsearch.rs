@@ -135,16 +135,26 @@ impl ActionHandler<BrowserArtistsAction> for ArtistSearchBrowser {
             BrowserArtistsAction::DisplaySelectedArtistAlbums => return self.get_songs().into(),
             BrowserArtistsAction::SubscribeToArtist => {
                 let selected = self.artist_search_panel.get_selected_item();
-                if let Some(artist) = self.artist_search_panel.list.get(selected) {
-                    self.artist_search_panel.subscribed_artists.insert(artist.browse_id.clone());
-                    return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(artist.browse_id.clone()))).into();
+                let browse_id = self
+                    .artist_search_panel
+                    .get_filtered_list_iter()
+                    .nth(selected)
+                    .map(|a| a.browse_id.clone());
+                if let Some(browse_id) = browse_id {
+                    self.artist_search_panel.subscribed_artists.insert(browse_id.clone());
+                    return (AsyncTask::new_no_op(), Some(AppCallback::SubscribeToArtistFromLibrary(browse_id))).into();
                 }
             }
             BrowserArtistsAction::UnsubscribeFromArtist => {
                 let selected = self.artist_search_panel.get_selected_item();
-                if let Some(artist) = self.artist_search_panel.list.get(selected) {
-                    self.artist_search_panel.subscribed_artists.remove(&artist.browse_id);
-                    return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![artist.browse_id.clone()]))).into();
+                let browse_id = self
+                    .artist_search_panel
+                    .get_filtered_list_iter()
+                    .nth(selected)
+                    .map(|a| a.browse_id.clone());
+                if let Some(browse_id) = browse_id {
+                    self.artist_search_panel.subscribed_artists.remove(&browse_id);
+                    return (AsyncTask::new_no_op(), Some(AppCallback::UnsubscribeFromArtistFromLibrary(vec![browse_id]))).into();
                 }
             }
         }

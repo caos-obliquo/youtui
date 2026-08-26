@@ -4,6 +4,7 @@ use crate::app::component::actionhandler::{
 use crate::app::server::{ArcServer, TaskMetadata};
 use crate::app::ui::action::AppAction;
 use crate::app::ui::browser::shared_components::SearchBlock;
+use crate::app::structures::fuzzy_match;
 use crate::app::view::{HasTitle, ListView};
 use crate::config::Config;
 use crate::config::keymap::Keymap;
@@ -174,11 +175,6 @@ impl Scrollable for PlaylistSearchPanel {
         self.route == PlaylistInputRouting::List
     }
 }
-impl PlaylistSearchPanel {
-    pub fn jump_to(&mut self, idx: usize) {
-        self.selected = idx.min(self.len().saturating_sub(1));
-    }
-}
 impl ListView for PlaylistSearchPanel {
     fn get_selected_item(&self) -> usize {
         self.selected
@@ -190,13 +186,34 @@ impl ListView for PlaylistSearchPanel {
         &mut self.widget_state
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = Cow<'_, str>> + '_ {
+        self.get_filtered_list_iter()
+            .map(|search_result| (&search_result.title).into())
+            .collect::<Vec<Cow<'_, str>>>()
+            .into_iter()
+    }
+}
+impl PlaylistSearchPanel {
+    /// Filter `self.list` by `local_filter_text` (set by `/` fuzzy finder or F1 filter).
+    /// Empty filter returns all items. Used by `get_items` so the visible list tracks the filter.
+    pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &NonPodcastSearchResultPlaylist> {
+        let filter = self.local_filter_text.trim();
         self.list
             .iter()
-            .map(|search_result| (&search_result.title).into())
+            .filter(move |search_result| filter.is_empty() || fuzzy_match(filter, &search_result.title).is_some())
     }
 }
 impl HasTitle for PlaylistSearchPanel {
     fn get_title(&self) -> Cow<'_, str> {
-        format!("Playlists - {} results", self.list.len()).into()
+        if self.local_filter_text.trim().is_empty() {
+            format!("Playlists - {} results", self.list.len()).into()
+        } else {
+            format!(
+                "Playlists - {} results [SEARCH: {} ({})]",
+                self.get_filtered_list_iter().count(),
+                self.local_filter_text,
+                self.list.len()
+            )
+            .into()
+        }
     }
 }
