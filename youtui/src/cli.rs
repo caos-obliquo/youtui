@@ -351,6 +351,19 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                     let album = meta.album.as_deref().unwrap_or("?");
                     pb.println(format!("  {}: year={}, artist={}, album={}, genres={}, styles={}",
                         key, year, artist, album, meta.genres.len(), meta.styles.len()));
+                    if !meta.subgenres.is_empty() {
+                        pb.println(format!("    subgenres: {}", meta.subgenres.join(", ")));
+                    }
+                    if !meta.genre_paths.is_empty() {
+                        let paths: Vec<String> = meta.genre_paths
+                            .iter()
+                            .map(|(t, p)| format!("{} -> {}", t, p))
+                            .collect();
+                        pb.println(format!("    genre_paths: {}", paths.join("; ")));
+                    }
+                    if !meta.descriptors.is_empty() {
+                        pb.println(format!("    descriptors: {}", meta.descriptors.join(", ")));
+                    }
                     pb.inc(1);
                 }
                 pb.finish_with_message(format!("Metadata cache: {} entries", entries.len()));

@@ -90,7 +90,7 @@ async fn fetch_track_info(client: &reqwest::Client, info_url: &str) -> Option<Va
         .and_then(util::extract_year);
     if album.is_none() && year.is_none() { return None; }
     let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
-    Some(ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new(), genres: Vec::new(), styles: Vec::new(), musicbrainz_release_group_id: None })
+    Some(ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new(), genres: Vec::new(), styles: Vec::new(), musicbrainz_release_group_id: None, subgenres: Vec::new(), genre_paths: Vec::new(), descriptors: Vec::new() })
 }
 
 #[cfg(test)]

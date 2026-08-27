@@ -139,6 +139,66 @@ pub fn expand_parent_genres(genres: &mut Vec<String>, styles: &mut Vec<String>) 
     *styles = expanded_styles;
 }
 
+/// Attach RYM descriptor/subgenre enrichment derived purely from local taxonomy.
+///
+/// For each tag in `genres` then `styles`:
+/// - `find_genre(tag)` -> if found, the most-specific leaf (last path segment) is
+///   pushed to `subgenres` and `(tag, full_rym_path)` to `genre_paths`.
+/// - if not found, the original tag is kept in both `subgenres` and `genre_paths`.
+///
+/// For each tag and each resolved leaf, `find_descriptor` is checked and any match
+/// is appended to `descriptors` (deduped case-insensitively).
+///
+/// `genres`/`styles` are never mutated - provider-weighted output is preserved.
+pub fn attach_rym_enrichment(
+    genres: &[String],
+    styles: &[String],
+) -> (Vec<String>, Vec<(String, String)>, Vec<String>) {
+    let db = genre_db_sqlite::GenreDb::global();
+    let mut subgenres: Vec<String> = Vec::new();
+    let mut genre_paths: Vec<(String, String)> = Vec::new();
+    // Resolved leaves and original tags feed descriptor matching.
+    let mut descriptor_candidates: Vec<String> = Vec::new();
+
+    for tag in genres.iter().chain(styles.iter()) {
+        descriptor_candidates.push(tag.clone());
+        match db.find_genre(tag) {
+            Some(g) => {
+                let leaf = g
+                    .path
+                    .as_ref()
+                    .and_then(|p| p.last().cloned())
+                    .unwrap_or_else(|| g.name.clone());
+                subgenres.push(leaf.clone());
+                let full_path = g
+                    .path
+                    .as_ref()
+                    .map(|p| p.join(" / "))
+                    .unwrap_or_else(|| g.name.clone());
+                genre_paths.push((tag.clone(), full_path));
+                descriptor_candidates.push(leaf);
+            }
+            None => {
+                subgenres.push(tag.clone());
+                genre_paths.push((tag.clone(), tag.clone()));
+            }
+        }
+    }
+
+    let mut descriptors: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for candidate in &descriptor_candidates {
+        if let Some(d) = db.find_descriptor(candidate) {
+            let lower = d.name.to_lowercase();
+            if seen.insert(lower) {
+                descriptors.push(d.name);
+            }
+        }
+    }
+
+    (subgenres, genre_paths, descriptors)
+}
+
 /// Normalize all genres in a list, deduplicating and sorting.
 pub fn normalize_genres(genres: &[String]) -> Vec<String> {
     let mut normalized: Vec<String> = genres.iter()
@@ -219,5 +279,85 @@ mod tests {
         assert!(all.len() > 3000);
         assert!(all.contains(&"Heavy metal".to_string()));
         assert!(all.contains(&"Black metal".to_string()));
+    }
+
+    #[test]
+    fn test_attach_rym_known_leaf_and_path() {
+        let db = genre_db_sqlite::GenreDb::global();
+        let known = db.find_genre("Heavy metal");
+        if let Some(g) = known {
+            let leaf = g
+                .path
+                .as_ref()
+                .and_then(|p| p.last().cloned())
+                .unwrap_or_else(|| g.name.clone());
+            let (subgenres, genre_paths, _descriptors) =
+                attach_rym_enrichment(&["Heavy metal".to_string()], &[]);
+            assert!(
+                subgenres.contains(&leaf),
+                "expected leaf {:?} in subgenres {:?}",
+                leaf,
+                subgenres
+            );
+            assert!(
+                genre_paths
+                    .iter()
+                    .any(|(t, p)| t == "Heavy metal" && !p.is_empty()),
+                "expected (Heavy metal, full_path) in genre_paths {:?}",
+                genre_paths
+            );
+        } else {
+            panic!("Heavy metal should exist in seeded genre db");
+        }
+    }
+
+    #[test]
+    fn test_attach_rym_unknown_tag_kept() {
+        let tag = "Zzxqw bogus genre 9999".to_string();
+        let (subgenres, genre_paths, _descriptors) =
+            attach_rym_enrichment(&[tag.clone()], &[]);
+        assert!(subgenres.contains(&tag));
+        assert!(genre_paths
+            .iter()
+            .any(|(t, p)| t == &tag && p == &tag));
+    }
+
+    #[test]
+    fn test_attach_rym_descriptor_attached() {
+        let db = genre_db_sqlite::GenreDb::global();
+        let desc = match db.all_descriptors().into_iter().next() {
+            Some(d) => d,
+            None => return,
+        };
+        let (_subgenres, _genre_paths, descriptors) =
+            attach_rym_enrichment(&[desc.name.clone()], &[]);
+        assert!(
+            descriptors.iter().any(|x| x.eq_ignore_ascii_case(&desc.name)),
+            "expected descriptor {:?} in {:?}",
+            desc.name,
+            descriptors
+        );
+    }
+
+    #[test]
+    fn test_attach_rym_no_descriptor_for_unknown() {
+        let tag = "Zzxqw bogus desc 9999".to_string();
+        let (_subgenres, _genre_paths, descriptors) =
+            attach_rym_enrichment(&[tag.clone()], &[]);
+        assert!(
+            !descriptors.iter().any(|x| x.eq_ignore_ascii_case(&tag)),
+            "unknown tag should yield no descriptor"
+        );
+    }
+
+    #[test]
+    fn test_attach_rym_does_not_mutate_inputs() {
+        let genres = vec!["Heavy metal".to_string()];
+        let styles = vec!["Thrash".to_string()];
+        let before_g = genres.clone();
+        let before_s = styles.clone();
+        let _ = attach_rym_enrichment(&genres, &styles);
+        assert_eq!(genres, before_g);
+        assert_eq!(styles, before_s);
     }
 }

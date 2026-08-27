@@ -9,6 +9,12 @@ pub struct ValidatedMetadata {
     pub album_tracks: Vec<AlbumTrack>,
     pub genres: Vec<String>,
     pub styles: Vec<String>,
+    #[serde(default)]
+    pub subgenres: Vec<String>,
+    #[serde(default)]
+    pub genre_paths: Vec<(String, String)>,
+    #[serde(default)]
+    pub descriptors: Vec<String>,
     pub musicbrainz_release_group_id: Option<String>,
 }
 

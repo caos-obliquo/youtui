@@ -37,6 +37,12 @@ pub struct ValidatedMetadata {
     pub album_tracks: Vec<AlbumTrack>,
     pub genres: Vec<String>,
     pub styles: Vec<String>,
+    #[serde(default)]
+    pub subgenres: Vec<String>,
+    #[serde(default)]
+    pub genre_paths: Vec<(String, String)>,
+    #[serde(default)]
+    pub descriptors: Vec<String>,
     pub musicbrainz_release_group_id: Option<String>,
 }
 
@@ -93,6 +99,9 @@ impl SqliteCache {
                 styles      TEXT,
                 album_tracks TEXT,
                 musicbrainz_release_group_id TEXT,
+                subgenres   TEXT,
+                genre_paths TEXT,
+                descriptors TEXT,
                 created_at  INT NOT NULL,
                 accessed_at INT NOT NULL
             );
@@ -115,17 +124,32 @@ impl SqliteCache {
     }
 
     fn migrate(&self) -> Result<(), CacheError> {
-        let has_column: bool = self
+        let has_mbid: bool = self
             .conn
             .query_row(
                 "SELECT COUNT(*) > 0 FROM pragma_table_info('metadata_cache') WHERE name = 'musicbrainz_release_group_id'",
                 [],
                 |r| r.get(0),
             )?;
-        if !has_column {
+        if !has_mbid {
             self.conn.execute_batch(
                 "ALTER TABLE metadata_cache ADD COLUMN musicbrainz_release_group_id TEXT;
                  PRAGMA user_version = 2;",
+            )?;
+        }
+        let has_subgenres: bool = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('metadata_cache') WHERE name = 'subgenres'",
+                [],
+                |r| r.get(0),
+            )?;
+        if !has_subgenres {
+            self.conn.execute_batch(
+                "ALTER TABLE metadata_cache ADD COLUMN subgenres TEXT;
+                 ALTER TABLE metadata_cache ADD COLUMN genre_paths TEXT;
+                 ALTER TABLE metadata_cache ADD COLUMN descriptors TEXT;
+                 PRAGMA user_version = 3;",
             )?;
         }
         Ok(())
@@ -206,11 +230,15 @@ impl SqliteCache {
             Option<String>,
             Option<String>,
             Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
             i64,
             i64,
         )> = self.conn.query_row(
             "SELECT cache_key, artist, album, year, genres, styles, album_tracks,
-                    musicbrainz_release_group_id, created_at, accessed_at
+                    musicbrainz_release_group_id, subgenres, genre_paths, descriptors,
+                    created_at, accessed_at
              FROM metadata_cache WHERE cache_key = ?1",
             params![key],
             |row| {
@@ -225,6 +253,9 @@ impl SqliteCache {
                     row.get(7)?,
                     row.get(8)?,
                     row.get(9)?,
+                    row.get(10)?,
+                    row.get(11)?,
+                    row.get(12)?,
                 ))
             },
         );
@@ -239,6 +270,9 @@ impl SqliteCache {
                 styles_json,
                 tracks_json,
                 mbid,
+                subgenres_json,
+                genre_paths_json,
+                descriptors_json,
                 _created,
                 _accessed,
             )) => {
@@ -251,6 +285,9 @@ impl SqliteCache {
                 let genres: Vec<String> = Self::deserialize_json_vec(genres_json);
                 let styles: Vec<String> = Self::deserialize_json_vec(styles_json);
                 let album_tracks: Vec<AlbumTrack> = Self::deserialize_json_vec(tracks_json);
+                let subgenres: Vec<String> = Self::deserialize_json_vec(subgenres_json);
+                let genre_paths: Vec<(String, String)> = Self::deserialize_json_vec(genre_paths_json);
+                let descriptors: Vec<String> = Self::deserialize_json_vec(descriptors_json);
 
                 Some(ValidatedMetadata {
                     artist,
@@ -260,6 +297,9 @@ impl SqliteCache {
                     album_tracks,
                     genres,
                     styles,
+                    subgenres,
+                    genre_paths,
+                    descriptors,
                     musicbrainz_release_group_id: mbid,
                 })
             }
@@ -277,12 +317,16 @@ impl SqliteCache {
         let genres_json = serde_json::to_string(&meta.genres)?;
         let styles_json = serde_json::to_string(&meta.styles)?;
         let tracks_json = serde_json::to_string(&meta.album_tracks)?;
+        let subgenres_json = serde_json::to_string(&meta.subgenres)?;
+        let genre_paths_json = serde_json::to_string(&meta.genre_paths)?;
+        let descriptors_json = serde_json::to_string(&meta.descriptors)?;
 
         self.conn.execute(
             "INSERT OR REPLACE INTO metadata_cache
              (cache_key, artist, album, year, genres, styles, album_tracks,
-              musicbrainz_release_group_id, created_at, accessed_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+              musicbrainz_release_group_id, subgenres, genre_paths, descriptors,
+              created_at, accessed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
             params![
                 key,
                 meta.artist,
@@ -292,6 +336,9 @@ impl SqliteCache {
                 styles_json,
                 tracks_json,
                 meta.musicbrainz_release_group_id,
+                subgenres_json,
+                genre_paths_json,
+                descriptors_json,
                 now,
             ],
         )?;
@@ -306,11 +353,15 @@ impl SqliteCache {
             let genres_json = serde_json::to_string(&meta.genres)?;
             let styles_json = serde_json::to_string(&meta.styles)?;
             let tracks_json = serde_json::to_string(&meta.album_tracks)?;
+            let subgenres_json = serde_json::to_string(&meta.subgenres)?;
+            let genre_paths_json = serde_json::to_string(&meta.genre_paths)?;
+            let descriptors_json = serde_json::to_string(&meta.descriptors)?;
             self.conn.execute(
                 "INSERT OR REPLACE INTO metadata_cache
                  (cache_key, artist, album, year, genres, styles, album_tracks,
-                  musicbrainz_release_group_id, created_at, accessed_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+                  musicbrainz_release_group_id, subgenres, genre_paths, descriptors,
+                  created_at, accessed_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
                 params![
                     key,
                     meta.artist,
@@ -320,6 +371,9 @@ impl SqliteCache {
                     styles_json,
                     tracks_json,
                     meta.musicbrainz_release_group_id,
+                    subgenres_json,
+                    genre_paths_json,
+                    descriptors_json,
                     now,
                 ],
             )?;
@@ -358,7 +412,7 @@ impl SqliteCache {
     pub fn iter(&self) -> Result<Vec<(String, ValidatedMetadata)>, CacheError> {
         let mut stmt = self.conn.prepare(
             "SELECT cache_key, artist, album, year, genres, styles, album_tracks,
-                    musicbrainz_release_group_id
+                    musicbrainz_release_group_id, subgenres, genre_paths, descriptors
              FROM metadata_cache",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -370,10 +424,16 @@ impl SqliteCache {
             let styles_json: Option<String> = row.get(5)?;
             let tracks_json: Option<String> = row.get(6)?;
             let mbid: Option<String> = row.get(7)?;
+            let subgenres_json: Option<String> = row.get(8)?;
+            let genre_paths_json: Option<String> = row.get(9)?;
+            let descriptors_json: Option<String> = row.get(10)?;
 
             let genres: Vec<String> = Self::deserialize_json_vec(genres_json);
             let styles: Vec<String> = Self::deserialize_json_vec(styles_json);
             let album_tracks: Vec<AlbumTrack> = Self::deserialize_json_vec(tracks_json);
+            let subgenres: Vec<String> = Self::deserialize_json_vec(subgenres_json);
+            let genre_paths: Vec<(String, String)> = Self::deserialize_json_vec(genre_paths_json);
+            let descriptors: Vec<String> = Self::deserialize_json_vec(descriptors_json);
 
             Ok((
                 key,
@@ -385,6 +445,9 @@ impl SqliteCache {
                     album_tracks,
                     genres,
                     styles,
+                    subgenres,
+                    genre_paths,
+                    descriptors,
                     musicbrainz_release_group_id: mbid,
                 },
             ))
@@ -440,6 +503,9 @@ mod tests {
             genres: vec!["Rock".to_string()],
             styles: vec!["Hard Rock".to_string()],
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         }
     }
 
@@ -596,6 +662,9 @@ mod tests {
             genres: Vec::new(),
             styles: Vec::new(),
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         };
         meta.artist = Some("Test Artist".to_string());
         meta.album = Some("Test Album".to_string());
@@ -623,6 +692,9 @@ mod tests {
             genres: Vec::new(),
             styles: Vec::new(),
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         };
         cache.put(key, &meta).unwrap();
         let got = cache.get(key).unwrap();
@@ -670,6 +742,9 @@ mod tests {
             genres: Vec::new(),
             styles: Vec::new(),
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         };
         meta.artist = Some("New Artist".to_string());
         meta.musicbrainz_release_group_id = Some("new-mbid".to_string());
@@ -679,6 +754,101 @@ mod tests {
             got2.musicbrainz_release_group_id,
             Some("new-mbid".to_string())
         );
+    }
+
+    #[test]
+    fn sqlite_migration_v3() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE metadata_cache (
+                cache_key   TEXT PRIMARY KEY,
+                artist      TEXT,
+                album       TEXT,
+                year        TEXT,
+                genres      TEXT,
+                styles      TEXT,
+                album_tracks TEXT,
+                musicbrainz_release_group_id TEXT,
+                created_at  INT NOT NULL,
+                accessed_at INT NOT NULL
+            );
+            PRAGMA user_version = 2;
+            INSERT INTO metadata_cache (cache_key, artist, created_at, accessed_at)
+            VALUES (\"k1\", \"Old Artist\", 100, 100);",
+        )
+        .unwrap();
+
+        let cache = SqliteCache { conn };
+        cache.migrate().unwrap();
+        cache.migrate().unwrap();
+
+        let has_sub: bool = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('metadata_cache') WHERE name = 'subgenres'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(has_sub, "subgenres column must exist after v3 migrate");
+        let has_paths: bool = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('metadata_cache') WHERE name = 'genre_paths'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(has_paths, "genre_paths column must exist after v3 migrate");
+        let has_desc: bool = cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('metadata_cache') WHERE name = 'descriptors'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(has_desc, "descriptors column must exist after v3 migrate");
+
+        // Old row still readable with empty enrichment fields.
+        let got = cache.get("k1").unwrap();
+        assert_eq!(got.artist, Some("Old Artist".to_string()));
+        assert!(got.subgenres.is_empty());
+        assert!(got.genre_paths.is_empty());
+        assert!(got.descriptors.is_empty());
+    }
+
+    #[test]
+    fn sqlite_roundtrip_rym_fields() {
+        let cache = SqliteCache::open_in_memory().unwrap();
+        let key = "artist::title";
+        let meta = ValidatedMetadata {
+            artist: None,
+            album: None,
+            year: None,
+            track_no: None,
+            album_tracks: Vec::new(),
+            genres: Vec::new(),
+            styles: Vec::new(),
+            musicbrainz_release_group_id: None,
+            subgenres: vec!["Death metal".to_string(), "Black metal".to_string()],
+            genre_paths: vec![(
+                "Death metal".to_string(),
+                "Metal / Extreme metal / Death metal".to_string(),
+            )],
+            descriptors: vec!["dark".to_string(), "technical".to_string()],
+        };
+        cache.put(key, &meta).unwrap();
+        let got = cache.get(key).unwrap();
+        assert_eq!(got.subgenres, vec!["Death metal".to_string(), "Black metal".to_string()]);
+        assert_eq!(
+            got.genre_paths,
+            vec![(
+                "Death metal".to_string(),
+                "Metal / Extreme metal / Death metal".to_string(),
+            )]
+        );
+        assert_eq!(got.descriptors, vec!["dark".to_string(), "technical".to_string()]);
     }
 
     #[test]
@@ -693,6 +863,9 @@ mod tests {
             genres: Vec::new(),
             styles: Vec::new(),
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         };
         m1.artist = Some("Artist 1".to_string());
         m1.musicbrainz_release_group_id = Some("mbid-1".to_string());
@@ -705,6 +878,9 @@ mod tests {
             genres: Vec::new(),
             styles: Vec::new(),
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         };
         m2.artist = Some("Artist 2".to_string());
         // No mbid for m2

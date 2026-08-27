@@ -138,6 +138,9 @@ impl MetadataProvider for DiscogsProvider {
                         genres,
                         styles,
                         musicbrainz_release_group_id: None,
+                        subgenres: Vec::new(),
+                        genre_paths: Vec::new(),
+                        descriptors: Vec::new(),
                     });
                 } else {
                     tracing::debug!("Discogs: album has {} tracks but '{}' not found - skipping", tracks.len(), title);

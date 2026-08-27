@@ -166,6 +166,9 @@ mod tests {
             genres: genres.into_iter().map(String::from).collect(),
             styles: styles.into_iter().map(String::from).collect(),
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         }
     }
 
@@ -280,6 +283,9 @@ mod tests {
             genres: unique_many,
             styles: vec![],
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         };
         let results = vec![(100, meta, 7)];
         let (genres, _styles) = weighted_merge_genres(&results);
@@ -298,6 +304,9 @@ mod tests {
             genres: vec![],
             styles: unique_many,
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         };
         let results = vec![(100, meta, 6)];
         let (_genres, styles) = weighted_merge_genres(&results);

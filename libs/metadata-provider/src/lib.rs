@@ -250,6 +250,10 @@ impl MetadataRegistry {
                 }
             }
             crate::genre_map::expand_parent_genres(&mut meta.genres, &mut meta.styles);
+            let (sg, gp, d) = crate::genre_map::attach_rym_enrichment(&meta.genres, &meta.styles);
+            meta.subgenres = sg;
+            meta.genre_paths = gp;
+            meta.descriptors = d;
             self.cache.lock().unwrap().put(cache_key.clone(), meta.clone());
             if let Some(ref sqlite) = self.sqlite_cache {
                 if let Ok(cache) = sqlite.lock() {
@@ -358,6 +362,10 @@ impl MetadataRegistry {
         if !meta.genres.is_empty() || !meta.styles.is_empty() {
             crate::genre_map::expand_parent_genres(&mut meta.genres, &mut meta.styles);
         }
+        let (sg, gp, d) = crate::genre_map::attach_rym_enrichment(&meta.genres, &meta.styles);
+        meta.subgenres = sg;
+        meta.genre_paths = gp;
+        meta.descriptors = d;
         // Always cache, even without year (serves as "already tried" flag to
         // prevent infinite re-resolve on every library load).
         self.cache.lock().unwrap().put(cache_key.clone(), meta.clone());
@@ -579,6 +587,9 @@ fn sqlite_meta_from_domain(meta: &ValidatedMetadata) -> metadata_cache_sqlite::V
         }).collect(),
         genres: meta.genres.clone(),
         styles: meta.styles.clone(),
+        subgenres: meta.subgenres.clone(),
+        genre_paths: meta.genre_paths.clone(),
+        descriptors: meta.descriptors.clone(),
         musicbrainz_release_group_id: meta.musicbrainz_release_group_id.clone(),
     }
 }
@@ -599,6 +610,9 @@ fn domain_meta_from_sqlite(meta: &metadata_cache_sqlite::ValidatedMetadata) -> V
         }).collect(),
         genres: meta.genres.clone(),
         styles: meta.styles.clone(),
+        subgenres: meta.subgenres.clone(),
+        genre_paths: meta.genre_paths.clone(),
+        descriptors: meta.descriptors.clone(),
         musicbrainz_release_group_id: meta.musicbrainz_release_group_id.clone(),
     }
 }
