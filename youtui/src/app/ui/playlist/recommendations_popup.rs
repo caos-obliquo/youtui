@@ -4,7 +4,7 @@ use async_callback_manager::AsyncTask;
 use crossterm::event::{KeyCode, KeyModifiers};
 use crate::app::structures::Percentage;
 use crate::app::view::{BasicConstraint, basic_constraints_to_table_constraints};
-use crate::drawutils::{ROW_HIGHLIGHT_COLOUR, TABLE_HEADINGS_COLOUR};
+use crate::drawutils::{ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TABLE_HEADINGS_COLOUR, TEXT_COLOUR};
 use crate::widgets::{ScrollingTable, ScrollingTableState};
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -318,10 +318,12 @@ impl RecommendationsPopup {
                     .iter()
                     .enumerate()
                     .map(|(idx, item)| {
-                        let artist = if !item.artist.is_empty() {
-                            item.artist.clone()
+                        let artist = if !item.artist.is_empty() && !item.title.is_empty() {
+                            format!("{} - {}", item.artist, item.title)
                         } else if !item.title.is_empty() {
                             item.title.clone()
+                        } else if !item.artist.is_empty() {
+                            item.artist.clone()
                         } else {
                             "-".to_string()
                         };
@@ -360,8 +362,8 @@ impl RecommendationsPopup {
                 let layout = [
                     BasicConstraint::Length(4),
                     BasicConstraint::Length(7),
-                    BasicConstraint::Percentage(Percentage(22)),
-                    BasicConstraint::Percentage(Percentage(42)),
+                    BasicConstraint::Percentage(Percentage(28)),
+                    BasicConstraint::Percentage(Percentage(36)),
                     BasicConstraint::Length(7),
                     BasicConstraint::Length(9),
                 ];
@@ -377,26 +379,6 @@ impl RecommendationsPopup {
                 frame.render_stateful_widget(table, inner, &mut self.table_state);
         }
 
-        let footer = if self.loading {
-            "".to_string()
-        } else if self.menu_open {
-            "j/k select  -  Enter act  -  Esc close".to_string()
-        } else if self.filter_active {
-            format!("[filter: {}]  -  / clear  -  Tab kind  -  j/k move  -  Enter/o act  -  q close", self.filter)
-        } else {
-            "Tab: 0.85 [All|Artists]  -  / filter  -  j/k move  -  Enter/o act  -  q close".to_string()
-        };
-        let footer_style = Style::default().fg(Color::Cyan);
-        frame.render_widget(
-            Paragraph::new(footer).style(footer_style),
-            Rect {
-                x: inner.x,
-                y: popup_area.y + popup_area.height.saturating_sub(1),
-                width: inner.width,
-                height: 1,
-            },
-        );
-
         if self.menu_open {
             self.draw_menu(frame, inner);
         }
@@ -405,24 +387,19 @@ impl RecommendationsPopup {
     fn draw_menu(&self, frame: &mut Frame, inner: Rect) {
         let menu_width = MENU_ITEMS.iter().map(|s| s.len()).max().unwrap_or(4) as u16 + 4;
         let menu_height = MENU_ITEMS.len() as u16 + 2;
-        let menu_area = Rect {
-            x: inner.x + inner.width.saturating_sub(menu_width + 2),
-            y: inner.y + 2,
-            width: menu_width,
-            height: menu_height,
-        };
+        let menu_area = crate::drawutils::left_bottom_corner_rect(menu_height, menu_width, inner);
         frame.render_widget(Clear, menu_area);
         let menu_block = Block::default()
-            .title(" Actions ")
-            .border_style(Style::default().fg(Color::Cyan))
+            .title(" Context Menu ")
+            .border_style(Style::default().fg(SELECTED_BORDER_COLOUR))
             .borders(Borders::ALL);
         let menu_inner = menu_block.inner(menu_area);
         frame.render_widget(menu_block, menu_area);
         for (i, label) in MENU_ITEMS.iter().enumerate() {
             let style = if i == self.menu_selected {
-                Style::default().fg(Color::Black).bg(Color::Cyan)
+                Style::default().fg(Color::Reset).bg(ROW_HIGHLIGHT_COLOUR)
             } else {
-                Style::default().fg(Color::Cyan)
+                Style::default().fg(TEXT_COLOUR)
             };
             frame.render_widget(
                 Paragraph::new(*label).style(style),
