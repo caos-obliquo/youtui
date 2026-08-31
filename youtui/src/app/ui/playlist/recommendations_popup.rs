@@ -318,11 +318,12 @@ impl RecommendationsPopup {
                     .iter()
                     .enumerate()
                     .map(|(idx, item)| {
-                        let artist = if !item.artist.is_empty() && !item.title.is_empty() {
-                            format!("{} - {}", item.artist, item.title)
-                        } else if !item.title.is_empty() {
+                        let name = if !item.title.is_empty() {
                             item.title.clone()
-                        } else if !item.artist.is_empty() {
+                        } else {
+                            "-".to_string()
+                        };
+                        let artist = if !item.artist.is_empty() {
                             item.artist.clone()
                         } else {
                             "-".to_string()
@@ -344,6 +345,7 @@ impl RecommendationsPopup {
                         vec![
                             Cow::Owned((idx + 1).to_string()),
                             Cow::Owned(type_str.to_string()),
+                            Cow::Owned(name),
                             Cow::Owned(artist),
                             Cow::Owned(sim),
                             Cow::Owned(match_str),
@@ -354,6 +356,7 @@ impl RecommendationsPopup {
                 let headings: Vec<Cell<'static>> = vec![
                     Cell::from(Line::raw("#")),
                     Cell::from(Line::raw("Type")),
+                    Cell::from(Line::raw("Name")),
                     Cell::from(Line::raw("Artist")),
                     Cell::from(Line::raw("Similar To")),
                     Cell::from(Line::raw("Match")),
@@ -362,8 +365,9 @@ impl RecommendationsPopup {
                 let layout = [
                     BasicConstraint::Length(4),
                     BasicConstraint::Length(7),
+                    BasicConstraint::Percentage(Percentage(22)),
+                    BasicConstraint::Percentage(Percentage(18)),
                     BasicConstraint::Percentage(Percentage(28)),
-                    BasicConstraint::Percentage(Percentage(36)),
                     BasicConstraint::Length(7),
                     BasicConstraint::Length(9),
                 ];
