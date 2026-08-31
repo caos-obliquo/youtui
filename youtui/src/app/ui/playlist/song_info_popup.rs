@@ -387,6 +387,13 @@ impl SongInfoPopup {
         } else {
             genre_list.join(", ")
         };
+        // RYM descriptions for known genre tags; unknown/free-text tags skipped.
+        let rym_lines: Vec<String> = genre_list
+            .iter()
+            .filter_map(|g| rym_genre_data::find_genre(g).map(|ge| ge.description.as_deref()))
+            .filter(|d| d.is_some())
+            .map(|d| format!("\u{2514} {}", d.unwrap()))
+            .collect();
         let raw_lines = vec![
             ("Title", self.song.title.as_str()),
             ("Artist", &artist),
@@ -428,8 +435,12 @@ impl SongInfoPopup {
             display.push_str(&marker);
             display.push('\n');
 
-            // Just show the raw genre string from metadata. RYM tree expansion
-            // adds noise — no per-song relevance signal available.
+            if *label == "Genre" && !rym_lines.is_empty() {
+                for line in &rym_lines {
+                    display.push_str(line);
+                    display.push('\n');
+                }
+            }
         }
 
         let info_widget = Paragraph::new(display)

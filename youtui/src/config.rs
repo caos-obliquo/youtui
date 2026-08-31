@@ -2,6 +2,7 @@ use crate::get_config_dir;
 use anyhow::{Context, Result};
 use clap::ValueEnum;
 use keymap::{YoutuiKeymap, YoutuiKeymapIR, YoutuiModeNamesIR};
+use md5;
 use serde::{Deserialize, Serialize};
 use ytmapi_rs::auth::OAuthToken;
 
@@ -94,6 +95,24 @@ impl Default for ScrobblingConfig {
 
 fn default_yt_dlp_command() -> String {
     String::from("yt-dlp")
+}
+
+/// Compute a Last.fm API signature.
+///
+/// Algorithm (per Last.fm auth spec): concatenate every `key`+`value` pair in
+/// the parameter list after sorting by key, then append the shared `secret`,
+/// and return the lowercase MD5 hex digest of that string. The `api_sig`
+/// parameter itself must NOT be included in the input list.
+pub(crate) fn sign_lastfm(params: &[(String, String)], secret: &str) -> String {
+    let mut sorted: Vec<&(String, String)> = params.iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0));
+    let sig_string: String = sorted
+        .iter()
+        .map(|(k, v)| format!("{}{}", k, v))
+        .collect::<Vec<_>>()
+        .join("")
+        + secret;
+    format!("{:x}", md5::compute(sig_string.as_bytes()))
 }
 
 fn default_cookie_browser() -> String {

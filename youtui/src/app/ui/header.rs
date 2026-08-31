@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use vi_text_editor::ViTextEditor;
 
 /// Minimal header: two bordered blocks side by side.
-/// - Commands block: F1/F2/F3, o (Context Menu), ? help only.
+    /// - Commands block: F1/F2/F3/F4, o (Context Menu), ? help only.
 /// - Browser block (browser context): the five tabs on one line.
 /// Everything else lives in the ? help menu.
 pub fn header_required_height(_w: &super::YoutuiWindow) -> u16 {
@@ -67,17 +67,19 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     }
 
     spans.push(button_span("F1"));
-    spans.push(Span::raw(" (Toggle Search) "));
+    spans.push(Span::raw(" Search "));
     spans.push(button_span("F2"));
-    spans.push(Span::raw(" (Toggle Browser) "));
+    spans.push(Span::raw(" Browser "));
     spans.push(button_span("F3"));
-    spans.push(Span::raw(" (Toggle Playlist) "));
+    spans.push(Span::raw(" Playlist "));
+    spans.push(button_span("F4"));
+    spans.push(Span::raw(" Recs "));
     if matches!(w.context, WindowContext::Playlist | WindowContext::Browser) {
         spans.push(button_span("o"));
-        spans.push(Span::raw(" (Context Menu) "));
+        spans.push(Span::raw(" Menu "));
     }
     spans.push(button_span("?"));
-    spans.push(Span::raw(" (Toggle Help) "));
+    spans.push(Span::raw(" Help "));
 
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
     let commands_widget = Paragraph::new(Line::from(spans));

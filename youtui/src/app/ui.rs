@@ -7,6 +7,7 @@ use self::playlist::config_editor_popup::ConfigEditorPopup;
 use self::playlist::playlist_editor_popup::PlaylistEditorPopup;
 use self::playlist::lyrics_popup::LyricsPopup;
 use self::playlist::song_info_popup::SongInfoPopup;
+use self::playlist::recommendations_popup::RecommendationsPopup;
 use vi_text_editor::ViTextEditor;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -82,6 +83,7 @@ pub struct YoutuiWindow {
     pub playlist_edit_popup: Option<PlaylistEditPopup>,
     pub playlist_details_popup: Option<PlaylistDetailsPopup>,
     pub notes_popup: Option<NotesPopup>,
+    pub recommendations_popup: Option<RecommendationsPopup>,
     pub delete_confirm: Option<(PlaylistID<'static>, String)>,
     pub config: Config,
     pub key_stack: Vec<KeyEvent>,
@@ -98,7 +100,13 @@ pub struct YoutuiWindow {
     pub lyrics_viewing_idx: Option<usize>,
     pub last_album_art: Option<std::rc::Rc<crate::app::server::song_thumbnail_downloader::SongThumbnail>>,
     pub sixel_data: Option<String>,
+    pub last_sixel_data: Option<String>,
     pub sixel_rect: Option<ratatui::layout::Rect>,
+    /// When true, `flush_sixel` must re-emit the current sixel even if the image
+    /// data is unchanged (e.g. after tmux wiped the graphics layer on a pane/window
+    /// switch). Set on `FocusGained` and by the keepalive timer. Consumed by
+    /// `flush_sixel` (reset to false after a re-emit).
+    pub force_sixel_redraw: bool,
     pub cached_album_protocol: Option<ratatui_image::protocol::Protocol>,
     pub cached_album_chunk: Option<ratatui::layout::Rect>,
     pub logger_fullscreen: bool,
@@ -591,6 +599,7 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                 }
                 self.dismiss_search();
             }
+            AppAction::Recommend => return self.open_recommendations().into(),
             AppAction::TogglePlaylist => self.handle_toggle_playlist(),
             AppAction::EditConfig => self.open_config_editor(),
             AppAction::OpenUrl => { self.command_mode = true; self.command_editor.clear(); },
@@ -629,6 +638,7 @@ impl YoutuiWindow {
             playlist_edit_popup: None,
             playlist_details_popup: None,
             notes_popup: None,
+            recommendations_popup: None,
             delete_confirm: None,
             key_stack: Vec::new(),
             help: HelpMenu::new(),
@@ -644,7 +654,9 @@ impl YoutuiWindow {
             lyrics_viewing_idx: None,
             last_album_art: None,
             sixel_data: None,
+            last_sixel_data: None,
             sixel_rect: None,
+            force_sixel_redraw: false,
             cached_album_protocol: None,
             cached_album_chunk: None,
             logger_fullscreen: false,
@@ -916,6 +928,16 @@ impl YoutuiWindow {
                 return YoutuiEffect { effect, callback };
             }
         }
+        if self.recommendations_popup.is_some() {
+            if let Event::Key(k) = event {
+                let popup = self.recommendations_popup.as_mut().unwrap();
+                let (effect, callback) = popup.handle_key(k);
+                let effect = effect.map_frontend(|this: &mut Self| {
+                    this.recommendations_popup.as_mut().unwrap()
+                });
+                return YoutuiEffect { effect, callback };
+            }
+        }
         if self.playlist_save_popup.is_some() {
             if let Event::Key(k) = event {
                 let popup = self.playlist_save_popup.as_mut().unwrap();
@@ -982,6 +1004,18 @@ impl YoutuiWindow {
         match event {
             Event::Key(k) => return self.handle_key_event(k),
             Event::Mouse(m) => return self.handle_mouse_event(m).into(),
+            Event::FocusGained => {
+                // tmux wipes the sixel graphics layer when the pane loses focus.
+                // Force a flicker-free re-emit of the current album art on return
+                // (no DCS clear, so no blank frame). `invalidate_protocol_cache`
+                // also re-encodes the ratatui Image path on the next draw.
+                self.force_sixel_redraw = true;
+                self.invalidate_protocol_cache();
+                tracing::debug!("FocusGained: forcing sixel album art re-emit");
+            }
+            Event::FocusLost => {
+                tracing::debug!("FocusLost: sixel persists until pane switch");
+            }
             other => tracing::warn!("Received unimplemented {:?} event", other),
         }
         AsyncTask::new_no_op().into()
@@ -1037,6 +1071,7 @@ impl YoutuiWindow {
     }
     pub fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
         use crossterm::event::KeyCode;
+        tracing::debug!("[key] handle_key_event: code={:?} mods={:?} ctx={:?}", key_event.code, key_event.modifiers, self.context);
 
         // Intercept keys when browser filter is active - prevent command bleeding
         if self.context == WindowContext::Browser && self.browser.filter_active() {
@@ -1668,6 +1703,30 @@ impl YoutuiWindow {
         }
     }
 
+    pub fn open_recommendations(&mut self) -> ComponentEffect<Self> {
+        use crate::app::server::FetchAllRecommendations;
+        use crate::app::ui::playlist::effect_handlers_playlist::{
+            HandleRecommendationsOk, HandleRecommendationsErr,
+        };
+        use crate::lastfm_recommend::RecKind;
+        self.recommendations_popup = Some(RecommendationsPopup::new(RecKind::Artists, true));
+        AsyncTask::new_future_try(
+            FetchAllRecommendations(
+                20,
+                35,
+                0.7,
+                1,
+                self.playlist.scrobbling_config.clone(),
+            ),
+            HandleRecommendationsOk,
+            HandleRecommendationsErr,
+            None,
+        )
+        .map_frontend(|this: &mut Self| {
+            this.recommendations_popup.as_mut().expect("just set")
+        })
+    }
+
     pub fn close_popup(&mut self) {
         // Notes can be stacked on top of another popup (e.g. lyrics)
         // Only clear notes, keep parent popup intact
@@ -1691,6 +1750,7 @@ impl YoutuiWindow {
         self.playlist_edit_popup = None;
         self.playlist_details_popup = None;
         self.notes_popup = None;
+        self.recommendations_popup = None;
         self.delete_confirm = None;
         // Restore context from prev_context, but don't leave prev_context
         // as a stale popup context (would trap user on next toggle).

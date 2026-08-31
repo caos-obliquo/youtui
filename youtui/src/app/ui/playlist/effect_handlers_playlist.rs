@@ -11,6 +11,7 @@ use crate::app::ui::playlist::Playlist;
 use crate::app::ui::playlist::lyrics_popup::LyricsPopup;
 use crate::app::ui::playlist::playlist_update_popup::{PlaylistUpdatePopup, PlaylistUpdatePopupState};
 use crate::app::ui::playlist::playlist_details_popup::PlaylistDetailsPopup;
+use crate::app::ui::playlist::recommendations_popup::RecommendationsPopup;
 use async_callback_manager::{AsyncTask, FrontendEffect};
 use std::rc::Rc;
 use tracing::{debug, error, info, warn};
@@ -1194,6 +1195,110 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             error!("GetRelatedTracks failed: {}", msg);
             this.last_error = Some(format!("Related tracks failed: {}", msg));
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+#[derive(Debug, PartialEq)]
+pub struct HandleRecommendationsOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleRecommendationsErr;
+
+impl_youtui_task_handler!(
+    HandleRecommendationsOk,
+    Vec<crate::lastfm_recommend::RecItem>,
+    RecommendationsPopup,
+    |_, recs: Vec<crate::lastfm_recommend::RecItem>| {
+        move |this: &mut RecommendationsPopup| {
+            this.set_items(recs);
+            AsyncTask::<RecommendationsPopup, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRecommendationsErr,
+    anyhow::Error,
+    RecommendationsPopup,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut RecommendationsPopup| {
+            error!("Recommendations fetch failed: {}", msg);
+            this.loading = false;
+            AsyncTask::<RecommendationsPopup, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+// ActOnRecommendation handlers - resolved YTM songs are queued and played
+#[derive(Debug, PartialEq)]
+pub struct HandleActOnRecommendationOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleActOnRecommendationErr;
+
+impl_youtui_task_handler!(
+    HandleActOnRecommendationOk,
+    Vec<ytmapi_rs::parse::SearchResultSong>,
+    Playlist,
+    |_, songs: Vec<ytmapi_rs::parse::SearchResultSong>| {
+        move |this: &mut Playlist| {
+            let count = songs.len();
+            info!("ActOnRecommendation resolved {} songs, queueing and playing", count);
+            let list_songs: Vec<ListSong> = songs.into_iter().map(|song| {
+                let ytmapi_rs::parse::SearchResultSong {
+                    title,
+                    artist,
+                    album,
+                    duration,
+                    plays,
+                    explicit,
+                    video_id,
+                    thumbnails,
+                    ..
+                } = song;
+                ListSong {
+                    download_status: DownloadStatus::None,
+                    id: ListSongID(0),
+                    year: None,
+                    artists: MaybeRc::Owned(vec![ListSongArtist {
+                        name: crate::app::structures::normalize_artist_name(&artist),
+                        id: None,
+                    }]),
+                    album: album.map(|a| MaybeRc::Owned(ListSongAlbum::from(a))),
+                    actual_duration: None,
+                    video_id,
+                    track_no: None,
+                    plays,
+                    title,
+                    explicit: Some(explicit),
+                    duration_string: duration,
+                    thumbnails: MaybeRc::Owned(thumbnails),
+                    album_art: AlbumArtState::None,
+                    genres: Vec::new(),
+                    styles: Vec::new(),
+                    start_offset: None,
+                    like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+                    is_album_upload: false,
+                    release_mbid: None,
+                }
+            }).collect();
+            let effect = this.reset();
+            let (id, next_effect) = this.push_song_list(list_songs);
+            effect.push(next_effect).push(this.play_song_id(id))
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleActOnRecommendationErr,
+    anyhow::Error,
+    Playlist,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |this: &mut Playlist| {
+            error!("ActOnRecommendation failed: {}", msg);
+            this.last_error = Some(format!("Recommendation action failed: {}", msg));
             AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }

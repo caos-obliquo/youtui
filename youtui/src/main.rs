@@ -19,6 +19,7 @@ mod core;
 mod drawutils;
 mod keyaction;
 mod keybind;
+mod lastfm_recommend;
 mod widgets;
 mod youtube_downloader;
 
@@ -464,6 +465,38 @@ enum Command {
         /// Lookup a specific genre and print its subgenres with descriptions.
         #[arg(long)]
         lookup: Option<String>,
+    },
+    /// Fetch Last.fm homepage recommendations (tracks, albums, artists).
+    /// Requires the [scrobbling] config section (api_key, api_secret, session_key).
+    Recommendations {
+        /// Filter: all, tracks, albums, or artists (default all)
+        #[arg(long = "type", default_value = "all")]
+        type_filter: String,
+        /// Number of items per type (default 20)
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+        /// Page number (default 1)
+        #[arg(long, default_value_t = 1)]
+        page: u32,
+        /// Niche bias strength 0.0-1.0 (default 0.7; higher = more niche/underground, 0 = naive)
+        #[arg(long = "niche-level", default_value = "0.7")]
+        niche_level: f64,
+        /// Seed count for niche path (default 35)
+        #[arg(long = "seed-count", default_value_t = 35)]
+        seed_count: u32,
+        /// Output as machine-readable JSON instead of the sectioned list
+        #[arg(long, default_value_t = false)]
+        json: bool,
+    },
+    /// Fetch ListenBrainz collaborative-filtering recommendations.
+    /// Requires the [scrobbling] config section (listenbrainz_token).
+    ListenbrainzRecommendations {
+        /// Recommendation artist_type filter: top, similar, or raw (default top)
+        #[arg(long = "artist-type", default_value = "top")]
+        artist_type: String,
+        /// Output as machine-readable JSON instead of the list
+        #[arg(long, default_value_t = false)]
+        json: bool,
     },
 }
 

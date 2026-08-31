@@ -769,6 +769,153 @@ impl BackendTask<ArcServer> for GetRelatedTracks {
     }
 }
 
+#[derive(Debug, PartialEq)]
+// Kept for single-kind fetches; F4 now uses FetchAllRecommendations.
+#[allow(dead_code)]
+pub struct FetchNicheRecommendations(
+    pub crate::lastfm_recommend::RecKind,
+    pub u32,
+    pub u32,
+    pub f64,
+    pub u32,
+    pub crate::config::ScrobblingConfig,
+);
+
+impl BackendTask<ArcServer> for FetchNicheRecommendations {
+    type Output = Result<Vec<crate::lastfm_recommend::RecItem>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        _backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let cfg = self.5;
+        let kind = self.0;
+        let limit = self.1;
+        let seed_count = self.2;
+        let niche_level = self.3;
+        let page = self.4;
+        async move {
+            let fut = crate::lastfm_recommend::fetch_niche_recommendations(
+                &cfg,
+                kind,
+                limit,
+                seed_count,
+                niche_level,
+                page,
+            );
+            Box::pin(fut)
+                .await
+                .map_err(|e| anyhow::anyhow!(e.to_string()))
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct FetchAllRecommendations(
+    pub u32,
+    pub u32,
+    pub f64,
+    pub u32,
+    pub crate::config::ScrobblingConfig,
+);
+
+impl BackendTask<ArcServer> for FetchAllRecommendations {
+    type Output = Result<Vec<crate::lastfm_recommend::RecItem>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        _backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let cfg = self.4;
+        let limit = self.0;
+        let seed_count = self.1;
+        let niche_level = self.2;
+        let page = self.3;
+        async move {
+            use futures::StreamExt;
+            let kinds = [
+                crate::lastfm_recommend::RecKind::Tracks,
+                crate::lastfm_recommend::RecKind::Albums,
+                crate::lastfm_recommend::RecKind::Artists,
+            ];
+            let results: Vec<Result<Vec<crate::lastfm_recommend::RecItem>>> =
+                futures::stream::iter(kinds.into_iter().map(|kind| {
+                    let cfg = cfg.clone();
+                    async move {
+                        crate::lastfm_recommend::fetch_niche_recommendations(
+                            &cfg, kind, limit, seed_count, niche_level, page,
+                        )
+                        .await
+                    }
+                }))
+                .buffer_unordered(3)
+                .collect()
+                .await;
+            let mut all = Vec::new();
+            for r in results {
+                match r {
+                    Ok(items) => all.extend(items),
+                    Err(e) => {
+                        tracing::warn!("FetchAllRecommendations: one kind failed: {e}");
+                    }
+                }
+            }
+            Ok(all)
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ActOnRecommendation(
+    pub usize,
+    pub crate::lastfm_recommend::RecKind,
+    pub String,
+    pub String,
+    pub crate::config::ScrobblingConfig,
+);
+
+impl BackendTask<ArcServer> for ActOnRecommendation {
+    type Output = Result<Vec<SearchResultSong>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let backend = backend.clone();
+        async move {
+            let (index, kind, title, artist, _cfg) = (self.0, self.1, self.2, self.3, self.4);
+            let query = match kind {
+                crate::lastfm_recommend::RecKind::Artists => {
+                    if artist.is_empty() {
+                        title.clone()
+                    } else {
+                        artist.clone()
+                    }
+                }
+                crate::lastfm_recommend::RecKind::Tracks
+                | crate::lastfm_recommend::RecKind::Albums => {
+                    if artist.is_empty() {
+                        title.clone()
+                    } else {
+                        format!("{} - {}", artist, title)
+                    }
+                }
+            };
+            tracing::info!(
+                "ActOnRecommendation: idx={} kind={:?} query={}",
+                index,
+                kind,
+                query
+            );
+            let results = SearchSongs(query).into_future(&backend).await?;
+            let song = results.into_iter().next().ok_or_else(|| {
+                anyhow::anyhow!("No YTM search results for recommendation: {}", title)
+            })?;
+            Ok(vec![song])
+        }
+    }
+}
+
 impl BackendTask<ArcServer> for CreatePlaylistWithVideos {
     type Output = Result<PlaylistID<'static>>;
     type MetadataType = TaskMetadata;

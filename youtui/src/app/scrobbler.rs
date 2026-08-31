@@ -227,12 +227,7 @@ pub(crate) async fn submit_scrobble_inner(
         params.push(("albumArtist".into(), album_artist.clone()));
     }
     params.push(("duration".into(), state.duration.as_secs().to_string()));
-    params.sort_by(|a, b| a.0.cmp(&b.0));
-    let sig_string: String = params.iter()
-        .map(|(k, v)| format!("{}{}", k, v))
-        .collect::<Vec<_>>()
-        .join("") + &config.api_secret;
-    let api_sig = format!("{:x}", md5::compute(sig_string.as_bytes()));
+    let api_sig = crate::config::sign_lastfm(&params, &config.api_secret);
     debug!("Scrobble params: {:?}, api_sig={}", params, api_sig);
     params.push(("api_sig".into(), api_sig));
 
@@ -246,6 +241,8 @@ pub(crate) async fn submit_scrobble_inner(
             let text = resp.text().await.unwrap_or_default();
             if text.contains("<lfm status=\"ok\">") {
                 info!("Scrobbled: {} - {} (album: {:?})", state.artist, state.track, state.album);
+                // Best-effort parallel ListenBrainz submit (log-only; never affects Last.fm result).
+                submit_to_listenbrainz(config, state).await;
                 ScrobbleResult::Success
             } else if text.contains("error code=\"29\"") {
                 error!("Scrobble rate limited: {} (artist={}, track={})", text, state.artist, state.track);
@@ -261,6 +258,53 @@ pub(crate) async fn submit_scrobble_inner(
             error!("Scrobble HTTP error: {} (artist={}, track={})", e, state.artist, state.track);
             ScrobbleResult::Failure
         }
+    }
+}
+
+/// Best-effort ListenBrainz submit of a single scrobble. Log-only: a failure
+/// never affects the caller. Skipped silently when no LB token is configured.
+async fn submit_to_listenbrainz(config: &crate::config::ScrobblingConfig, state: &ScrobbleState) {
+    if config.listenbrainz_token.trim().is_empty() {
+        return;
+    }
+    let listened_at = state
+        .start_time
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let mut track_metadata = serde_json::json!({
+        "artist_name": state.artist,
+        "track_name": state.track,
+    });
+    if let Some(ref album) = state.album {
+        track_metadata["release_name"] = serde_json::Value::String(album.clone());
+    }
+    let body = serde_json::json!({
+        "listen_type": "single",
+        "payload": [{
+            "listened_at": listened_at,
+            "track_metadata": track_metadata,
+        }],
+    });
+    let client = reqwest::Client::new();
+    match client
+        .post("https://api.listenbrainz.org/1/submit-listens")
+        .header("Authorization", format!("Token {}", config.listenbrainz_token))
+        .header("Content-Type", "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                debug!("ListenBrainz scrobble accepted: {} - {}", state.artist, state.track);
+            } else {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                warn!("ListenBrainz scrobble rejected ({}): {}", status, text);
+            }
+        }
+        Err(e) => warn!("ListenBrainz scrobble failed: {}", e),
     }
 }
 
@@ -309,11 +353,7 @@ pub async fn submit_now_playing(config: &crate::config::ScrobblingConfig, state:
         params.push(("albumArtist".into(), album_artist.clone()));
     }
     params.sort_by(|a, b| a.0.cmp(&b.0));
-    let sig_string: String = params.iter()
-        .map(|(k, v)| format!("{}{}", k, v))
-        .collect::<Vec<_>>()
-        .join("") + &config.api_secret;
-    let api_sig = format!("{:x}", md5::compute(sig_string.as_bytes()));
+    let api_sig = crate::config::sign_lastfm(&params, &config.api_secret);
     params.push(("api_sig".into(), api_sig));
     let client = reqwest::Client::new();
     match client.post("https://ws.audioscrobbler.com/2.0/")
