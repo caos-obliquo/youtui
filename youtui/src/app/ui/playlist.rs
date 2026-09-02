@@ -2513,10 +2513,6 @@ impl Playlist {
         self.cur_selected = self.list.get_list_iter().len().saturating_sub(1);
     }
 
-    /// Jump to a song by its visual index (as shown on screen).
-    pub fn jump_to_visual(&mut self, visual_idx: usize) {
-        self.cur_selected = visual_idx.min(self.get_max_visual_index());
-    }
     pub fn search_indices_len(&self) -> usize {
         self.search_indices.len()
     }
@@ -2912,6 +2908,22 @@ impl Playlist {
     pub fn handle_text_entry_action(&mut self, action: TextEntryAction) {
         if action == TextEntryAction::Submit && self.search_enabled {
             self.search_enabled = false;
+        }
+    }
+
+    /// Set the queue's fuzzy search text from the global `/` finder. Recomputes
+    /// search indices so the visible list filters live (matches title/album/artist).
+    pub fn set_fuzzy_search(&mut self, text: &str) {
+        self.search_text = text.to_string();
+        self.update_search_indices();
+        self.cur_selected = self.cur_selected.min(self.get_max_visual_index());
+    }
+
+    /// Clear the queue's fuzzy search text (dismiss `/`). Recomputes indices.
+    pub fn clear_fuzzy_search(&mut self) {
+        if !self.search_text.is_empty() {
+            self.search_text.clear();
+            self.update_search_indices();
         }
     }
 

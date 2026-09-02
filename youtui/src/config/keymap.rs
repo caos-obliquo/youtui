@@ -1055,6 +1055,13 @@ fn default_browser_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::Char('R')),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::BrowserLibrary(BrowserLibraryAction::ReloadCategory),
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::Backspace),
             KeyActionTree::new_key(AppAction::Browser(BrowserAction::Back)),
         ),

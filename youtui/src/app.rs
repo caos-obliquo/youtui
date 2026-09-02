@@ -982,7 +982,16 @@ impl Youtui {
             return Ok(());
         }
         let rect = self.window_state.sixel_rect;
-        if let Some((data, rect)) = self.window_state.sixel_data.as_ref().zip(rect) {
+        let sd = self.window_state.sixel_data.clone();
+        // Skip the DCS clear+redraw entirely when the sixel is unchanged. The
+        // sixel lives on a separate graphics layer that ratatui's text clear
+        // does not touch, so re-drawing every frame only causes a visible
+        // flash (blank frame between clear and redraw). Persisting it on screen
+        // is correct and flicker-free.
+        if sd == self.window_state.last_sixel_data {
+            return Ok(());
+        }
+        if let Some((data, rect)) = sd.as_ref().zip(rect) {
             let mut stdout = io::stdout();
             // Clear stale sixel at this position before re-drawing
             stdout.write_all(b"\x1bP0p\x1b\\")?;
@@ -998,6 +1007,7 @@ impl Youtui {
             write!(stdout, "\x1b[{}A", rect.height)?;
             stdout.flush()?;
         }
+        self.window_state.last_sixel_data = sd;
         Ok(())
     }
 }

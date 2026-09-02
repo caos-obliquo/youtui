@@ -82,10 +82,18 @@ impl ArtistSearchPanel {
         self.selected = 0;
     }
     pub fn go_to_last(&mut self) {
-        self.selected = self.list.len().saturating_sub(1);
+        self.selected = self.get_filtered_list_iter().count().saturating_sub(1);
     }
-    pub fn jump_to(&mut self, idx: usize) {
-        self.selected = idx.min(self.list.len().saturating_sub(1));
+    /// Filtered view of the artist list, used by the `/` fuzzy finder and F1 search.
+    pub fn get_filtered_list_iter(&self) -> impl Iterator<Item = &SearchResultArtist> + '_ {
+        let filter_text = &self.local_filter_text;
+        self.list.iter().filter(move |search_result| {
+            if filter_text.is_empty() {
+                true
+            } else {
+                crate::app::structures::fuzzy_match(filter_text, &search_result.artist).is_some()
+            }
+        })
     }
 }
 impl Component for ArtistSearchPanel {
@@ -170,8 +178,7 @@ impl ListView for ArtistSearchPanel {
         &mut self.widget_state
     }
     fn get_items(&self) -> impl ExactSizeIterator<Item = Cow<'_, str>> + '_ {
-        self.list
-            .iter()
+        self.get_filtered_list_iter()
             .map(|search_result| {
                 let prefix = if self.subscribed_artists.contains(&search_result.browse_id) {
                     "\u{f02e} "
@@ -180,10 +187,23 @@ impl ListView for ArtistSearchPanel {
                 };
                 Cow::Owned(format!("{}{}", prefix, search_result.artist))
             })
+            .collect::<Vec<Cow<'_, str>>>()
+            .into_iter()
     }
 }
 impl HasTitle for ArtistSearchPanel {
     fn get_title(&self) -> Cow<'_, str> {
-        format!("Artists - {} results", self.list.len()).into()
+        if self.local_filter_text.is_empty() {
+            format!("Artists - {} results", self.list.len()).into()
+        } else {
+            let count = self.get_filtered_list_iter().count();
+            format!(
+                "Artists - {} results [SEARCH: {} ({})]",
+                self.list.len(),
+                self.local_filter_text,
+                count
+            )
+            .into()
+        }
     }
 }

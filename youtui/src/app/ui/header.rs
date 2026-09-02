@@ -5,13 +5,16 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
-use vi_text_editor::ViTextEditor;
+use ratatui::widgets::{Block, Borders, Paragraph};
 
 /// Minimal header: two bordered blocks side by side.
     /// - Commands block: F1/F2/F3/F4, o (Context Menu), ? help only.
 /// - Browser block (browser context): the five tabs on one line.
 /// Everything else lives in the ? help menu.
+///
+/// The header is always three lines. The `/` fuzzy finder and the F1 local
+/// filter show their query on the bottom nav-hint bar (see draw_nav_hint_bar),
+/// so the header is never grown or wiped.
 pub fn header_required_height(_w: &super::YoutuiWindow) -> u16 {
     3
 }
@@ -24,30 +27,13 @@ fn button_span(label: &str) -> Span<'static> {
 }
 
 pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
-    // Fuzzy finder active: show search input in header
-    if w.fuzzy_finder.shown {
-        let filter_block = Block::default().borders(Borders::ALL).title(" / ").border_style(Style::default().fg(Color::Cyan));
-        let display = w.fuzzy_finder.editor.render_simple("/");
-        let inner = filter_block.inner(chunk);
-        f.render_widget(Clear, chunk);
-        f.render_widget(filter_block, chunk);
-        f.render_widget(Paragraph::new(display).style(Style::default().fg(Color::Cyan)), inner);
-        f.set_cursor_position((inner.x + w.fuzzy_finder.editor.cursor as u16, inner.y));
-        return;
-    }
-    // Browser local filter active: show filter input in header
-    if matches!(w.context, WindowContext::Browser) && w.browser.filter_active() {
-        let editor = w.browser.filter_editor();
-        let filter_block = Block::default().borders(Borders::ALL).title(" Filter ").border_style(Style::default().fg(Color::Cyan));
-        let display = editor.render_simple("/");
-        let inner = filter_block.inner(chunk);
-        f.render_widget(Clear, chunk);
-        f.render_widget(filter_block, chunk);
-        f.render_widget(Paragraph::new(display).style(Style::default().fg(Color::Cyan)), inner);
-        f.set_cursor_position((inner.x + editor.cursor as u16, inner.y));
-        return;
-    }
+    // The header is always three lines. The `/` fuzzy finder and the F1 local
+    // filter show their query on the bottom nav-hint bar (see draw_nav_hint_bar),
+    // so the header is never grown or wiped.
+    draw_normal_header(f, w, chunk);
+}
 
+fn draw_normal_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     let mut spans: Vec<Span> = Vec::new();
 
     let vi_mode: Option<String> = if w.command_mode {

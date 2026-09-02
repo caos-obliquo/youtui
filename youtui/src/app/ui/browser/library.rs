@@ -113,7 +113,7 @@ impl Action for BrowserLibraryAction {
             BrowserLibraryAction::FocusCategory => "Focus categories",
             BrowserLibraryAction::ActivateSelected => "Open selected",
             BrowserLibraryAction::DismissTracks => "Back from tracks",
-            BrowserLibraryAction::ReloadCategory => "Refresh category",
+            BrowserLibraryAction::ReloadCategory => "Refresh category (auto-renews cookie)",
             BrowserLibraryAction::CycleSortOrder => "Sort: A-Z / Z-A / Recent",
         }
         .into()

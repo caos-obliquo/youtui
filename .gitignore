@@ -21,3 +21,4 @@ session-*.md
 /async-callback-manager/target/*
 .omo/
 .codegraph/
+.pi/

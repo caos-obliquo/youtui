@@ -1,4 +1,4 @@
-use crate::app::component::actionhandler::{ComponentEffect, YoutuiEffect};
+use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::server::ValidatedMetadata;
 
 use crate::app::server::{

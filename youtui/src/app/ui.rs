@@ -492,15 +492,20 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                 return self.handle_seek(SEEK_AMOUNT, SeekDirection::Back).into();
             }
             AppAction::ToggleHelp => self.toggle_help(),
-            AppAction::FuzzyFinder => {
-                if self.fuzzy_finder.shown {
-                    self.fuzzy_finder.close();
-                } else {
-                    self.fuzzy_finder.open();
-                    self.fuzzy_finder
-                        .set_entries(fuzzy_finder::build_corpus(self.context, self));
-                }
+        AppAction::FuzzyFinder => {
+            if self.fuzzy_finder.shown {
+                self.fuzzy_finder.close();
+                // Clear any active filter so the list restores on dismiss.
+                self.browser.clear_local_filter();
+                self.playlist.clear_fuzzy_search();
+            } else {
+                self.fuzzy_finder.open();
+                // Start with no filter; the list shows everything until the user types.
+                self.browser.clear_local_filter();
+                self.playlist.clear_fuzzy_search();
+                self.fuzzy_finder.set_entries(fuzzy_finder::build_corpus(self.context, self));
             }
+        }
             AppAction::Quit => {
                 self.quit_confirm = true;
                 return AsyncTask::new_no_op().into();
@@ -762,60 +767,63 @@ impl YoutuiWindow {
             return AsyncTask::new_no_op().into();
         }
 
-        // Fuzzy finder (/ prompt) intercepts all keys while shown
+        // Fuzzy finder (/ prompt) intercepts typing/control keys while shown.
+        // Navigation keys (j/k, Up/Down) fall through to the main list so the
+        // filtered list can be scrolled (neovim-style: / filters, j/k navigate).
         if self.fuzzy_finder.shown {
             if let Event::Key(k) = event {
                 if k.kind == crossterm::event::KeyEventKind::Press {
                     use crossterm::event::KeyCode;
-                    match k.code {
+                    let handled = match k.code {
                         KeyCode::Esc => {
                             self.fuzzy_finder.close();
-                            return AsyncTask::new_no_op().into();
+                            self.browser.clear_local_filter();
+                            self.playlist.clear_fuzzy_search();
+                            true
                         }
                         KeyCode::Enter => {
-                            let jump = self.fuzzy_finder.selected().map(|e| e.kind);
+                            // Commit the current filter: keep browser.filter_text set so the
+                            // main list stays filtered (neovim-style accept-search).
                             self.fuzzy_finder.close();
-                            if let Some(kind) = jump {
-                                return self.fuzzy_jump(kind).into();
-                            }
-                            return AsyncTask::new_no_op().into();
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            self.fuzzy_finder.move_selection(-1);
-                            return AsyncTask::new_no_op().into();
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            self.fuzzy_finder.move_selection(1);
-                            return AsyncTask::new_no_op().into();
-                        }
-                        KeyCode::Char(c)
-                            if k.modifiers
-                                == crossterm::event::KeyModifiers::CONTROL
-                                && (c == 'n' || c == 'p') =>
-                        {
-                            self.fuzzy_finder
-                                .move_selection(if c == 'n' { 1 } else { -1 });
-                            return AsyncTask::new_no_op().into();
+                            true
                         }
                         KeyCode::Backspace => {
                             self.fuzzy_finder
                                 .editor
                                 .handle_key(KeyCode::Backspace, false, false);
                             self.fuzzy_finder.recompute();
-                            return AsyncTask::new_no_op().into();
+                            let q = self.fuzzy_finder.query();
+                            if matches!(self.context, WindowContext::Playlist) {
+                                self.playlist.set_fuzzy_search(q);
+                            } else {
+                                self.browser.set_local_filter(q);
+                            }
+                            true
                         }
+                        // Typing: every char (including j/k) goes into the query.
+                        // j/k are NOT list navigation while `/` is open (neovim-style:
+                        // the prompt is a text input; navigate after commit with Enter).
                         KeyCode::Char(c) => {
                             self.fuzzy_finder
                                 .editor
                                 .handle_key(KeyCode::Char(c), false, false);
                             self.fuzzy_finder.recompute();
-                            return AsyncTask::new_no_op().into();
+                            let q = self.fuzzy_finder.query();
+                            if matches!(self.context, WindowContext::Playlist) {
+                                self.playlist.set_fuzzy_search(q);
+                            } else {
+                                self.browser.set_local_filter(q);
+                            }
+                            true
                         }
-                        _ => return AsyncTask::new_no_op().into(),
+                        // j/k and Up/Down: not handled here -> navigate main list below.
+                        _ => false,
+                    };
+                    if handled {
+                        return AsyncTask::new_no_op().into();
                     }
                 }
             }
-            return AsyncTask::new_no_op().into();
         }
 
         // Command mode (: prompt) with vi-mode editor
@@ -1396,51 +1404,7 @@ impl YoutuiWindow {
         self.cached_album_protocol = None;
         self.cached_album_chunk = None;
     }
-    /// Execute a fuzzy-finder jump target.
-    pub fn fuzzy_jump(&mut self, kind: fuzzy_finder::FuzzyKind) -> ComponentEffect<Self> {
-        use fuzzy_finder::FuzzyKind;
-        match kind {
-            FuzzyKind::Playlist(visual_idx) => {
-                if self.context != WindowContext::Playlist {
-                    self.handle_toggle_playlist();
-                }
-                self.playlist.jump_to_visual(visual_idx);
-            }
-            FuzzyKind::Browser(tab, item) => {
-                if self.context != WindowContext::Browser {
-                    self.prev_context = self.context;
-                    self.context = WindowContext::Browser;
-                }
-                if let Some(task) = self.browser.switch_to_tab(tab) {
-                    let t = task.map_frontend(|this: &mut Self| &mut this.browser);
-                    self.browser.jump_to_item(tab, item);
-                    return t;
-                }
-                self.browser.jump_to_item(tab, item);
-            }
-            FuzzyKind::OpenTab(tab) => {
-                if self.context != WindowContext::Browser {
-                    self.prev_context = self.context;
-                    self.context = WindowContext::Browser;
-                }
-                if let Some(task) = self.browser.switch_to_tab(tab) {
-                    return task.map_frontend(|this: &mut Self| &mut this.browser);
-                }
-            }
-            // Informational entries - no navigation
-            FuzzyKind::Lyrics(_) |
-            FuzzyKind::SongInfo |
-            FuzzyKind::Logs(_) |
-            FuzzyKind::PlaylistSavePopup |
-            FuzzyKind::PlaylistUpdatePopup(_) |
-            FuzzyKind::PlaylistEditor(_) |
-            FuzzyKind::PlaylistRenamePopup |
-            FuzzyKind::PlaylistEditPopup |
-            FuzzyKind::PlaylistDetailsPopup |
-            FuzzyKind::Notes(_) => {}
-        }
-        AsyncTask::new_no_op()
-    }
+
     pub fn toggle_help(&mut self) {        if self.help.shown {
             self.help.shown = false;
         } else {
