@@ -38,6 +38,7 @@ pub enum AppAction {
     ToggleHelp,
     FuzzyFinder,
     ViewLogs,
+    Recommend,
     PlayPause,
     NoOp,
     ToggleBrowser,
@@ -135,6 +136,7 @@ impl Action for AppAction {
             | AppAction::FuzzyFinder
             | AppAction::Quit
             | AppAction::ViewLogs
+            | AppAction::Recommend
             | AppAction::NoOp
             | AppAction::ToggleBrowser
             | AppAction::TogglePlaylist
@@ -175,6 +177,7 @@ impl Action for AppAction {
             AppAction::ToggleBrowser => "Toggle Browser".into(),
             AppAction::TogglePlaylist => "Toggle Playlist".into(),
             AppAction::ViewLogs => "View Logs".into(),
+            AppAction::Recommend => "Recommendations".into(),
             AppAction::SeekForward => format!("Seek Forward {}s", SEEK_AMOUNT.as_secs()).into(),
             AppAction::SeekBack => format!("Seek Back {}s", SEEK_AMOUNT.as_secs()).into(),
             AppAction::NoOp => "No Operation".into(),

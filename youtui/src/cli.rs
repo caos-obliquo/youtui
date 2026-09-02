@@ -1,5 +1,6 @@
 use crate::{Cli, OAUTH_FILENAME, RuntimeInfo, get_api, get_config_dir, get_data_dir};
 use anyhow::{Context, Result};
+use tracing::info;
 use metadata_cache_sqlite::SqliteCache;
 use metadata_provider::MetadataProvider;
 use futures::future::try_join_all;
@@ -16,17 +17,30 @@ mod querybuilder;
 /// Default network timeout for any single async CLI operation.
 const CLI_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Generous budget for fan-out operations that perform many sequential
+/// upstream calls (e.g. the niche recommendations scan which fetches one or
+/// more `getSimilar`/`getInfo` responses per seed/candidate). A single 30s
+/// window is too small for ~140 network round-trips.
+const NICHE_TIMEOUT: Duration = Duration::from_secs(600);
+
 /// Wrap a Result-returning async operation in a 30s timeout.
 async fn with_timeout<F, T>(ctx: &str, fut: F) -> Result<T>
 where
     F: std::future::Future<Output = Result<T>>,
 {
-    match tokio::time::timeout(CLI_TIMEOUT, fut).await {
+    with_timeout_dur(CLI_TIMEOUT, ctx, fut).await
+}
+
+async fn with_timeout_dur<F, T>(dur: Duration, ctx: &str, fut: F) -> Result<T>
+where
+    F: std::future::Future<Output = Result<T>>,
+{
+    match tokio::time::timeout(dur, fut).await {
         Ok(res) => res,
         Err(_) => Err(anyhow::anyhow!(
             "[ERROR] {}: operation timed out after {}s (network failure or unresponsive server)",
             ctx,
-            CLI_TIMEOUT.as_secs()
+            dur.as_secs()
         )),
     }
 }
@@ -166,7 +180,151 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             }
             return Ok(());
         }
-        Some(crate::Command::TestValidateMetadata { artist, title, album }) => {
+        Some(crate::Command::Recommendations { type_filter, limit, page, niche_level, seed_count, seed, similar_limit, json }) => {
+            use crate::lastfm_recommend::{
+                RecKind, fetch_niche_recommendations, fetch_recommendations,
+                fetch_recommendations_for_seed, print_recommendations,
+                print_recommendations_json,
+            };
+            if let Some(seed_query) = seed {
+                require_non_empty(seed_query, "seed")?;
+                let kind = match type_filter.as_str() {
+                    "tracks" => RecKind::Tracks,
+                    "albums" => RecKind::Albums,
+                    "artists" => RecKind::Artists,
+                    _ => RecKind::Artists,
+                };
+                info!(
+                    "Fetching seed recommendations: kind={} seed='{}' limit={} similar_limit={}",
+                    kind, seed_query, limit, similar_limit
+                );
+                let items = with_timeout_dur(
+                    NICHE_TIMEOUT,
+                    "recommendations",
+                    fetch_recommendations_for_seed(
+                        &config.scrobbling,
+                        kind,
+                        seed_query,
+                        *limit,
+                        *similar_limit,
+                    ),
+                )
+                .await
+                .with_context(|| {
+                    format!("Failed to fetch seed recommendations for '{}'", seed_query)
+                })?;
+                info!("Fetched {} seed recommendations", items.len());
+                if *json {
+                    print_recommendations_json(&items);
+                } else {
+                    print_recommendations(&items);
+                }
+                return Ok(());
+            }
+            let valid = ["all", "tracks", "albums", "artists"];
+            if !valid.contains(&type_filter.as_str()) {
+                return Err(anyhow::anyhow!(
+                    "--type must be one of: all, tracks, albums, artists"
+                ));
+            }
+            if !(0.0..=1.0).contains(niche_level) {
+                return Err(anyhow::anyhow!(
+                    "--niche-level must be between 0.0 and 1.0"
+                ));
+            }
+            if config.scrobbling.session_key.trim().is_empty() {
+                eprintln!("[ERROR] recommendations: session_key not configured in [scrobbling] config section");
+                return Err(anyhow::anyhow!("recommendations: session_key missing"));
+            }
+            let kinds: Vec<RecKind> = if type_filter == "all" {
+                vec![RecKind::Tracks, RecKind::Albums, RecKind::Artists]
+            } else {
+                vec![match type_filter.as_str() {
+                    "tracks" => RecKind::Tracks,
+                    "albums" => RecKind::Albums,
+                    "artists" => RecKind::Artists,
+                    _ => unreachable!(),
+                }]
+            };
+            let mut all = Vec::new();
+            for kind in &kinds {
+                if *niche_level == 0.0 {
+                    info!("Fetching Last.fm recommendations: kind={} limit={} page={}", kind, limit, page);
+                    let items = with_timeout(
+                        "recommendations",
+                        fetch_recommendations(&config.scrobbling, *kind, *limit, *page),
+                    )
+                    .await
+                    .with_context(|| format!("Failed to fetch Last.fm {} recommendations", kind))?;
+                    info!("Fetched {} Last.fm {} recommendations", items.len(), kind);
+                    all.extend(items);
+                } else {
+                    info!(
+                        "Fetching niche Last.fm recommendations: kind={} limit={} niche_level={} seeds={}",
+                        kind, limit, niche_level, seed_count
+                    );
+                    let items = with_timeout_dur(
+                        NICHE_TIMEOUT,
+                        "recommendations",
+                        fetch_niche_recommendations(
+                            &config.scrobbling,
+                            *kind,
+                            *limit,
+                            *seed_count,
+                            *niche_level,
+                            *page,
+                        ),
+                    )
+                    .await
+                    .with_context(|| format!("Failed to fetch niche Last.fm {} recommendations", kind))?;
+                    info!("Fetched {} niche Last.fm {} recommendations", items.len(), kind);
+                    all.extend(items);
+                }
+            }
+            if *json {
+                print_recommendations_json(&all);
+            } else {
+                print_recommendations(&all);
+            }
+            return Ok(());
+        }
+        Some(crate::Command::ListenbrainzRecommendations { artist_type, json }) => {
+            use crate::lastfm_recommend::{
+                fetch_listenbrainz_recommendations, print_listenbrainz_recommendations,
+                print_listenbrainz_recommendations_json,
+            };
+            let valid = ["top", "similar", "raw"];
+            if !valid.contains(&artist_type.as_str()) {
+                return Err(anyhow::anyhow!(
+                    "--artist-type must be one of: top, similar, raw"
+                ));
+            }
+            if config.scrobbling.listenbrainz_token.trim().is_empty() {
+                eprintln!("[ERROR] listenbrainz-recommendations: listenbrainz_token not configured in [scrobbling] config section");
+                return Err(anyhow::anyhow!("listenbrainz-recommendations: listenbrainz_token missing"));
+            }
+            let username = "caos_obliquo";
+            info!("Fetching ListenBrainz CF recommendations: user={} artist_type={}", username, artist_type);
+            let items = with_timeout(
+                "listenbrainz-recommendations",
+                fetch_listenbrainz_recommendations(&config.scrobbling, username, artist_type),
+            )
+            .await
+            .with_context(|| format!("Failed to fetch ListenBrainz CF recommendations for {}", username))?;
+            info!("Fetched {} ListenBrainz CF recommendations", items.len());
+            if *json {
+                print_listenbrainz_recommendations_json(&items);
+            } else {
+                print_listenbrainz_recommendations(&items);
+            }
+            return Ok(());
+        }
+        Some(crate::Command::TestValidateMetadata {
+            artist,
+            title,
+            album,
+            rym,
+        }) => {
             use crate::app::server::MetadataRegistry;
             require_non_empty(artist, "artist")?;
             require_non_empty(title, "title")?;
@@ -204,6 +362,17 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             println!("Tracks:    {}", meta.album_tracks.len());
             println!("Genres:    {:?}", meta.genres);
             println!("Styles:    {:?}", meta.styles);
+            if *rym {
+                for g in &meta.genres {
+                    match rym_genre_data::find_genre(g) {
+                        Some(ge) => match &ge.description {
+                            Some(desc) => println!("  [RYM] {} - {}", g, desc),
+                            None => println!("  [RYM] {} - (no description)", g),
+                        },
+                        None => println!("  [RYM] {} - (not in RYM data)", g),
+                    }
+                }
+            }
             for (i, t) in meta.album_tracks.iter().enumerate() {
                 println!("  {}. {} ({:.0}s) {:?}", i + 1, t.title, t.duration_secs, t.artist);
             }
@@ -351,6 +520,19 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                     let album = meta.album.as_deref().unwrap_or("?");
                     pb.println(format!("  {}: year={}, artist={}, album={}, genres={}, styles={}",
                         key, year, artist, album, meta.genres.len(), meta.styles.len()));
+                    if !meta.subgenres.is_empty() {
+                        pb.println(format!("    subgenres: {}", meta.subgenres.join(", ")));
+                    }
+                    if !meta.genre_paths.is_empty() {
+                        let paths: Vec<String> = meta.genre_paths
+                            .iter()
+                            .map(|(t, p)| format!("{} -> {}", t, p))
+                            .collect();
+                        pb.println(format!("    genre_paths: {}", paths.join("; ")));
+                    }
+                    if !meta.descriptors.is_empty() {
+                        pb.println(format!("    descriptors: {}", meta.descriptors.join(", ")));
+                    }
                     pb.inc(1);
                 }
                 pb.finish_with_message(format!("Metadata cache: {} entries", entries.len()));

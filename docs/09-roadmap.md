@@ -348,6 +348,21 @@
 | 89 | ScrobbleCache CLI subcommand: `youtui scrobble-cache [--show/--clear/--retry]` | `youtui/src/main.rs`, `youtui/src/cli.rs`, `youtui/src/app/scrobbler.rs` |
 | 90 | CI release workflow fix: anchor version grep to [package] section | `.github/workflows/release.yml` |
 
+## Completed (feat/lastfm-recommendations + listenbrainz)
+
+| # | Feature | Files |
+|---|---------|-------|
+| 138 | **Recommendations CLI + niche engine**: `youtui recommendations` synthesizes Last.fm recs from `user.getTop*` -> `getSimilar` (`user.getRecommended*` removed from catalog; `album.getSimilar` does not exist, Albums use `artist.getSimilar(album.artist)`). A+B niche score `match_score*(1-niche) + niche_favor(listeners)*niche`, `--niche-level 0.7`, `--seed-count 35`, caps ~3/seed + global `--limit`, dedup by name/MBID, `[niche]` suffix when `niche_level >= 0.5`. `buffer_unordered(8)` fan-out cuts ~90s -> ~12s. | `lastfm_recommend.rs` (new), `main.rs` |
+| 139 | **Seed CLI**: `--seed <artist|artist - title>` seeds discovery from a specific artist (`fetch_recommendations_for_seed`), graceful artist fallback. `--similar-limit 10`. | `lastfm_recommend.rs` |
+| 140 | **SQLite persistent cache**: `RecommendationStore` (rusqlite 0.31 bundled) at `~/.local/share/youtui/recommendations_cache.db`, 24h TTL, serde_json blob + fetched_at epoch. F4 recs persist across app restarts within 24h; `r` reloads, `--seed` does not refresh. | `recommendations_store.rs` (new) |
+| 141 | **F4 Recommendations TUI popup**: Global `F(4)` -> `AppAction::Recommend` -> `RecommendationsPopup`. j/k nav, C-g/G top/bottom, `/` filter, Tab kind cycle, o context menu (Play/Add to Queue/Copy URL/Song Info/Go to Artist), Enter acts, r reload, q/Esc close. Columns `#/Type/Artist/Name/Similar To/List`. `FetchAllRecommendations` runs 3 kinds concurrently (`buffer_unordered(3)`); `FetchNicheRecommendations` now `#[allow(dead_code)]`. | `recommendations_popup.rs` (new), `ui.rs`, `header.rs`, `keymap.rs`, `messages.rs`, `effect_handlers_playlist.rs`, `draw.rs` |
+| 142 | **Song Info wiring in F4**: o menu -> Song Info -> `ViewRecSongInfo(usize, RecKind, String, String)` resolves rec -> `SearchSongs` -> `ListSong` -> `open_song_info_popup` (fires RYM genre descriptions). `Navigate` closes popup before nav. | `app.rs`, `messages.rs` |
+| 143 | **LB synthesis + backfill**: `youtui listenbrainz-recommendations` CLI (`--artist-type top|similar|raw`, `--json`) with HTTP 204 fallback to `synthesize_listenbrainz_recommendations` (listens corpus -> top artists -> `artist.getSimilar` -> 20 recs). `lb_backfill.py` imported 239,624 scrobbles (0 failures, oldest Oct 2014, resume-aware, `latest-import` watermark). | `lastfm_recommend.rs`, `lb_backfill.py` |
+| 144 | **Genre pipeline fix**: `lastfm_track.rs` falls back to `artist.getInfo` tags when track toptags empty; `score_result` genre bonus `min(genres,5)*4`; `merge_album`/`merge_artist` in merge.rs; resolver merges album/artist when `all_results.len() > 1`. Underground bands now show rich genres. | `libs/metadata-provider/` |
+| 145 | **RYM genre CLI flag**: `test-validate-metadata [--album <name>] --rym` prints RYM genre descriptions. | `main.rs` |
+
+Current state: youtui 194 pass, 0 fail, 4 ignored; no new warnings. Full subsystem doc: `docs/subsystems/recommendations.md`; ListenBrainz pieces: `docs/06-subsystems/scrobbling.md`; genre fix: `docs/06-subsystems/validation.md`.
+
 ## Previous Releases
 
 ### v1.0.3 - Scrobble, playback, sixel fixes (PR #29)

@@ -492,6 +492,9 @@ fn resolve_full_pipeline_sqlite_hit() {
     let sqlite = SqliteCache::open_in_memory().expect("open in memory");
     let sqlite_meta = metadata_cache_sqlite::ValidatedMetadata {
         musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         artist: Some("Metallica".into()),
         album: Some("Master of Puppets".into()),
         year: Some("1986".into()),
@@ -571,6 +574,9 @@ fn resolve_full_pipeline_merge_genres() {
             genres: vec!["Thrash metal".to_string()],
             styles: vec![],
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         }),
     };
     let p2 = MockProvider {
@@ -586,6 +592,9 @@ fn resolve_full_pipeline_merge_genres() {
             genres: vec!["Speed metal".to_string()],
             styles: vec!["1980s".to_string()],
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         }),
     };
 
@@ -633,6 +642,9 @@ fn resolve_normalizes_single_provider_genres() {
             genres: vec!["thrash metal".to_string(), "heavy metal".to_string()],
             styles: vec!["metal".to_string()],
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         }),
     };
     let reg = make_registry(vec![Box::new(p)]);
@@ -690,6 +702,9 @@ fn sqlite_cache_hit_in_resolve() {
     let sqlite = SqliteCache::open_in_memory().expect("open in memory");
     let sqlite_meta = metadata_cache_sqlite::ValidatedMetadata {
         musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         artist: Some("Megadeth".into()),
         album: Some("Rust in Peace".into()),
         year: Some("1990".into()),

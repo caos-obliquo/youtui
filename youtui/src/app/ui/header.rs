@@ -8,7 +8,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 /// Minimal header: two bordered blocks side by side.
-/// - Commands block: F1/F2/F3, o (Context Menu), ? help only.
+    /// - Commands block: F1/F2/F3/F4, o (Context Menu), ? help only.
 /// - Browser block (browser context): the five tabs on one line.
 /// Everything else lives in the ? help menu.
 ///
@@ -53,21 +53,23 @@ fn draw_normal_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     }
 
     spans.push(button_span("F1"));
-    spans.push(Span::raw(" (Toggle Search) "));
+    spans.push(Span::raw(" Search "));
     spans.push(button_span("F2"));
-    spans.push(Span::raw(" (Toggle Browser) "));
+    spans.push(Span::raw(" Browser "));
     spans.push(button_span("F3"));
-    spans.push(Span::raw(" (Toggle Playlist) "));
+    spans.push(Span::raw(" Queue "));
+    spans.push(button_span("F4"));
+    spans.push(Span::raw(" Recs "));
     if matches!(w.context, WindowContext::Playlist | WindowContext::Browser) {
         spans.push(button_span("o"));
-        spans.push(Span::raw(" (Context Menu) "));
+        spans.push(Span::raw(" Menu "));
     }
     spans.push(button_span("?"));
-    spans.push(Span::raw(" (Toggle Help) "));
+    spans.push(Span::raw(" Help "));
 
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
     let commands_widget = Paragraph::new(Line::from(spans));
-    if !matches!(w.context, WindowContext::Browser) {
+    if !matches!(w.context, WindowContext::Browser) || w.recommendations_popup.is_some() {
         f.render_widget(commands_widget, commands_block.inner(chunk));
         f.render_widget(commands_block, chunk);
         return;

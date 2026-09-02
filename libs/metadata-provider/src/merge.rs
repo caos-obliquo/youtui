@@ -92,6 +92,56 @@ pub fn merge_year(results: &[(i32, ValidatedMetadata, u8)]) -> Option<String> {
     Some(tied.remove(0))
 }
 
+/// Pick the album supplied by the highest-scoring provider; tie-break by priority weight.
+pub fn merge_album(results: &[(i32, ValidatedMetadata, u8)]) -> Option<String> {
+    let mut best: Option<(i32, u8, String)> = None;
+    for (score, meta, priority) in results {
+        let album = match meta.album {
+            Some(ref a) if !a.is_empty() => a.clone(),
+            _ => continue,
+        };
+        let weight = priority_weight(*priority);
+        let better = match &best {
+            None => true,
+            Some((b_score, b_priority, _)) => *score > *b_score
+                || (*score == *b_score && weight > *b_priority),
+        };
+        if better {
+            best = Some((*score, weight, album));
+        }
+    }
+    best.map(|(_, _, album)| album)
+}
+
+/// Pick the artist supplied by the highest-scoring provider; tie-break by priority weight.
+pub fn merge_artist(results: &[(i32, ValidatedMetadata, u8)]) -> Option<String> {
+    let mut best: Option<(i32, u8, String)> = None;
+    for (score, meta, priority) in results {
+        let artist = match meta.artist {
+            Some(ref a) if !a.is_empty() => a.clone(),
+            _ => continue,
+        };
+        let weight = priority_weight(*priority);
+        let better = match &best {
+            None => true,
+            Some((b_score, b_priority, _)) => *score > *b_score
+                || (*score == *b_score && weight > *b_priority),
+        };
+        if better {
+            best = Some((*score, weight, artist));
+        }
+    }
+    best.map(|(_, _, artist)| artist)
+}
+
+fn priority_weight(priority: u8) -> u8 {
+    match priority {
+        7 => 3u8,
+        6 => 2u8,
+        _ => 1u8,
+    }
+}
+
 /// Merge genres and styles from multiple provider results using priority-based weights.
 ///
 /// Weight rules:
@@ -166,6 +216,9 @@ mod tests {
             genres: genres.into_iter().map(String::from).collect(),
             styles: styles.into_iter().map(String::from).collect(),
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         }
     }
 
@@ -280,6 +333,9 @@ mod tests {
             genres: unique_many,
             styles: vec![],
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         };
         let results = vec![(100, meta, 7)];
         let (genres, _styles) = weighted_merge_genres(&results);
@@ -298,6 +354,9 @@ mod tests {
             genres: vec![],
             styles: unique_many,
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         };
         let results = vec![(100, meta, 6)];
         let (_genres, styles) = weighted_merge_genres(&results);

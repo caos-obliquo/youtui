@@ -184,6 +184,9 @@ impl MetadataProvider for ListenBrainzProvider {
                 genres,
                 styles,
                 musicbrainz_release_group_id: release_group_mbid,
+                subgenres: Vec::new(),
+                genre_paths: Vec::new(),
+                descriptors: Vec::new(),
             })
         })
     }

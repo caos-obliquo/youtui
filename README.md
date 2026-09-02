@@ -29,7 +29,38 @@ cd youtui
 cargo install --path youtui --force
 ```
 
-No AUR. Local compilation only.
+No AUR. Local compilation only. After `cargo install`, the `youtui` command is on your PATH automatically.
+
+### Running the dev build (recommended for this repo)
+
+If you build and run from the workspace instead of installing, the binary lives at
+`youtui/target/release/youtui` and `youtui` on your PATH may resolve to an older or
+stale installed copy. Make sure the command you launch actually points at the freshly
+built `target/release` binary. Two ways to do that:
+
+**Option A - shell alias** (add to `~/.zshrc` or `~/.bashrc`):
+
+```sh
+alias youtui="$HOME/path/to/youtui/target/release/youtui"
+```
+
+**Option B - symlink onto your PATH**
+
+```sh
+mkdir -p "$HOME/.local/bin"
+ln -sf "$(pwd)/target/release/youtui" "$HOME/.local/bin/youtui"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+With either option, verify you are running the expected build:
+
+```sh
+youtui --version
+```
+
+The dev binary includes the full recommendations feature (F4), the listenbrainz
+scrobble, and the genre pipeline. Run `cargo build --release -p youtui` after any
+change, then relaunch `youtui`.
 
 ### Dependencies
 

@@ -33,6 +33,9 @@ impl OverrideEntry {
             genres: self.genres.clone().unwrap_or_default(),
             styles: self.styles.clone().unwrap_or_default(),
             musicbrainz_release_group_id: None,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         }
     }
 }

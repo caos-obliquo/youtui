@@ -175,6 +175,9 @@ impl MusicBrainzProvider {
             genres,
             styles,
             musicbrainz_release_group_id: release_group_id,
+            subgenres: Vec::new(),
+            genre_paths: Vec::new(),
+            descriptors: Vec::new(),
         })
     }
 }

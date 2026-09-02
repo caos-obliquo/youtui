@@ -64,6 +64,9 @@ impl MetadataProvider for GeniusProvider {
                     genres: Vec::new(),
                     styles: Vec::new(),
                     musicbrainz_release_group_id: None,
+                    subgenres: Vec::new(),
+                    genre_paths: Vec::new(),
+                    descriptors: Vec::new(),
                 })
             } else {
                 None

@@ -190,6 +190,9 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
     if let Some(popup) = &mut w.config_editor_popup {
         popup.draw(f, f.area());
     }
+    if let Some(popup) = &mut w.recommendations_popup {
+        popup.draw(f, content_chunk);
+    }
     if let Some(popup) = &mut w.playlist_rename_popup {
         popup.draw(f, f.area());
     }

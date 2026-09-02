@@ -55,6 +55,20 @@ Cumulative weight accumulation using `HashMap<String, (String, u8)>`:
 
 All weights accumulate via `and_modify`/`saturating_add`. After accumulation, genres sorted by weight desc, then alphabetically. **Capped at 30** each for genres and styles. Parent genres expanded via `GenreDb::expand_parent_genres()`. Final dedup by `name_lower`.
 
+## Genre Pipeline Fix (artist.getInfo fallback + scoring bonus + merge)
+
+Three changes close the genre gap for underground bands (previously empty or `None` genres):
+
+1. **`lastfm_track.rs` `fetch_track_info`**: when a track's toptags are empty, falls back to `artist.getInfo` tags (`fetch_artist_genres`). Underground artists often lack track-level tags but have artist-level tags.
+2. **`score_result` genre bonus** (lib.rs): `score += (genres.len() as i32).min(5) * 4` - providers that return genres score higher, so genre-rich results win resolution.
+3. **`merge.rs` `merge_album` / `merge_artist`** (with `priority_weight`): the resolver merges album and artist when `all_results.len() > 1`, so genre data from multiple providers combines instead of the best-scoring result winning outright.
+
+Documented limitation: an album resolves only when a provider exposes it. Real playback passes the album hint; a bare-title search may resolve `None` album.
+
+Debug: `youtui test-validate-metadata <artist> <title> [--album <name>] [--rym]` - the `--rym` flag prints RYM genre descriptions for resolved genres.
+
+See [docs/subsystems/recommendations.md](../subsystems/recommendations.md) for the genre-aware Song Info path in the F4 recommendations popup, and [TODO.md](../../TODO.md).
+
 ## Year Merge (merge_year)
 
 File: `libs/metadata-provider/src/merge.rs`.
@@ -161,7 +175,7 @@ pub enum EnrichTarget {
 | `youtui test-musicbrainz --artist "X" --title "Y"` | Test MB recording lookup + genre fetch |
 | `youtui test-caa --release-group-id "MBID"` | Test CAA album art download |
 | `youtui test-listenbrainz --artist "X" --title "Y"` | Test LB tag lookup |
-| `youtui test-validate-metadata --artist "X" --title "Y" --album "Z"` | Test full multi-provider resolution |
+| `youtui test-validate-metadata --artist "X" --title "Y" --album "Z" [--rym]` | Test full multi-provider resolution (+ RYM genre descriptions) |
 | `youtui enrich-cache [--artist "X" --title "Y"]` | Batch enrich cache from stdin or args |
 | `youtui test-scrobble --artist "X" --title "Y" --album "Z" --duration N` | Test Last.fm scrobble API |
 | `youtui scrobble-cache --show/--clear/--retry` | Manage failed scrobble retry queue |

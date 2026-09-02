@@ -3278,6 +3278,7 @@ Genres
             Screamo
                 Screamo::genre
                 Emoviolence::genre
+                Skramz::genre
         Folk Punk
             Folk Punk::genre
             Celtic Punk::genre
@@ -3315,6 +3316,7 @@ Genres
                 Thrashcore
                     Thrashcore::genre
                     Powerviolence::genre
+                    Warp Metal::genre
             Metalcore
                 Metalcore::genre
                 Deathcore
@@ -3334,6 +3336,7 @@ Genres
                     Emoviolence::genre
                 Swancore::genre
             Sass::genre
+            Sasscore::genre
         Mod Revival::genre
         Pigfuck::genre
         Post-Punk
@@ -3380,6 +3383,7 @@ Genres
                 Thrashcore
                     Thrashcore::genre
                     Powerviolence::genre
+                    Warp Metal::genre
             Horror Punk::genre
             Könsrock::genre
             Oi!::genre
@@ -7162,6 +7166,7 @@ Genres
             Screamo
                 Screamo::genre
                 Emoviolence::genre
+                Skramz::genre
         Experimental Rock
             Experimental Rock::genre
             Avant-Prog
@@ -7234,6 +7239,7 @@ Genres
                 Thrashcore
                     Thrashcore::genre
                     Powerviolence::genre
+                    Warp Metal::genre
             Metalcore
                 Metalcore::genre
                 Deathcore
@@ -7253,6 +7259,7 @@ Genres
                     Emoviolence::genre
                 Swancore::genre
             Sass::genre
+            Sasscore::genre
         Heartland Rock::genre
         Industrial Rock
             Industrial Rock::genre
@@ -7267,6 +7274,7 @@ Genres
         Manguebeat::genre
         Math Rock
             Math Rock::genre
+            Mathrock::genre
             Math Pop::genre
         Metal
             Metal::genre
@@ -7478,6 +7486,7 @@ Genres
                 Thrashcore
                     Thrashcore::genre
                     Powerviolence::genre
+                    Warp Metal::genre
             Horror Punk::genre
             Könsrock::genre
             Oi!::genre

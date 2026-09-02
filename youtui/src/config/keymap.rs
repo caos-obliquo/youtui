@@ -804,6 +804,13 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new_unmodified(crossterm::event::KeyCode::F(4)),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::Recommend,
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::F(11)),
             KeyActionTree::new_key_with_visibility(
                 AppAction::ViewLogs,

@@ -790,6 +790,12 @@ pub async fn command_to_query(
         Command::GenreDb { .. } => {
             anyhow::bail!("GenreDb is a standalone CLI command, not an API query")
         }
+        Command::Recommendations { .. } => {
+            anyhow::bail!("Recommendations is a standalone CLI command, not an API query")
+        }
+        Command::ListenbrainzRecommendations { .. } => {
+            anyhow::bail!("ListenbrainzRecommendations is a standalone CLI command, not an API query")
+        }
         Command::AuthRefresh => {
             anyhow::bail!("AuthRefresh is a standalone CLI command, not an API query")
         }

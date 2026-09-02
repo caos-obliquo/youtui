@@ -42,7 +42,7 @@
 | `lrclib-rs` | 4 | LRCLIB lyrics provider |
 | `metadata-cache-sqlite` | 20 | Persistent SQLite cache for metadata results (year/genres/styles/MBID). LRU in-memory (200 entries) + SQLite fallback via `lookup_cache()`. Background flush 60s + on-quit |
 | `metadata-provider` | 110 | Metadata trait + 6 provider impls (MusicBrainz, Discogs, Last.fm Album/Track, Metal-API, Genius) |
-| `rym-genre-data` | 10 | RYM genre/descriptor hierarchy from pre-scraped GitHub data |
+| `rym-genre-data` | 10 | RYM genre/descriptor hierarchy from pre-scraped GitHub data (2629 genres with descriptions, via joeseesun/music-genre-finder) |
 | `vi-text-editor` | 67 | Vim text editor widget for popups |
 | `ytmapi-rs` | 82 (lib) | YT Music API client |
 | `youtui` | 180 | Main TUI application binary |
