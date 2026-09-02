@@ -22,7 +22,7 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | [06-subsystems/validation](06-subsystems/validation.md) | Metadata pipeline, Last.fm/Discogs/MB |
 | [06-subsystems/audio](06-subsystems/audio.md) | Download, decode, player, gapless |
 | [06-subsystems/album-splitting](06-subsystems/album-splitting.md) | Track extraction, Arc sharing, offsets |
-| [06-subsystems/scrobbling](06-subsystems/scrobbling.md) | Libre.fm/Last.fm integration |
+| [06-subsystems/scrobbling](06-subsystems/scrobbling.md) | Libre.fm/Last.fm/ListenBrainz integration |
 | [06-subsystems/auth](06-subsystems/auth.md) | OAuth, cookie, browser auth flows |
 | [06-subsystems/queue](06-subsystems/queue.md) | Persistence, shuffle, repeat modes |
 | [06-subsystems/playlist-editor](06-subsystems/playlist-editor.md) | Vim-driven playlist editing popup |
@@ -32,6 +32,7 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | [ytmapi-rs-status](ytmapi-rs-status.md) | Feature matrix vs Python ytmusicapi |
 | [subsystems/album_art_popup](subsystems/album_art_popup.md) | Sixel album art popup architecture |
 | [subsystems/notes](subsystems/notes.md) | Notes popup system |
+| [subsystems/recommendations](subsystems/recommendations.md) | Recommendations CLI + F4 popup, niche engine, LB recs, SQLite cache |
 | [man/genius-rs.1](man/genius-rs.1) | Man page - genius-rs CLI (lyrics + annotations) |
 
 ## Man Pages
@@ -102,6 +103,16 @@ cargo test --release -p genius-rs            # 18 tests
 ```
 
 All paths use XDG convention (`~/.config/youtui/`, `~/.local/share/youtui/`) - compatible with Linux, macOS, and BSD.
+
+## CLI Tools
+
+| Command | Purpose |
+|---------|---------|
+| `youtui recommendations [--type all/tracks/albums/artists] [--limit 20] [--page 1] [--niche-level 0.7] [--seed-count 35] [--seed <artist>] [--similar-limit 10] [--json]` | Last.fm recommendations (niche-aware) |
+| `youtui listenbrainz-recommendations [--artist-type top/similar/raw] [--json]` | ListenBrainz collaborative-filtering recs |
+| `youtui test-validate-metadata --artist "X" --title "Y" [--album "Z"] [--rym]` | Multi-provider resolution (+ RYM genre descriptions) |
+
+`youtui recommendations` caches results in `~/.local/share/youtui/recommendations_cache.db` (24h TTL). See [subsystems/recommendations](subsystems/recommendations.md).
 
 ## Workspace Crates
 

@@ -188,6 +188,10 @@ pub enum AppCallback {
     InsertNext(Vec<ListSong>),
     QueueSong(Vec<ListSong>),
     GetRelatedTracks(ytmapi_rs::common::VideoID<'static>),
+    ActOnRecommendation(usize, crate::lastfm_recommend::RecKind, String, String),
+    /// Resolves a recommendation to a YTM song and opens its info popup.
+    ViewRecSongInfo(usize, crate::lastfm_recommend::RecKind, String, String),
+    ReloadRecommendations,
     OpenPlaylistEditor {
         playlist_id: ytmapi_rs::common::PlaylistID<'static>,
         playlist_title: String,
@@ -490,6 +494,48 @@ impl Youtui {
                     .map_frontend(|this: &mut crate::app::ui::YoutuiWindow| &mut this.playlist);
                 self.task_manager.spawn_task(&self.server, task);
             }
+            AppCallback::ActOnRecommendation(index, kind, title, artist) => {
+                use crate::app::server::ActOnRecommendation;
+                use crate::app::ui::playlist::effect_handlers_playlist::{
+                    HandleActOnRecommendationOk, HandleActOnRecommendationErr,
+                };
+                let cfg = self.window_state.playlist.scrobbling_config.clone();
+                let task: crate::app::component::actionhandler::ComponentEffect<crate::app::ui::YoutuiWindow> =
+                    AsyncTask::new_future_try(
+                        ActOnRecommendation(index, kind, title, artist, cfg),
+                        HandleActOnRecommendationOk,
+                        HandleActOnRecommendationErr,
+                        None,
+                    )
+                    .map_frontend(|this: &mut crate::app::ui::YoutuiWindow| &mut this.playlist);
+                self.task_manager.spawn_task(&self.server, task);
+            }
+            AppCallback::ViewRecSongInfo(index, kind, title, artist) => {
+                use crate::app::server::ActOnRecommendation;
+                use crate::app::ui::playlist::effect_handlers_playlist::{
+                    HandleRecSongInfoOk, HandleRecSongInfoErr,
+                };
+                let cfg = self.window_state.playlist.scrobbling_config.clone();
+                let task: crate::app::component::actionhandler::ComponentEffect<crate::app::ui::YoutuiWindow> =
+                    AsyncTask::new_future_try(
+                        ActOnRecommendation(index, kind, title, artist, cfg),
+                        HandleRecSongInfoOk,
+                        HandleRecSongInfoErr,
+                        None,
+                    )
+                    .map_frontend(|this: &mut crate::app::ui::YoutuiWindow| this);
+                self.task_manager.spawn_task(&self.server, task);
+            }
+            AppCallback::ReloadRecommendations => {
+                self.window_state.recommendations_cache = None;
+                if let Some(store) = &self.window_state.recommendations_store {
+                    if let Err(e) = store.clear("default") {
+                        tracing::warn!("Failed to clear recommendation store: {}", e);
+                    }
+                }
+                let task = self.window_state.open_recommendations();
+                self.task_manager.spawn_task(&self.server, task);
+            }
             AppCallback::OpenPlaylistSavePopup(video_ids) => {
                 self.window_state.open_playlist_save_popup(video_ids);
             }
@@ -643,6 +689,9 @@ impl Youtui {
                     album_tracks: Vec::new(),
                     genres: song.genres.clone(),
                     styles: song.styles.clone(),
+                    subgenres: Vec::new(),
+                    genre_paths: Vec::new(),
+                    descriptors: Vec::new(),
                     musicbrainz_release_group_id: None,
                 };
                 self.server.metadata_registry.save_override(&artist, &song.title, &meta);
@@ -821,6 +870,7 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, effect);
             }
             AppCallback::Navigate(target) => {
+                self.window_state.recommendations_popup = None;
                 self.window_state.context = WindowContext::Browser;
                 if let Some(task) = self.window_state.browser.navigate_to(target) {
                     let task = task.map_frontend(|window: &mut YoutuiWindow| &mut window.browser);

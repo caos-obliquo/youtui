@@ -151,8 +151,17 @@ impl MetadataRegistry {
         }
         // More tracks = more complete: +1 per track (up to +10)
         score += (meta.album_tracks.len() as i32).min(10) * 1;
-        // PENALTY: if artist IS present but doesn't match at all - wrong band
-        if !artist_ok {
+        // Genres are real enrichment: +4 per genre (up to +20) so a provider
+        // returning genres isn't scored low and dropped from the genre-merge.
+        score += (meta.genres.len() as i32).min(5) * 4;
+        // PENALTY (wrong band): keep a mismatched-artist record only when the album
+        // matches the searched title (validated hit); otherwise it's a coincidence.
+        let album_matches = meta.album.as_deref().map_or(false, |a| {
+            let a_low = util::norm_for_lfm(a).to_lowercase();
+            let t_low = util::norm_for_lfm(title).to_lowercase();
+            a_low == t_low || a_low.contains(&t_low) || t_low.contains(&a_low)
+        });
+        if !artist_ok && !album_matches {
             if let Some(ref a) = meta.artist {
                 let a_low = util::norm_for_lfm(a).to_lowercase();
                 let art_low = util::norm_for_lfm(artist).to_lowercase();
@@ -234,6 +243,16 @@ impl MetadataRegistry {
                 if let Some(merged_year) = merge::merge_year(&all_results) {
                     meta.year = Some(merged_year);
                 }
+                if let Some(merged_album) = merge::merge_album(&all_results) {
+                    if meta.album.is_none() {
+                        meta.album = Some(merged_album);
+                    }
+                }
+                if let Some(merged_artist) = merge::merge_artist(&all_results) {
+                    if meta.artist.is_none() {
+                        meta.artist = Some(merged_artist);
+                    }
+                }
                 let (merged_genres, merged_styles) = merge::weighted_merge_genres(&all_results);
                 if !merged_genres.is_empty() {
                     meta.genres = merged_genres;
@@ -292,26 +311,24 @@ impl MetadataRegistry {
             return Some(overridden);
         }
         if let Some(cached) = self.cache.lock().unwrap().get(&cache_key) {
-            if cached.year.is_some() {
+            let has_genres = !cached.genres.is_empty() || !cached.styles.is_empty();
+            // Only serve a cache hit that has genre data; a stale year-only entry
+            // would short-circuit and leave Song Info genres empty.
+            if cached.year.is_some() && has_genres {
                 tracing::debug!("resolve_fast: LRU cache hit for {} - {} (year: {:?})", artist, title, cached.year.as_deref().unwrap_or("none"));
                 return Some(cached.clone());
             }
-            // Cached without year — fast providers have no year for this entry.
-            // Return None to avoid re-resolve waste; EnrichFromMetadataCache
-            // will skip this entry (handler filters by year presence).
-            return None;
         }
         if let Some(ref sqlite) = self.sqlite_cache {
             if let Ok(cache) = sqlite.lock() {
                 if let Some(sqlite_meta) = cache.get(&cache_key) {
                     let domain_meta = domain_meta_from_sqlite(&sqlite_meta);
-                    if domain_meta.year.is_some() {
+                    let has_genres = !domain_meta.genres.is_empty() || !domain_meta.styles.is_empty();
+                    if domain_meta.year.is_some() && has_genres {
                         tracing::debug!("resolve_fast: SQLite cache hit for {} - {} (year: {:?})", artist, title, domain_meta.year.as_deref().unwrap_or("none"));
                         self.cache.lock().unwrap().put(cache_key.clone(), domain_meta.clone());
                         return Some(domain_meta);
                     }
-                    // Same: cached without year, don't re-resolve
-                    return None;
                 }
             }
         }
@@ -353,6 +370,8 @@ impl MetadataRegistry {
             styles = crate::genre_map::normalize_genres(&styles);
         }
         let mut meta = ValidatedMetadata {
+            artist: Some(artist.to_string()),
+            album: album.map(|a| a.to_string()),
             year: year.clone(),
             genres,
             styles,
@@ -377,12 +396,16 @@ impl MetadataRegistry {
             }
         }
         let found_year = year.is_some();
+        // Return the meta when we have either a year OR genre data. Genres are
+        // valuable on their own (Song Info displays them), and tying resolution
+        // to a Year match dropped genre-only results for niche tracks.
+        let has_data = found_year || !meta.genres.is_empty() || !meta.styles.is_empty();
         if found_year {
             tracing::info!("resolve_fast: {} - {} -> year={:?}, genres={}, styles={}", artist, title, year.as_deref().unwrap_or("none"), meta.genres.len(), meta.styles.len());
         } else {
             tracing::debug!("resolve_fast: {} - {} -> no year from fast providers (genres: {}, styles: {})", artist, title, meta.genres.len(), meta.styles.len());
         }
-        if found_year { Some(meta) } else { None }
+        if has_data { Some(meta) } else { None }
     }
 
     /// Fast year-only resolve. Skips slow providers (MB, Discogs, Genius)

@@ -180,11 +180,47 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             }
             return Ok(());
         }
-        Some(crate::Command::Recommendations { type_filter, limit, page, niche_level, seed_count, json }) => {
+        Some(crate::Command::Recommendations { type_filter, limit, page, niche_level, seed_count, seed, similar_limit, json }) => {
             use crate::lastfm_recommend::{
                 RecKind, fetch_niche_recommendations, fetch_recommendations,
-                print_recommendations, print_recommendations_json,
+                fetch_recommendations_for_seed, print_recommendations,
+                print_recommendations_json,
             };
+            if let Some(seed_query) = seed {
+                require_non_empty(seed_query, "seed")?;
+                let kind = match type_filter.as_str() {
+                    "tracks" => RecKind::Tracks,
+                    "albums" => RecKind::Albums,
+                    "artists" => RecKind::Artists,
+                    _ => RecKind::Artists,
+                };
+                info!(
+                    "Fetching seed recommendations: kind={} seed='{}' limit={} similar_limit={}",
+                    kind, seed_query, limit, similar_limit
+                );
+                let items = with_timeout_dur(
+                    NICHE_TIMEOUT,
+                    "recommendations",
+                    fetch_recommendations_for_seed(
+                        &config.scrobbling,
+                        kind,
+                        seed_query,
+                        *limit,
+                        *similar_limit,
+                    ),
+                )
+                .await
+                .with_context(|| {
+                    format!("Failed to fetch seed recommendations for '{}'", seed_query)
+                })?;
+                info!("Fetched {} seed recommendations", items.len());
+                if *json {
+                    print_recommendations_json(&items);
+                } else {
+                    print_recommendations(&items);
+                }
+                return Ok(());
+            }
             let valid = ["all", "tracks", "albums", "artists"];
             if !valid.contains(&type_filter.as_str()) {
                 return Err(anyhow::anyhow!(
@@ -283,7 +319,12 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             }
             return Ok(());
         }
-        Some(crate::Command::TestValidateMetadata { artist, title, album }) => {
+        Some(crate::Command::TestValidateMetadata {
+            artist,
+            title,
+            album,
+            rym,
+        }) => {
             use crate::app::server::MetadataRegistry;
             require_non_empty(artist, "artist")?;
             require_non_empty(title, "title")?;
@@ -321,6 +362,17 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             println!("Tracks:    {}", meta.album_tracks.len());
             println!("Genres:    {:?}", meta.genres);
             println!("Styles:    {:?}", meta.styles);
+            if *rym {
+                for g in &meta.genres {
+                    match rym_genre_data::find_genre(g) {
+                        Some(ge) => match &ge.description {
+                            Some(desc) => println!("  [RYM] {} - {}", g, desc),
+                            None => println!("  [RYM] {} - (no description)", g),
+                        },
+                        None => println!("  [RYM] {} - (not in RYM data)", g),
+                    }
+                }
+            }
             for (i, t) in meta.album_tracks.iter().enumerate() {
                 println!("  {}. {} ({:.0}s) {:?}", i + 1, t.title, t.duration_secs, t.artist);
             }

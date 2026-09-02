@@ -16,6 +16,7 @@
 
 use crate::config::ScrobblingConfig;
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, info, warn};
 
@@ -23,7 +24,7 @@ use tracing::{debug, info, warn};
 const LASTFM_BASE: &str = "https://ws.audioscrobbler.com/2.0";
 
 /// Which recommendation feed to fetch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RecKind {
     Tracks,
     Albums,
@@ -71,7 +72,7 @@ impl RecKind {
 }
 
 /// A single synthesized Last.fm recommendation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RecItem {
     pub kind: RecKind,
     pub title: String,
@@ -327,6 +328,79 @@ pub async fn fetch_recommendations(
     Ok(out)
 }
 
+/// Build recommendations derived from a user-supplied seed query.
+///
+/// `Artists`: whole seed is the artist. `Tracks`/`Albums`: split `Artist - Title`.
+pub async fn fetch_recommendations_for_seed(
+    config: &ScrobblingConfig,
+    kind: RecKind,
+    seed_query: &str,
+    limit: u32,
+    similar_limit: u32,
+) -> Result<Vec<RecItem>> {
+    info!(
+        "Fetching recommendations for seed: kind={:?} seed='{}' limit={} similar_limit={}",
+        kind, seed_query, limit, similar_limit
+    );
+    let source = match kind {
+        RecKind::Artists => TopItem {
+            title: seed_query.trim().to_string(),
+            artist: String::new(),
+        },
+        RecKind::Tracks | RecKind::Albums => {
+            match seed_query.split_once(" - ") {
+                Some((artist, title)) => TopItem {
+                    title: title.trim().to_string(),
+                    artist: artist.trim().to_string(),
+                },
+                None => TopItem {
+                    title: seed_query.trim().to_string(),
+                    artist: String::new(),
+                },
+            }
+        }
+    };
+    if source.title.is_empty() {
+        anyhow::bail!("--seed must not be empty");
+    }
+    let mut out = match fetch_similar_for_source(config, kind, &source, similar_limit).await {
+        Ok(items) => items,
+        Err(e) => {
+            let artist = match kind {
+                RecKind::Tracks | RecKind::Albums if source.artist.trim().is_empty() => {
+                    warn!(
+                        "seed '{}' ({:?}) failed: {}; no artist to fall back to",
+                        seed_query, kind, e
+                    );
+                    return Ok(Vec::new());
+                }
+                RecKind::Tracks | RecKind::Albums => source.artist.clone(),
+                RecKind::Artists => {
+                    warn!("seed '{}' ({:?}) failed: {}", seed_query, kind, e);
+                    return Ok(Vec::new());
+                }
+            };
+            warn!(
+                "seed '{}' ({:?}) failed ({}); falling back to similar artists for '{}'",
+                seed_query, kind, e, artist
+            );
+            let artist_source = TopItem {
+                title: artist,
+                artist: String::new(),
+            };
+            fetch_similar_for_source(config, RecKind::Artists, &artist_source, similar_limit).await?
+        }
+    };
+    out.truncate(limit as usize);
+    info!(
+        "Fetched {} recommendations for seed '{}' ({:?})",
+        out.len(),
+        seed_query,
+        kind
+    );
+    Ok(out)
+}
+
 /// Look up an artist's total listener count via `artist.getInfo`.
 async fn fetch_artist_listeners(config: &ScrobblingConfig, artist: &str) -> Result<Option<u64>> {
     if artist.trim().is_empty() {
@@ -343,6 +417,45 @@ async fn fetch_artist_listeners(config: &ScrobblingConfig, artist: &str) -> Resu
         .and_then(|a| a.get("stats"))
         .and_then(|s| s.get("listeners"))
         .and_then(parse_count))
+}
+
+async fn fetch_artist_top_album(config: &ScrobblingConfig, artist_name: &str) -> Result<Option<(String, String)>> {
+    if artist_name.trim().is_empty() {
+        return Ok(None);
+    }
+    let value = lastfm_get(
+        config,
+        "artist.getTopAlbums",
+        vec![
+            ("artist".into(), artist_name.to_string()),
+            ("limit".into(), "1".to_string()),
+        ],
+    )
+    .await?;
+    let Some(album) = value
+        .get("topalbums")
+        .and_then(|t| t.get("album"))
+        .and_then(|a| a.as_array())
+        .and_then(|a| a.first())
+    else {
+        return Ok(None);
+    };
+    let title = album
+        .get("name")
+        .and_then(|n| n.as_str())
+        .unwrap_or("")
+        .to_string();
+    let artist = album
+        .get("artist")
+        .and_then(|a| a.get("name"))
+        .and_then(|n| n.as_str())
+        .unwrap_or(artist_name)
+        .to_string();
+    debug!(
+        "artist.getTopAlbums: artist={} top_album='{}' by '{}'",
+        artist_name, title, artist
+    );
+    Ok(Some((title, artist)))
 }
 
 /// Map a listener count to a niche favorability score in [0, 1].
@@ -451,12 +564,25 @@ pub async fn fetch_niche_recommendations(
             );
             let seed_str = seeds.join(", ");
             let base = if seed_str.is_empty() {
-                "Similar to: unknown".to_string()
+                "unknown".to_string()
             } else {
-                format!("Similar to: {}", seed_str)
+                seed_str.clone()
             };
             let mut item = cand;
-            item.reason = Some(format!("{} (match {:.2}){}", base, score, niche_suffix(niche_level)));
+            if kind == RecKind::Albums {
+                let query_artist = item.title.clone();
+                if let Some((album_title, album_artist)) =
+                    fetch_artist_top_album(&cfg, &query_artist).await?
+                {
+                    item.title = album_title;
+                    item.artist = album_artist;
+                }
+            }
+            // Store the computed niche score in match_score so the table's Match column shows it,
+            // and store the fetched listener count in playcount so the List column shows a real value.
+            item.match_score = Some(score);
+            item.playcount = listeners;
+            item.reason = Some(format!("{}{}", base, niche_suffix(niche_level)));
             Ok::<(RecItem, f64), anyhow::Error>((item, score))
         }
     }))

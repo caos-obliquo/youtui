@@ -11,7 +11,7 @@ use crate::app::ui::playlist::Playlist;
 use crate::app::ui::playlist::lyrics_popup::LyricsPopup;
 use crate::app::ui::playlist::playlist_update_popup::{PlaylistUpdatePopup, PlaylistUpdatePopupState};
 use crate::app::ui::playlist::playlist_details_popup::PlaylistDetailsPopup;
-use crate::app::ui::playlist::recommendations_popup::RecommendationsPopup;
+use crate::app::ui::YoutuiWindow;
 use async_callback_manager::{AsyncTask, FrontendEffect};
 use std::rc::Rc;
 use tracing::{debug, error, info, warn};
@@ -1208,11 +1208,19 @@ pub struct HandleRecommendationsErr;
 impl_youtui_task_handler!(
     HandleRecommendationsOk,
     Vec<crate::lastfm_recommend::RecItem>,
-    RecommendationsPopup,
+    YoutuiWindow,
     |_, recs: Vec<crate::lastfm_recommend::RecItem>| {
-        move |this: &mut RecommendationsPopup| {
-            this.set_items(recs);
-            AsyncTask::<RecommendationsPopup, ArcServer, TaskMetadata>::new_no_op()
+        move |this: &mut YoutuiWindow| {
+            this.recommendations_cache = Some((std::time::Instant::now(), recs.clone()));
+            if let Some(store) = &this.recommendations_store {
+                if let Err(e) = store.save("default", &recs) {
+                    error!("Failed to persist recommendations cache: {}", e);
+                }
+            }
+            if let Some(p) = this.recommendations_popup.as_mut() {
+                p.set_items(recs);
+            }
+            AsyncTask::<YoutuiWindow, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -1220,13 +1228,15 @@ impl_youtui_task_handler!(
 impl_youtui_task_handler!(
     HandleRecommendationsErr,
     anyhow::Error,
-    RecommendationsPopup,
+    YoutuiWindow,
     |_, err: anyhow::Error| {
         let msg = err.to_string();
-        move |this: &mut RecommendationsPopup| {
+        move |this: &mut YoutuiWindow| {
             error!("Recommendations fetch failed: {}", msg);
-            this.loading = false;
-            AsyncTask::<RecommendationsPopup, ArcServer, TaskMetadata>::new_no_op()
+            if let Some(p) = this.recommendations_popup.as_mut() {
+                p.loading = false;
+            }
+            AsyncTask::<YoutuiWindow, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -1236,6 +1246,77 @@ impl_youtui_task_handler!(
 pub struct HandleActOnRecommendationOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleActOnRecommendationErr;
+
+// ViewRecSongInfo handlers - resolve a recommendation to a song and open its info popup
+#[derive(Debug, PartialEq)]
+pub struct HandleRecSongInfoOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleRecSongInfoErr;
+
+impl_youtui_task_handler!(
+    HandleRecSongInfoOk,
+    Vec<ytmapi_rs::parse::SearchResultSong>,
+    YoutuiWindow,
+    |_, songs: Vec<ytmapi_rs::parse::SearchResultSong>| {
+        move |this: &mut YoutuiWindow| {
+            let Some(song) = songs.into_iter().next() else {
+                warn!("Song Info: no resolve result for recommendation");
+                return AsyncTask::<YoutuiWindow, ArcServer, TaskMetadata>::new_no_op();
+            };
+            let ytmapi_rs::parse::SearchResultSong {
+                title,
+                artist,
+                album,
+                duration,
+                plays,
+                explicit,
+                video_id,
+                thumbnails,
+                ..
+            } = song;
+            let song = ListSong {
+                download_status: DownloadStatus::None,
+                id: ListSongID(0),
+                year: None,
+                artists: MaybeRc::Owned(vec![ListSongArtist {
+                    name: crate::app::structures::normalize_artist_name(&artist),
+                    id: None,
+                }]),
+                album: album.map(|a| MaybeRc::Owned(ListSongAlbum::from(a))),
+                actual_duration: None,
+                video_id,
+                track_no: None,
+                plays,
+                title,
+                explicit: Some(explicit),
+                duration_string: duration,
+                thumbnails: MaybeRc::Owned(thumbnails),
+                album_art: AlbumArtState::None,
+                genres: Vec::new(),
+                styles: Vec::new(),
+                start_offset: None,
+                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+                is_album_upload: false,
+                release_mbid: None,
+            };
+            info!("Song Info: opening song info popup for '{}'", song.title);
+            this.open_song_info_popup(song)
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleRecSongInfoErr,
+    anyhow::Error,
+    YoutuiWindow,
+    |_, err: anyhow::Error| {
+        let msg = err.to_string();
+        move |_this: &mut YoutuiWindow| {
+            error!("ViewRecSongInfo failed: {}", msg);
+            AsyncTask::<YoutuiWindow, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
 
 impl_youtui_task_handler!(
     HandleActOnRecommendationOk,

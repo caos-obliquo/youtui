@@ -9194,6 +9194,7 @@ dependencies = [
  "ratatui-image",
  "raw-window-handle",
  "reqwest 0.11.27",
+ "rusqlite",
  "rym-genre-data",
  "serde",
  "serde_json",

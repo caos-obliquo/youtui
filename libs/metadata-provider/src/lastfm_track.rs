@@ -32,7 +32,7 @@ impl MetadataProvider for TrackSearchProvider {
                 "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={}&artist={}&track={}&format=json",
                 util::urlencoding(key), util::urlencoding(artist), util::urlencoding(title)
             );
-            if let Some(meta) = fetch_track_info(client, &info_url).await {
+            if let Some(meta) = fetch_track_info(client, &info_url, key, artist).await {
                 return Some(meta);
             }
 
@@ -44,6 +44,7 @@ impl MetadataProvider for TrackSearchProvider {
                 if let Ok(data) = resp.json::<serde_json::Value>().await {
                     if let Some(results) = data.get("results").and_then(|r| r.get("trackmatches")).and_then(|m| m.get("track")).and_then(|t| t.as_array()) {
                         let artist_lower = artist.to_lowercase();
+                        let title_norm = util::norm_for_lfm(title);
                         for result in results {
                             let result_artist = result.get("artist")?.as_str()?;
                             let result_name = result.get("name")?.as_str()?;
@@ -52,19 +53,33 @@ impl MetadataProvider for TrackSearchProvider {
                             let result_words: Vec<&str> = result_lower.split_whitespace().collect();
                             let shares_word = artist_words.iter().any(|w| result_words.contains(w))
                                 || result_words.iter().any(|w| artist_words.contains(w));
-                            if !shares_word && !artist_lower.is_empty() { continue; }
-
-                            let title_norm = util::norm_for_lfm(title);
                             let result_name_norm = util::norm_for_lfm(result_name);
-                            if !title_norm.contains(&result_name_norm) && !result_name_norm.contains(&title_norm) {
-                                continue;
-                            }
+                            let title_matches = title_norm.contains(&result_name_norm)
+                                || result_name_norm.contains(&title_norm);
 
+                            // The queued artist/title can be inverted or wrong; validate the
+                            // mismatch via track.getInfo instead of hard-rejecting the artist name.
+                            let strict_match = shares_word && title_matches;
+                            if strict_match {
+                                let info_url = format!(
+                                    "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={}&artist={}&track={}&format=json",
+                                    util::urlencoding(key), util::urlencoding(result_artist), util::urlencoding(result_name)
+                                );
+                                if let Some(meta) = fetch_track_info(client, &info_url, key, result_artist).await {
+                                    return Some(meta);
+                                }
+                            }
+                        }
+
+                        // No strict match: validate the top relevance hit (index 0).
+                        if let Some(top) = results.first() {
+                            let result_artist = top.get("artist").and_then(|a| a.as_str())?;
+                            let result_name = top.get("name").and_then(|n| n.as_str())?;
                             let info_url = format!(
                                 "https://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={}&artist={}&track={}&format=json",
                                 util::urlencoding(key), util::urlencoding(result_artist), util::urlencoding(result_name)
                             );
-                            if let Some(meta) = fetch_track_info(client, &info_url).await {
+                            if let Some(meta) = fetch_track_info(client, &info_url, key, result_artist).await {
                                 return Some(meta);
                             }
                         }
@@ -78,19 +93,85 @@ impl MetadataProvider for TrackSearchProvider {
 
 /// Call track.getInfo and parse response into ValidatedMetadata.
 /// Returns None if request fails or response has no album/year data.
-async fn fetch_track_info(client: &reqwest::Client, info_url: &str) -> Option<ValidatedMetadata> {
+/// If track toptags are empty (or track.getInfo errors), falls back to artist.getInfo tags as genres.
+async fn fetch_track_info(client: &reqwest::Client, info_url: &str, lastfm_key: &str, artist: &str) -> Option<ValidatedMetadata> {
     let resp = client.get(info_url).send().await.ok()?;
     let data: serde_json::Value = resp.json().await.ok()?;
-    let track = data.get("track")?;
-    let album = track.get("album").and_then(|a| a.get("title")).and_then(|t| t.as_str()).map(|s| s.to_string());
-    let artist_name = track.get("artist").and_then(|a| a.get("name")).and_then(|n| n.as_str()).map(|s| s.to_string());
-    let year = track.get("wiki")
+    let track = data.get("track");
+    let album = track.and_then(|t| t.get("album")).and_then(|a| a.get("title")).and_then(|t| t.as_str()).map(|s| s.to_string());
+    let artist_name = track
+        .and_then(|t| t.get("artist"))
+        .and_then(|a| a.get("name"))
+        .and_then(|n| n.as_str())
+        .map(|s| s.to_string())
+        // track.getInfo often errors/omits the artist for niche tracks; the query artist is authoritative.
+        .or_else(|| Some(artist.to_string()))
+        .filter(|s| !s.is_empty());
+    let year = track
+        .and_then(|t| t.get("wiki"))
         .and_then(|w| w.get("published"))
         .and_then(|p| p.as_str())
         .and_then(util::extract_year);
-    if album.is_none() && year.is_none() { return None; }
-    let track_no = track.get("album").and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
-    Some(ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new(), genres: Vec::new(), styles: Vec::new(), musicbrainz_release_group_id: None, subgenres: Vec::new(), genre_paths: Vec::new(), descriptors: Vec::new() })
+    let genres: Vec<String> = track
+        .and_then(|t| t.get("toptags"))
+        .and_then(|t| t.get("tag"))
+        .and_then(|t| t.as_array())
+        .map(|tags| {
+            let mut all: Vec<(String, u32)> = tags
+                .iter()
+                .filter_map(|tag| {
+                    let name = tag.get("name").and_then(|n| n.as_str())?.to_string();
+                    if name.is_empty() {
+                        return None;
+                    }
+                    let count = tag
+                        .get("count")
+                        .and_then(|c| c.as_str())
+                        .and_then(|c| c.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    Some((name, count))
+                })
+                .collect();
+            all.sort_by(|a, b| b.1.cmp(&a.1));
+            all.into_iter().map(|(n, _)| n).collect()
+        })
+        .unwrap_or_default();
+    let mut genres = genres;
+    if genres.is_empty() {
+        let fallback_artist = artist_name.as_deref().unwrap_or(artist);
+        if let Some(artist_genres) = fetch_artist_genres(client, lastfm_key, fallback_artist).await {
+            if !artist_genres.is_empty() {
+                genres = artist_genres;
+            }
+        }
+    }
+    if album.is_none() && year.is_none() && genres.is_empty() { return None; }
+    let track_no = track.and_then(|t| t.get("album")).and_then(|a| a.get("@attr")).and_then(|a| a.get("rank")).and_then(|r| r.as_str()).and_then(|s| s.parse::<usize>().ok());
+    Some(ValidatedMetadata { artist: artist_name, album, year, track_no, album_tracks: Vec::new(), genres, styles: Vec::new(), musicbrainz_release_group_id: None, subgenres: Vec::new(), genre_paths: Vec::new(), descriptors: Vec::new() })
+}
+
+/// Call artist.getInfo and return its toptag names. Returns None on any error.
+async fn fetch_artist_genres(client: &reqwest::Client, lastfm_key: &str, artist: &str) -> Option<Vec<String>> {
+    let url = format!(
+        "https://ws.audioscrobbler.com/2.0/?method=artist.getInfo&api_key={}&artist={}&format=json",
+        util::urlencoding(lastfm_key), util::urlencoding(artist)
+    );
+    let resp = client.get(&url).send().await.ok()?;
+    let data: serde_json::Value = resp.json().await.ok()?;
+    let names: Vec<String> = data
+        .get("artist")
+        .and_then(|a| a.get("tags"))
+        .and_then(|t| t.get("tag"))
+        .and_then(|t| t.as_array())
+        .map(|tags| {
+            tags.iter()
+                .filter_map(|tag| {
+                    let name = tag.get("name").and_then(|n| n.as_str())?.to_string();
+                    if name.is_empty() { None } else { Some(name) }
+                })
+                .collect()
+        })?;
+    if names.is_empty() { None } else { Some(names) }
 }
 
 #[cfg(test)]
@@ -129,6 +210,75 @@ mod tests {
             .and_then(|p| p.as_str())
             .and_then(|d| crate::util::extract_year(d));
         assert_eq!(year, None);
+    }
+
+    #[test]
+    fn parse_lastfm_track_toptags_to_genres() {
+        let json = serde_json::json!({
+            "track": {
+                "name": "what is love?",
+                "artist": {"name": "hitbox"},
+                "album": {"title": "Some Album"},
+                "toptags": {
+                    "tag": [
+                        {"name": "nu metal", "count": "10"},
+                        {"name": "metalcore", "count": "5"}
+                    ]
+                }
+            }
+        });
+        let genres: Vec<String> = json
+            .pointer("/track/toptags/tag")
+            .and_then(|t| t.as_array())
+            .map(|tags| {
+                let mut all: Vec<(String, u32)> = tags
+                    .iter()
+                    .filter_map(|tag| {
+                        let name = tag.get("name").and_then(|n| n.as_str())?.to_string();
+                        if name.is_empty() {
+                            return None;
+                        }
+                        let count = tag
+                            .get("count")
+                            .and_then(|c| c.as_str())
+                            .and_then(|c| c.parse::<u32>().ok())
+                            .unwrap_or(0);
+                        Some((name, count))
+                    })
+                    .collect();
+                all.sort_by(|a, b| b.1.cmp(&a.1));
+                all.into_iter().map(|(n, _)| n).collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(genres, vec!["nu metal", "metalcore"]);
+    }
+
+    #[test]
+    fn parse_lastfm_artist_tags() {
+        let json = serde_json::json!({
+            "artist": {
+                "name": "Wreck and Reference",
+                "tags": {
+                    "tag": [
+                        {"name": "drone", "url": "u1"},
+                        {"name": "noise", "url": "u2"}
+                    ]
+                }
+            }
+        });
+        let names: Vec<String> = json
+            .pointer("/artist/tags/tag")
+            .and_then(|t| t.as_array())
+            .map(|tags| {
+                tags.iter()
+                    .filter_map(|tag| {
+                        let name = tag.get("name").and_then(|n| n.as_str())?.to_string();
+                        if name.is_empty() { None } else { Some(name) }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(names, vec!["drone", "noise"]);
     }
 
     #[test]

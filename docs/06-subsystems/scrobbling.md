@@ -14,6 +14,7 @@ enabled = true
 api_key = "your_lastfm_api_key"
 api_secret = "your_lastfm_secret"
 session_key = "your_lastfm_session_key"
+listenbrainz_token = ""   # optional; empty = no ListenBrainz submission
 ```
 
 ## Scrobble Flow
@@ -93,6 +94,26 @@ Error 29 (rate limit exceeded) handled via:
 - `ScrobbleResult::RateLimited` stops the retry loop
 - Next startup retries cached scrobbles
 - Background 5-min retry loop continues retrying until cleared
+
+## ListenBrainz Submission (submit_to_listenbrainz)
+
+Every scrobble also gets a best-effort parallel POST to ListenBrainz at `api.listenbrainz.org/1/submit-listens` (`listen_type:"single"`, `Authorization: Token`), alongside the Last.fm submission:
+
+- Log-only - never blocks or affects the Last.fm result
+- Uses `config.scrobbling.listenbrainz_token`; empty token = silent no-op
+- Proven live: HTTP 200 + round-trip readback with LB server-side MusicBrainz enrichment
+
+## ListenBrainz Recommendations
+
+LB collaborative-filtering recs come from `1/cf/recommendation/user/{u}/recording?artist_type=top|similar|raw`. HTTP 204 (recs not ready; LB nightly batch) is NOT an error: `fetch_listenbrainz_recommendations` falls back to `synthesize_listenbrainz_recommendations`, which walks the LB listens corpus -> top artists -> `artist.getSimilar` -> 20 artist recs. Exposed via the `youtui listenbrainz-recommendations` CLI.
+
+## ListenBrainz Backfill
+
+Scripted import of Last.fm scrobbles to ListenBrainz (`lb_backfill.py`): `user.getRecentTracks` paginated (200/batch, ~1199 pages) -> `submit-listens` `listen_type:"import"` (500/chunk) -> `latest-import` watermark. Resume-aware via state file, 0.35s rate-limit sleep. Imported 239,624 scrobbles with 0 failures; oldest listen Oct 2014; LB profile 245,483 songs.
+
+## Recommendations Cache
+
+`RecommendationStore` persists F4 recommendation results to `~/.local/share/youtui/recommendations_cache.db` (rusqlite, 24h TTL). F4 recs survive app restarts within 24h.
 
 ## Known Issues
 

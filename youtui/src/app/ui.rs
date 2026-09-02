@@ -29,6 +29,7 @@ use audio_player::{SeekDirection, VolumeUpdate};
 use crate::config::Config;
 use crate::config::keymap::Keymap;
 use crate::keyaction::{DisplayableKeyAction, DisplayableMode};
+use crate::recommendations_store::RecommendationStore;
 use crate::widgets::ScrollingTableState;
 use action::{AppAction, ListAction, PAGE_KEY_LINES, SEEK_AMOUNT, TextEntryAction};
 use async_callback_manager::{AsyncTask, Constraint, NoOpHandler};
@@ -84,6 +85,8 @@ pub struct YoutuiWindow {
     pub playlist_details_popup: Option<PlaylistDetailsPopup>,
     pub notes_popup: Option<NotesPopup>,
     pub recommendations_popup: Option<RecommendationsPopup>,
+    pub recommendations_cache: Option<(std::time::Instant, Vec<crate::lastfm_recommend::RecItem>)>,
+    pub recommendations_store: Option<RecommendationStore>,
     pub delete_confirm: Option<(PlaylistID<'static>, String)>,
     pub config: Config,
     pub key_stack: Vec<KeyEvent>,
@@ -639,6 +642,8 @@ impl YoutuiWindow {
             playlist_details_popup: None,
             notes_popup: None,
             recommendations_popup: None,
+            recommendations_cache: None,
+            recommendations_store: RecommendationStore::open_default(),
             delete_confirm: None,
             key_stack: Vec::new(),
             help: HelpMenu::new(),
@@ -1689,15 +1694,16 @@ impl YoutuiWindow {
         self.prev_context = self.context;
         self.context = WindowContext::SongInfo;
         if needs_enrich {
+            if let Some(popup) = self.song_info_popup.as_mut() {
+                popup.set_genre_enriching(true);
+            }
             AsyncTask::new_future_try(
                 ResolveSongGenres { artist, title, album },
                 HandleResolveSongGenresOk,
                 NoOpHandler,
                 None,
             )
-            .map_frontend(|this: &mut Self| {
-                this.song_info_popup.as_mut().expect("just set")
-            })
+            .map_frontend(|this: &mut Self| this)
         } else {
             AsyncTask::new_no_op()
         }
@@ -1709,6 +1715,32 @@ impl YoutuiWindow {
             HandleRecommendationsOk, HandleRecommendationsErr,
         };
         use crate::lastfm_recommend::RecKind;
+        const CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+        // 1. persistent store (survives restarts)
+        if let Some(store) = &self.recommendations_store {
+            if let Some(items) = store.load("default") {
+                self.recommendations_popup = Some(RecommendationsPopup::new(RecKind::Artists, false));
+                if let Some(p) = self.recommendations_popup.as_mut() {
+                    p.set_items(items);
+                }
+                return AsyncTask::<Self, crate::app::server::ArcServer, crate::app::server::TaskMetadata>::new_no_op()
+                    .map_frontend(|this: &mut Self| this);
+            }
+        }
+
+        // 2. in-memory cache (same-session fast path)
+        if let Some((fetched_at, cached)) = &self.recommendations_cache {
+            if fetched_at.elapsed() < CACHE_TTL && !cached.is_empty() {
+                self.recommendations_popup = Some(RecommendationsPopup::new(RecKind::Artists, false));
+                if let Some(p) = self.recommendations_popup.as_mut() {
+                    p.set_items(cached.clone());
+                }
+                return AsyncTask::<Self, crate::app::server::ArcServer, crate::app::server::TaskMetadata>::new_no_op()
+                    .map_frontend(|this: &mut Self| this);
+            }
+        }
+
         self.recommendations_popup = Some(RecommendationsPopup::new(RecKind::Artists, true));
         AsyncTask::new_future_try(
             FetchAllRecommendations(
@@ -1722,9 +1754,7 @@ impl YoutuiWindow {
             HandleRecommendationsErr,
             None,
         )
-        .map_frontend(|this: &mut Self| {
-            this.recommendations_popup.as_mut().expect("just set")
-        })
+        .map_frontend(|this: &mut Self| this)
     }
 
     pub fn close_popup(&mut self) {

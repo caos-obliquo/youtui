@@ -71,7 +71,7 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
     spans.push(button_span("F2"));
     spans.push(Span::raw(" Browser "));
     spans.push(button_span("F3"));
-    spans.push(Span::raw(" Playlist "));
+    spans.push(Span::raw(" Queue "));
     spans.push(button_span("F4"));
     spans.push(Span::raw(" Recs "));
     if matches!(w.context, WindowContext::Playlist | WindowContext::Browser) {
@@ -83,7 +83,7 @@ pub fn draw_header(f: &mut Frame, w: &super::YoutuiWindow, chunk: Rect) {
 
     let commands_block = Block::default().borders(Borders::ALL).title("Commands");
     let commands_widget = Paragraph::new(Line::from(spans));
-    if !matches!(w.context, WindowContext::Browser) {
+    if !matches!(w.context, WindowContext::Browser) || w.recommendations_popup.is_some() {
         f.render_widget(commands_widget, commands_block.inner(chunk));
         f.render_widget(commands_block, chunk);
         return;

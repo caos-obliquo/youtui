@@ -20,6 +20,7 @@ mod drawutils;
 mod keyaction;
 mod keybind;
 mod lastfm_recommend;
+mod recommendations_store;
 mod widgets;
 mod youtube_downloader;
 
@@ -402,6 +403,9 @@ enum Command {
         title: String,
         /// Optional album name hint
         album: Option<String>,
+        /// Also print RYM genre descriptions for the resolved genres
+        #[arg(long, default_value_t = false)]
+        rym: bool,
     },
     /// Query ListenBrainz for metadata about a song (requires listenbrainz_token in config).
     TestListenbrainz {
@@ -484,6 +488,12 @@ enum Command {
         /// Seed count for niche path (default 35)
         #[arg(long = "seed-count", default_value_t = 35)]
         seed_count: u32,
+        /// Seed query (artist, or 'Artist - Title') to derive recommendations from, instead of scrobble history
+        #[arg(long)]
+        seed: Option<String>,
+        /// Number of similar items to fetch per seed (default 10)
+        #[arg(long, default_value_t = 10)]
+        similar_limit: u32,
         /// Output as machine-readable JSON instead of the sectioned list
         #[arg(long, default_value_t = false)]
         json: bool,

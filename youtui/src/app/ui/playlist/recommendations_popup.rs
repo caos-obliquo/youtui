@@ -31,9 +31,6 @@ impl Action for RecommendationsAction {
     }
 }
 
-/// Context menu items; index matches `menu_selected`.
-const MENU_ITEMS: &[&str] = &["Play", "Add to Queue", "Copy URL"];
-
 pub struct RecommendationsPopup {
     pub kind: crate::lastfm_recommend::RecKind,
     pub kind_filter: Option<crate::lastfm_recommend::RecKind>,
@@ -99,6 +96,28 @@ impl RecommendationsPopup {
         }
     }
 
+    fn menu_items(&self) -> Vec<(&'static str, &'static str)> {
+        let visible = self.visible_items();
+        let kind = visible
+            .get(self.selected.min(visible.len().saturating_sub(1)))
+            .map(|i| i.kind);
+        let mut items = vec![
+            ("Enter", "Play"),
+            ("n", "Add to Queue"),
+            ("y", "Copy URL"),
+            ("i", "Song Info"),
+        ];
+        items.push(("a", "Go to Artist"));
+        if matches!(
+            kind,
+            Some(crate::lastfm_recommend::RecKind::Tracks) | Some(crate::lastfm_recommend::RecKind::Albums)
+        ) {
+            items.push(("b", "Go to Album"));
+            items.push(("t", "Go to Track"));
+        }
+        items
+    }
+
     pub fn handle_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
         if self.menu_open {
             return self.handle_menu_key(event);
@@ -148,6 +167,10 @@ impl RecommendationsPopup {
                 self.selected = 0;
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char('r') if !self.filter_active => {
+                info!("Reloading recommendations");
+                (AsyncTask::new_no_op(), Some(AppCallback::ReloadRecommendations))
+            }
             KeyCode::Char(c) if self.filter_active => {
                 self.filter.push(c);
                 self.selected = 0;
@@ -196,17 +219,21 @@ impl RecommendationsPopup {
     }
 
     fn handle_menu_key(&mut self, event: crossterm::event::KeyEvent) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        let n = self.menu_items().len();
+        if n == 0 {
+            return (AsyncTask::new_no_op(), None);
+        }
         match event.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                self.menu_selected = (self.menu_selected + 1) % MENU_ITEMS.len();
+                self.menu_selected = (self.menu_selected + 1) % n;
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.menu_selected = (self.menu_selected + MENU_ITEMS.len() - 1) % MENU_ITEMS.len();
+                self.menu_selected = (self.menu_selected + n - 1) % n;
                 (AsyncTask::new_no_op(), None)
             }
             KeyCode::Enter | KeyCode::Char('o') | KeyCode::Char(' ') => {
-                self.menu_open = false;
+                self.menu_selected = self.menu_selected.min(n - 1);
                 self.activate_menu_item()
             }
             KeyCode::Esc | KeyCode::Char('q') => {
@@ -214,19 +241,34 @@ impl RecommendationsPopup {
                 info!("Recommendations context menu closed");
                 (AsyncTask::new_no_op(), None)
             }
+            KeyCode::Char(c) => {
+                let items = self.menu_items();
+                if let Some(idx) = items.iter().position(|(key, _)| key.chars().next() == Some(c)) {
+                    self.menu_selected = idx;
+                    self.activate_menu_item_at(idx)
+                } else {
+                    (AsyncTask::new_no_op(), None)
+                }
+            }
             _ => (AsyncTask::new_no_op(), None),
         }
     }
 
     fn activate_menu_item(&mut self) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        self.activate_menu_item_at(self.menu_selected)
+    }
+
+    fn activate_menu_item_at(&mut self, menu_idx: usize) -> (ComponentEffect<Self>, Option<AppCallback>) {
+        self.menu_open = false;
         let visible = self.visible_items();
         if visible.is_empty() {
             return (AsyncTask::new_no_op(), None);
         }
         let idx = self.selected.min(visible.len() - 1);
         let item = visible[idx];
-        match MENU_ITEMS[self.menu_selected] {
-            "Play" => {
+        let items = self.menu_items();
+        match items.get(menu_idx).map(|(_, desc)| *desc) {
+            Some("Play") => {
                 info!(
                     "Recommendation menu: Play idx={} kind={:?} title={} artist={}",
                     idx, item.kind, item.title, item.artist
@@ -243,7 +285,7 @@ impl RecommendationsPopup {
             }
             // Queue-only resolution (search then enqueue without playing) needs a
             // dedicated backend callback; for now reuse the act path so the action works.
-            "Add to Queue" => {
+            Some("Add to Queue") => {
                 info!(
                     "Recommendation menu: Add to Queue idx={} kind={:?} title={} artist={}",
                     idx, item.kind, item.title, item.artist
@@ -258,7 +300,7 @@ impl RecommendationsPopup {
                     )),
                 )
             }
-            "Copy URL" => {
+            Some("Copy URL") => {
                 if item.url.is_empty() {
                     warn!("Recommendation menu: Copy URL skipped, empty url for idx={}", idx);
                 } else {
@@ -266,6 +308,67 @@ impl RecommendationsPopup {
                     info!("Copied recommendation URL: {}", item.url);
                 }
                 (AsyncTask::new_no_op(), None)
+            }
+            Some("Song Info") => {
+                info!(
+                    "Recommendation menu: Song Info idx={} kind={:?} title={} artist={}",
+                    idx, item.kind, item.title, item.artist
+                );
+                (
+                    AsyncTask::new_no_op(),
+                    Some(AppCallback::ViewRecSongInfo(
+                        idx,
+                        item.kind,
+                        item.title.clone(),
+                        item.artist.clone(),
+                    )),
+                )
+            }
+            Some("Go to Artist") => {
+                let name = if !item.artist.is_empty() {
+                    item.artist.clone()
+                } else {
+                    item.title.clone()
+                };
+                info!("Recommendation menu: Go to Artist name={}", name);
+                (
+                    AsyncTask::new_no_op(),
+                    Some(AppCallback::Navigate(crate::app::NavTarget::Artist(name))),
+                )
+            }
+            Some("Go to Album") => {
+                if item.artist.is_empty() {
+                    let name = item.title.clone();
+                    info!("Recommendation menu: Go to Album fell back to Artist name={}", name);
+                    (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::Navigate(crate::app::NavTarget::Artist(name))),
+                    )
+                } else {
+                    info!(
+                        "Recommendation menu: Go to Album artist={} album={}",
+                        item.artist, item.title
+                    );
+                    (
+                        AsyncTask::new_no_op(),
+                        Some(AppCallback::Navigate(crate::app::NavTarget::Album {
+                            artist: item.artist.clone(),
+                            album: item.title.clone(),
+                        })),
+                    )
+                }
+            }
+            Some("Go to Track") => {
+                let query = if item.artist.is_empty() {
+                    item.title.clone()
+                } else {
+                    format!("{} - {}", item.artist, item.title)
+                };
+                info!("Recommendation menu: Go to Track query={}", query);
+                (
+                    AsyncTask::new_no_op(),
+                    Some(AppCallback::Navigate(crate::app::NavTarget::SongSearch(query))),
+                )
             }
             _ => (AsyncTask::new_no_op(), None),
         }
@@ -314,6 +417,8 @@ impl RecommendationsPopup {
                     return;
                 }
                 let count = visible.len();
+                let no_artist_col = self.kind_filter
+                    == Some(crate::lastfm_recommend::RecKind::Artists);
                 let items: Vec<Vec<Cow<'static, str>>> = visible
                     .iter()
                     .enumerate()
@@ -329,10 +434,6 @@ impl RecommendationsPopup {
                             "-".to_string()
                         };
                         let sim = item.reason.clone().unwrap_or_default();
-                        let match_str = item
-                            .match_score
-                            .map(|m| format!("{:.2}", m))
-                            .unwrap_or_else(|| "-".to_string());
                         let list_str = item
                             .playcount
                             .map(format_count)
@@ -342,35 +443,59 @@ impl RecommendationsPopup {
                             crate::lastfm_recommend::RecKind::Albums => "Album",
                             crate::lastfm_recommend::RecKind::Artists => "Artist",
                         };
-                        vec![
+                        let mut row = vec![
                             Cow::Owned((idx + 1).to_string()),
                             Cow::Owned(type_str.to_string()),
-                            Cow::Owned(name),
-                            Cow::Owned(artist),
+                        ];
+                        if no_artist_col {
+                            row.push(Cow::Owned(name));
+                        } else {
+                            row.push(Cow::Owned(artist));
+                            row.push(Cow::Owned(name));
+                        }
+                        row.extend([
                             Cow::Owned(sim),
-                            Cow::Owned(match_str),
                             Cow::Owned(list_str),
-                        ]
+                        ]);
+                        row
                     })
                     .collect();
-                let headings: Vec<Cell<'static>> = vec![
-                    Cell::from(Line::raw("#")),
-                    Cell::from(Line::raw("Type")),
-                    Cell::from(Line::raw("Name")),
-                    Cell::from(Line::raw("Artist")),
-                    Cell::from(Line::raw("Similar To")),
-                    Cell::from(Line::raw("Match")),
-                    Cell::from(Line::raw("List")),
-                ];
-                let layout = [
-                    BasicConstraint::Length(4),
-                    BasicConstraint::Length(7),
-                    BasicConstraint::Percentage(Percentage(22)),
-                    BasicConstraint::Percentage(Percentage(18)),
-                    BasicConstraint::Percentage(Percentage(28)),
-                    BasicConstraint::Length(7),
-                    BasicConstraint::Length(9),
-                ];
+                let headings: Vec<Cell<'static>> = if no_artist_col {
+                    vec![
+                        Cell::from(Line::raw("#")),
+                        Cell::from(Line::raw("Type")),
+                        Cell::from(Line::raw("Name")),
+                        Cell::from(Line::raw("Similar To")),
+                        Cell::from(Line::raw("List")),
+                    ]
+                } else {
+                    vec![
+                        Cell::from(Line::raw("#")),
+                        Cell::from(Line::raw("Type")),
+                        Cell::from(Line::raw("Artist")),
+                        Cell::from(Line::raw("Name")),
+                        Cell::from(Line::raw("Similar To")),
+                        Cell::from(Line::raw("List")),
+                    ]
+                };
+                let layout: &[BasicConstraint] = if no_artist_col {
+                    &[
+                        BasicConstraint::Length(4),
+                        BasicConstraint::Length(7),
+                        BasicConstraint::Percentage(Percentage(28)),
+                        BasicConstraint::Percentage(Percentage(48)),
+                        BasicConstraint::Length(9),
+                    ]
+                } else {
+                    &[
+                        BasicConstraint::Length(4),
+                        BasicConstraint::Length(7),
+                        BasicConstraint::Percentage(Percentage(22)),
+                        BasicConstraint::Percentage(Percentage(20)),
+                        BasicConstraint::Percentage(Percentage(36)),
+                        BasicConstraint::Length(9),
+                    ]
+                };
                 let table_widths = basic_constraints_to_table_constraints(&layout, inner.width, 1);
                 let table = ScrollingTable::new(items, headings, table_widths, self.tick)
                     .style(Style::default().fg(Color::Reset))
@@ -389,8 +514,13 @@ impl RecommendationsPopup {
     }
 
     fn draw_menu(&self, frame: &mut Frame, inner: Rect) {
-        let menu_width = MENU_ITEMS.iter().map(|s| s.len()).max().unwrap_or(4) as u16 + 4;
-        let menu_height = MENU_ITEMS.len() as u16 + 2;
+        let items = self.menu_items();
+        let lines: Vec<String> = items
+            .iter()
+            .map(|(key, desc)| format!("{:<8} {}", key, desc))
+            .collect();
+        let menu_width = lines.iter().map(|s| s.len()).max().unwrap_or(4) as u16 + 4;
+        let menu_height = lines.len() as u16 + 2;
         let menu_area = crate::drawutils::left_bottom_corner_rect(menu_height, menu_width, inner);
         frame.render_widget(Clear, menu_area);
         let menu_block = Block::default()
@@ -399,22 +529,11 @@ impl RecommendationsPopup {
             .borders(Borders::ALL);
         let menu_inner = menu_block.inner(menu_area);
         frame.render_widget(menu_block, menu_area);
-        for (i, label) in MENU_ITEMS.iter().enumerate() {
-            let style = if i == self.menu_selected {
-                Style::default().fg(Color::Reset).bg(ROW_HIGHLIGHT_COLOUR)
-            } else {
-                Style::default().fg(TEXT_COLOUR)
-            };
-            frame.render_widget(
-                Paragraph::new(*label).style(style),
-                Rect {
-                    x: menu_inner.x,
-                    y: menu_inner.y + i as u16,
-                    width: menu_inner.width,
-                    height: 1,
-                },
-            );
-        }
+        let text = lines.join("\n");
+        frame.render_widget(
+            Paragraph::new(text).style(Style::default().fg(TEXT_COLOUR)),
+            menu_inner,
+        );
     }
 
 }

@@ -1,6 +1,7 @@
 use crate::app::component::actionhandler::{Action, ActionHandler, ComponentEffect, YoutuiEffect};
 use crate::app::structures::{ListSong, ListSongArtist, MaybeRc, ListSongAlbum, AlbumOrUploadAlbumID};
 use crate::app::ui::AppCallback;
+use crate::app::ui::YoutuiWindow;
 use ytmapi_rs::common::YoutubeID;
 use async_callback_manager::{AsyncTask, BackendTask};
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -58,6 +59,7 @@ pub struct SongInfoPopup {
     genre_scroll: usize,
     mode: PopupMode,
     visual_start: usize,
+    genre_enriching: bool,
 }
 
 impl_youtui_component!(SongInfoPopup);
@@ -82,12 +84,16 @@ impl SongInfoPopup {
             genre_scroll: 0,
             mode: PopupMode::Normal,
             visual_start: 0,
+            genre_enriching: false,
         }
     }
 
+    pub fn set_genre_enriching(&mut self, enriching: bool) {
+        self.genre_enriching = enriching;
+    }
+
     fn visual_range(&self) -> (usize, usize) {
-        let s = self.visual_start.min(self.selected_field);
-        let e = self.visual_start.max(self.selected_field);
+        let s = self.visual_start.min(self.selected_field);        let e = self.visual_start.max(self.selected_field);
         (s, e)
     }
 
@@ -247,10 +253,13 @@ impl SongInfoPopup {
     }
 
     fn build_genre_str(&self) -> String {
-        let g: Vec<&str> = self.song.styles.iter().map(|s| s.as_str()).collect();
-        if g.is_empty() || (g.len() == 1 && g[0].is_empty()) {
-            let filtered: Vec<&str> = self.song.genres.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
-            if filtered.is_empty() { "-".to_string() } else { filtered.join(", ") }
+        // Genres are the validated, niche-correct tags (from the genre pipeline);
+        // styles are a noisier, provider-weighted set. Show genres first, and only
+        // fall back to styles when genres are empty (some tracks only carry styles).
+        let g: Vec<&str> = self.song.genres.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+        if g.is_empty() {
+            let styles: Vec<&str> = self.song.styles.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+            if styles.is_empty() { "-".to_string() } else { styles.join(", ") }
         } else {
             g.join(", ")
         }
@@ -296,12 +305,10 @@ impl SongInfoPopup {
                 .map(|y| y.as_str().to_string())
                 .unwrap_or_default(),
             Field::Genre => {
-                let parts: Vec<&str> = {
-                    let g: Vec<&str> = self.song.styles.iter().map(|s| s.as_str()).collect();
-                    if g.is_empty() || (g.len() == 1 && g[0].is_empty()) {
-                        self.song.genres.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect()
-                    } else { g }
-                };
+                let g: Vec<&str> = self.song.genres.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
+                let parts: Vec<&str> = if g.is_empty() {
+                    self.song.styles.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect()
+                } else { g };
                 parts.join(", ")
             }
         }
@@ -377,22 +384,27 @@ impl SongInfoPopup {
         let duration = &self.song.duration_string;
         let source = self.song.video_id.get_raw();
         let genre_list: Vec<&str> = {
-            let g = self.song.styles.iter().map(|s| s.as_str()).collect::<Vec<_>>();
-            if g.is_empty() || (g.len() == 1 && g[0].is_empty()) {
-                self.song.genres.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect()
+            let g = self.song.genres.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect::<Vec<_>>();
+            if g.is_empty() {
+                self.song.styles.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect()
             } else { g }
         };
-        let genre_str = if genre_list.is_empty() {
+        let genre_str = if self.genre_enriching && genre_list.is_empty() {
+            "searching...".to_string()
+        } else if genre_list.is_empty() {
             "-".to_string()
         } else {
             genre_list.join(", ")
         };
         // RYM descriptions for known genre tags; unknown/free-text tags skipped.
+        let rym_indent = "  Genre: ".len();
         let rym_lines: Vec<String> = genre_list
             .iter()
-            .filter_map(|g| rym_genre_data::find_genre(g).map(|ge| ge.description.as_deref()))
-            .filter(|d| d.is_some())
-            .map(|d| format!("\u{2514} {}", d.unwrap()))
+            .filter_map(|g| {
+                let desc = rym_genre_data::find_genre(g)?.description.as_deref()?;
+                Some((g, desc))
+            })
+            .map(|(name, desc)| format!("{}\u{2514} {}: {}", " ".repeat(rym_indent), name, desc))
             .collect();
         let raw_lines = vec![
             ("Title", self.song.title.as_str()),
@@ -542,13 +554,16 @@ pub struct HandleResolveSongGenresOk;
 impl_youtui_task_handler!(
     HandleResolveSongGenresOk,
     (Vec<String>, Vec<String>),
-    SongInfoPopup,
+    YoutuiWindow,
     |_, result: (Vec<String>, Vec<String>)| {
-        move |target: &mut SongInfoPopup| {
+        move |this: &mut YoutuiWindow| {
             let (genres, styles) = result;
-            if !genres.is_empty() || !styles.is_empty() {
-                target.song.genres = genres;
-                target.song.styles = styles;
+            if let Some(popup) = this.song_info_popup.as_mut() {
+                popup.genre_enriching = false;
+                if !genres.is_empty() || !styles.is_empty() {
+                    popup.song.genres = genres;
+                    popup.song.styles = styles;
+                }
             }
             AsyncTask::new_no_op()
         }
