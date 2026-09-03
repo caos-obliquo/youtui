@@ -46,7 +46,7 @@ pub struct GetLyrics(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
 pub struct GetAnnotations(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
-pub struct ValidateMetadata(pub String, pub String, pub crate::app::structures::ListSongID, pub String, pub Option<String>, pub Option<String>);
+pub struct ValidateMetadata(pub String, pub String, pub crate::app::structures::ListSongID, pub String, pub Option<String>, pub Option<String>, pub String, pub bool);
 
 #[derive(Debug, PartialEq)]
 pub struct GetSearchSuggestions(pub String);
@@ -1728,11 +1728,11 @@ impl BackendTask<ArcServer> for ValidateMetadata {
             let title = self.1;
             let _song_id = self.2;
             let album = self.5;
+            let video_id = self.6;
+            let is_album_upload = self.7;
             let mut result = registry.resolve(&artist, &title, album.as_deref()).await?;
 
-            // YTM album enrichment: try to fill missing album/year from YouTube Music
             if result.year.is_none() || result.album.is_none() {
-                // Prefer known album name for search, fall back to artist + title
                 let search_query = match album {
                     Some(ref a) => result.artist.as_ref()
                         .map(|art| format!("{} {}", art, a))
@@ -1751,6 +1751,10 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                                 Ok(g) => g,
                                 Err(e) => {
                                     tracing::debug!("YTM API unavailable for enrichment: {}", e);
+                                    if is_album_upload && result.album_tracks.is_empty() {
+                                        tracing::info!("yt-dlp fallback: album enrichment unavailable, trying description/chapters for video_id={}", video_id);
+                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id).await;
+                                    }
                                     return Ok(result);
                                 }
                             };
@@ -1765,12 +1769,29 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                                         result.album = Some(album_data.title);
                                     }
                                 }
-                                Err(e) => tracing::debug!("YTM album detail fetch failed: {}", e),
+                                Err(e) => {
+                                    tracing::debug!("YTM album detail fetch failed: {}", e);
+                                    if is_album_upload && result.album_tracks.is_empty() {
+                                        tracing::info!("yt-dlp fallback: album detail failed, trying description/chapters for video_id={}", video_id);
+                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id).await;
+                                    }
+                                }
                             }
                         }
                     }
-                    Err(e) => tracing::debug!("YTM album search failed: {}", e),
+                    Err(e) => {
+                        tracing::debug!("YTM album search failed: {}", e);
+                                    if is_album_upload && result.album_tracks.is_empty() {
+                                        tracing::info!("yt-dlp fallback: album search failed, trying description/chapters for video_id={}", video_id);
+                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id).await;
+                                    }
+                    }
                 }
+            }
+
+            if is_album_upload && result.album_tracks.is_empty() {
+                tracing::info!("yt-dlp fallback: no tracks from any provider, trying description/chapters for video_id={}", video_id);
+                result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id).await;
             }
 
             Ok(result)

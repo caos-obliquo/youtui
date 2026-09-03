@@ -88,6 +88,7 @@ use ui::{
 pub mod component;
 mod media_controls;
 pub mod server;
+pub mod util;
 mod structures;
 pub mod queue_persistence;
 pub mod scrobbler;
