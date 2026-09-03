@@ -4,8 +4,8 @@
 
 | Issue | Workaround |
 |-------|------------|
-| **Footer album art broken in tmux** - **FIXED v1.0.3**: `flush_sixel` no longer gated by `is_tmux`. Unconditional DCS clear `\x1bP0p\x1b\\` before re-write prevents stale pixel corruption. | N/A - fix is permanent. |
-| **`o.v` album art popup broken in tmux** - **FIXED v1.0.3**: Same root cause as footer - unconditional DCS clear on sixel flush. | N/A - fix is permanent. |
+| **Footer album art in tmux**: flash on art change and vanish on pane switch fixed in this change (focus reporting + flicker-free re-emit). Requires `allow-passthrough on` and `set -g focus-events on` in tmux. | N/A - fix is permanent. |
+| **`o.v` album art popup in tmux** | N/A - fix is permanent. |
 | **No sixel support at all**: Terminal emulator does not support sixel graphics. | Album art silently skipped. Check with `printf '\eP#? \e\\'` - no response = no sixel. |
 
 ### What is sixel?
@@ -37,27 +37,33 @@ tmux intercepts terminal output and re-encodes it. Sixel passthrough must be ena
 ```tmux
 set -g -a terminal-overrides ',foot*:Ms=\E]52;%p1%s;%p2%s\7'
 set -g allow-passthrough on
+set -g focus-events on
 ```
 
 **iTerm2 + tmux on macOS**:
 ```tmux
 set -g -a terminal-overrides ',iterm2*:Ms=\E]52;%p1%s;%p2%s\7'
 set -g allow-passthrough on
+set -g focus-events on
 ```
 
 **XTerm + tmux on Linux/BSD**:
 ```tmux
 set -g -a terminal-overrides ',xterm*:Ms=\E]52;%p1%s;%p2%s\7'
 set -g allow-passthrough on
+set -g focus-events on
 ```
 
 **Kitty + tmux**:
 ```tmux
 set -g -a terminal-overrides ',xterm-kitty:Ms=\E]52;%p1%s;%p2%s\7'
 set -g allow-passthrough on
+set -g focus-events on
 ```
 
 The `terminal-overrides` line tells tmux to pass through the sixel escape sequence for your specific terminal type. Without it, tmux blocks all escape sequences it does not recognize.
+
+`set -g focus-events on` makes tmux forward focus in/out to the pane. Youtui enables focus reporting (`?1004h`) at startup and re-emits the album art on `FocusGained`, so the cover returns after a pane/window switch without a keypress.
 
 ### Why `:reload` fixes it
 

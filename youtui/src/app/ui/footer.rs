@@ -408,4 +408,52 @@ mod tests {
             "AlbumArtState::Error must clear sixel_data"
         );
     }
+
+    /// Regression: flush_sixel must DCS-clear on empty data (erase) or rect
+    /// change. PR #43 fixed per-frame flash with the `sd == last_sixel_data`
+    /// guard; this test ensures the guard is bypassed on `force_sixel_redraw`
+    /// so FocusGained re-emits a tmux-wiped image without a clear.
+    #[test]
+    fn flush_sixel_clears_only_on_rect_change_or_force() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/app.rs")
+        ).expect("app.rs exists");
+        assert!(
+            src.contains("let force = std::mem::take(&mut self.window_state.force_sixel_redraw)"),
+            "flush_sixel must consume force_sixel_redraw via std::mem::take"
+        );
+        assert!(
+            src.contains("if !force && sd == self.window_state.last_sixel_data"),
+            "skip guard must check !force first"
+        );
+        let branch = src
+            .split("if let Some((data, rect)) = sd.as_ref().zip(rect)")
+            .nth(1)
+            .expect("data-write branch present");
+        assert!(
+            branch.contains("data.is_empty() || Some(rect) != self.window_state.last_sixel_rect"),
+            "DCS clear must fire on erase (empty data) or rect change, found:\n{}",
+            branch
+        );
+    }
+
+    /// Regression: terminal init must enable focus reporting (?1004h) so
+    /// FocusGained events can fire inside tmux. Without this the
+    /// force_sixel_redraw path never triggers.
+    #[test]
+    fn terminal_init_enables_focus_change() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/app.rs")
+        ).expect("app.rs exists");
+        assert!(
+            src.contains("EnableFocusChange"),
+            "terminal init must send EnableFocusChange (?1004h)"
+        );
+        assert!(
+            src.contains("DisableFocusChange"),
+            "destruct_terminal must send DisableFocusChange (?1004l)"
+        );
+    }
 }
