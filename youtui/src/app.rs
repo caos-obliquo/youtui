@@ -984,6 +984,9 @@ impl Youtui {
 
     fn flush_sixel(&mut self) -> Result<()> {
         use std::io::Write;
+        let rect = self.window_state.sixel_rect;
+        let sd = self.window_state.sixel_data.clone();
+        let force = std::mem::take(&mut self.window_state.force_sixel_redraw);
         // When album art popup is open, ratatui_image handles rendering via Image widget.
         // flush_sixel would DCS-clear and re-render the same image → visible flash.
         if self.window_state.album_art_popup.is_some() {
@@ -993,11 +996,38 @@ impl Youtui {
             // stale popup sixel before rewriting the footer art.
             self.window_state.last_sixel_data = None;
             self.window_state.last_sixel_rect = None;
+            // If a forced re-emit is pending (FocusGained / keepalive after
+            // a tmux pane or window switch wiped the screen), re-emit the
+            // popup sixel now so it does not vanish. Otherwise the popup is
+            // already rendered by ratatui in the current frame — skip the
+            // sixel flush to avoid a flash.
+            if !force {
+                return Ok(());
+            }
+            // force is true — re-emit the popup sixel using the same
+            // rect-tracking guard, then return early. We intentionally
+            // do NOT update last_sixel_data/last_sixel_rect here (they're
+            // already None), so the popup-close case will trigger a
+            // DCS clear and re-emit the footer art cleanly.
+            if let Some((data, rect)) = sd.as_ref().zip(rect) {
+                let mut stdout = io::stdout();
+                if data.is_empty() || Some(rect) != self.window_state.last_sixel_rect {
+                    stdout.write_all(b"\x1bP0p\x1b\\")?;
+                }
+                crossterm::execute!(&mut stdout, crossterm::cursor::MoveTo(rect.x, rect.y))?;
+                stdout.write_all(data.as_bytes())?;
+                stdout.flush()?;
+            } else if let Some(rect) = rect {
+                let mut stdout = io::stdout();
+                crossterm::execute!(&mut stdout, crossterm::cursor::MoveTo(rect.x, rect.y))?;
+                for _ in 0..rect.height {
+                    write!(stdout, "\x1b[{}X\x1b[1B", rect.width)?;
+                }
+                write!(stdout, "\x1b[{}A", rect.height)?;
+                stdout.flush()?;
+            }
             return Ok(());
         }
-    let rect = self.window_state.sixel_rect;
-    let sd = self.window_state.sixel_data.clone();
-    let force = std::mem::take(&mut self.window_state.force_sixel_redraw);
     // Skip the DCS clear+redraw entirely when the sixel is unchanged and no
     // forced re-emit is pending. The sixel lives on a separate graphics layer
     // that ratatui's text clear does not touch, so re-drawing every frame only

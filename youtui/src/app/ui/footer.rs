@@ -451,9 +451,36 @@ mod tests {
             src.contains("EnableFocusChange"),
             "terminal init must send EnableFocusChange (?1004h)"
         );
-        assert!(
+         assert!(
             src.contains("DisableFocusChange"),
             "destruct_terminal must send DisableFocusChange (?1004l)"
+        );
+    }
+
+    /// Regression: when the album art popup is open, flush_sixel must reset
+    /// last_sixel_data and last_sixel_rect to None so that closing the popup
+    /// triggers a DCS clear (rect change) that wipes the stale popup sixel
+    /// before the footer art is re-emitted. Without this, the rect-tracking
+    /// guard in Fix 3 would skip the clear (same data/rect as before popup).
+    #[test]
+    fn flush_sixel_resets_state_when_popup_open() {
+        let src = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("src/app.rs")
+        ).expect("app.rs exists");
+        // Flush_sixel is the second occurrence of the popup guard.
+        let popup_branch = src
+            .match_indices("if self.window_state.album_art_popup.is_some()")
+            .nth(1)
+            .map(|(idx, _)| &src[idx..])
+            .expect("popup guard in flush_sixel");
+        assert!(
+            popup_branch.contains("self.window_state.last_sixel_data = None;"),
+            "flush_sixel must reset last_sixel_data when popup open"
+        );
+        assert!(
+            popup_branch.contains("self.window_state.last_sixel_rect = None;"),
+            "flush_sixel must reset last_sixel_rect when popup open"
         );
     }
 }
