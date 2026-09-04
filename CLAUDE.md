@@ -110,7 +110,7 @@ ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli removed 
 - **FetchAlbumArt never fired**: `cur_played_dur.map_or(false, ...)` blocked on initial play. Changed to `map_or(true, ...)`
 - **FetchAlbumArt in autoplay**: added trigger for tracks without art
 - **Scrobble sent album name as track title**: autoplay passed `song_album` instead of `song_title`
-- **Tmux sixel vanishing**: `flush_sixel` gated by `is_tmux`. Removed guard, added unconditional DCS clear
+- **Tmux sixel vanishing**: focus reporting (`?1004h`) enabled at startup, `force_sixel_redraw` consumed in `flush_sixel` on `FocusGained`, rect-tracking guard eliminates double-render flash, 3s keepalive re-arm
 - **Last track duration leak**: `parent_duration=None` gave `None` actual_duration → progress bar uncapped. `or_else` fallback added
 - **Gapless advance ID mismatch**: `QueueDecodedSong(id)` used current song ID not next song ID. Progress updates rejected after autoplay switched tracks. Stopped playback after track 2 for album splits.
 
@@ -302,7 +302,7 @@ See `docs/09-roadmap.md` for detailed session history.
 - **MA_COOKIE**: `cf_clearance` cookie from Metal Archives expires ~30 min. Must be refreshed manually via browser DevTools > Application > Cookies. The `metal-proxy` crate has been removed from workspace (backend API returns 500).
 - **Album `audio_playlist_id`**: May be `None` for some album types (singles/EPs). `o.t` shows feedback message now.
 - **Playlist editor modified check**: `Esc`/`:q` warns on unsaved changes. `:q!` force-quits.
-- **Sixel album art**: Belt-and-suspenders clear on close fixed in af0acb8. Sixel cleared via `\x1bP0p\x1b\\` DCS clear at start of every draw, plus offset tracking via `sixel_rect` for proper area management.
+- **Sixel album art**: Focus reporting (`?1004h`) enabled at startup, re-emits on `FocusGained` in tmux, rect-tracking eliminates art-change flash, 3s keepalive re-arms focus reporting. Set `focus-events on` + `allow-passthrough on` in tmux.conf.
 - **Scrobbler rate limit**: Rescrobbled systemd service double-submits scrobbles. Must stop/disable rescrobbled before using native scrobbler. `sudo systemctl stop --user rescrobbled && sudo systemctl disable --user rescrobbled`.
 - **Scrobble cache**: Persistent retry file at `~/.config/youtui/scrobble_cache.json`. Failed scrobbles saved to disk with retry count (max 3). Retried on startup + background 5-min loop. Rate limit stops retries to avoid hammering.
 - **Protocol cache (chunk dimensions)**: `cached_album_chunk` tracks image chunk dimensions in footer. `chunk_changed` comparison prevents 8-bit fallback on terminal resize (PR #8).

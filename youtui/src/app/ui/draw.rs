@@ -22,32 +22,31 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
             // No DCS clear here — flush_sixel in footer handles stale sixel removal.
             use ratatui::layout::Margin;
             use ratatui::layout::Alignment;
-            use ratatui_image::{Image, Resize};
-            use ratatui::widgets::{Clear, Paragraph};
-            use ratatui::style::{Style, Color};
-            let area = f.area();
-            f.render_widget(Clear, area);
-            // Center image with 1/6 vertical and 1/8 horizontal margins
-            let margin_v = (area.height / 6).max(1);
-            let margin_h = (area.width / 8).max(1);
-            let centered = area.inner(Margin { vertical: margin_v, horizontal: margin_h });
-            if centered.width < 4 || centered.height < 4 {
-                f.render_widget(Paragraph::new("Terminal too small").centered(), area);
-                return;
-            }
-            if let Some(thumb) = popup.current_thumbnail() {
-                // Guard: skip render if image has no pixel data
-                if thumb.in_mem_image.width() == 0 || thumb.in_mem_image.height() == 0 {
-                    w.sixel_data = None;
-                    w.sixel_rect = None;
-                    f.render_widget(Paragraph::new("No image data").centered(), area);
-                    return;
-                }
-                match terminal_image_capabilities.new_protocol(
-                    thumb.in_mem_image.clone(),
-                    centered,
-                    Resize::Fit(None),
-                ) {
+    use ratatui_image::{Image, Resize};
+    use ratatui::widgets::{Clear, Paragraph};
+    use ratatui::style::{Style, Color};
+    let area = f.area();
+    f.render_widget(Clear, area);
+    let margin_v = (area.height / 10).max(1);
+    let margin_h = (area.width / 10).max(1);
+    let centered = area.inner(Margin { vertical: margin_v, horizontal: margin_h });
+    if centered.width < 4 || centered.height < 4 {
+        f.render_widget(Paragraph::new("Terminal too small").centered(), area);
+        return;
+    }
+    if let Some(thumb) = popup.current_thumbnail() {
+        // Guard: skip render if image has no pixel data
+        if thumb.in_mem_image.width() == 0 || thumb.in_mem_image.height() == 0 {
+            w.sixel_data = None;
+            w.sixel_rect = None;
+            f.render_widget(Paragraph::new("No image data").centered(), area);
+            return;
+        }
+        match terminal_image_capabilities.new_protocol(
+            thumb.in_mem_image.clone(),
+            centered,
+            Resize::Fit(None),
+        ) {
                     Ok(protocol) => {
                         // Get the actual fitted area (may be smaller than centered due to aspect ratio)
                         let fitted = protocol.area();

@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/` fuzzy finder reworked to filter the visible list live (neovim-style): input on header, main list filters in real time; scoped to the active tab and cleared on tab switch / dive-in so it does not leak across views; `j/k` type into the query, `Up`/`Down` navigate the filtered list, `Esc`/`/` clears, `Enter` commits; `[SEARCH: text (N/M)]` indicator shown under the header
 
 ### Fixed
+- Sixel tmux persistence: EnableFocusChange/DisableFocusChange (?1004h) at init/exit, flush_sixel re-emits popup sixel on FocusGained with rect-tracking guard, 3s keepalive re-arms ?1004h. Requires focus-events on + allow-passthrough on in tmux
 - Stale `album_tracks` leaking split track names into the next song's scrobble
 - Album split trusts metadata provider; six regressions fixed (VL prefix, reqwest version, EP/singles detection, Netscape cookie parsing)
 - Album split guard skips YTM tracks that already have proper metadata

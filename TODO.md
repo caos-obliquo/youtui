@@ -56,6 +56,7 @@
 - **Tests**: 6 fixture-parse tests (parse_top_tracks/albums/artists, parse_similar_track/artist_with_reason, `sign_lastfm` known-vector) + LB parse tests. youtui: **194 pass, 0 fail, 4 ignored**. No new warnings.
 - **Docs**: full subsystem doc at `docs/subsystems/recommendations.md`; shipped list in `docs/09-roadmap.md`; ListenBrainz pieces in `docs/06-subsystems/scrobbling.md`; genre pipeline fix in `docs/06-subsystems/validation.md`.
 - **RYM genre dataset 49->2629**: imported `joeseesun/music-genre-finder` (5,947 RYM genres, 49 main + 578 detailed) -> `libs/rym-genre-data/data/rym-genre-descriptions.json` 12KB->494KB, 2,625 unique + 4 slang aliases (Skramz->Screamo, Sasscore->Sass, Mathrock->Math Rock, Warp Metal custom) wired into `rym-hierarchy.txt` (Skramz/Mathrock/Sasscore/Warp Metal ::genre leaves); `test-validate-metadata --rym` now 10/10 hitbox genres with blurbs (was 3/10); `cargo test -p rym-genre-data` 10 pass, `cargo test -p youtui` 194 pass.
+- **Sixel tmux persistence**: EnableFocusChange/DisableFocusChange (?1004h) at init/exit, flush_sixel re-emits popup sixel on FocusGained with rect-tracking guard, 3s keepalive re-arms ?1004h. Requires focus-events on + allow-passthrough on in tmux.conf.
 
 ## Low Priority
 - **Native streaming** - symphonia/basic-tcp-streaming prototype

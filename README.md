@@ -4,6 +4,8 @@ Vim-driven TUI for YouTube Music. Originally forked from [nick42d/youtui](https:
 
 **Upstream diff**: this fork adds native scrobbling, album splitting with metadata enrichment, vim playlist editor, 8-provider metadata pipeline, context menu, sixel album art, lyrics with annotations, suckless codebase (-630 lines). Drifted significantly - we own the feature set now.
 
+**tmux requirements for sixel album art**: `set -g allow-passthrough on` and `set -g focus-events on` in tmux.conf. Youtui enables focus reporting (?1004h) at startup and re-emits the album art on FocusGained.
+
 ## Workspace
 
 | Crate | Description |

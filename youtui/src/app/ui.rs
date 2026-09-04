@@ -105,10 +105,11 @@ pub struct YoutuiWindow {
     pub sixel_data: Option<String>,
     pub last_sixel_data: Option<String>,
     pub sixel_rect: Option<ratatui::layout::Rect>,
+    pub last_sixel_rect: Option<ratatui::layout::Rect>,
     /// When true, `flush_sixel` must re-emit the current sixel even if the image
     /// data is unchanged (e.g. after tmux wiped the graphics layer on a pane/window
     /// switch). Set on `FocusGained` and by the keepalive timer. Consumed by
-    /// `flush_sixel` (reset to false after a re-emit).
+    /// `flush_sixel` via `std::mem::take` (reset to false after a re-emit).
     pub force_sixel_redraw: bool,
     pub cached_album_protocol: Option<ratatui_image::protocol::Protocol>,
     pub cached_album_chunk: Option<ratatui::layout::Rect>,
@@ -666,6 +667,7 @@ impl YoutuiWindow {
             sixel_data: None,
             last_sixel_data: None,
             sixel_rect: None,
+            last_sixel_rect: None,
             force_sixel_redraw: false,
             cached_album_protocol: None,
             cached_album_chunk: None,
@@ -1081,6 +1083,15 @@ impl YoutuiWindow {
     pub async fn handle_tick(&mut self) {
         self.tick = self.tick.wrapping_add(1);
         self.playlist.handle_tick().await;
+        // dirge pattern: periodically re-arm focus reporting so FocusGained
+        // keeps firing after an external reset (tmux detach/reattach, terminal
+        // reset) turns ?1004 off. Guarded by TMUX env to avoid writes outside
+        // tmux where the mode is already stable.
+        if self.tick % 3 == 0 && std::env::var("TMUX").is_ok() {
+            use std::io::Write;
+            let _ = std::io::stdout().write_all(b"\x1b[?1004h");
+            let _ = std::io::stdout().flush();
+        }
     }
     pub fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
         use crossterm::event::KeyCode;

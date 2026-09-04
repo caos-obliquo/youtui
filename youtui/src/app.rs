@@ -6,7 +6,9 @@ use anyhow::{Context, Result, bail};
 use async_callback_manager::{AsyncCallbackManager, AsyncTask, TaskOutcome};
 use component::actionhandler::YoutuiEffect;
 use tracing::warn;
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+use crossterm::event::{
+    DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -88,6 +90,7 @@ use ui::{
 pub mod component;
 mod media_controls;
 pub mod server;
+pub mod util;
 mod structures;
 pub mod queue_persistence;
 pub mod scrobbler;
@@ -255,7 +258,12 @@ impl Youtui {
         // Setup terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture,)?;
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            EnableFocusChange,
+        )?;
         // By only performing panic cleanup from the main thread, this largely prevents
         // exits that occur part-way through a redraw.
         IS_MAIN_THREAD.with(|flag| flag.set(true));
@@ -976,25 +984,71 @@ impl Youtui {
 
     fn flush_sixel(&mut self) -> Result<()> {
         use std::io::Write;
+        let rect = self.window_state.sixel_rect;
+        let sd = self.window_state.sixel_data.clone();
+        let force = std::mem::take(&mut self.window_state.force_sixel_redraw);
         // When album art popup is open, ratatui_image handles rendering via Image widget.
         // flush_sixel would DCS-clear and re-render the same image → visible flash.
         if self.window_state.album_art_popup.is_some() {
+            // Popup renders via ratatui Image widget. Reset last_sixel_data/rect
+            // so that when the popup closes, flush_sixel sees a rect change
+            // (popup_rect vs footer_rect) and does a DCS clear to wipe the
+            // stale popup sixel before rewriting the footer art.
+            self.window_state.last_sixel_data = None;
+            self.window_state.last_sixel_rect = None;
+            // If a forced re-emit is pending (FocusGained / keepalive after
+            // a tmux pane or window switch wiped the screen), re-emit the
+            // popup sixel now so it does not vanish. Otherwise the popup is
+            // already rendered by ratatui in the current frame — skip the
+            // sixel flush to avoid a flash.
+            if !force {
+                return Ok(());
+            }
+            // force is true — re-emit the popup sixel using the same
+            // rect-tracking guard, then return early. We intentionally
+            // do NOT update last_sixel_data/last_sixel_rect here (they're
+            // already None), so the popup-close case will trigger a
+            // DCS clear and re-emit the footer art cleanly.
+            if let Some((data, rect)) = sd.as_ref().zip(rect) {
+                let mut stdout = io::stdout();
+                if data.is_empty() || Some(rect) != self.window_state.last_sixel_rect {
+                    stdout.write_all(b"\x1bP0p\x1b\\")?;
+                }
+                crossterm::execute!(&mut stdout, crossterm::cursor::MoveTo(rect.x, rect.y))?;
+                stdout.write_all(data.as_bytes())?;
+                stdout.flush()?;
+            } else if let Some(rect) = rect {
+                let mut stdout = io::stdout();
+                crossterm::execute!(&mut stdout, crossterm::cursor::MoveTo(rect.x, rect.y))?;
+                for _ in 0..rect.height {
+                    write!(stdout, "\x1b[{}X\x1b[1B", rect.width)?;
+                }
+                write!(stdout, "\x1b[{}A", rect.height)?;
+                stdout.flush()?;
+            }
             return Ok(());
         }
-        let rect = self.window_state.sixel_rect;
-        let sd = self.window_state.sixel_data.clone();
-        // Skip the DCS clear+redraw entirely when the sixel is unchanged. The
-        // sixel lives on a separate graphics layer that ratatui's text clear
-        // does not touch, so re-drawing every frame only causes a visible
-        // flash (blank frame between clear and redraw). Persisting it on screen
-        // is correct and flicker-free.
-        if sd == self.window_state.last_sixel_data {
-            return Ok(());
-        }
+    // Skip the DCS clear+redraw entirely when the sixel is unchanged and no
+    // forced re-emit is pending. The sixel lives on a separate graphics layer
+    // that ratatui's text clear does not touch, so re-drawing every frame only
+    // causes a visible flash (blank frame between clear and redraw). A forced
+    // re-emit (FocusGained, keepalive) bypasses this so a tmux-wiped image is
+    // restored; the write path below uses no DCS clear, so it stays flicker-free.
+    if !force && sd == self.window_state.last_sixel_data {
+        return Ok(());
+    }
         if let Some((data, rect)) = sd.as_ref().zip(rect) {
             let mut stdout = io::stdout();
-            // Clear stale sixel at this position before re-drawing
-            stdout.write_all(b"\x1bP0p\x1b\\")?;
+            // Global DCS clear only when the image moved or is being erased. On a
+            // same-rect data change the ratatui Image widget already wrote the new
+            // sixel (with its own area clear) during terminal.draw() this frame, so
+            // a global clear here would wipe it and flash. Forced re-emits write
+            // with no clear: the sixel data self-clears its own area. Empty data
+            // (quit_confirm/command_mode, draw.rs:237/264) is an erase request and
+            // MUST clear, otherwise stale pixels stay behind the overlay.
+            if data.is_empty() || Some(rect) != self.window_state.last_sixel_rect {
+                stdout.write_all(b"\x1bP0p\x1b\\")?;
+            }
             crossterm::execute!(&mut stdout, crossterm::cursor::MoveTo(rect.x, rect.y))?;
             stdout.write_all(data.as_bytes())?;
             stdout.flush()?;
@@ -1008,6 +1062,7 @@ impl Youtui {
             stdout.flush()?;
         }
         self.window_state.last_sixel_data = sd;
+        self.window_state.last_sixel_rect = rect;
         Ok(())
     }
 }
@@ -1027,6 +1082,7 @@ fn destruct_terminal() -> Result<()> {
         io::stdout(),
         LeaveAlternateScreen,
         DisableMouseCapture,
+        DisableFocusChange,
         crossterm::cursor::Show
     )?;
     Ok(())

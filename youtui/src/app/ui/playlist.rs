@@ -1212,7 +1212,7 @@ impl Playlist {
         let p_album = p_song.album.as_ref().map(|a| a.name.clone());
         info!("Force-split: re-validating song {:?} (artist={:?}, title={:?}, album={:?})", parent_id, artist, clean_title, p_album);
         let validation_task = AsyncTask::new_future_try(
-            ValidateMetadata(artist, clean_title, parent_id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), p_album),
+            ValidateMetadata(artist, clean_title, parent_id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), p_album, p_song.video_id.get_raw().to_string(), p_song.is_album_upload),
             HandleMetadataValidated(parent_id),
             HandleMetadataValidationError,
             None,
@@ -1527,9 +1527,9 @@ impl Playlist {
             let album_name = if let Some(idx) = self.get_index_from_id(id) {
                 self.get_song_from_idx(idx).and_then(|s| s.album.as_ref().map(|a| a.name.clone()))
             } else { None };
-            // Spawn metadata validation (Last.fm -> MusicBrainz) in parallel with download
+            let song_is_album_upload = self.get_song_from_id(id).map(|s| s.is_album_upload).unwrap_or(false);
             let validation_task = AsyncTask::new_future_try(
-                ValidateMetadata(meta_artist, meta_title, id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), album_name),
+                ValidateMetadata(meta_artist, meta_title, id, self.scrobbling_config.api_key.clone(), Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), album_name, raw_id.clone(), song_is_album_upload),
                 HandleMetadataValidated(id),
                 HandleMetadataValidationError,
                 None,
@@ -2092,7 +2092,7 @@ impl Playlist {
                 let album = song.album.as_ref().map(|a| a.name.clone());
                 let validation_task = AsyncTask::new_future_try(
                     ValidateMetadata(artist, clean_title, first_id, self.scrobbling_config.api_key.clone(),
-                        Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), album),
+                        Some(self.scrobbling_config.discogs_token.clone()).filter(|s| !s.is_empty()), album, song.video_id.get_raw().to_string(), song.is_album_upload),
                     HandleMetadataValidated(first_id),
                     HandleMetadataValidationError,
                     None,
