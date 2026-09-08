@@ -62,10 +62,15 @@
 Commit rule: one commit per finished item below, small clean diffs. No batching.
 - [x] **Liked-songs `/` filter selection mismatch** - filter display shows filtered rows but Enter/j/k/menu actions index the FULL list (wrong song plays). Mirror the playlist-tracks matching-index pattern in `youtui/src/app/ui/browser/library.rs`.
 - [x] **First-entry bug (liked songs + playlists)** - applying a filter does not snap the cursor to the first filtered row; snap moves relative to the stale cursor. Snap to first matching row on filter apply in both views.
-- [ ] **Symphonia AAC log spam** - `check failed` errors flood the F11 log view. Per-target suppression at logger init (`youtui/src/app.rs` `init_tracing`), RUST_LOG-overridable.
+- [x] **Symphonia AAC log spam** - `check failed` errors flood the F11 log view. Per-target suppression at logger init (`youtui/src/app.rs` `init_tracing`), RUST_LOG-overridable.
 - [ ] **Repeat-One scrobble missing on repeats** - first play scrobbles, repeats do not. Diagnose with runtime log evidence at the repeat transition, then fix.
 - [x] **Stray `eprintln!` removal** - debug leftover in `youtui/src/app/ui/browser.rs` filter key handler.
 - [ ] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
+
+## Log Navigation & CLI Access (new - user reported)
+- **Log fullscreen navigation broken**: `h` enters fullscreen logs but `j/k` don't work for scrolling; `h/l` are exclusive for tab navigation only. Need separate key for fullscreen (e.g., `f`). `h/l` should remain tab navigation only.
+- **CLI log access**: Add `youtui log` subcommand (or `youtui logs`) to view logs outside TUI — supports `--follow`, `--filter`, `--since`, `--level`, `--json`. Reads from the same log file `init_tracing` writes to (`get_data_dir()/logs/youtui-*.log`).
+- **Progress bar accuracy**: Ensure progress bar matches exact music length and displays correct metadata timestamp. The footer progress bar currently shows `00:00/00:00` initially; verify duration sync from `play_song_id`/`autoplay_song_id` through to `handle_set_song_play_progress` and that track position updates match actual audio playback time.
 
 ## Low Priority
 - **Native streaming** - symphonia/basic-tcp-streaming prototype

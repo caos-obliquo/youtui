@@ -2184,6 +2184,9 @@ impl Playlist {
                 // Check repeat mode directly for Repeat One.
                 if self.repeat_mode == crate::app::structures::RepeatMode::One {
                     info!("Repeat One: replaying prev track (from Stopped)");
+                    // Ensure fresh scrobble state for repeat
+                    self.scrobble_pending = false;
+                    self.scrobble_state = None;
                     self.play_song_id(prev_id)
                 } else {
                     warn!("Asked to play next, but not currently playing");
@@ -2200,6 +2203,9 @@ impl Playlist {
 
                 if self.repeat_mode == crate::app::structures::RepeatMode::One {
                     info!("Repeat One: replaying current track");
+                    // Ensure fresh scrobble state for repeat
+                    self.scrobble_pending = false;
+                    self.scrobble_state = None;
                     self.play_song_id(*id)
                 } else if let Some(next_song_id) = self.get_next_song_id(*id) {
                     self.autoplay_song_id(next_song_id)
@@ -2218,6 +2224,9 @@ impl Playlist {
                             }
                         }
                         crate::app::structures::RepeatMode::One => {
+                            // Ensure fresh scrobble state for repeat
+                            self.scrobble_pending = false;
+                            self.scrobble_state = None;
                             self.play_song_id(*id)
                         }
                         crate::app::structures::RepeatMode::Off => {
