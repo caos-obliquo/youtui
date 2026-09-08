@@ -67,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Symphonia AAC `check failed` log spam suppressed in F11 view via tui-logger env-filter; RUST_LOG override still works (app.rs)**
 - **Repeat-One scrobble now fires on every replay by resetting scrobble state at the repeat boundary (playlist.rs)**
 - **Stray `eprintln!` debug leftover removed from browser filter handler (browser.rs)**
+- **Scrobble state duration updated from 240s fallback to actual track duration when available (playlist.rs)**
 
 ## [v1.0.3] - 2026-06-27
 

@@ -5,7 +5,7 @@
 - **Liked-songs `/` filter selection mismatch**: Enter/j/k/menu incorrectly targeted the full list instead of the filtered row. Fixed by routing all actions through filtered index mapping (library.rs).
 - **First-entry filter snap bug**: Cursor did not jump to the first matching row when a filter was applied in Liked Songs and Playlists views. Fixed by snapping to first match on filter apply (library.rs, browser.rs).
 - **Symphonia AAC `check failed` log spam**: Flooded the F11 log view. Fixed by suppressing `symphonia*` targets via tui-logger env-filter at init; RUST_LOG override still works (app.rs).
-- **Repeat-One scrobble missing on repeats**: First play scrobbled, repeats did not. Fixed by explicitly resetting scrobble state at the repeat boundary in `autoplay_next_or_stop` (playlist.rs). **UPDATE: User reports still only 3/10+ scrobbles counted - needs further investigation**.
+- **Repeat-One scrobble missing on repeats**: First play scrobbled, repeats did not. Fixed by explicitly resetting scrobble state at the repeat boundary in `autoplay_next_or_stop` (playlist.rs) and updating scrobble state duration from 240s fallback to actual track duration when available (playlist.rs).
 - **Stray `eprintln!` debug output**: Removed from browser filter key handler (browser.rs).
 
 ## Tmux + Sixel Album Art
