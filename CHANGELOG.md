@@ -62,6 +62,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - TestValidateMetadata: removed double-fetch (per-provider loop then `registry.resolve`)
 - Footer album-art flicker: skip sixel redraw when the encoded image is unchanged
 - CI security audit: bump `rkyv` 0.8.16→0.8.18 (clears RUSTSEC-2026-0233/0234/0235); ignore `RUSTSEC-2026-0258` (h2 0.3.27, unfixable without reqwest 0.11→0.12 migration)
+- **Liked-songs `/` filter selection mismatch: Enter/j/k/menu now correctly target the filtered row instead of the full list (library.rs)**
+- **First-entry filter snap: cursor now jumps to the first matching row when a filter is applied in Liked Songs and Playlists views (library.rs, browser.rs)**
+- **Symphonia AAC `check failed` log spam suppressed in F11 view via tui-logger env-filter; RUST_LOG override still works (app.rs)**
+- **Repeat-One scrobble now fires on every replay by resetting scrobble state at the repeat boundary (playlist.rs)**
+- **Stray `eprintln!` debug leftover removed from browser filter handler (browser.rs)**
 
 ## [v1.0.3] - 2026-06-27
 

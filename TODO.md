@@ -63,7 +63,7 @@ Commit rule: one commit per finished item below, small clean diffs. No batching.
 - [x] **Liked-songs `/` filter selection mismatch** - filter display shows filtered rows but Enter/j/k/menu actions index the FULL list (wrong song plays). Mirror the playlist-tracks matching-index pattern in `youtui/src/app/ui/browser/library.rs`.
 - [x] **First-entry bug (liked songs + playlists)** - applying a filter does not snap the cursor to the first filtered row; snap moves relative to the stale cursor. Snap to first matching row on filter apply in both views.
 - [x] **Symphonia AAC log spam** - `check failed` errors flood the F11 log view. Per-target suppression at logger init (`youtui/src/app.rs` `init_tracing`), RUST_LOG-overridable.
-- [ ] **Repeat-One scrobble missing on repeats** - first play scrobbles, repeats do not. Diagnose with runtime log evidence at the repeat transition, then fix.
+- [x] **Repeat-One scrobble missing on repeats** - first play scrobbles, repeats do not. Diagnose with runtime log evidence at the repeat transition, then fix.
 - [x] **Stray `eprintln!` removal** - debug leftover in `youtui/src/app/ui/browser.rs` filter key handler.
 - [ ] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
 

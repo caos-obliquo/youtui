@@ -3418,6 +3418,13 @@ impl Playlist {
         if let Some(song) = self.get_mut_song_from_id(id) {
             if song.start_offset.is_none() || song.actual_duration.is_none() {
                 song.actual_duration = duration;
+                // Update scrobble state duration if it was using the 240s fallback
+                if let (Some(ref mut state), Some(dur)) = (self.scrobble_state.as_mut(), duration) {
+                    if state.duration == Duration::from_secs(240) {
+                        state.duration = dur;
+                        debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
+                    }
+                }
             }
         }
     }
@@ -3434,6 +3441,13 @@ impl Playlist {
         if let Some(song) = self.get_mut_song_from_id(id) {
             if song.start_offset.is_none() || song.actual_duration.is_none() {
                 song.actual_duration = duration;
+                // Update scrobble state duration if it was using the 240s fallback
+                if let (Some(ref mut state), Some(dur)) = (self.scrobble_state.as_mut(), duration) {
+                    if state.duration == Duration::from_secs(240) {
+                        state.duration = dur;
+                        debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
+                    }
+                }
             }
         }
 
