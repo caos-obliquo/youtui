@@ -732,12 +732,20 @@ impl LibraryBrowser {
         if self.category != LibraryCategory::LikedSongs {
             return (AsyncTask::new_no_op(), None);
         }
-        let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
-        let Some(song) = songs.get(self.cur_selected) else {
+        let has_filter = !self.local_filter_text.is_empty();
+        let song = if has_filter {
+            self.get_liked_songs_filtered_iter_with_indices()
+                .nth(self.cur_selected)
+                .map(|(_, s)| s.clone())
+        } else {
+            let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+            songs.get(self.cur_selected).cloned()
+        };
+        let Some(song) = song else {
             return (AsyncTask::new_no_op(), None);
         };
         debug!(title = %song.title, "Library: play selected song");
-        (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song.clone()])))
+        (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylistAndPlay(vec![song])))
     }
 
     pub fn play_all_songs(&self) -> (AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata>, Option<AppCallback>) {
@@ -768,8 +776,16 @@ impl LibraryBrowser {
         if self.category != LibraryCategory::LikedSongs {
             return (AsyncTask::new_no_op(), None);
         }
-        let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
-        let Some(song) = songs.get(self.cur_selected) else {
+        let has_filter = !self.local_filter_text.is_empty();
+        let song = if has_filter {
+            self.get_liked_songs_filtered_iter_with_indices()
+                .nth(self.cur_selected)
+                .map(|(_, s)| s.clone())
+        } else {
+            let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+            songs.get(self.cur_selected).cloned()
+        };
+        let Some(song) = song else {
             return (AsyncTask::new_no_op(), None);
         };
         let artist = song.artists.iter().map(|a| a.name.clone()).collect::<Vec<_>>().join(", ");
@@ -803,6 +819,8 @@ impl LibraryBrowser {
                 } else {
                     self.local_filter_text.clear();
                 }
+                // Snap to first match when filter is applied via F1 search
+                self.snap_to_first_match();
             }
         }
         AsyncTask::new_no_op()
@@ -904,6 +922,21 @@ impl LibraryBrowser {
     fn get_liked_songs_filtered_iter(&self) -> impl Iterator<Item = &ListSong> {
         let ft = &self.local_filter_text;
         self.song_list.get_list_iter().filter(move |ls| {
+            if ft.is_empty() { return true; }
+            let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
+            let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
+            let artist = ls.get_fields([ListSongDisplayableField::Artists]).into_iter().next().unwrap_or_default();
+            fuzzy_match(&ft, &title).is_some()
+                || fuzzy_match(&ft, &album).is_some()
+                || fuzzy_match(&ft, &artist).is_some()
+        })
+    }
+
+    /// Returns filtered liked songs with their original indices in song_list.
+    /// Used to map displayed row index -> original song_list index when filter is active.
+    fn get_liked_songs_filtered_iter_with_indices(&self) -> impl Iterator<Item = (usize, &ListSong)> {
+        let ft = &self.local_filter_text;
+        self.song_list.get_list_iter().enumerate().filter(move |(_, ls)| {
             if ft.is_empty() { return true; }
             let title = ls.get_fields([ListSongDisplayableField::Song]).into_iter().next().unwrap_or_default();
             let album = ls.get_fields([ListSongDisplayableField::Album]).into_iter().next().unwrap_or_default();
@@ -1455,11 +1488,25 @@ impl Scrollable for LibraryBrowser {
             }
             InputRouting::Content => match self.category {
                 LibraryCategory::LikedSongs => {
-                    let max = self.song_list.get_list_iter().count().saturating_sub(1);
-                    self.cur_selected = self
-                        .cur_selected
-                        .saturating_add_signed(amount)
-                        .min(max);
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let max = if has_filter {
+                        self.get_liked_songs_filtered_iter().count().saturating_sub(1)
+                    } else {
+                        self.song_list.get_list_iter().count().saturating_sub(1)
+                    };
+                    if has_filter {
+                        let matching: Vec<usize> = self.get_liked_songs_filtered_iter_with_indices()
+                            .map(|(i, _)| i)
+                            .collect();
+                        self.cur_selected = self.snap_filtered(
+                            self.cur_selected, amount, max, &matching,
+                        );
+                    } else {
+                        self.cur_selected = self
+                            .cur_selected
+                            .saturating_add_signed(amount)
+                            .min(max);
+                    }
                 }
                 LibraryCategory::Playlists => {
                     if self.show_playlist_tracks {
@@ -1533,6 +1580,51 @@ impl LibraryBrowser {
             matching.iter().copied().rev().find(|&i| i <= new_raw).unwrap_or(current)
         }
     }
+
+    /// Snap cursor to the first matching item when filter is applied.
+    /// Called from sync_local_filter (per-keystroke /) and handle_text_entry_action (F1 submit).
+    pub fn snap_to_first_match(&mut self) {
+        if self.local_filter_text.is_empty() {
+            return;
+        }
+        match self.category {
+            LibraryCategory::LikedSongs => {
+                let matching: Vec<usize> = self.get_liked_songs_filtered_iter_with_indices()
+                    .map(|(i, _)| i)
+                    .collect();
+                if !matching.is_empty() {
+                    self.cur_selected = matching[0];
+                }
+            }
+            LibraryCategory::Playlists => {
+                if self.show_playlist_tracks {
+                    let matching: Vec<usize> = self.get_tracks_filtered_list_iter()
+                        .filter_map(|ls| self.playlist_tracks.iter().position(|p| p.video_id == ls.video_id))
+                        .collect();
+                    if !matching.is_empty() {
+                        self.playlist_tracks_selected = matching[0];
+                    }
+                } else {
+                    let matching: Vec<usize> = self.get_playlists_filtered_iter().map(|(i, _)| i).collect();
+                    if !matching.is_empty() {
+                        self.playlist_selected = matching[0];
+                    }
+                }
+            }
+            LibraryCategory::Artists => {
+                let matching: Vec<usize> = self.get_artists_filtered_iter().map(|(i, _)| i).collect();
+                if !matching.is_empty() {
+                    self.artist_selected = matching[0];
+                }
+            }
+            LibraryCategory::Albums => {
+                let matching: Vec<usize> = self.get_albums_filtered_iter().map(|(i, _)| i).collect();
+                if !matching.is_empty() {
+                    self.album_selected = matching[0];
+                }
+            }
+        }
+    }
 }
 
 impl ActionHandler<FilterAction> for LibraryBrowser {
@@ -1594,14 +1686,29 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     return (AsyncTask::new_no_op(), None);
                 }
                 BrowserSongsAction::AddSongToPlaylist => {
-                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
-                    if let Some(song) = songs.get(self.cur_selected) {
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let song = if has_filter {
+                        self.get_liked_songs_filtered_iter_with_indices()
+                            .nth(self.cur_selected)
+                            .map(|(_, s)| s.clone())
+                    } else {
+                        let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                        songs.get(self.cur_selected).cloned()
+                    };
+                    if let Some(song) = song {
                         debug!(title = %song.title, "Library: add song to playlist");
-                        return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(vec![song.clone()])));
+                        return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(vec![song])));
                     }
                 }
                 BrowserSongsAction::AddSongsToPlaylist => {
-                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let songs: Vec<_> = if has_filter {
+                        self.get_liked_songs_filtered_iter_with_indices()
+                            .map(|(_, s)| s.clone())
+                            .collect()
+                    } else {
+                        self.song_list.get_list_iter().cloned().collect()
+                    };
                     debug!(count = %songs.len(), "Library: add all songs to playlist");
                     return (AsyncTask::new_no_op(), Some(AppCallback::AddSongsToPlaylist(songs)));
                 }
@@ -1614,51 +1721,106 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     return (AsyncTask::new_no_op(), None);
                 }
                 BrowserSongsAction::GoToArtist => {
-                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
-                    if let Some(song) = songs.get(self.cur_selected) {
-                        if let Some(cb) = super::shared_components::navigate_to_artist(song) {
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let song = if has_filter {
+                        self.get_liked_songs_filtered_iter_with_indices()
+                            .nth(self.cur_selected)
+                            .map(|(_, s)| s.clone())
+                    } else {
+                        let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                        songs.get(self.cur_selected).cloned()
+                    };
+                    if let Some(song) = song {
+                        if let Some(cb) = super::shared_components::navigate_to_artist(&song) {
                             return (AsyncTask::new_no_op(), Some(cb));
                         }
                     }
                 }
                 BrowserSongsAction::GoToAlbum => {
-                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
-                    if let Some(song) = songs.get(self.cur_selected) {
-                        if let Some(cb) = super::shared_components::navigate_to_album(song) {
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let song = if has_filter {
+                        self.get_liked_songs_filtered_iter_with_indices()
+                            .nth(self.cur_selected)
+                            .map(|(_, s)| s.clone())
+                    } else {
+                        let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                        songs.get(self.cur_selected).cloned()
+                    };
+                    if let Some(song) = song {
+                        if let Some(cb) = super::shared_components::navigate_to_album(&song) {
                             return (AsyncTask::new_no_op(), Some(cb));
                         }
                         warn!("Song has no album data, cannot navigate to album");
                     }
                 }
                 BrowserSongsAction::SaveToExistingPlaylist => {
-                    let video_ids: Vec<_> = self.song_list.get_list_iter()
-                        .map(|s| s.video_id.clone())
-                        .collect();
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let video_ids: Vec<_> = if has_filter {
+                        self.get_liked_songs_filtered_iter_with_indices()
+                            .map(|(_, s)| s.video_id.clone())
+                            .collect()
+                    } else {
+                        self.song_list.get_list_iter()
+                            .map(|s| s.video_id.clone())
+                            .collect()
+                    };
                     if !video_ids.is_empty() {
                         return (AsyncTask::new_no_op(), Some(AppCallback::OpenPlaylistUpdatePopup(video_ids)));
                     }
                 }
                 BrowserSongsAction::InsertNext => {
-                    let songs: Vec<_> = self.song_list.get_list_iter().skip(self.cur_selected).cloned().collect();
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let songs: Vec<_> = if has_filter {
+                        self.get_liked_songs_filtered_iter_with_indices()
+                            .skip(self.cur_selected)
+                            .map(|(_, s)| s.clone())
+                            .collect()
+                    } else {
+                        self.song_list.get_list_iter().skip(self.cur_selected).cloned().collect()
+                    };
                     if !songs.is_empty() {
                         return (AsyncTask::new_no_op(), Some(AppCallback::InsertNext(songs)));
                     }
                 }
                 BrowserSongsAction::QueueSong => {
-                    if let Some(song) = self.song_list.get_list_iter().nth(self.cur_selected) {
-                        return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song.clone()])));
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let song = if has_filter {
+                        self.get_liked_songs_filtered_iter_with_indices()
+                            .nth(self.cur_selected)
+                            .map(|(_, s)| s.clone())
+                    } else {
+                        self.song_list.get_list_iter().nth(self.cur_selected).cloned()
+                    };
+                    if let Some(song) = song {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::QueueSong(vec![song])));
                     }
                 }
                 BrowserSongsAction::GetRelatedTracks => {
-                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
-                    if let Some(song) = songs.get(self.cur_selected) {
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let song = if has_filter {
+                        self.get_liked_songs_filtered_iter_with_indices()
+                            .nth(self.cur_selected)
+                            .map(|(_, s)| s.clone())
+                    } else {
+                        let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                        songs.get(self.cur_selected).cloned()
+                    };
+                    if let Some(song) = song {
                         return (AsyncTask::new_no_op(), Some(AppCallback::GetRelatedTracks(song.video_id.clone())));
                     }
                 }
                 BrowserSongsAction::ViewSongInfo => {
-                    let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
-                    if let Some(song) = songs.get(self.cur_selected) {
-                        return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song: song.clone() }));
+                    let has_filter = !self.local_filter_text.is_empty();
+                    let song = if has_filter {
+                        self.get_liked_songs_filtered_iter_with_indices()
+                            .nth(self.cur_selected)
+                            .map(|(_, s)| s.clone())
+                    } else {
+                        let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
+                        songs.get(self.cur_selected).cloned()
+                    };
+                    if let Some(song) = song {
+                        return (AsyncTask::new_no_op(), Some(AppCallback::ViewSongInfo { song }));
                     }
                 }
                 _ => warn!("Unsupported song action for liked songs: {:?}", action),
