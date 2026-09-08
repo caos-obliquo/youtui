@@ -246,11 +246,11 @@ pub(crate) async fn submit_scrobble_inner(
                 ScrobbleResult::Success
             } else if text.contains("error code=\"29\"") {
                 error!("Scrobble rate limited: {} (artist={}, track={})", text, state.artist, state.track);
-                eprintln!("SCROBBLE_API_RESPONSE={}", text);
+                debug!("SCROBBLE_API_RESPONSE={}", text);
                 ScrobbleResult::RateLimited
             } else {
                 error!("Scrobble failed: {} (artist={}, track={})", text, state.artist, state.track);
-                eprintln!("SCROBBLE_API_RESPONSE={}", text);
+                debug!("SCROBBLE_API_RESPONSE={}", text);
                 ScrobbleResult::Failure
             }
         }

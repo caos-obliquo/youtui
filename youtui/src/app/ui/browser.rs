@@ -695,7 +695,6 @@ impl Browser {
             _ => {
                 self.filter_editor.handle_key(k.code, k.modifiers.contains(crossterm::event::KeyModifiers::SHIFT), false);
                 let text = self.filter_editor.get_text().to_string();
-                eprintln!("FILTER KEY: text='{}'", text);
                 self.library_browser.local_filter_text = text;
                 self.sync_local_filter();
             }

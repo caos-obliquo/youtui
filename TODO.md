@@ -58,6 +58,15 @@
 - **RYM genre dataset 49->2629**: imported `joeseesun/music-genre-finder` (5,947 RYM genres, 49 main + 578 detailed) -> `libs/rym-genre-data/data/rym-genre-descriptions.json` 12KB->494KB, 2,625 unique + 4 slang aliases (Skramz->Screamo, Sasscore->Sass, Mathrock->Math Rock, Warp Metal custom) wired into `rym-hierarchy.txt` (Skramz/Mathrock/Sasscore/Warp Metal ::genre leaves); `test-validate-metadata --rym` now 10/10 hitbox genres with blurbs (was 3/10); `cargo test -p rym-genre-data` 10 pass, `cargo test -p youtui` 194 pass.
 - **Sixel tmux persistence**: EnableFocusChange/DisableFocusChange (?1004h) at init/exit, flush_sixel re-emits popup sixel on FocusGained with rect-tracking guard, 3s keepalive re-arms ?1004h. Requires focus-events on + allow-passthrough on in tmux.conf.
 
+## Active (branch: fix/library-filter-scrobble-logs)
+Commit rule: one commit per finished item below, small clean diffs. No batching.
+- [ ] **Liked-songs `/` filter selection mismatch** - filter display shows filtered rows but Enter/j/k/menu actions index the FULL list (wrong song plays). Mirror the playlist-tracks matching-index pattern in `youtui/src/app/ui/browser/library.rs`.
+- [ ] **First-entry bug (liked songs + playlists)** - applying a filter does not snap the cursor to the first filtered row; snap moves relative to the stale cursor. Snap to first matching row on filter apply in both views.
+- [ ] **Symphonia AAC log spam** - `check failed` errors flood the F11 log view. Per-target suppression at logger init (`youtui/src/app.rs` `init_tracing`), RUST_LOG-overridable.
+- [ ] **Repeat-One scrobble missing on repeats** - first play scrobbles, repeats do not. Diagnose with runtime log evidence at the repeat transition, then fix.
+- [ ] **Stray `eprintln!` removal** - debug leftover in `youtui/src/app/ui/browser.rs` filter key handler.
+- [ ] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
+
 ## Low Priority
 - **Native streaming** - symphonia/basic-tcp-streaming prototype
 - **Artist album pagination** - `ParseFromContinuable` for `GetArtistAlbumsQuery`
