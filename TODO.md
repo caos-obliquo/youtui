@@ -58,14 +58,12 @@
 - **RYM genre dataset 49->2629**: imported `joeseesun/music-genre-finder` (5,947 RYM genres, 49 main + 578 detailed) -> `libs/rym-genre-data/data/rym-genre-descriptions.json` 12KB->494KB, 2,625 unique + 4 slang aliases (Skramz->Screamo, Sasscore->Sass, Mathrock->Math Rock, Warp Metal custom) wired into `rym-hierarchy.txt` (Skramz/Mathrock/Sasscore/Warp Metal ::genre leaves); `test-validate-metadata --rym` now 10/10 hitbox genres with blurbs (was 3/10); `cargo test -p rym-genre-data` 10 pass, `cargo test -p youtui` 194 pass.
 - **Sixel tmux persistence**: EnableFocusChange/DisableFocusChange (?1004h) at init/exit, flush_sixel re-emits popup sixel on FocusGained with rect-tracking guard, 3s keepalive re-arms ?1004h. Requires focus-events on + allow-passthrough on in tmux.conf.
 
-## Active (branch: fix/library-filter-scrobble-logs)
+## Active (branch: fix/log-cli-progress)
 Commit rule: one commit per finished item below, small clean diffs. No batching.
-- [x] **Liked-songs `/` filter selection mismatch** - filter display shows filtered rows but Enter/j/k/menu actions index the FULL list (wrong song plays). Mirror the playlist-tracks matching-index pattern in `youtui/src/app/ui/browser/library.rs`.
-- [x] **First-entry bug (liked songs + playlists)** - applying a filter does not snap the cursor to the first filtered row; snap moves relative to the stale cursor. Snap to first matching row on filter apply in both views.
-- [x] **Symphonia AAC log spam** - `check failed` errors flood the F11 log view. Per-target suppression at logger init (`youtui/src/app.rs` `init_tracing`), RUST_LOG-overridable.
-- [x] **Repeat-One scrobble missing on repeats** - first play scrobbles, repeats do not. Diagnose with runtime log evidence at the repeat transition, then fix.
-- [x] **Stray `eprintln!` removal** - debug leftover in `youtui/src/app/ui/browser.rs` filter key handler.
-- [x] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
+- [ ] **Logger fullscreen layout** - `f` toggles `logger_fullscreen` bool but draw.rs ignores it; logger stays in small list_chunk. Expand logger to full window area when true; ensure j/k/PageUp/PageDown route to logger in fullscreen.
+- [ ] **CLI `youtui log` subcommand** - view logs outside TUI from `get_data_dir()/debug*.log` (same files init_tracing writes). Flags: `--follow`, `--filter <regex>`, `--since <ts|1h|30m>`, `--level <trace|debug|info|warn|error>`, `--json`.
+- [ ] **Progress bar duration sync** - footer shows `00:00/00:00` initially (cur_played_dur + actual_duration None). Set provisional actual_duration in play_song_id/autoplay_song_id from YTM metadata so footer renders real total from frame 1.
+- [ ] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
 
 ## Log Navigation & CLI Access (new - user reported)
 - **Log fullscreen navigation broken**: `h` enters fullscreen logs but `j/k` don't work for scrolling; `h/l` are exclusive for tab navigation only. Need separate key for fullscreen (e.g., `f`). `h/l` should remain tab navigation only.
