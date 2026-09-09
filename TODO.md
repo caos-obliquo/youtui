@@ -65,7 +65,7 @@ Commit rule: one commit per finished item below, small clean diffs. No batching.
 - [x] **Symphonia AAC log spam** - `check failed` errors flood the F11 log view. Per-target suppression at logger init (`youtui/src/app.rs` `init_tracing`), RUST_LOG-overridable.
 - [x] **Repeat-One scrobble missing on repeats** - first play scrobbles, repeats do not. Diagnose with runtime log evidence at the repeat transition, then fix.
 - [x] **Stray `eprintln!` removal** - debug leftover in `youtui/src/app/ui/browser.rs` filter key handler.
-- [ ] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
+- [x] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
 
 ## Log Navigation & CLI Access (new - user reported)
 - **Log fullscreen navigation broken**: `h` enters fullscreen logs but `j/k` don't work for scrolling; `h/l` are exclusive for tab navigation only. Need separate key for fullscreen (e.g., `f`). `h/l` should remain tab navigation only.
