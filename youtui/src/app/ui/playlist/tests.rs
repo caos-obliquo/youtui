@@ -596,6 +596,37 @@ fn non_album_progress_subtracts_offset() {
 }
 
 #[test]
+fn queued_backfills_missing_duration_string() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+
+    let mut song = make_album_original("vx1", None);
+    song.duration_string = String::new();
+    let id = p.list.push_song_list(vec![song]);
+
+    p.handle_queued(Some(Duration::from_secs(77)), id);
+
+    let song = p.get_song_from_id(id).unwrap();
+    assert_eq!(song.actual_duration, Some(Duration::from_secs(77)));
+    assert_eq!(song.duration_string, "01:17");
+}
+
+#[test]
+fn queued_keeps_existing_duration_string() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+
+    let mut song = make_album_original("vx1", None);
+    song.duration_string = "3:45".into();
+    let id = p.list.push_song_list(vec![song]);
+
+    p.handle_queued(Some(Duration::from_secs(77)), id);
+
+    let song = p.get_song_from_id(id).unwrap();
+    assert_eq!(song.duration_string, "3:45");
+}
+
+#[test]
 fn cancel_all_downloads_triggers_tokens() {
     let p = get_dummy_playlist();
     // Register a download task
