@@ -772,6 +772,9 @@ pub async fn command_to_query(
         Command::ScrobbleCache { .. } => {
             anyhow::bail!("ScrobbleCache is a standalone CLI command, not an API query")
         }
+        Command::Log { .. } => {
+            anyhow::bail!("Log is a standalone CLI command, not an API query")
+        }
         Command::TestListenbrainz { .. } => {
             anyhow::bail!("TestListenbrainz is a standalone CLI command, not an API query")
         }

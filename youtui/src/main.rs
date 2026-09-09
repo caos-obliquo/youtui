@@ -443,6 +443,24 @@ enum Command {
         #[arg(long)]
         retry: bool,
     },
+    /// View TUI log files written by init_tracing (same content as the F11 view).
+    Log {
+        /// Follow the latest log file live (like tail -f). Ctrl-C to exit.
+        #[arg(long)]
+        follow: bool,
+        /// Only show lines containing this substring (case-insensitive)
+        #[arg(long)]
+        filter: Option<String>,
+        /// Lowest level to show: trace|debug|info|warn|error
+        #[arg(long)]
+        level: Option<String>,
+        /// Print matching lines as JSON objects instead of raw text
+        #[arg(long)]
+        json: bool,
+        /// Print only the last N matching lines (default 200; ignored with --follow tail start)
+        #[arg(long, default_value_t = 200)]
+        tail: usize,
+    },
     /// Batch-enrich year metadata from file/stdin and persist to SQLite cache.
     /// Input: one line per track, format "Artist | Title" (pipe-separated).
     /// Lines starting with # are skipped as comments.

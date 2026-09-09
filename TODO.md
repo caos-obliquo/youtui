@@ -60,7 +60,7 @@
 
 ## Active (branch: fix/log-cli-progress)
 Commit rule: one commit per finished item below, small clean diffs. No batching.
-- [ ] **Logger fullscreen layout** - `f` toggles `logger_fullscreen` bool but draw.rs ignores it; logger stays in small list_chunk. Expand logger to full window area when true; ensure j/k/PageUp/PageDown route to logger in fullscreen.
+- [x] **Logger fullscreen layout** - `f` toggles `logger_fullscreen` bool but draw.rs ignores it; logger stays in small list_chunk. Expand logger to full window area when true; ensure j/k/PageUp/PageDown route to logger in fullscreen.
 - [ ] **CLI `youtui log` subcommand** - view logs outside TUI from `get_data_dir()/debug*.log` (same files init_tracing writes). Flags: `--follow`, `--filter <regex>`, `--since <ts|1h|30m>`, `--level <trace|debug|info|warn|error>`, `--json`.
 - [ ] **Progress bar duration sync** - footer shows `00:00/00:00` initially (cur_played_dur + actual_duration None). Set provisional actual_duration in play_song_id/autoplay_song_id from YTM metadata so footer renders real total from frame 1.
 - [ ] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
