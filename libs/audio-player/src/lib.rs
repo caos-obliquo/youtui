@@ -420,11 +420,11 @@ where
                             continue;
                         };
                         let cur_pos = sink.get_pos();
-                        // Cap to song duration if known; otherwise allow seeking (rodio handles
-                        // past-end seeks and reports back actual position). Using unwrap_or with
-                        // a very large duration prevents the bug where unknown duration capped
-                        // seeks to 0.
-                        let max_pos = cur_song_duration.unwrap_or(Duration::from_secs(u64::MAX));
+                        // Don't cap seek target at metadata duration — let rodio handle actual
+                        // audio bounds. If metadata is shorter than real audio (common), capping
+                        // would prevent seeking past the wrong duration. Use u64::MAX to allow
+                        // seeking freely; UI progress is capped by actual_duration separately.
+                        let max_pos = Duration::from_secs(u64::MAX);
                         let new_pos = match direction {
                             SeekDirection::Forward => cur_pos.saturating_add(inc).min(max_pos),
                             SeekDirection::Back => cur_pos.saturating_sub(inc).min(max_pos),
