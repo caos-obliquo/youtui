@@ -1136,8 +1136,14 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
         .expect("Expected logger to initialise succesfully");
     // Suppress symphonia AAC 'check failed' spam in F11 log view.
     // Uses env-filter (prefix match) because set_level_for_target is exact-match only.
+    // The trailing bare default (debug/info, matching the init flag) is REQUIRED:
+    // without it the filter defaults unmatched targets to Error and F11 capture dies.
     // RUST_LOG override still works (e.g., RUST_LOG=symphonia_codec_aac=debug).
-    tui_logger::set_env_filter_from_string("symphonia=off,symphonia_codec_aac=off,symphonia_core=off");
+    let default_level = if debug { "debug" } else { "info" };
+    let filter_str = format!(
+        "{default_level},symphonia=off,symphonia_codec_aac=off,symphonia_core=off"
+    );
+    tui_logger::set_env_filter_from_string(&filter_str);
     Ok(())
 }
 
