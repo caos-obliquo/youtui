@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Library cookie auto-recovery via yt-dlp: `auth-refresh` CLI + `rebuild_from_cookie` rebuilds the YTM session from a fresh chromium cookie when the stored cookie expires
 - `get-browse` CLI command wired to ytmapi-rs `BrowseQuery` (raw browse JSON for any browseId)
 - `filter_youtube_cookies` strips foreign cookies before building the hyper header (avoids 64KB header overflow / 431 errors)
+- `youtui log` CLI subcommand: tail/filter/search the `debug*.log` files `init_tracing` writes (`--follow`, `--filter`, `--since`, `--level`, `--json`)
 
 ### Changed
 - Album splitting now only triggers for channel uploads or YTM tracks missing metadata; regular YTM tracks keep their correct structure
@@ -68,6 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Repeat-One scrobble now fires on every replay by resetting scrobble state at the repeat boundary (playlist.rs)**
 - **Stray `eprintln!` debug leftover removed from browser filter handler (browser.rs)**
 - **Scrobble state duration updated from 240s fallback to actual track duration when available (playlist.rs)**
+- **Logger fullscreen (`f`) now expands the log widget to the full window area (draw.rs)**
+- **Footer progress total backfilled from decoded duration when YTM provides none, instead of `00:00` (playlist.rs)**
+- **Songs-search Like column now maps `like_status` from YTM results instead of hardcoding Indifferent (structures.rs)**
 
 ## [v1.0.3] - 2026-06-27
 

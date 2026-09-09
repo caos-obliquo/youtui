@@ -7,6 +7,9 @@
 - **Symphonia AAC `check failed` log spam**: Flooded the F11 log view. Fixed by suppressing `symphonia*` targets via tui-logger env-filter at init; RUST_LOG override still works (app.rs).
 - **Repeat-One scrobble missing on repeats**: First play scrobbled, repeats did not. Fixed by explicitly resetting scrobble state at the repeat boundary in `autoplay_next_or_stop` (playlist.rs) and updating scrobble state duration from 240s fallback to actual track duration when available (playlist.rs).
 - **Stray `eprintln!` debug output**: Removed from browser filter key handler (browser.rs).
+- **Logger fullscreen (`f`) did nothing**: `logger_fullscreen` bool toggled but draw ignored it. Logger now renders over the full window area when set (draw.rs).
+- **Footer progress total `00:00`**: tracks without YTM duration showed `00:00/00:00`. `duration_string` now backfilled from the decoded duration in `handle_queued`/`handle_playing` when empty/zero (playlist.rs).
+- **Songs-search Like column always empty**: `add_raw_search_result_song` dropped `like_status` via `..` and hardcoded Indifferent. Now bound from the YTM result (structures.rs).
 
 ## Tmux + Sixel Album Art
 

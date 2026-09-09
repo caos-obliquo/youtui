@@ -61,14 +61,15 @@
 ## Active (branch: fix/log-cli-progress)
 Commit rule: one commit per finished item below, small clean diffs. No batching.
 - [x] **Logger fullscreen layout** - `f` toggles `logger_fullscreen` bool but draw.rs ignores it; logger stays in small list_chunk. Expand logger to full window area when true; ensure j/k/PageUp/PageDown route to logger in fullscreen.
-- [ ] **CLI `youtui log` subcommand** - view logs outside TUI from `get_data_dir()/debug*.log` (same files init_tracing writes). Flags: `--follow`, `--filter <regex>`, `--since <ts|1h|30m>`, `--level <trace|debug|info|warn|error>`, `--json`.
-- [ ] **Progress bar duration sync** - footer shows `00:00/00:00` initially (cur_played_dur + actual_duration None). Set provisional actual_duration in play_song_id/autoplay_song_id from YTM metadata so footer renders real total from frame 1.
-- [ ] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
+- [x] **CLI `youtui log` subcommand** - view logs outside TUI from `get_data_dir()/debug*.log` (same files init_tracing writes). Flags: `--follow`, `--filter <regex>`, `--since <ts|1h|30m>`, `--level <trace|debug|info|warn|error>`, `--json`.
+- [x] **Progress bar duration sync** - footer shows `00:00/00:00` when YTM gives no duration. `duration_string` backfilled from decoded duration in `handle_queued`/`handle_playing` (guarded: only when empty/zero, split-track durations untouched).
+- [x] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
+- [x] **Songs-search Like column** - Like column empty in Songs tab; `add_raw_search_result_song` dropped `like_status` via `..` and hardcoded Indifferent. Bind it from SearchResultSong.
 
-## Log Navigation & CLI Access (new - user reported)
-- **Log fullscreen navigation broken**: `h` enters fullscreen logs but `j/k` don't work for scrolling; `h/l` are exclusive for tab navigation only. Need separate key for fullscreen (e.g., `f`). `h/l` should remain tab navigation only.
-- **CLI log access**: Add `youtui log` subcommand (or `youtui logs`) to view logs outside TUI — supports `--follow`, `--filter`, `--since`, `--level`, `--json`. Reads from the same log file `init_tracing` writes to (`get_data_dir()/logs/youtui-*.log`).
-- **Progress bar accuracy**: Ensure progress bar matches exact music length and displays correct metadata timestamp. The footer progress bar currently shows `00:00/00:00` initially; verify duration sync from `play_song_id`/`autoplay_song_id` through to `handle_set_song_play_progress` and that track position updates match actual audio playback time.
+## Log Navigation & CLI Access (done - shipped in fix/log-cli-progress)
+- **Log fullscreen navigation**: `f` now expands the logger to the full window; `j/k` scroll (were already bound to Up/Down, now usable with the full area).
+- **CLI log access**: `youtui log` subcommand added - supports `--follow`, `--filter`, `--since`, `--level`, `--json`. Reads the same `get_data_dir()/debug*.log` files `init_tracing` writes.
+- **Progress bar accuracy**: `duration_string` backfilled from decoded duration in `handle_queued`/`handle_playing` when YTM gave none; footer shows the real total instead of `00:00/00:00`.
 
 ## Low Priority
 - **Native streaming** - symphonia/basic-tcp-streaming prototype
