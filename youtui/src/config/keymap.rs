@@ -998,6 +998,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ForceSplitAlbum)),
                     ),
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('c')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ClearDownload)),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('m')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleRomaji)),
                     ),

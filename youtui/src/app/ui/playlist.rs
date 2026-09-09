@@ -209,6 +209,7 @@ pub enum PlaylistAction {
     SortQueueClear,
     ForceSplitAlbum,
     PasteYanked,
+    ClearDownload,
 }
 
 impl Action for PlaylistAction {
@@ -260,6 +261,7 @@ impl Action for PlaylistAction {
             PlaylistAction::SortQueueClear => "Clear Sort",
             PlaylistAction::ForceSplitAlbum => "Force Split Album",
             PlaylistAction::PasteYanked => "Paste Yanked",
+            PlaylistAction::ClearDownload => "Clear Download (force re-download)",
         }
         .into()
     }
@@ -476,6 +478,15 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     self.list.insert_song_list_at(self.yank_buffer.clone(), pos);
                     if self.shuffle_enabled { self.generate_shuffle_indices(); }
                     info!("Pasted {} yanked songs at position {}", self.yank_buffer.len(), pos);
+                }
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::ClearDownload => {
+                if let Some(song) = self.list.get_list_iter_mut().nth(self.cur_selected) {
+                    if matches!(song.download_status, DownloadStatus::Downloaded(_) | DownloadStatus::Downloading(_)) {
+                        song.download_status = DownloadStatus::None;
+                        info!("Cleared download status for {} to force re-download", song.title);
+                    }
                 }
                 (AsyncTask::new_no_op(), None)
             },
