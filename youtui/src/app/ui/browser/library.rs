@@ -947,6 +947,26 @@ impl LibraryBrowser {
         })
     }
 
+    // Cursor holds a raw song_list index everywhere. When a filter is active,
+    // resolve it to the selected song via the matching set. Falls back to the
+    // first match when the cursor is stale (list refreshed under an active filter).
+    fn get_liked_songs_selected_filtered(&self) -> Option<ListSong> {
+        let matching: Vec<(usize, &ListSong)> =
+            self.get_liked_songs_filtered_iter_with_indices().collect();
+        if matching.is_empty() {
+            return None;
+        }
+        let pos = matching.iter().position(|(i, _)| *i == self.cur_selected).unwrap_or(0);
+        Some(matching[pos].1.clone())
+    }
+
+    // Filtered-list position of the raw cursor, for skip-from-cursor actions.
+    fn liked_songs_filtered_cursor_pos(&self) -> usize {
+        self.get_liked_songs_filtered_iter_with_indices()
+            .position(|(i, _)| i == self.cur_selected)
+            .unwrap_or(0)
+    }
+
     fn get_playlists_filtered_iter(&self) -> impl Iterator<Item = (usize, &LibraryPlaylist)> {
         let ft = self.local_filter_text.to_lowercase();
         self.playlist_data.iter().enumerate().filter(move |(_, pl)| {
@@ -1489,19 +1509,18 @@ impl Scrollable for LibraryBrowser {
             InputRouting::Content => match self.category {
                 LibraryCategory::LikedSongs => {
                     let has_filter = !self.local_filter_text.is_empty();
-                    let max = if has_filter {
-                        self.get_liked_songs_filtered_iter().count().saturating_sub(1)
-                    } else {
-                        self.song_list.get_list_iter().count().saturating_sub(1)
-                    };
                     if has_filter {
                         let matching: Vec<usize> = self.get_liked_songs_filtered_iter_with_indices()
                             .map(|(i, _)| i)
                             .collect();
-                        self.cur_selected = self.snap_filtered(
-                            self.cur_selected, amount, max, &matching,
-                        );
+                        if matching.is_empty() {
+                            return;
+                        }
+                        let pos = matching.iter().position(|&i| i == self.cur_selected).unwrap_or(0);
+                        let new_pos = pos.saturating_add_signed(amount).min(matching.len() - 1);
+                        self.cur_selected = matching[new_pos];
                     } else {
+                        let max = self.song_list.get_list_iter().count().saturating_sub(1);
                         self.cur_selected = self
                             .cur_selected
                             .saturating_add_signed(amount)
@@ -1688,9 +1707,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::AddSongToPlaylist => {
                     let has_filter = !self.local_filter_text.is_empty();
                     let song = if has_filter {
-                        self.get_liked_songs_filtered_iter_with_indices()
-                            .nth(self.cur_selected)
-                            .map(|(_, s)| s.clone())
+                        self.get_liked_songs_selected_filtered()
                     } else {
                         let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                         songs.get(self.cur_selected).cloned()
@@ -1723,9 +1740,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::GoToArtist => {
                     let has_filter = !self.local_filter_text.is_empty();
                     let song = if has_filter {
-                        self.get_liked_songs_filtered_iter_with_indices()
-                            .nth(self.cur_selected)
-                            .map(|(_, s)| s.clone())
+                        self.get_liked_songs_selected_filtered()
                     } else {
                         let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                         songs.get(self.cur_selected).cloned()
@@ -1739,9 +1754,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::GoToAlbum => {
                     let has_filter = !self.local_filter_text.is_empty();
                     let song = if has_filter {
-                        self.get_liked_songs_filtered_iter_with_indices()
-                            .nth(self.cur_selected)
-                            .map(|(_, s)| s.clone())
+                        self.get_liked_songs_selected_filtered()
                     } else {
                         let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                         songs.get(self.cur_selected).cloned()
@@ -1772,7 +1785,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                     let has_filter = !self.local_filter_text.is_empty();
                     let songs: Vec<_> = if has_filter {
                         self.get_liked_songs_filtered_iter_with_indices()
-                            .skip(self.cur_selected)
+                            .skip(self.liked_songs_filtered_cursor_pos())
                             .map(|(_, s)| s.clone())
                             .collect()
                     } else {
@@ -1785,9 +1798,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::QueueSong => {
                     let has_filter = !self.local_filter_text.is_empty();
                     let song = if has_filter {
-                        self.get_liked_songs_filtered_iter_with_indices()
-                            .nth(self.cur_selected)
-                            .map(|(_, s)| s.clone())
+                        self.get_liked_songs_selected_filtered()
                     } else {
                         self.song_list.get_list_iter().nth(self.cur_selected).cloned()
                     };
@@ -1798,9 +1809,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::GetRelatedTracks => {
                     let has_filter = !self.local_filter_text.is_empty();
                     let song = if has_filter {
-                        self.get_liked_songs_filtered_iter_with_indices()
-                            .nth(self.cur_selected)
-                            .map(|(_, s)| s.clone())
+                        self.get_liked_songs_selected_filtered()
                     } else {
                         let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                         songs.get(self.cur_selected).cloned()
@@ -1812,9 +1821,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::ViewSongInfo => {
                     let has_filter = !self.local_filter_text.is_empty();
                     let song = if has_filter {
-                        self.get_liked_songs_filtered_iter_with_indices()
-                            .nth(self.cur_selected)
-                            .map(|(_, s)| s.clone())
+                        self.get_liked_songs_selected_filtered()
                     } else {
                         let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                         songs.get(self.cur_selected).cloned()
@@ -2500,5 +2507,72 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0][1], "Chill Vibes");
+    }
+
+    fn make_liked_song(video: &'static str, title: &str, artist: &str) -> ListSong {
+        ListSong {
+            video_id: ytmapi_rs::common::VideoID::from_raw(video),
+            track_no: None,
+            plays: String::new(),
+            title: title.into(),
+            explicit: None,
+            download_status: DownloadStatus::None,
+            id: crate::app::structures::ListSongID(0),
+            duration_string: "3:00".into(),
+            actual_duration: None,
+            start_offset: None,
+            year: None,
+            genres: Vec::new(),
+            styles: Vec::new(),
+            album_art: AlbumArtState::None,
+            artists: MaybeRc::Owned(vec![ListSongArtist { name: artist.into(), id: None }]),
+            thumbnails: MaybeRc::Owned(Vec::new()),
+            album: None,
+            like_status: LikeStatus::Indifferent,
+            is_album_upload: false,
+            release_mbid: None,
+        }
+    }
+
+    fn liked_songs_three() -> LibraryBrowser {
+        let mut lib = LibraryBrowser::new();
+        lib.category = LibraryCategory::LikedSongs;
+        lib.input_routing = InputRouting::Content;
+        lib.song_list.clear();
+        lib.song_list.push_song_list(vec![
+            make_liked_song("vid_dalek", "Spiritual Healing", "dalek"),
+            make_liked_song("vid_phy1", "Slouching Gaits", "Phyllomedusa"),
+            make_liked_song("vid_phy2", "Czar Frogmeister", "Phyllomedusa"),
+        ]);
+        lib
+    }
+
+    #[test]
+    fn liked_songs_filtered_selection_resolves_raw_cursor() {
+        let mut lib = liked_songs_three();
+        lib.local_filter_text = "slouching".into();
+        // Raw cursor on the single match resolves to that song, not full-list row 1 by position.
+        lib.cur_selected = 1;
+        let sel = lib.get_liked_songs_selected_filtered().expect("match resolves");
+        assert_eq!(sel.video_id, ytmapi_rs::common::VideoID::from_raw("vid_phy1"));
+        // Stale raw cursor outside the matching set falls back to first match, never None.
+        lib.cur_selected = 0;
+        let sel = lib.get_liked_songs_selected_filtered().expect("fallback resolves");
+        assert_eq!(sel.video_id, ytmapi_rs::common::VideoID::from_raw("vid_phy1"));
+    }
+
+    #[test]
+    fn liked_songs_increment_stays_inside_matches() {
+        let mut lib = liked_songs_three();
+        lib.local_filter_text = "phyllomedusa".into();
+        lib.cur_selected = 1;
+        lib.increment_list(1);
+        assert_eq!(lib.cur_selected, 2);
+        lib.increment_list(1);
+        assert_eq!(lib.cur_selected, 2);
+        lib.increment_list(-1);
+        assert_eq!(lib.cur_selected, 1);
+        lib.increment_list(-1);
+        assert_eq!(lib.cur_selected, 1);
     }
 }
