@@ -420,19 +420,14 @@ where
                             continue;
                         };
                         let cur_pos = sink.get_pos();
-                        // The `min` is used because Rodio always you to seek past song end when
-                        // paused, and will report back an incorrect
-                        // position for sink.get_pos().
-                        //
-                        // TODO: Report upstream
+                        // Cap to song duration if known; otherwise allow seeking (rodio handles
+                        // past-end seeks and reports back actual position). Using unwrap_or with
+                        // a very large duration prevents the bug where unknown duration capped
+                        // seeks to 0.
+                        let max_pos = cur_song_duration.unwrap_or(Duration::from_secs(u64::MAX));
                         let new_pos = match direction {
-                            SeekDirection::Forward => cur_pos
-                                .saturating_add(inc)
-                                .min(cur_song_duration.unwrap_or_default()),
-
-                            SeekDirection::Back => cur_pos
-                                .saturating_sub(inc)
-                                .min(cur_song_duration.unwrap_or_default()),
+                            SeekDirection::Forward => cur_pos.saturating_add(inc).min(max_pos),
+                            SeekDirection::Back => cur_pos.saturating_sub(inc).min(max_pos),
                         };
                         debug!(
                             "Executing seek request of {inc:?} in direction {direction:?}. \
@@ -459,8 +454,8 @@ where
                         // Rodio always you to seek past song end when paused, and will report back
                         // an incorrect position for sink.get_pos().
                         // TODO: Report upstream
-                        let res =
-                            sink.try_seek(seek_to_pos.min(cur_song_duration.unwrap_or_default()));
+                        let max_pos = cur_song_duration.unwrap_or(Duration::from_secs(u64::MAX));
+                        let res = sink.try_seek(seek_to_pos.min(max_pos));
                         if let Err(e) = res {
                             error!("Failed to seek {:?}", e);
                         }
