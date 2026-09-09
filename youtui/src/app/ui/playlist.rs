@@ -3416,20 +3416,19 @@ impl Playlist {
 
     pub fn handle_queued(&mut self, duration: Option<Duration>, id: ListSongID) {
         if let Some(song) = self.get_mut_song_from_id(id) {
-            if song.start_offset.is_none() || song.actual_duration.is_none() {
-                song.actual_duration = duration;
-                // Backfill duration_string from decoded duration when YTM gave none,
-                // so footer progress bar shows the real total immediately.
-                if let Some(dur) = duration {
-                    if song.duration_string.is_empty()
-                        || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
-                    {
-                        song.duration_string =
-                            super::footer::secs_to_time_string(dur.as_secs() as usize);
-                    }
+            // Always update actual_duration from decoded audio when available.
+            // The metadata duration (YTM duration_seconds) may be shorter than real audio.
+            if let Some(dur) = duration {
+                song.actual_duration = Some(dur);
+                // Backfill duration_string when YTM gave none or zero.
+                if song.duration_string.is_empty()
+                    || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
+                {
+                    song.duration_string =
+                        super::footer::secs_to_time_string(dur.as_secs() as usize);
                 }
                 // Update scrobble state duration if it was using the 240s fallback
-                if let (Some(ref mut state), Some(dur)) = (self.scrobble_state.as_mut(), duration) {
+                if let Some(ref mut state) = self.scrobble_state.as_mut() {
                     if state.duration == Duration::from_secs(240) {
                         state.duration = dur;
                         debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
@@ -3449,20 +3448,19 @@ impl Playlist {
 
     pub fn handle_playing(&mut self, duration: Option<Duration>, id: ListSongID) {
         if let Some(song) = self.get_mut_song_from_id(id) {
-            if song.start_offset.is_none() || song.actual_duration.is_none() {
-                song.actual_duration = duration;
-                // Backfill duration_string from decoded duration when YTM gave none,
-                // so footer progress bar shows the real total immediately.
-                if let Some(dur) = duration {
-                    if song.duration_string.is_empty()
-                        || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
-                    {
-                        song.duration_string =
-                            super::footer::secs_to_time_string(dur.as_secs() as usize);
-                    }
+            // Always update actual_duration from decoded audio when available.
+            // The metadata duration (YTM duration_seconds) may be shorter than real audio.
+            if let Some(dur) = duration {
+                song.actual_duration = Some(dur);
+                // Backfill duration_string when YTM gave none or zero.
+                if song.duration_string.is_empty()
+                    || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
+                {
+                    song.duration_string =
+                        super::footer::secs_to_time_string(dur.as_secs() as usize);
                 }
                 // Update scrobble state duration if it was using the 240s fallback
-                if let (Some(ref mut state), Some(dur)) = (self.scrobble_state.as_mut(), duration) {
+                if let Some(ref mut state) = self.scrobble_state.as_mut() {
                     if state.duration == Duration::from_secs(240) {
                         state.duration = dur;
                         debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
