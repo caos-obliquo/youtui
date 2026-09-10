@@ -10,6 +10,9 @@
 - **Logger fullscreen (`f`) did nothing**: `logger_fullscreen` bool toggled but draw ignored it. Logger now renders over the full window area when set (draw.rs).
 - **Footer progress total `00:00`**: tracks without YTM duration showed `00:00/00:00`. `duration_string` now backfilled from the decoded duration in `handle_queued`/`handle_playing` when empty/zero (playlist.rs).
 - **Songs-search Like column always empty**: `add_raw_search_result_song` dropped `like_status` via `..` and hardcoded Indifferent. Now bound from the YTM result (structures.rs).
+- **Now-playing failures silent**: rejected `track.updateNowPlaying` responses were swallowed with no log. Now logged at error level with status/body excerpt, and the request includes track duration (scrobbler.rs).
+- **Early audio end silent**: tracks ending with played far below expected duration just stopped. `handle_done_playing` now detects it, resets `download_status` so the next play re-downloads, and logs loudly (playlist.rs).
+- **Progress bar froze mid-track**: displayed progress was capped at the decoded duration estimate, which runs short on VBR streams. Progress now tracks the rodio audio position uncapped; footer ratio already clamps 0.0-1.0 (playlist.rs).
 
 ## Tmux + Sixel Album Art
 

@@ -72,6 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Logger fullscreen (`f`) now expands the log widget to the full window area (draw.rs)**
 - **Footer progress total backfilled from decoded duration when YTM provides none, instead of `00:00` (playlist.rs)**
 - **Songs-search Like column now maps `like_status` from YTM results instead of hardcoding Indifferent (structures.rs)**
+- **Now-playing failures no longer silent: rejected `track.updateNowPlaying` responses log at error level, and the request now includes track duration (scrobbler.rs)**
+- **Early audio end detection: tracks ending with played far below expected duration reset `download_status` for re-download and log loudly instead of silently stopping (playlist.rs)**
+- **Progress bar freeze fixed: progress tracks the rodio audio position uncapped instead of clamping at the decoded duration estimate, which runs short on VBR streams (playlist.rs)**
 
 ## [v1.0.3] - 2026-06-27
 
