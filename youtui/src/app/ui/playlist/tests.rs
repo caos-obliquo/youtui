@@ -723,3 +723,49 @@ fn early_audio_end_resets_download_status() {
     let song = p.get_song_from_id(id).unwrap();
     assert!(matches!(song.download_status, DownloadStatus::None));
 }
+
+#[test]
+fn progress_tracks_past_short_actual_duration() {
+    // Creep regression: decoded total_duration estimate (69s) shorter than real
+    // audio (03:59 YTM). Bar froze at 01:09 while audio kept playing because
+    // cur_played_dur was capped at actual_duration. Progress must track audio.
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut song = make_album_original("vx1", None);
+    song.title = "Creep".into();
+    song.duration_string = "03:59".into();
+    song.actual_duration = Some(Duration::from_secs(69));
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+    p.play_status = PlayState::Playing(id);
+
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(60), id);
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(60)));
+
+    // Audio position past the wrong estimate must still advance the display.
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(80), id);
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(80)));
+
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(120), id);
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(120)));
+}
+
+#[test]
+fn progress_advances_normally_with_matching_duration() {
+    // Guard: regular track where decoded duration matches metadata advances 1:1.
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut song = make_album_original("vx1", None);
+    song.duration_string = "03:59".into();
+    song.actual_duration = Some(Duration::from_secs(239));
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+    p.play_status = PlayState::Playing(id);
+
+    for secs in [0, 60, 120, 239] {
+        let _ = p.handle_set_song_play_progress(Duration::from_secs(secs), id);
+        assert_eq!(p.cur_played_dur, Some(Duration::from_secs(secs)));
+    }
+}

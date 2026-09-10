@@ -3277,12 +3277,19 @@ impl Playlist {
             Some(offset) => d.saturating_sub(offset),
             None => d,
         };
-        // Cap at actual_duration so progress never exceeds track boundary
-        let capped = match self.get_cur_playing_song().and_then(|s| s.actual_duration) {
-            Some(max) => track_rel.min(max),
-            None => track_rel,
-        };
-        self.cur_played_dur = Some(capped);
+        // Track rodio audio position directly. Do NOT cap at actual_duration:
+        // decoded total_duration is a byte-len/bitrate estimate that can run
+        // short of real audio (VBR YouTube streams), which froze the bar
+        // while audio kept playing. Footer ratio already clamps to 0.0-1.0.
+        if let Some(max) = self.get_cur_playing_song().and_then(|s| s.actual_duration) {
+            if track_rel > max {
+                debug!(
+                    "Progress {:?} past actual_duration {:?}, tracking audio",
+                    track_rel, max
+                );
+            }
+        }
+        self.cur_played_dur = Some(track_rel);
 
         // Persistent scrobble: check on every progress update regardless of context
         if self.scrobbling_config.enabled && !self.scrobble_pending {
