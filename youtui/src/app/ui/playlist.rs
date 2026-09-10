@@ -1695,7 +1695,8 @@ impl Playlist {
                         let album = self.canonical_album_name.clone()
                             .or_else(|| song.album.as_ref().map(|a| a.name.clone()));
                         let album_artist = song.artists.first().map(|a| a.name.clone());
-                        let state = crate::app::scrobbler::ScrobbleState::new(artist, track_name, album, album_artist, Duration::ZERO);
+                        let dur = song.actual_duration.unwrap_or(std::time::Duration::from_secs(240));
+                        let state = crate::app::scrobbler::ScrobbleState::new(artist, track_name, album, album_artist, dur);
                         let cfg = self.scrobbling_config.clone();
                         tokio::spawn(async move {
                             crate::app::scrobbler::submit_now_playing(&cfg, &state).await;
@@ -3422,7 +3423,45 @@ impl Playlist {
             return AsyncTask::new_no_op();
         }
 
+        self.detect_early_audio_end(id);
         self.autoplay_next_or_stop(id)
+    }
+
+    /// Detect truncated audio when decoder ends far earlier than expected.
+    /// Resets download_status so next play re-downloads fresh bytes.
+    /// No auto-replay here - normal advance/repeat flow continues untouched.
+    fn detect_early_audio_end(&mut self, id: ListSongID) {
+        let played_secs = match self.cur_played_dur {
+            Some(d) => d.as_secs(),
+            None => return,
+        };
+        if played_secs == 0 {
+            return;
+        }
+        let Some(song) = self.get_song_from_id(id) else {
+            return;
+        };
+        if song.track_no.is_some() {
+            return;
+        }
+        let expected_secs = match song.actual_duration {
+            Some(d) => d.as_secs(),
+            None => super::footer::parse_simple_time_to_secs(&song.duration_string) as u64,
+        };
+        if expected_secs < 60 {
+            return;
+        }
+        if played_secs * 2 >= expected_secs {
+            return;
+        }
+        let title = song.title.clone();
+        if let Some(song) = self.get_mut_song_from_id(id) {
+            song.download_status = DownloadStatus::None;
+        }
+        error!(
+            "Early audio end for '{}' - played {}s of {}s expected, cleared download to force re-download",
+            title, played_secs, expected_secs
+        );
     }
 
     pub fn handle_queued(&mut self, duration: Option<Duration>, id: ListSongID) {

@@ -702,3 +702,24 @@ fn album_split_guard_allows_track_without_metadata() {
     assert!(!should_skip_album_split(false, Some(1), false));
     assert!(!should_skip_album_split(false, None, true));
 }
+
+#[test]
+fn early_audio_end_resets_download_status() {
+    // Given: 02:26 track with truncated bytes, decoder ended at 00:42
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1, 2, 3]));
+    let mut song = make_album_original("vx1", None);
+    song.title = "Truncated Song".into();
+    song.duration_string = "02:26".into();
+    song.actual_duration = Some(Duration::from_secs(146));
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+    p.play_status = PlayState::Playing(id);
+    p.cur_played_dur = Some(Duration::from_secs(42));
+    // When: DonePlaying arrives
+    let _ = p.handle_done_playing(id);
+    // Then: download cleared so next play re-downloads fresh bytes
+    let song = p.get_song_from_id(id).unwrap();
+    assert!(matches!(song.download_status, DownloadStatus::None));
+}
