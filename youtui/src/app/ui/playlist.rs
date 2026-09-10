@@ -112,6 +112,9 @@ pub struct Playlist {
     pub scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
     /// Guard: prevents duplicate scrobble submissions from overlapping progress updates
     scrobble_pending: bool,
+    /// Count of progress updates seen for the current play. Gates early-end
+    /// detection so a stalled forwarder can't nuke a healthy download.
+    progress_updates_seen: u64,
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
@@ -961,6 +964,7 @@ impl Playlist {
             search_cur: 0,
             scrobble_state: None,
             scrobble_pending: false,
+            progress_updates_seen: 0,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
             romaji_originals: HashMap::new(),
             album_tracks: None,
@@ -1604,6 +1608,7 @@ impl Playlist {
             self.queue_status = QueueState::NotQueued;
             if self.scrobbling_config.enabled {
                 self.scrobble_pending = false;
+                self.progress_updates_seen = 0;
                 // Keep canonical name when new song has same album (avoids unnecessary re-fetch).
                 // Clear when album changes to prevent stale canonical leaking into wrong scrobble.
                 let keep_canonical = self.get_song_from_idx(song_index)
@@ -1771,6 +1776,7 @@ impl Playlist {
             // Scrobble + album art setup for autoplayed tracks
             if self.scrobbling_config.enabled {
                 self.scrobble_pending = false;
+                self.progress_updates_seen = 0;
                 let keep_canonical = self.get_song_from_idx(song_index)
                     .and_then(|s| s.album.as_ref().map(|a| crate::app::scrobbler::clean_album_for_scrobble(&a.name)))
                     .zip(self.canonical_album_name.as_deref())
@@ -3265,6 +3271,7 @@ impl Playlist {
         if !self.check_id_is_cur(id) {
             return AsyncTask::new_no_op();
         }
+        self.progress_updates_seen = self.progress_updates_seen.saturating_add(1);
 
         let (start_offset, is_album_track) = self.get_song_from_id(id).map(|s| {
             (s.start_offset, s.track_no.is_some())
@@ -3443,6 +3450,12 @@ impl Playlist {
             None => return,
         };
         if played_secs == 0 {
+            return;
+        }
+        // Require a healthy stream of progress updates before trusting the
+        // played figure: a stalled forwarder plus full audio play would
+        // otherwise clear a good download into a re-download loop.
+        if self.progress_updates_seen < 10 {
             return;
         }
         let Some(song) = self.get_song_from_id(id) else {

@@ -373,7 +373,6 @@ pub async fn submit_now_playing(config: &crate::config::ScrobblingConfig, state:
             }
         }
         Err(e) => {
-            debug!("Now playing HTTP error: {}", e);
             warn!("Now playing failed: {} (artist={}, track={})", e, state.artist, state.track);
         }
     }
