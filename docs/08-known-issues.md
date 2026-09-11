@@ -4,7 +4,7 @@
 
 - **Liked-songs `/` filter selection mismatch**: Enter/j/k/menu incorrectly targeted the full list instead of the filtered row. Fixed by routing all actions through filtered index mapping (library.rs).
 - **First-entry filter snap bug**: Cursor did not jump to the first matching row when a filter was applied in Liked Songs and Playlists views. Fixed by snapping to first match on filter apply (library.rs, browser.rs).
-- **Symphonia AAC `check failed` log spam**: Flooded the F11 log view. Fixed by suppressing `symphonia*` targets via tui-logger env-filter at init; RUST_LOG override still works (app.rs).
+- **Symphonia AAC `check failed` log spam**: Flooded the F11 log view. Fixed in three layers: tracing `EnvFilter` directives + tui-logger env-filter with explicit default level + exact-target `Off` table; startup fingerprint line proves a fresh binary (app.rs).
 - **Repeat-One scrobble missing on repeats**: First play scrobbled, repeats did not. Fixed by explicitly resetting scrobble state at the repeat boundary in `autoplay_next_or_stop` (playlist.rs) and updating scrobble state duration from 240s fallback to actual track duration when available (playlist.rs).
 - **Stray `eprintln!` debug output**: Removed from browser filter key handler (browser.rs).
 - **Logger fullscreen (`f`) did nothing**: `logger_fullscreen` bool toggled but draw ignored it. Logger now renders over the full window area when set (draw.rs).
@@ -13,6 +13,10 @@
 - **Now-playing failures silent**: rejected `track.updateNowPlaying` responses were swallowed with no log. Now logged at error level with status/body excerpt, and the request includes track duration (scrobbler.rs).
 - **Early audio end silent**: tracks ending with played far below expected duration just stopped. `handle_done_playing` now detects it, resets `download_status` so the next play re-downloads, and logs loudly (playlist.rs).
 - **Progress bar froze mid-track**: displayed progress was capped at the decoded duration estimate, which runs short on VBR streams. Progress now tracks the rodio audio position uncapped; footer ratio already clamps 0.0-1.0 (playlist.rs).
+- **Seek (`[`/`]`) reset progress to zero or stalled at metadata duration**: audio-player capped seek targets at `unwrap_or_default()` (zero) and at the metadata duration. Seek targets are now uncapped; rodio enforces real audio bounds (audio-player).
+- **Liked-songs filtered Enter dead after typing**: raw cursor fed to filtered `.nth()` returned `None`. Cursor now resolves through the matching set with first-match fallback, and `j/k` move in filtered-position space (library.rs).
+- **Early-end detector false positive**: a stalled progress forwarder on a fully-played file would nuke a healthy download. Detector now requires 10+ observed progress updates before trusting the played figure (playlist.rs).
+- **Truncated downloads cached as good**: stream exhaustion counted as success with no byte check. New `ClearDownload` queue action (`o` menu, `c` key) forces re-download of a suspect track (playlist.rs).
 
 ## Tmux + Sixel Album Art
 

@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `get-browse` CLI command wired to ytmapi-rs `BrowseQuery` (raw browse JSON for any browseId)
 - `filter_youtube_cookies` strips foreign cookies before building the hyper header (avoids 64KB header overflow / 431 errors)
 - `youtui log` CLI subcommand: tail/filter/search the `debug*.log` files `init_tracing` writes (`--follow`, `--filter`, `--since`, `--level`, `--json`)
+- `ClearDownload` queue action (`o` menu, `c` key): force re-download of a cached track, for truncated-download recovery
 
 ### Changed
 - Album splitting now only triggers for channel uploads or YTM tracks missing metadata; regular YTM tracks keep their correct structure
@@ -65,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI security audit: bump `rkyv` 0.8.16→0.8.18 (clears RUSTSEC-2026-0233/0234/0235); ignore `RUSTSEC-2026-0258` (h2 0.3.27, unfixable without reqwest 0.11→0.12 migration)
 - **Liked-songs `/` filter selection mismatch: Enter/j/k/menu now correctly target the filtered row instead of the full list (library.rs)**
 - **First-entry filter snap: cursor now jumps to the first matching row when a filter is applied in Liked Songs and Playlists views (library.rs, browser.rs)**
-- **Symphonia AAC `check failed` log spam suppressed in F11 view via tui-logger env-filter; RUST_LOG override still works (app.rs)**
+- **Symphonia AAC `check failed` log spam suppressed in F11 view via three layers (tracing `EnvFilter` directives + tui-logger env-filter with explicit default level + exact-target `Off` table); startup fingerprint line proves fresh binary (app.rs)**
 - **Repeat-One scrobble now fires on every replay by resetting scrobble state at the repeat boundary (playlist.rs)**
 - **Stray `eprintln!` debug leftover removed from browser filter handler (browser.rs)**
 - **Scrobble state duration updated from 240s fallback to actual track duration when available (playlist.rs)**
@@ -75,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Now-playing failures no longer silent: rejected `track.updateNowPlaying` responses log at error level, and the request now includes track duration (scrobbler.rs)**
 - **Early audio end detection: tracks ending with played far below expected duration reset `download_status` for re-download and log loudly instead of silently stopping (playlist.rs)**
 - **Progress bar freeze fixed: progress tracks the rodio audio position uncapped instead of clamping at the decoded duration estimate, which runs short on VBR streams (playlist.rs)**
+- **Seek (`[`/`]`) no longer resets progress to zero on tracks with unknown duration, and no longer stalls at a short metadata duration (audio-player)**
+- **Liked-songs filtered Enter/j/k fixed for real: cursor resolves through the matching set with first-match fallback, and `j/k` move in filtered-position space (library.rs)**
+- **Early-end detector gated on observed progress updates so a stalled forwarder can no longer nuke a healthy download (playlist.rs)**
 
 ## [v1.0.3] - 2026-06-27
 
