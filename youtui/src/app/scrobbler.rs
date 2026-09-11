@@ -246,11 +246,11 @@ pub(crate) async fn submit_scrobble_inner(
                 ScrobbleResult::Success
             } else if text.contains("error code=\"29\"") {
                 error!("Scrobble rate limited: {} (artist={}, track={})", text, state.artist, state.track);
-                eprintln!("SCROBBLE_API_RESPONSE={}", text);
+                debug!("SCROBBLE_API_RESPONSE={}", text);
                 ScrobbleResult::RateLimited
             } else {
                 error!("Scrobble failed: {} (artist={}, track={})", text, state.artist, state.track);
-                eprintln!("SCROBBLE_API_RESPONSE={}", text);
+                debug!("SCROBBLE_API_RESPONSE={}", text);
                 ScrobbleResult::Failure
             }
         }
@@ -352,6 +352,7 @@ pub async fn submit_now_playing(config: &crate::config::ScrobblingConfig, state:
     if let Some(ref album_artist) = state.album_artist {
         params.push(("albumArtist".into(), album_artist.clone()));
     }
+    params.push(("duration".into(), state.duration.as_secs().to_string()));
     params.sort_by(|a, b| a.0.cmp(&b.0));
     let api_sig = crate::config::sign_lastfm(&params, &config.api_secret);
     params.push(("api_sig".into(), api_sig));
@@ -362,12 +363,18 @@ pub async fn submit_now_playing(config: &crate::config::ScrobblingConfig, state:
         .await
     {
         Ok(resp) => {
+            let status = resp.status();
             let text = resp.text().await.unwrap_or_default();
             if text.contains("<lfm status=\"ok\">") {
                 info!("Now playing: {} - {}", state.artist, state.track);
+            } else {
+                let excerpt: String = text.chars().take(300).collect();
+                error!("Now playing rejected ({}): {} (artist={}, track={})", status, excerpt, state.artist, state.track);
             }
         }
-        Err(e) => debug!("Now playing HTTP error: {}", e),
+        Err(e) => {
+            warn!("Now playing failed: {} (artist={}, track={})", e, state.artist, state.track);
+        }
     }
 }
 

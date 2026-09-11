@@ -92,6 +92,13 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         return;
     }
 
+    // Logger fullscreen (f): take the whole screen, skip header/footer/nav.
+    if matches!(w.context, WindowContext::Logs) && w.logger_fullscreen {
+        let context_selected = !w.help.shown && !w.key_pending();
+        w.logger.draw_chunk(f, f.area(), context_selected);
+        return;
+    }
+
     let [header_chunk, window_chunk, footer_chunk] = Layout::default()
         .direction(Direction::Vertical)
         .margin(0)

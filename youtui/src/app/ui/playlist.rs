@@ -112,6 +112,9 @@ pub struct Playlist {
     pub scrobble_state: Option<crate::app::scrobbler::ScrobbleState>,
     /// Guard: prevents duplicate scrobble submissions from overlapping progress updates
     scrobble_pending: bool,
+    /// Count of progress updates seen for the current play. Gates early-end
+    /// detection so a stalled forwarder can't nuke a healthy download.
+    progress_updates_seen: u64,
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
@@ -209,6 +212,7 @@ pub enum PlaylistAction {
     SortQueueClear,
     ForceSplitAlbum,
     PasteYanked,
+    ClearDownload,
 }
 
 impl Action for PlaylistAction {
@@ -260,6 +264,7 @@ impl Action for PlaylistAction {
             PlaylistAction::SortQueueClear => "Clear Sort",
             PlaylistAction::ForceSplitAlbum => "Force Split Album",
             PlaylistAction::PasteYanked => "Paste Yanked",
+            PlaylistAction::ClearDownload => "Clear Download (force re-download)",
         }
         .into()
     }
@@ -476,6 +481,15 @@ impl ActionHandler<PlaylistAction> for Playlist {
                     self.list.insert_song_list_at(self.yank_buffer.clone(), pos);
                     if self.shuffle_enabled { self.generate_shuffle_indices(); }
                     info!("Pasted {} yanked songs at position {}", self.yank_buffer.len(), pos);
+                }
+                (AsyncTask::new_no_op(), None)
+            },
+            PlaylistAction::ClearDownload => {
+                if let Some(song) = self.list.get_list_iter_mut().nth(self.cur_selected) {
+                    if matches!(song.download_status, DownloadStatus::Downloaded(_) | DownloadStatus::Downloading(_)) {
+                        song.download_status = DownloadStatus::None;
+                        info!("Cleared download status for {} to force re-download", song.title);
+                    }
                 }
                 (AsyncTask::new_no_op(), None)
             },
@@ -950,6 +964,7 @@ impl Playlist {
             search_cur: 0,
             scrobble_state: None,
             scrobble_pending: false,
+            progress_updates_seen: 0,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
             romaji_originals: HashMap::new(),
             album_tracks: None,
@@ -1593,6 +1608,7 @@ impl Playlist {
             self.queue_status = QueueState::NotQueued;
             if self.scrobbling_config.enabled {
                 self.scrobble_pending = false;
+                self.progress_updates_seen = 0;
                 // Keep canonical name when new song has same album (avoids unnecessary re-fetch).
                 // Clear when album changes to prevent stale canonical leaking into wrong scrobble.
                 let keep_canonical = self.get_song_from_idx(song_index)
@@ -1684,7 +1700,8 @@ impl Playlist {
                         let album = self.canonical_album_name.clone()
                             .or_else(|| song.album.as_ref().map(|a| a.name.clone()));
                         let album_artist = song.artists.first().map(|a| a.name.clone());
-                        let state = crate::app::scrobbler::ScrobbleState::new(artist, track_name, album, album_artist, Duration::ZERO);
+                        let dur = song.actual_duration.unwrap_or(std::time::Duration::from_secs(240));
+                        let state = crate::app::scrobbler::ScrobbleState::new(artist, track_name, album, album_artist, dur);
                         let cfg = self.scrobbling_config.clone();
                         tokio::spawn(async move {
                             crate::app::scrobbler::submit_now_playing(&cfg, &state).await;
@@ -1759,6 +1776,7 @@ impl Playlist {
             // Scrobble + album art setup for autoplayed tracks
             if self.scrobbling_config.enabled {
                 self.scrobble_pending = false;
+                self.progress_updates_seen = 0;
                 let keep_canonical = self.get_song_from_idx(song_index)
                     .and_then(|s| s.album.as_ref().map(|a| crate::app::scrobbler::clean_album_for_scrobble(&a.name)))
                     .zip(self.canonical_album_name.as_deref())
@@ -2184,6 +2202,9 @@ impl Playlist {
                 // Check repeat mode directly for Repeat One.
                 if self.repeat_mode == crate::app::structures::RepeatMode::One {
                     info!("Repeat One: replaying prev track (from Stopped)");
+                    // Ensure fresh scrobble state for repeat
+                    self.scrobble_pending = false;
+                    self.scrobble_state = None;
                     self.play_song_id(prev_id)
                 } else {
                     warn!("Asked to play next, but not currently playing");
@@ -2200,6 +2221,9 @@ impl Playlist {
 
                 if self.repeat_mode == crate::app::structures::RepeatMode::One {
                     info!("Repeat One: replaying current track");
+                    // Ensure fresh scrobble state for repeat
+                    self.scrobble_pending = false;
+                    self.scrobble_state = None;
                     self.play_song_id(*id)
                 } else if let Some(next_song_id) = self.get_next_song_id(*id) {
                     self.autoplay_song_id(next_song_id)
@@ -2218,6 +2242,9 @@ impl Playlist {
                             }
                         }
                         crate::app::structures::RepeatMode::One => {
+                            // Ensure fresh scrobble state for repeat
+                            self.scrobble_pending = false;
+                            self.scrobble_state = None;
                             self.play_song_id(*id)
                         }
                         crate::app::structures::RepeatMode::Off => {
@@ -3244,6 +3271,7 @@ impl Playlist {
         if !self.check_id_is_cur(id) {
             return AsyncTask::new_no_op();
         }
+        self.progress_updates_seen = self.progress_updates_seen.saturating_add(1);
 
         let (start_offset, is_album_track) = self.get_song_from_id(id).map(|s| {
             (s.start_offset, s.track_no.is_some())
@@ -3256,12 +3284,19 @@ impl Playlist {
             Some(offset) => d.saturating_sub(offset),
             None => d,
         };
-        // Cap at actual_duration so progress never exceeds track boundary
-        let capped = match self.get_cur_playing_song().and_then(|s| s.actual_duration) {
-            Some(max) => track_rel.min(max),
-            None => track_rel,
-        };
-        self.cur_played_dur = Some(capped);
+        // Track rodio audio position directly. Do NOT cap at actual_duration:
+        // decoded total_duration is a byte-len/bitrate estimate that can run
+        // short of real audio (VBR YouTube streams), which froze the bar
+        // while audio kept playing. Footer ratio already clamps to 0.0-1.0.
+        if let Some(max) = self.get_cur_playing_song().and_then(|s| s.actual_duration) {
+            if track_rel > max {
+                debug!(
+                    "Progress {:?} past actual_duration {:?}, tracking audio",
+                    track_rel, max
+                );
+            }
+        }
+        self.cur_played_dur = Some(track_rel);
 
         // Persistent scrobble: check on every progress update regardless of context
         if self.scrobbling_config.enabled && !self.scrobble_pending {
@@ -3402,13 +3437,73 @@ impl Playlist {
             return AsyncTask::new_no_op();
         }
 
+        self.detect_early_audio_end(id);
         self.autoplay_next_or_stop(id)
+    }
+
+    /// Detect truncated audio when decoder ends far earlier than expected.
+    /// Resets download_status so next play re-downloads fresh bytes.
+    /// No auto-replay here - normal advance/repeat flow continues untouched.
+    fn detect_early_audio_end(&mut self, id: ListSongID) {
+        let played_secs = match self.cur_played_dur {
+            Some(d) => d.as_secs(),
+            None => return,
+        };
+        if played_secs == 0 {
+            return;
+        }
+        // Require a healthy stream of progress updates before trusting the
+        // played figure: a stalled forwarder plus full audio play would
+        // otherwise clear a good download into a re-download loop.
+        if self.progress_updates_seen < 10 {
+            return;
+        }
+        let Some(song) = self.get_song_from_id(id) else {
+            return;
+        };
+        if song.track_no.is_some() {
+            return;
+        }
+        let expected_secs = match song.actual_duration {
+            Some(d) => d.as_secs(),
+            None => super::footer::parse_simple_time_to_secs(&song.duration_string) as u64,
+        };
+        if expected_secs < 60 {
+            return;
+        }
+        if played_secs * 2 >= expected_secs {
+            return;
+        }
+        let title = song.title.clone();
+        if let Some(song) = self.get_mut_song_from_id(id) {
+            song.download_status = DownloadStatus::None;
+        }
+        error!(
+            "Early audio end for '{}' - played {}s of {}s expected, cleared download to force re-download",
+            title, played_secs, expected_secs
+        );
     }
 
     pub fn handle_queued(&mut self, duration: Option<Duration>, id: ListSongID) {
         if let Some(song) = self.get_mut_song_from_id(id) {
-            if song.start_offset.is_none() || song.actual_duration.is_none() {
-                song.actual_duration = duration;
+            // Always update actual_duration from decoded audio when available.
+            // The metadata duration (YTM duration_seconds) may be shorter than real audio.
+            if let Some(dur) = duration {
+                song.actual_duration = Some(dur);
+                // Backfill duration_string when YTM gave none or zero.
+                if song.duration_string.is_empty()
+                    || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
+                {
+                    song.duration_string =
+                        super::footer::secs_to_time_string(dur.as_secs() as usize);
+                }
+                // Update scrobble state duration if it was using the 240s fallback
+                if let Some(ref mut state) = self.scrobble_state.as_mut() {
+                    if state.duration == Duration::from_secs(240) {
+                        state.duration = dur;
+                        debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
+                    }
+                }
             }
         }
     }
@@ -3423,8 +3518,24 @@ impl Playlist {
 
     pub fn handle_playing(&mut self, duration: Option<Duration>, id: ListSongID) {
         if let Some(song) = self.get_mut_song_from_id(id) {
-            if song.start_offset.is_none() || song.actual_duration.is_none() {
-                song.actual_duration = duration;
+            // Always update actual_duration from decoded audio when available.
+            // The metadata duration (YTM duration_seconds) may be shorter than real audio.
+            if let Some(dur) = duration {
+                song.actual_duration = Some(dur);
+                // Backfill duration_string when YTM gave none or zero.
+                if song.duration_string.is_empty()
+                    || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
+                {
+                    song.duration_string =
+                        super::footer::secs_to_time_string(dur.as_secs() as usize);
+                }
+                // Update scrobble state duration if it was using the 240s fallback
+                if let Some(ref mut state) = self.scrobble_state.as_mut() {
+                    if state.duration == Duration::from_secs(240) {
+                        state.duration = dur;
+                        debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
+                    }
+                }
             }
         }
 

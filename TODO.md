@@ -58,6 +58,19 @@
 - **RYM genre dataset 49->2629**: imported `joeseesun/music-genre-finder` (5,947 RYM genres, 49 main + 578 detailed) -> `libs/rym-genre-data/data/rym-genre-descriptions.json` 12KB->494KB, 2,625 unique + 4 slang aliases (Skramz->Screamo, Sasscore->Sass, Mathrock->Math Rock, Warp Metal custom) wired into `rym-hierarchy.txt` (Skramz/Mathrock/Sasscore/Warp Metal ::genre leaves); `test-validate-metadata --rym` now 10/10 hitbox genres with blurbs (was 3/10); `cargo test -p rym-genre-data` 10 pass, `cargo test -p youtui` 194 pass.
 - **Sixel tmux persistence**: EnableFocusChange/DisableFocusChange (?1004h) at init/exit, flush_sixel re-emits popup sixel on FocusGained with rect-tracking guard, 3s keepalive re-arms ?1004h. Requires focus-events on + allow-passthrough on in tmux.conf.
 
+## Active (branch: fix/log-cli-progress)
+Commit rule: one commit per finished item below, small clean diffs. No batching.
+- [x] **Logger fullscreen layout** - `f` toggles `logger_fullscreen` bool but draw.rs ignores it; logger stays in small list_chunk. Expand logger to full window area when true; ensure j/k/PageUp/PageDown route to logger in fullscreen.
+- [x] **CLI `youtui log` subcommand** - view logs outside TUI from `get_data_dir()/debug*.log` (same files init_tracing writes). Flags: `--follow`, `--filter <regex>`, `--since <ts|1h|30m>`, `--level <trace|debug|info|warn|error>`, `--json`.
+- [x] **Progress bar duration sync** - footer shows `00:00/00:00` when YTM gives no duration. `duration_string` backfilled from decoded duration in `handle_queued`/`handle_playing` (guarded: only when empty/zero, split-track durations untouched).
+- [x] **CHANGELOG + docs cross-check** - Unreleased section + `docs/08-known-issues.md` updated per finished item, cross-referenced.
+- [x] **Songs-search Like column** - Like column empty in Songs tab; `add_raw_search_result_song` dropped `like_status` via `..` and hardcoded Indifferent. Bind it from SearchResultSong.
+
+## Log Navigation & CLI Access (done - shipped in fix/log-cli-progress)
+- **Log fullscreen navigation**: `f` now expands the logger to the full window; `j/k` scroll (were already bound to Up/Down, now usable with the full area).
+- **CLI log access**: `youtui log` subcommand added - supports `--follow`, `--filter`, `--since`, `--level`, `--json`. Reads the same `get_data_dir()/debug*.log` files `init_tracing` writes.
+- **Progress bar accuracy**: `duration_string` backfilled from decoded duration in `handle_queued`/`handle_playing` when YTM gave none; footer shows the real total instead of `00:00/00:00`.
+
 ## Low Priority
 - **Native streaming** - symphonia/basic-tcp-streaming prototype
 - **Artist album pagination** - `ParseFromContinuable` for `GetArtistAlbumsQuery`

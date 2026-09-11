@@ -1107,7 +1107,13 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
         )
         .add_directive(
             format!("metadata_provider={}", tracing_log_level).parse().unwrap(),
-        );
+        )
+        // Layer 1: drop symphonia records at the tracing layer (directives are
+        // prefix-matched). Deterministic: pinned off, RUST_LOG cannot re-enable
+        // symphonia* (it still controls every other target).
+        .add_directive("symphonia=off".parse().unwrap())
+        .add_directive("symphonia_codec_aac=off".parse().unwrap())
+        .add_directive("symphonia_core=off".parse().unwrap());
     if logging {
         let (log_file, log_file_name) = get_limited_sequential_file(
             &get_data_dir()?,
@@ -1134,6 +1140,29 @@ async fn init_tracing(debug: bool, logging: bool) -> Result<()> {
     }
     tui_logger::init_logger(tui_logger_log_level)
         .expect("Expected logger to initialise succesfully");
+    // Suppress symphonia AAC 'check failed' spam in F11 log view.
+    // Uses env-filter (prefix match) because set_level_for_target is exact-match only.
+    // The trailing bare default (debug/info, matching the init flag) is REQUIRED:
+    // without it the filter defaults unmatched targets to Error and F11 capture dies.
+    // RUST_LOG override still works (e.g., RUST_LOG=symphonia_codec_aac=debug).
+    let default_level = if debug { "debug" } else { "info" };
+    let filter_str = format!(
+        "{default_level},symphonia=off,symphonia_codec_aac=off,symphonia_core=off"
+    );
+    tui_logger::set_env_filter_from_string(&filter_str);
+    // Layer 2: exact-target kill-switch. The hashtable lookup hashes the full target
+    // string, so only verbatim module paths match; symphonia_codec_aac::aac is the
+    // exact target observed in the wild (mod.rs:311 validate! failures).
+    for target in [
+        "symphonia_codec_aac::aac",
+        "symphonia_codec_aac",
+        "symphonia_core",
+        "symphonia",
+    ] {
+        tui_logger::set_level_for_target(target, tui_logger::LevelFilter::Off);
+    }
+    // Startup fingerprint: proves a fresh binary is running and suppression applied.
+    info!("Log suppression active for symphonia* targets in F11 view.");
     Ok(())
 }
 

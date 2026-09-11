@@ -627,9 +627,9 @@ fn clean_channel_album_name(name: &str) -> String {
             explicit,
             video_id,
             thumbnails,
+            like_status,
             ..
         } = song;
-        let like_status = LikeStatus::Indifferent;
         self.list.push(ListSong {
             download_status: DownloadStatus::None,
             id,

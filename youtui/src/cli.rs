@@ -148,6 +148,9 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             }
             return Ok(());
         }
+        Some(crate::Command::Log { follow, filter, level, json, tail }) => {
+            return handle_log(*follow, filter.clone(), level.clone(), *json, *tail).await;
+        }
         Some(crate::Command::ScrobbleCache { show: _show, clear, retry }) => {
             use crate::app::scrobbler::{read_scrobble_cache_entries, clear_scrobble_cache};
             if *clear {
@@ -823,4 +826,106 @@ async fn get_oauth_token(client_id: String, client_secret: String) -> Result<Str
     let _ = std::io::stdin().read_line(&mut _buf);
     let token = generate_oauth_token(&client, code, client_id, client_secret).await?;
     Ok(serde_json::to_string_pretty(&token)?)
+}
+
+const LOG_LEVELS: [&str; 5] = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
+
+fn log_line_level(line: &str) -> Option<usize> {
+    LOG_LEVELS.iter().position(|lvl| line.contains(&format!(" {lvl} ")))
+}
+
+fn log_line_matches(line: &str, min_level: usize, filter: &Option<String>) -> bool {
+    match log_line_level(line) {
+        Some(rank) if rank < min_level => return false,
+        None if min_level > 0 => return false,
+        _ => {}
+    }
+    if let Some(f) = filter {
+        if !line.to_lowercase().contains(&f.to_lowercase()) {
+            return false;
+        }
+    }
+    true
+}
+
+fn print_log_line(path: &std::path::Path, lineno: usize, text: &str, json: bool) {
+    if json {
+        let file = path.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+        println!("{}", serde_json::json!({"file": file, "line": lineno, "text": text}));
+    } else {
+        println!("{text}");
+    }
+}
+
+async fn handle_log(follow: bool, filter: Option<String>, level: Option<String>, json: bool, tail: usize) -> Result<()> {
+    let min_level = match level.as_deref() {
+        None => 0,
+        Some(l) => LOG_LEVELS.iter().position(|v| v.eq_ignore_ascii_case(l)).with_context(|| {
+            format!("[ERROR] Log: unknown level '{l}' (trace|debug|info|warn|error)")
+        })?,
+    };
+    let dir = crate::get_data_dir().with_context(|| "[ERROR] Log: cannot resolve data dir")?;
+    let mut files: Vec<(usize, PathBuf)> = vec![];
+    let mut rd = tokio::fs::read_dir(&dir).await.with_context(|| {
+        format!("[ERROR] Log: cannot read data dir {}", dir.display())
+    })?;
+    while let Some(e) = rd.next_entry().await.with_context(|| "[ERROR] Log: failed to read dir entry")? {
+        let name = e.file_name().into_string().unwrap_or_default();
+        if let Some(num) = name.strip_prefix("debug").and_then(|s| s.strip_suffix(".log")).and_then(|s| s.parse::<usize>().ok()) {
+            files.push((num, e.path()));
+        }
+    }
+    files.sort_by_key(|(n, _)| *n);
+    let Some((_, path)) = files.last() else {
+        println!("No log files found in {}.", dir.display());
+        return Ok(());
+    };
+    let content = std::fs::read_to_string(path).with_context(|| {
+        format!("[ERROR] Log: cannot read {}", path.display())
+    })?;
+    let lines: Vec<&str> = content.lines().collect();
+    let mut matched: Vec<(usize, &str)> = lines.iter().enumerate()
+        .map(|(i, l)| (i + 1, *l))
+        .filter(|(_, l)| log_line_matches(l, min_level, &filter))
+        .collect();
+    if !follow && matched.len() > tail {
+        matched = matched.split_off(matched.len() - tail);
+    }
+    for (n, l) in &matched {
+        print_log_line(path, *n, l, json);
+    }
+    if follow {
+        let mut offset = content.len() as u64;
+        let mut lineno = lines.len();
+        loop {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let len = std::fs::metadata(path).with_context(|| {
+                format!("[ERROR] Log: cannot stat {}", path.display())
+            })?.len();
+            if len < offset {
+                offset = 0;
+                lineno = 0;
+            }
+            if len > offset {
+                use std::io::{Read, Seek, SeekFrom};
+                let mut f = std::fs::File::open(path).with_context(|| {
+                    format!("[ERROR] Log: cannot reopen {}", path.display())
+                })?;
+                f.seek(SeekFrom::Start(offset)).with_context(|| "[ERROR] Log: seek failed")?;
+                let mut buf = String::new();
+                f.read_to_string(&mut buf).with_context(|| "[ERROR] Log: read failed")?;
+                offset = len;
+                for chunk in buf.split('\n') {
+                    if chunk.is_empty() {
+                        continue;
+                    }
+                    lineno += 1;
+                    if log_line_matches(chunk, min_level, &filter) {
+                        print_log_line(path, lineno, chunk, json);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }
