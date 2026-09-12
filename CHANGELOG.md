@@ -79,6 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Seek (`[`/`]`) no longer resets progress to zero on tracks with unknown duration, and no longer stalls at a short metadata duration (audio-player)**
 - **Liked-songs filtered Enter/j/k fixed for real: cursor resolves through the matching set with first-match fallback, and `j/k` move in filtered-position space (library.rs)**
 - **Early-end detector gated on observed progress updates so a stalled forwarder can no longer nuke a healthy download (playlist.rs)**
+- **Seek uncaps past metadata duration: progress follows rodio position without clamping at short estimate (audio-player)**
+- **Liked-songs cursor resolver: Enter/j/k resolve through filtered match set with first-match fallback (library.rs)**
+- **Early-end detector 10+ progress-updates guard: stalled forwarder cannot nuke a healthy download (playlist.rs)**
+- **New ClearDownload queue action: o-menu c force re-downloads cached track for truncated-download recovery (playlist.rs)**
+- **AudioQuality dead plumbing removal: enum + downloader plumbing + SetBestQuality binding removed (structures.rs, playlist.rs, keymap.rs)**
 
 ## [v1.0.3] - 2026-06-27
 
