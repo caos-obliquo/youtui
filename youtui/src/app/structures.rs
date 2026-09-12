@@ -262,15 +262,6 @@ pub enum PlayState {
     Buffering(ListSongID),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
-pub enum AudioQuality {
-    #[default]
-    Best,
-    High,
-    Medium,
-    Low,
-}
-
 impl PlayState {
     pub fn list_icon(&self) -> char {
         match self {
