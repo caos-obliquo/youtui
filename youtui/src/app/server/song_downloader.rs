@@ -1,7 +1,6 @@
 use super::{AUDIO_QUALITY, DL_CALLBACK_CHUNK_SIZE};
 use crate::app::CALLBACK_CHANNEL_SIZE;
 use crate::app::server::MAX_RETRIES;
-use crate::app::AudioQuality;
 use crate::app::structures::{ListSongID, Percentage};
 use crate::config::{Config, DownloaderType};
 use crate::core::send_or_error;
@@ -128,8 +127,8 @@ impl SongDownloader {
                     "Initiating yt-dlp downloader using yt-dlp path `{}`",
                     config.yt_dlp_command
                 );
-                let downloader = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone(), AudioQuality::default());
-                let downloader_clone = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone(), AudioQuality::default());
+                let downloader = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone());
+                let downloader_clone = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone());
                 tokio::task::spawn(async {
                     let output = downloader_clone.get_version().await;
                     match output {
@@ -148,7 +147,6 @@ impl SongDownloader {
         song_video_id: VideoID<'static>,
         song_playlist_id: ListSongID,
         cancel_token: Option<Arc<tokio_util::sync::CancellationToken>>,
-        audio_quality: AudioQuality,
     ) -> impl Stream<Item = DownloadProgressUpdate> + use<> {
         match self {
             SongDownloader::YtDlp(yt_dlp_downloader) => {
@@ -157,7 +155,6 @@ impl SongDownloader {
                     song_video_id,
                     song_playlist_id,
                     cancel_token,
-                    audio_quality,
                 ))
             }
             SongDownloader::Native(native_youtube_downloader) => {
@@ -166,7 +163,6 @@ impl SongDownloader {
                     song_video_id,
                     song_playlist_id,
                     cancel_token,
-                    audio_quality,
                 ))
             }
         }
@@ -178,7 +174,6 @@ fn download_song_using_downloader<T>(
     song_video_id: VideoID<'static>,
     song_playlist_id: ListSongID,
     cancel_token: Option<Arc<tokio_util::sync::CancellationToken>>,
-    audio_quality: AudioQuality,
 ) -> impl Stream<Item = DownloadProgressUpdate>
 where
     T: YoutubeMusicDownloader + Send + Sync + 'static,
@@ -213,12 +208,10 @@ where
         
         let song_download = || {
             let _tx = tx.clone();
-        let audio_quality = audio_quality;
             // No progress callback - icons handle the status entirely
             download_song_with_progress_update_callback(
                 &downloader,
                 song_video_id.clone(),
-                audio_quality,
                 move |_| async move { /* No-op - status shown via icons */ },
             )
         };
@@ -308,7 +301,6 @@ where
 async fn download_song_with_progress_update_callback<T, Fut>(
     downloader: &T,
     song_video_id: VideoID<'static>,
-    audio_quality: AudioQuality,
     _run_on_progress_interval: impl Fn(Percentage) -> Fut + Send + Sync,
 ) -> Result<InMemSong, T::Error>
 where
@@ -317,7 +309,7 @@ where
     T::Error: std::fmt::Display + Send,
 {
     let song_video_id = song_video_id.get_raw();
-    let stream_future = downloader.stream_song(song_video_id, audio_quality);
+    let stream_future = downloader.stream_song(song_video_id);
     let YoutubeMusicDownload {
         total_size_bytes,
         song: stream,

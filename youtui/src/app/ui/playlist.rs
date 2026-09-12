@@ -2394,7 +2394,7 @@ impl Playlist {
         debug!("download_song: starting download for {}", video_id);
 
         let effect = AsyncTask::new_stream(
-            DownloadSong(song.video_id.clone(), id, cancel_token.clone(), self.audio_quality),
+            DownloadSong(song.video_id.clone(), id, cancel_token.clone()),
             HandleSongDownloadProgressUpdate,
             None,
         );
