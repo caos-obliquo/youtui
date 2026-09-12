@@ -938,10 +938,6 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleShuffle)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('A')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SetBestQuality)),
-                    ),
-                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('c')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::TogglePlaylistCategoryFilter)),
                     ),

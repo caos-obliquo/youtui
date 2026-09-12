@@ -179,7 +179,6 @@ pub enum PlaylistAction {
     LoadQueue,
     DeleteQueue,
     ClearSearch,
-    SetBestQuality,
     SaveToNewPlaylist,
     LoadFromYTM,
     ViewLyrics,
@@ -231,7 +230,6 @@ impl Action for PlaylistAction {
             PlaylistAction::SaveQueue => "Save Queue",
             PlaylistAction::LoadQueue => "Load Queue",
             PlaylistAction::DeleteQueue => "Delete Queue",
-            PlaylistAction::SetBestQuality => "Set Best Quality",
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
             PlaylistAction::LoadFromYTM => "Load YouTube Music Playlist",
             PlaylistAction::ViewLyrics => "View Lyrics",
@@ -303,9 +301,6 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             }
             PlaylistAction::DeleteQueue => (AsyncTask::new_no_op(), None),
-            PlaylistAction::SetBestQuality => {
-                (AsyncTask::new_no_op(), None)
-            },
             PlaylistAction::SaveToNewPlaylist => {
                 let video_ids: Vec<VideoID<'static>> = self.list.get_list_iter()
                     .map(|song| song.video_id.clone())
