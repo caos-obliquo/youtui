@@ -8,6 +8,7 @@ use std::borrow::Cow;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 use ytmapi_rs::common::{
     AlbumID, ArtistChannelID, Explicit, LikeStatus, UploadAlbumID, UploadArtistID, VideoID, YoutubeID,
@@ -79,7 +80,7 @@ pub enum AlbumArtState {
     Error,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ListSong {
     pub video_id: VideoID<'static>,
     pub track_no: Option<usize>,
@@ -96,11 +97,66 @@ pub struct ListSong {
     pub styles: Vec<String>,
     pub album_art: AlbumArtState,
     pub artists: MaybeRc<Vec<ListSongArtist>>,
+    #[serde(skip)]
+    pub artists_string: OnceLock<String>,
     pub thumbnails: MaybeRc<Vec<Thumbnail>>,
     pub album: Option<MaybeRc<ListSongAlbum>>,
     pub like_status: LikeStatus,
     pub is_album_upload: bool,
     pub release_mbid: Option<String>,
+}
+
+impl Clone for ListSong {
+    fn clone(&self) -> Self {
+        Self {
+            video_id: self.video_id.clone(),
+            track_no: self.track_no,
+            plays: self.plays.clone(),
+            title: self.title.clone(),
+            explicit: self.explicit.clone(),
+            download_status: self.download_status.clone(),
+            id: self.id,
+            duration_string: self.duration_string.clone(),
+            actual_duration: self.actual_duration,
+            start_offset: self.start_offset,
+            year: self.year.clone(),
+            genres: self.genres.clone(),
+            styles: self.styles.clone(),
+            album_art: self.album_art.clone(),
+            artists: self.artists.clone(),
+            artists_string: OnceLock::new(),
+            thumbnails: self.thumbnails.clone(),
+            album: self.album.clone(),
+            like_status: self.like_status.clone(),
+            is_album_upload: self.is_album_upload,
+            release_mbid: self.release_mbid.clone(),
+        }
+    }
+}
+
+impl PartialEq for ListSong {
+    fn eq(&self, other: &Self) -> bool {
+        self.video_id == other.video_id
+            && self.track_no == other.track_no
+            && self.plays == other.plays
+            && self.title == other.title
+            && self.explicit == other.explicit
+            && self.download_status == other.download_status
+            && self.id == other.id
+            && self.duration_string == other.duration_string
+            && self.actual_duration == other.actual_duration
+            && self.start_offset == other.start_offset
+            && self.year == other.year
+            && self.genres == other.genres
+            && self.styles == other.styles
+            && self.album_art == other.album_art
+            && self.artists == other.artists
+            && self.thumbnails == other.thumbnails
+            && self.album == other.album
+            && self.like_status == other.like_status
+            && self.is_album_upload == other.is_album_upload
+            && self.release_mbid == other.release_mbid
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -309,7 +365,7 @@ impl ListSong {
                 .map(|track_no| track_no.to_string())
                 .map(Cow::Owned)
                 .unwrap_or(Cow::Borrowed("-")),
-            ListSongDisplayableField::Artists => compute_artists_string(&self.artists).into(),
+            ListSongDisplayableField::Artists => self.artists_string.get_or_init(|| compute_artists_string(&self.artists)).clone().into(),
             ListSongDisplayableField::Album => self
                 .album
                 .as_ref()
@@ -375,6 +431,7 @@ LikeStatus::Liked => Cow::Borrowed("\u{ec14}"),
             styles: Vec::new(),
             album_art: AlbumArtState::None,
             artists: MaybeRc::Owned(list_artists),
+            artists_string: OnceLock::new(),
             thumbnails: MaybeRc::Owned(thumb.unwrap_or_default()),
             album: list_album,
             like_status: LikeStatus::Indifferent,
@@ -482,6 +539,7 @@ impl BrowserSongsList {
             id,
             year: Some(year),
             artists: MaybeRc::Rc(artists),
+            artists_string: OnceLock::new(),
             album: Some(MaybeRc::Rc(album)),
             actual_duration: None,
             video_id,
@@ -629,6 +687,7 @@ fn clean_channel_album_name(name: &str) -> String {
                 name: normalize_artist_name(&artist),
                 id: None,
             }]),
+            artists_string: OnceLock::new(),
             album: album.map(|a| {
                 let mut album: ListSongAlbum = a.into();
                 // Strip "YouTube: " prefix from album name (uploader channel)
@@ -742,6 +801,7 @@ fn clean_channel_album_name(name: &str) -> String {
             id,
             year: None,
             artists: MaybeRc::Owned(artists),
+            artists_string: OnceLock::new(),
             album: album.map(MaybeRc::Owned),
             actual_duration: None,
             video_id,

@@ -353,7 +353,7 @@ impl_youtui_task_handler!(HandleLibrarySongsOk, EnrichedLibrarySongs, LibraryBro
             })),
             like_status: ts.like_status,
             is_album_upload: false,
-            release_mbid: None,
+            release_mbid: None, artists_string: std::sync::OnceLock::new(),
         }
     }).collect();
     LibraryEffect::SongsLoaded(songs)
@@ -449,7 +449,7 @@ impl_youtui_task_handler!(HandleLibraryPlaylistTracksOk, EnrichedPlaylistTracks,
             album,
             like_status: s.like_status,
             is_album_upload: false,
-            release_mbid: None,
+            release_mbid: None, artists_string: std::sync::OnceLock::new(),
         }
     }).collect();
     // The effect handler will populate track_set_ids from the songs
@@ -2530,7 +2530,7 @@ mod tests {
             album: None,
             like_status: LikeStatus::Indifferent,
             is_album_upload: false,
-            release_mbid: None,
+            release_mbid: None, artists_string: std::sync::OnceLock::new(),
         }
     }
 

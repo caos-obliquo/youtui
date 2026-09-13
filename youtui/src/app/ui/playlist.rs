@@ -1108,7 +1108,7 @@ impl Playlist {
                 album: list_album,
                 like_status: src_like_status.clone(),
                 is_album_upload: false,
-                release_mbid: None,
+                release_mbid: None, artists_string: std::sync::OnceLock::new(),
             };
             self.list.insert_after(src_idx + i, list_song);
             accum += track.duration_secs;
