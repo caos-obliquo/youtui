@@ -75,7 +75,7 @@ pub fn draw_footer(
                 .map(|s| &s.duration_string)
                 .map(parse_simple_time_to_secs)
                 .unwrap_or(0);
-            let progress = w.playlist.cur_played_dur.unwrap_or_default();
+            progress = w.playlist.cur_played_dur.unwrap_or_default();
             if duration == 0 { 0.0 }
             else { (progress.as_secs_f64() / duration as f64).clamp(0.0, 1.0) }
         }
