@@ -84,6 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Early-end detector 10+ progress-updates guard: stalled forwarder cannot nuke a healthy download (playlist.rs)**
 - **New ClearDownload queue action: o-menu c force re-downloads cached track for truncated-download recovery (playlist.rs)**
 - **AudioQuality dead plumbing removal: enum + downloader plumbing + SetBestQuality binding removed (structures.rs, playlist.rs, keymap.rs)**
+- **Lyrics popup key hints moved out of the box onto the shared nav-hint bar above the Status footer, matching queue placement (lyrics_popup.rs, draw.rs)**
+- **Unknown keybinds no longer brick startup: runtime keymap parsing warns-and-skips stale bindings like playlist.set_best_quality instead of failing config load (keymap.rs)**
+- **Footer elapsed time frozen at 00:00 fixed: duration clamp had shadowed the progress variable, bar filled while text stayed zero (footer.rs)**
 
 ## [v1.0.3] - 2026-06-27
 
