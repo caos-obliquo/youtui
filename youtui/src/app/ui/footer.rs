@@ -75,12 +75,15 @@ pub fn draw_footer(
                 .map(|s| &s.duration_string)
                 .map(parse_simple_time_to_secs)
                 .unwrap_or(0);
-            progress = w.playlist.cur_played_dur.unwrap_or_default();
+            let progress = w.playlist.cur_played_dur.unwrap_or_default();
             if duration == 0 { 0.0 }
             else { (progress.as_secs_f64() / duration as f64).clamp(0.0, 1.0) }
         }
         _ => 0.0,
     };
+    if progress.as_secs() > duration as u64 {
+        progress = Duration::from_secs(duration as u64);
+    }
     let progress_str = secs_to_time_string(progress.as_secs() as usize);
     let duration_str = secs_to_time_string(duration);
     let bar_str = format!("{progress_str}/{duration_str}");
