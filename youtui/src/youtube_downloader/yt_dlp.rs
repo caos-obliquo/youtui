@@ -262,6 +262,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_error_display_messages() {
+        use crate::youtube_downloader::yt_dlp::YtDlpDownloaderError;
+        let cases = [
+            (
+                YtDlpDownloaderError::IoError {
+                    message: "boom".to_string(),
+                },
+                "Error running yt-dlp - <boom>",
+            ),
+            (
+                YtDlpDownloaderError::NoOutput,
+                "Error running yt-dlp - no output when output was expected",
+            ),
+            (
+                YtDlpDownloaderError::InvalidFilesizeOutput {
+                    output: "xyz".to_string(),
+                },
+                "Error parsing filesize output: xyz",
+            ),
+            (
+                YtDlpDownloaderError::FormatNotAvailable {
+                    video_id: "abc".to_string(),
+                },
+                "Error running yt-dlp - format not available for video abc",
+            ),
+            (
+                YtDlpDownloaderError::AuthenticationError {
+                    video_id: "abc".to_string(),
+                    message: "bad".to_string(),
+                },
+                "Error running yt-dlp - authentication failed for video abc: bad",
+            ),
+        ];
+        for (err, expected) in cases {
+            assert_eq!(format!("{err}"), expected);
+        }
+    }
+
+    #[tokio::test]
     #[ignore = "Network and yt-dlp required"]
     async fn test_downloading_a_song_with_ytdlp() {
         let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());

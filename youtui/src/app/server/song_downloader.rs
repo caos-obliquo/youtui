@@ -359,6 +359,256 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug, Clone)]
+    struct MockError(String);
+
+    impl std::fmt::Display for MockError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock error: {}", self.0)
+        }
+    }
+
+    #[derive(Clone)]
+    struct MockDownloader {
+        fail_setup: bool,
+        chunks: Vec<Result<Bytes, MockError>>,
+    }
+
+    impl MockDownloader {
+        fn success(data: &[&[u8]]) -> Self {
+            Self {
+                fail_setup: false,
+                chunks: data
+                    .iter()
+                    .map(|c| Ok(Bytes::copy_from_slice(c)))
+                    .collect(),
+            }
+        }
+
+        fn setup_failure() -> Self {
+            Self {
+                fail_setup: true,
+                chunks: Vec::new(),
+            }
+        }
+    }
+
+    impl YoutubeMusicDownloader for MockDownloader {
+        type Error = MockError;
+
+        async fn stream_song(
+            &self,
+            _song_video_id: impl AsRef<str> + Send,
+        ) -> Result<
+            YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
+            Self::Error,
+        > {
+            if self.fail_setup {
+                return Err(MockError("setup failed".to_string()));
+            }
+            let total_size_bytes: usize = self
+                .chunks
+                .iter()
+                .filter_map(|c| c.as_ref().ok().map(|b| b.len()))
+                .sum();
+            let stream = futures::stream::iter(self.chunks.clone());
+            Ok(YoutubeMusicDownload {
+                total_size_bytes,
+                song: stream,
+            })
+        }
+    }
+
+    fn test_video_id() -> VideoID<'static> {
+        VideoID::from_raw("test123")
+    }
+
+    #[tokio::test]
+    async fn test_retry_success_first_try() {
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = callback_count.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            || async { Ok::<_, String>("ok") },
+            move |_| {
+                let counter = callback_count_clone.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+            3,
+        )
+        .await;
+        assert_eq!(result, Some("ok"));
+        assert_eq!(callback_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn test_retry_succeeds_after_failures() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = callback_count.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    let n = attempts.fetch_add(1, Ordering::SeqCst);
+                    if n < 2 {
+                        Err::<String, String>("fail".to_string())
+                    } else {
+                        Ok("recovered".to_string())
+                    }
+                }
+            },
+            move |_| {
+                let counter = callback_count_clone.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+            3,
+        )
+        .await;
+        assert_eq!(result, Some("recovered".to_string()));
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+        assert_eq!(callback_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn test_retry_always_fails_returns_none() {
+        let max_retries = 3;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = callback_count.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    Err::<String, String>("always fails".to_string())
+                }
+            },
+            move |_| {
+                let counter = callback_count_clone.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+            max_retries,
+        )
+        .await;
+        assert_eq!(result, None);
+        // One initial attempt + max_retries retries.
+        assert_eq!(attempts.load(Ordering::SeqCst), max_retries + 1);
+        assert_eq!(callback_count.load(Ordering::SeqCst), max_retries);
+    }
+
+    #[tokio::test]
+    async fn test_retry_callback_receives_retry_number() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_clone = seen.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            || async { Err::<String, String>("fail".to_string()) },
+            move |times_retried| {
+                let seen = seen_clone.clone();
+                async move {
+                    seen.lock().unwrap().push(times_retried);
+                }
+            },
+            3,
+        )
+        .await;
+        assert_eq!(result, None);
+        assert_eq!(*seen.lock().unwrap(), vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_retry_zero_max_retries_no_callback() {
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = callback_count.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            || async { Err::<String, String>("fail".to_string()) },
+            move |_| {
+                let counter = callback_count_clone.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+            0,
+        )
+        .await;
+        assert_eq!(result, None);
+        assert_eq!(callback_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_success_collects_chunks() {
+        let downloader = MockDownloader::success(&[b"hello ", b"world"]);
+        let result = download_song_with_progress_update_callback(
+            &downloader,
+            test_video_id(),
+            |_| async {},
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().0, b"hello world".to_vec());
+    }
+
+    #[tokio::test]
+    async fn test_download_setup_error_returns_err() {
+        let downloader = MockDownloader::setup_failure();
+        let result = download_song_with_progress_update_callback(
+            &downloader,
+            test_video_id(),
+            |_| async {},
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_chunk_error_returns_err() {
+        let downloader = MockDownloader {
+            fail_setup: false,
+            chunks: vec![
+                Ok(Bytes::from_static(b"partial")),
+                Err(MockError("chunk failed".to_string())),
+            ],
+        };
+        let result = download_song_with_progress_update_callback(
+            &downloader,
+            test_video_id(),
+            |_| async {},
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_empty_stream_returns_ok_empty() {
+        // The 0-byte rejection lives in download_song_using_downloader;
+        // this function passes empty data through as Ok.
+        let downloader = MockDownloader::success(&[]);
+        let result = download_song_with_progress_update_callback(
+            &downloader,
+            test_video_id(),
+            |_| async {},
+        )
+        .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().0.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_in_mem_song_debug_hides_bytes() {
+        let song = InMemSong(vec![1, 2, 3]);
+        assert_eq!(format!("{song:?}"), "InMemSong(\"Vec<..>\")");
+    }
     
     #[tokio::test]
     #[ignore = "Unreliable with dynamic concurrency - permits may be held by other tests"]
