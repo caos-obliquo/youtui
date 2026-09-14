@@ -378,6 +378,17 @@ fn draw_popup(f: &mut Frame, w: &YoutuiWindow, chunk: Rect) {
 }
 
 fn draw_nav_hint_bar(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
+    // Lyrics parity: while loaded lyrics are open, this slot shows the lyrics
+    // keys outside the popup box - the same row the queue page hints sit on.
+    if let Some(popup) = &w.lyrics_popup {
+        if let Some(hint) = popup.hint_line() {
+            let hint = Paragraph::new(hint)
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Center);
+            f.render_widget(hint, chunk);
+            return;
+        }
+    }
     // Context-aware: music-player commands always; nav keys follow context.
     let nav_key = match w.context {
         WindowContext::Browser => "h/l",
