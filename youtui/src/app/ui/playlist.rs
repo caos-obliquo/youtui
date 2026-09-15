@@ -3169,9 +3169,9 @@ impl Playlist {
                     effect = effect.push(self.download_song(next_id));
                 }
             }
-            DownloadProgressUpdateType::Error => {
-                self.last_error = Some("Download failed - check yt-dlp".to_string());
-                error!("download_error: song_id={}", video_id);
+            DownloadProgressUpdateType::Error(msg) => {
+                self.last_error = Some(format!("Download failed: {}", msg));
+                error!("download_error: song_id={}, reason={}", video_id, msg);
                 if let Some(idx) = self.get_index_from_id(id) {
                     if let Some(song) = self.list.get_list_iter_mut().nth(idx) {
                         song.download_status = DownloadStatus::Failed;

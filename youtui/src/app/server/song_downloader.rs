@@ -87,7 +87,7 @@ fn get_download_semaphore() -> Arc<Semaphore> {
 pub enum DownloadProgressUpdateType {
     Started,
     Completed(InMemSong),
-    Error,
+    Error(String),
     Retrying { times_retried: usize },
 }
 
@@ -239,7 +239,7 @@ where
                     send_or_error(
                         &tx,
                         DownloadProgressUpdate {
-                            kind: DownloadProgressUpdateType::Error,
+                            kind: DownloadProgressUpdateType::Error("Download produced 0 bytes".to_string()),
                             id: song_playlist_id,
                         },
                     )
@@ -261,7 +261,7 @@ where
                 send_or_error(
                     &tx,
                     DownloadProgressUpdate {
-                        kind: DownloadProgressUpdateType::Error,
+                        kind: DownloadProgressUpdateType::Error("Max retries exceeded".to_string()),
                         id: song_playlist_id,
                     },
                 )
