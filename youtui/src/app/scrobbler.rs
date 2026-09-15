@@ -45,7 +45,7 @@ impl ScrobbleState {
         let elapsed = self.start_time.elapsed().unwrap_or(Duration::ZERO);
         let threshold = (self.duration / 2).min(Duration::from_secs(240)).max(Duration::from_secs(30));
         let result = elapsed >= threshold;
-        tracing::info!("Scrobble check: elapsed={:?}, duration={:?}, threshold={:?}, should={}", elapsed, self.duration, threshold, result);
+        tracing::debug!("Scrobble check: elapsed={:?}, duration={:?}, threshold={:?}, should={}", elapsed, self.duration, threshold, result);
         result
     }
 }
