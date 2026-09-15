@@ -1659,7 +1659,7 @@ impl Playlist {
                         let album = self.canonical_album_name.clone()
                             .or_else(|| song.album.as_ref().map(|a| a.name.clone()));
                         let album_artist = song.artists.first().map(|a| a.name.clone());
-                        let dur = song.actual_duration.unwrap_or(std::time::Duration::from_secs(240));
+                        let dur = Self::best_known_duration(song).unwrap_or(std::time::Duration::from_secs(240));
                         self.scrobble_state = Some(crate::app::scrobbler::ScrobbleState::new(artist, song.title.clone(), album, album_artist, dur));
                         // Send now-playing notification to Last.fm
                         if let Some(ref state) = self.scrobble_state {
@@ -1781,11 +1781,13 @@ impl Playlist {
                     let album = song.album.as_ref().map(|a| a.name.clone());
                     let title = song.title.clone();
                     let actual_dur = song.actual_duration;
-                    (artist, album, title, actual_dur, song.artists.first().map(|a| a.name.clone()))
+                    let dur_str_secs = super::footer::parse_simple_time_to_secs(&song.duration_string) as u64;
+                    (artist, album, title, actual_dur, song.artists.first().map(|a| a.name.clone()), dur_str_secs)
                 });
-                if let Some((song_artist, song_album, song_title, actual_dur, album_artist)) = song_data {
+                if let Some((song_artist, song_album, song_title, actual_dur, album_artist, dur_str_secs)) = song_data {
                     let album = self.canonical_album_name.clone().or_else(|| song_album.clone());
-                    let dur = actual_dur.unwrap_or(std::time::Duration::from_secs(240));
+                    let parsed = std::time::Duration::from_secs(dur_str_secs);
+                    let dur = actual_dur.map(|a| a.max(parsed)).or(if parsed.is_zero() { None } else { Some(parsed) }).unwrap_or(std::time::Duration::from_secs(240));
                     let state = crate::app::scrobbler::ScrobbleState::new(
                         song_artist.clone(), song_title, album,
                         album_artist, dur,
@@ -3342,6 +3344,10 @@ impl Playlist {
                         if new_index > self.album_current_track {
                             for scrobbled_idx in self.album_current_track..new_index {
                                 if let Some(track) = tracks.get(scrobbled_idx) {
+                                    if track.duration_secs < 30.0 {
+                                        info!("Album track skipped (under 30s): #{} {} ({})", scrobbled_idx + 1, track.title, track.duration_secs);
+                                        continue;
+                                    }
                                     let cfg = self.scrobbling_config.clone();
                                     let artist = self.get_cur_playing_song()
                                         .map(|s| s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "))
@@ -3467,12 +3473,36 @@ impl Playlist {
         );
     }
 
+    /// Best-known duration for scrobble/gapless decisions.
+    /// YTM `duration_string` ("0:57") and metadata track durations are ground
+    /// truth. Rodio's decoded `total_duration` is a byte-len/bitrate estimate
+    /// that runs ~2x short on VBR YouTube streams (e.g. 28s for a 57s track),
+    /// so it must never shrink a known duration - doing so drops real 57s+
+    /// tracks below the 30s scrobble floor and they never submit.
+    fn best_known_duration(song: &ListSong) -> Option<Duration> {
+        let parsed =
+            Duration::from_secs(super::footer::parse_simple_time_to_secs(&song.duration_string) as u64);
+        match song.actual_duration {
+            Some(a) => Some(a.max(parsed)),
+            None if parsed.is_zero() => None,
+            None => Some(parsed),
+        }
+    }
+
     pub fn handle_queued(&mut self, duration: Option<Duration>, id: ListSongID) {
         if let Some(song) = self.get_mut_song_from_id(id) {
             // Always update actual_duration from decoded audio when available.
             // The metadata duration (YTM duration_seconds) may be shorter than real audio.
             if let Some(dur) = duration {
-                song.actual_duration = Some(dur);
+                let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                if dur >= floor {
+                    song.actual_duration = Some(dur);
+                } else {
+                    info!(
+                        "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
+                        dur, song.title, floor
+                    );
+                }
                 // Backfill duration_string when YTM gave none or zero.
                 if song.duration_string.is_empty()
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
@@ -3504,7 +3534,16 @@ impl Playlist {
             // Always update actual_duration from decoded audio when available.
             // The metadata duration (YTM duration_seconds) may be shorter than real audio.
             if let Some(dur) = duration {
-                song.actual_duration = Some(dur);
+                // Never shrink: VBR decode estimates run short (see best_known_duration).
+                let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                if dur >= floor {
+                    song.actual_duration = Some(dur);
+                } else {
+                    info!(
+                        "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
+                        dur, song.title, floor
+                    );
+                }
                 // Backfill duration_string when YTM gave none or zero.
                 if song.duration_string.is_empty()
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0

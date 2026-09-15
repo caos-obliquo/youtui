@@ -301,7 +301,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Network and yt-dlp required"]
     async fn test_downloading_a_song_with_ytdlp() {
         let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
         let YoutubeMusicDownload { song: stream, .. } =

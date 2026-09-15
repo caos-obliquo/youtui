@@ -610,36 +610,33 @@ mod tests {
         assert_eq!(format!("{song:?}"), "InMemSong(\"Vec<..>\")");
     }
     
-    #[tokio::test]
-    #[ignore = "Unreliable with dynamic concurrency - permits may be held by other tests"]
-    async fn test_semaphore_limiting() {
-        // Reset global state for test to ensure consistent behavior
-        let semaphore = get_download_semaphore();
-        
-        // With default uninitialized stats, should allow MAX_CONCURRENT_DOWNLOADS
-        let max_expected = if get_download_stats().lock().map(|s| s.average_time()).unwrap_or(0) == 0 {
-            MAX_CONCURRENT_DOWNLOADS
-        } else {
-            // Could be dynamically adjusted
-            1.max(MAX_CONCURRENT_DOWNLOADS)
-        };
-        
-        let mut permits = Vec::new();
-        
-        // Acquire all available permits
-        for _ in 0..max_expected {
-            let p = semaphore.try_acquire();
-            assert!(p.is_ok(), "Should be able to acquire permit");
-            permits.push(p.unwrap());
-        }
-        
-        // Next acquisition should fail (semaphore exhausted)
-        assert!(semaphore.try_acquire().is_err(), "Should not be able to acquire more permits");
-        
-        // Release one permit
-        drop(permits.pop());
-        
-        // Next acquisition should succeed
-        assert!(semaphore.try_acquire().is_ok(), "Should be able to acquire permit after releasing one");
+#[tokio::test]
+async fn test_semaphore_limiting() {
+    let semaphore = get_download_semaphore();
+    let stats = get_download_stats().lock().unwrap();
+    let avg_time = stats.average_time();
+    drop(stats);
+    
+    let target_permits = if avg_time == 0 || avg_time < 4000 {
+        MAX_CONCURRENT_DOWNLOADS
+    } else if avg_time < 7000 {
+        3
+    } else {
+        1
+    };
+    
+    let mut permits = Vec::new();
+    
+    for _ in 0..target_permits {
+        let p = semaphore.try_acquire();
+        assert!(p.is_ok(), "Should be able to acquire permit");
+        permits.push(p.unwrap());
     }
+    
+    assert!(semaphore.try_acquire().is_err(), "Should not be able to acquire more permits");
+    
+    drop(permits.pop());
+    
+    assert!(semaphore.try_acquire().is_ok(), "Should be able to acquire permit after releasing one");
+}
 }
