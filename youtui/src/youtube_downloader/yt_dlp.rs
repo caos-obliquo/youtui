@@ -1,4 +1,3 @@
-use crate::app::AudioQuality;
 use crate::youtube_downloader::{YoutubeMusicDownload, YoutubeMusicDownloader};
 use bytes::Bytes;
 use futures::Stream;
@@ -12,7 +11,7 @@ use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
 #[derive(Clone)]
-#[allow(dead_code)] // fields po_token, audio_quality passed at construction, read by yt-dlp subprocess
+#[allow(dead_code)] // field po_token passed at construction, read by yt-dlp subprocess
 /// # Note
 /// Cheap to clone due to use of Arc to store internals.
 pub struct YtDlpDownloader {
@@ -20,7 +19,6 @@ pub struct YtDlpDownloader {
     po_token: Option<String>,
     cookie_path: Option<String>,
     cookie_browser: String,
-    audio_quality: AudioQuality,
 }
 
 #[derive(Debug)]
@@ -59,13 +57,12 @@ impl std::fmt::Display for YtDlpDownloaderError {
 }
 
 impl YtDlpDownloader {
-    pub fn new(yt_dlp_command: String, po_token: Option<String>, cookie_path: Option<String>, cookie_browser: String, audio_quality: AudioQuality) -> Self {
+    pub fn new(yt_dlp_command: String, po_token: Option<String>, cookie_path: Option<String>, cookie_browser: String) -> Self {
         Self {
             yt_dlp_command: Arc::new(yt_dlp_command.into()),
             po_token,
             cookie_path,
             cookie_browser,
-            audio_quality,
         }
     }
     pub async fn get_version(self) -> Result<String, YtDlpDownloaderError> {
@@ -88,7 +85,6 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
     async fn stream_song(
         &self,
         song_video_id: impl AsRef<str> + Send,
-        _audio_quality: AudioQuality,
     ) -> Result<
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
         Self::Error,
@@ -249,29 +245,66 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
 mod tests {
     use crate::youtube_downloader::yt_dlp::YtDlpDownloader;
     use crate::youtube_downloader::{YoutubeMusicDownload, YoutubeMusicDownloader};
-    use crate::app::AudioQuality;
     use bytes::Bytes;
     use futures::StreamExt;
 
     #[tokio::test]
     async fn test_yt_dlp_downloader_with_po_token() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), Some("test_po_token".to_string()), None, "chromium".to_string(), AudioQuality::default());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), Some("test_po_token".to_string()), None, "chromium".to_string());
         assert!(downloader.po_token.is_some());
         assert_eq!(downloader.po_token.unwrap(), "test_po_token");
     }
 
     #[tokio::test]
     async fn test_yt_dlp_downloader_without_po_token() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string(), AudioQuality::default());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
         assert!(downloader.po_token.is_none());
     }
 
     #[tokio::test]
-    #[ignore = "Network and yt-dlp required"]
+    async fn test_error_display_messages() {
+        use crate::youtube_downloader::yt_dlp::YtDlpDownloaderError;
+        let cases = [
+            (
+                YtDlpDownloaderError::IoError {
+                    message: "boom".to_string(),
+                },
+                "Error running yt-dlp - <boom>",
+            ),
+            (
+                YtDlpDownloaderError::NoOutput,
+                "Error running yt-dlp - no output when output was expected",
+            ),
+            (
+                YtDlpDownloaderError::InvalidFilesizeOutput {
+                    output: "xyz".to_string(),
+                },
+                "Error parsing filesize output: xyz",
+            ),
+            (
+                YtDlpDownloaderError::FormatNotAvailable {
+                    video_id: "abc".to_string(),
+                },
+                "Error running yt-dlp - format not available for video abc",
+            ),
+            (
+                YtDlpDownloaderError::AuthenticationError {
+                    video_id: "abc".to_string(),
+                    message: "bad".to_string(),
+                },
+                "Error running yt-dlp - authentication failed for video abc: bad",
+            ),
+        ];
+        for (err, expected) in cases {
+            assert_eq!(format!("{err}"), expected);
+        }
+    }
+
+    #[tokio::test]
     async fn test_downloading_a_song_with_ytdlp() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string(), AudioQuality::default());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
         let YoutubeMusicDownload { song: stream, .. } =
-            downloader.stream_song("lYBUbBu4W08", AudioQuality::default()).await.unwrap();
+            downloader.stream_song("lYBUbBu4W08").await.unwrap();
         stream
             .map(|item| item.unwrap())
             .collect::<Vec<Bytes>>()

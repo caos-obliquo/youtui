@@ -833,7 +833,6 @@ async fn fetch_listenbrainz_top_artists(
             );
             break;
         }
-        let mut page_oldest: Option<u64> = None;
         for listen in &listens {
             let artist = listen
                 .get("track_metadata")
@@ -844,7 +843,7 @@ async fn fetch_listenbrainz_top_artists(
                 *counts.entry(artist.to_string()).or_insert(0) += 1;
             }
         }
-        page_oldest = payload.get("oldest_listen_ts").and_then(|v| v.as_u64());
+        let page_oldest = payload.get("oldest_listen_ts").and_then(|v| v.as_u64());
         let fetched = listens.len() as u64;
         debug!(
             "ListenBrainz listens page: user={} fetched={} oldest_ts={:?}",

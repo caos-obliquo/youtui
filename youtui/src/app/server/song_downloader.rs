@@ -1,7 +1,6 @@
 use super::{AUDIO_QUALITY, DL_CALLBACK_CHUNK_SIZE};
 use crate::app::CALLBACK_CHANNEL_SIZE;
 use crate::app::server::MAX_RETRIES;
-use crate::app::AudioQuality;
 use crate::app::structures::{ListSongID, Percentage};
 use crate::config::{Config, DownloaderType};
 use crate::core::send_or_error;
@@ -88,7 +87,7 @@ fn get_download_semaphore() -> Arc<Semaphore> {
 pub enum DownloadProgressUpdateType {
     Started,
     Completed(InMemSong),
-    Error,
+    Error(String),
     Retrying { times_retried: usize },
 }
 
@@ -128,8 +127,8 @@ impl SongDownloader {
                     "Initiating yt-dlp downloader using yt-dlp path `{}`",
                     config.yt_dlp_command
                 );
-                let downloader = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone(), AudioQuality::default());
-                let downloader_clone = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone(), AudioQuality::default());
+                let downloader = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone());
+                let downloader_clone = YtDlpDownloader::new(config.yt_dlp_command.clone(), po_token.clone(), cookie_path.clone(), config.cookie_browser.clone());
                 tokio::task::spawn(async {
                     let output = downloader_clone.get_version().await;
                     match output {
@@ -148,7 +147,6 @@ impl SongDownloader {
         song_video_id: VideoID<'static>,
         song_playlist_id: ListSongID,
         cancel_token: Option<Arc<tokio_util::sync::CancellationToken>>,
-        audio_quality: AudioQuality,
     ) -> impl Stream<Item = DownloadProgressUpdate> + use<> {
         match self {
             SongDownloader::YtDlp(yt_dlp_downloader) => {
@@ -157,7 +155,6 @@ impl SongDownloader {
                     song_video_id,
                     song_playlist_id,
                     cancel_token,
-                    audio_quality,
                 ))
             }
             SongDownloader::Native(native_youtube_downloader) => {
@@ -166,7 +163,6 @@ impl SongDownloader {
                     song_video_id,
                     song_playlist_id,
                     cancel_token,
-                    audio_quality,
                 ))
             }
         }
@@ -178,7 +174,6 @@ fn download_song_using_downloader<T>(
     song_video_id: VideoID<'static>,
     song_playlist_id: ListSongID,
     cancel_token: Option<Arc<tokio_util::sync::CancellationToken>>,
-    audio_quality: AudioQuality,
 ) -> impl Stream<Item = DownloadProgressUpdate>
 where
     T: YoutubeMusicDownloader + Send + Sync + 'static,
@@ -213,12 +208,10 @@ where
         
         let song_download = || {
             let _tx = tx.clone();
-        let audio_quality = audio_quality;
             // No progress callback - icons handle the status entirely
             download_song_with_progress_update_callback(
                 &downloader,
                 song_video_id.clone(),
-                audio_quality,
                 move |_| async move { /* No-op - status shown via icons */ },
             )
         };
@@ -246,7 +239,7 @@ where
                     send_or_error(
                         &tx,
                         DownloadProgressUpdate {
-                            kind: DownloadProgressUpdateType::Error,
+                            kind: DownloadProgressUpdateType::Error("Download produced 0 bytes".to_string()),
                             id: song_playlist_id,
                         },
                     )
@@ -268,7 +261,7 @@ where
                 send_or_error(
                     &tx,
                     DownloadProgressUpdate {
-                        kind: DownloadProgressUpdateType::Error,
+                        kind: DownloadProgressUpdateType::Error("Max retries exceeded".to_string()),
                         id: song_playlist_id,
                     },
                 )
@@ -308,7 +301,6 @@ where
 async fn download_song_with_progress_update_callback<T, Fut>(
     downloader: &T,
     song_video_id: VideoID<'static>,
-    audio_quality: AudioQuality,
     _run_on_progress_interval: impl Fn(Percentage) -> Fut + Send + Sync,
 ) -> Result<InMemSong, T::Error>
 where
@@ -317,7 +309,7 @@ where
     T::Error: std::fmt::Display + Send,
 {
     let song_video_id = song_video_id.get_raw();
-    let stream_future = downloader.stream_song(song_video_id, audio_quality);
+    let stream_future = downloader.stream_song(song_video_id);
     let YoutubeMusicDownload {
         total_size_bytes,
         song: stream,
@@ -367,37 +359,284 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    
-    #[tokio::test]
-    #[ignore = "Unreliable with dynamic concurrency - permits may be held by other tests"]
-    async fn test_semaphore_limiting() {
-        // Reset global state for test to ensure consistent behavior
-        let semaphore = get_download_semaphore();
-        
-        // With default uninitialized stats, should allow MAX_CONCURRENT_DOWNLOADS
-        let max_expected = if get_download_stats().lock().map(|s| s.average_time()).unwrap_or(0) == 0 {
-            MAX_CONCURRENT_DOWNLOADS
-        } else {
-            // Could be dynamically adjusted
-            1.max(MAX_CONCURRENT_DOWNLOADS)
-        };
-        
-        let mut permits = Vec::new();
-        
-        // Acquire all available permits
-        for _ in 0..max_expected {
-            let p = semaphore.try_acquire();
-            assert!(p.is_ok(), "Should be able to acquire permit");
-            permits.push(p.unwrap());
+    use bytes::Bytes;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug, Clone)]
+    struct MockError(String);
+
+    impl std::fmt::Display for MockError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "mock error: {}", self.0)
         }
-        
-        // Next acquisition should fail (semaphore exhausted)
-        assert!(semaphore.try_acquire().is_err(), "Should not be able to acquire more permits");
-        
-        // Release one permit
-        drop(permits.pop());
-        
-        // Next acquisition should succeed
-        assert!(semaphore.try_acquire().is_ok(), "Should be able to acquire permit after releasing one");
     }
+
+    #[derive(Clone)]
+    struct MockDownloader {
+        fail_setup: bool,
+        chunks: Vec<Result<Bytes, MockError>>,
+    }
+
+    impl MockDownloader {
+        fn success(data: &[&[u8]]) -> Self {
+            Self {
+                fail_setup: false,
+                chunks: data
+                    .iter()
+                    .map(|c| Ok(Bytes::copy_from_slice(c)))
+                    .collect(),
+            }
+        }
+
+        fn setup_failure() -> Self {
+            Self {
+                fail_setup: true,
+                chunks: Vec::new(),
+            }
+        }
+    }
+
+    impl YoutubeMusicDownloader for MockDownloader {
+        type Error = MockError;
+
+        async fn stream_song(
+            &self,
+            _song_video_id: impl AsRef<str> + Send,
+        ) -> Result<
+            YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
+            Self::Error,
+        > {
+            if self.fail_setup {
+                return Err(MockError("setup failed".to_string()));
+            }
+            let total_size_bytes: usize = self
+                .chunks
+                .iter()
+                .filter_map(|c| c.as_ref().ok().map(|b| b.len()))
+                .sum();
+            let stream = futures::stream::iter(self.chunks.clone());
+            Ok(YoutubeMusicDownload {
+                total_size_bytes,
+                song: stream,
+            })
+        }
+    }
+
+    fn test_video_id() -> VideoID<'static> {
+        VideoID::from_raw("test123")
+    }
+
+    #[tokio::test]
+    async fn test_retry_success_first_try() {
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = callback_count.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            || async { Ok::<_, String>("ok") },
+            move |_| {
+                let counter = callback_count_clone.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+            3,
+        )
+        .await;
+        assert_eq!(result, Some("ok"));
+        assert_eq!(callback_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn test_retry_succeeds_after_failures() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = callback_count.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    let n = attempts.fetch_add(1, Ordering::SeqCst);
+                    if n < 2 {
+                        Err::<String, String>("fail".to_string())
+                    } else {
+                        Ok("recovered".to_string())
+                    }
+                }
+            },
+            move |_| {
+                let counter = callback_count_clone.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+            3,
+        )
+        .await;
+        assert_eq!(result, Some("recovered".to_string()));
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+        assert_eq!(callback_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn test_retry_always_fails_returns_none() {
+        let max_retries = 3;
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = callback_count.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    Err::<String, String>("always fails".to_string())
+                }
+            },
+            move |_| {
+                let counter = callback_count_clone.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+            max_retries,
+        )
+        .await;
+        assert_eq!(result, None);
+        // One initial attempt + max_retries retries.
+        assert_eq!(attempts.load(Ordering::SeqCst), max_retries + 1);
+        assert_eq!(callback_count.load(Ordering::SeqCst), max_retries);
+    }
+
+    #[tokio::test]
+    async fn test_retry_callback_receives_retry_number() {
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_clone = seen.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            || async { Err::<String, String>("fail".to_string()) },
+            move |times_retried| {
+                let seen = seen_clone.clone();
+                async move {
+                    seen.lock().unwrap().push(times_retried);
+                }
+            },
+            3,
+        )
+        .await;
+        assert_eq!(result, None);
+        assert_eq!(*seen.lock().unwrap(), vec![1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_retry_zero_max_retries_no_callback() {
+        let callback_count = Arc::new(AtomicUsize::new(0));
+        let callback_count_clone = callback_count.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            || async { Err::<String, String>("fail".to_string()) },
+            move |_| {
+                let counter = callback_count_clone.clone();
+                async move {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+            0,
+        )
+        .await;
+        assert_eq!(result, None);
+        assert_eq!(callback_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn test_download_success_collects_chunks() {
+        let downloader = MockDownloader::success(&[b"hello ", b"world"]);
+        let result = download_song_with_progress_update_callback(
+            &downloader,
+            test_video_id(),
+            |_| async {},
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().0, b"hello world".to_vec());
+    }
+
+    #[tokio::test]
+    async fn test_download_setup_error_returns_err() {
+        let downloader = MockDownloader::setup_failure();
+        let result = download_song_with_progress_update_callback(
+            &downloader,
+            test_video_id(),
+            |_| async {},
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_chunk_error_returns_err() {
+        let downloader = MockDownloader {
+            fail_setup: false,
+            chunks: vec![
+                Ok(Bytes::from_static(b"partial")),
+                Err(MockError("chunk failed".to_string())),
+            ],
+        };
+        let result = download_song_with_progress_update_callback(
+            &downloader,
+            test_video_id(),
+            |_| async {},
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_download_empty_stream_returns_ok_empty() {
+        // The 0-byte rejection lives in download_song_using_downloader;
+        // this function passes empty data through as Ok.
+        let downloader = MockDownloader::success(&[]);
+        let result = download_song_with_progress_update_callback(
+            &downloader,
+            test_video_id(),
+            |_| async {},
+        )
+        .await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().0.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_in_mem_song_debug_hides_bytes() {
+        let song = InMemSong(vec![1, 2, 3]);
+        assert_eq!(format!("{song:?}"), "InMemSong(\"Vec<..>\")");
+    }
+    
+#[tokio::test]
+async fn test_semaphore_limiting() {
+    let semaphore = get_download_semaphore();
+    let stats = get_download_stats().lock().unwrap();
+    let avg_time = stats.average_time();
+    drop(stats);
+    
+    let target_permits = if avg_time == 0 || avg_time < 4000 {
+        MAX_CONCURRENT_DOWNLOADS
+    } else if avg_time < 7000 {
+        3
+    } else {
+        1
+    };
+    
+    let mut permits = Vec::new();
+    
+    for _ in 0..target_permits {
+        let p = semaphore.try_acquire();
+        assert!(p.is_ok(), "Should be able to acquire permit");
+        permits.push(p.unwrap());
+    }
+    
+    assert!(semaphore.try_acquire().is_err(), "Should not be able to acquire more permits");
+    
+    drop(permits.pop());
+    
+    assert!(semaphore.try_acquire().is_ok(), "Should be able to acquire permit after releasing one");
+}
 }

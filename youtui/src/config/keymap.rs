@@ -12,7 +12,9 @@ use crate::app::ui::logger::LoggerAction;
 use crate::app::ui::playlist::PlaylistAction;
 use crate::keyaction::{KeyAction, KeyActionVisibility};
 use crate::keybind::Keybind;
-use anyhow::{Context, Error, Result};
+use anyhow::Result;
+#[cfg(test)]
+use anyhow::{Context, Error};
 use crossterm::event::KeyModifiers;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
@@ -203,157 +205,209 @@ impl YoutuiKeymap {
 
         let browser_library = browser_library
             .into_iter()
-            .map(|(k, v)| {
-                let v =
-                    KeyActionTree::try_from_stringy(&k, v, Some(&mut browser_library_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "browser_library",
+                    &k,
+                    v,
+                    Some(&mut browser_library_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Browser library keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let global = global
             .into_iter()
-            .map(move |(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut global_mode_names))?;
-                Ok((k, v))
+            .filter_map(move |(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "global",
+                    &k,
+                    v,
+                    Some(&mut global_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Global keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let playlist = playlist
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut playlist_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "playlist",
+                    &k,
+                    v,
+                    Some(&mut playlist_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Playlist keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let browser = browser
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut browser_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "browser",
+                    &k,
+                    v,
+                    Some(&mut browser_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Browser keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let browser_artists = browser_artists
             .into_iter()
-            .map(|(k, v)| {
-                let v =
-                    KeyActionTree::try_from_stringy(&k, v, Some(&mut browser_artists_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "browser_artists",
+                    &k,
+                    v,
+                    Some(&mut browser_artists_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Browser artists keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let browser_playlists = browser_playlists
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "browser_playlists",
                     &k,
                     v,
                     Some(&mut browser_playlists_mode_names),
                 )?;
-                Ok((k, v))
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Browser playlists keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let browser_search = browser_search
             .into_iter()
-            .map(|(k, v)| {
-                let v =
-                    KeyActionTree::try_from_stringy(&k, v, Some(&mut browser_search_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "browser_search",
+                    &k,
+                    v,
+                    Some(&mut browser_search_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Browser search keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let browser_songs = browser_songs
             .into_iter()
-            .map(|(k, v)| {
-                let v =
-                    KeyActionTree::try_from_stringy(&k, v, Some(&mut browser_songs_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "browser_songs",
+                    &k,
+                    v,
+                    Some(&mut browser_songs_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Browser songs keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let browser_artist_songs = browser_artist_songs
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "browser_artist_songs",
                     &k,
                     v,
                     Some(&mut browser_artist_songs_mode_names),
                 )?;
-                Ok((k, v))
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Browser artist songs keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let browser_playlist_songs = browser_playlist_songs
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "browser_playlist_songs",
                     &k,
                     v,
                     Some(&mut browser_playlist_songs_mode_names),
                 )?;
-                Ok((k, v))
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Browser playlist songs keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let text_entry = text_entry
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut text_entry_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "text_entry",
+                    &k,
+                    v,
+                    Some(&mut text_entry_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Text entry keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let help = help
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut help_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "help",
+                    &k,
+                    v,
+                    Some(&mut help_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Help keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let sort = sort
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut sort_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "sort",
+                    &k,
+                    v,
+                    Some(&mut sort_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Sort keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let filter = filter
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut filter_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "filter",
+                    &k,
+                    v,
+                    Some(&mut filter_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Filter keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let list = list
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut list_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "list",
+                    &k,
+                    v,
+                    Some(&mut list_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("List keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
         let log = log
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut log_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "log",
+                    &k,
+                    v,
+                    Some(&mut log_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Log keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
 
         let playlist_save_popup = playlist_save_popup
             .into_iter()
-            .map(|(k, v)| {
-                let v = KeyActionTree::try_from_stringy(&k, v, Some(&mut playlist_save_popup_mode_names))?;
-                Ok((k, v))
+            .filter_map(|(k, v)| {
+                let v = KeyActionTree::try_from_stringy_lenient(
+                    "playlist_save_popup",
+                    &k,
+                    v,
+                    Some(&mut playlist_save_popup_mode_names),
+                )?;
+                Some((k, v))
             })
-            .collect::<Result<BTreeMap<_, _>>>()
-            .context("Playlist save popup keybinds parse failed")?;
+            .collect::<BTreeMap<_, _>>();
 
         let mut keymap = YoutuiKeymap::default();
         merge_keymaps(&mut keymap.global, global);
@@ -656,6 +710,10 @@ impl<A: Action> KeyActionTree<A> {
         }
     }
     /// Try to create a KeyActionTree from a KeyStringTree.
+    /// Test-only: strict variant backing `try_from_stringy_exact`, which
+    /// replaces (rather than merges) the default keybinds. Runtime parsing
+    /// uses the lenient variant so one stale binding cannot brick startup.
+    #[cfg(test)]
     fn try_from_stringy(
         key: &Keybind,
         stringy: KeyStringTree,
@@ -686,6 +744,53 @@ impl<A: Action> KeyActionTree<A> {
             }
         };
         Ok(new)
+    }
+    /// Lenient variant of `try_from_stringy` for runtime config parsing.
+    /// Unknown or removed action names (e.g. leftovers after an upgrade) are
+    /// skipped with a stderr warning instead of failing the whole section,
+    /// which previously bricked startup. Config loads before logging is
+    /// initialised, so the warning goes to stderr, not tracing.
+    fn try_from_stringy_lenient(
+        section: &str,
+        key: &Keybind,
+        stringy: KeyStringTree,
+        mode_names: Option<&mut BTreeMap<Keybind, ModeNameEnum>>,
+    ) -> Option<Self>
+    where
+        A: TryFrom<String, Error = anyhow::Error>,
+    {
+        match stringy {
+            KeyStringTree::Key(k) => match k.try_map(TryInto::try_into) {
+                Ok(action) => Some(KeyActionTree::Key(action)),
+                Err(e) => {
+                    eprintln!("[WARN] Config: skipping unknown keybind `{key:?}` in [{section}]: {e:#}");
+                    None
+                }
+            },
+            KeyStringTree::Mode(m) => {
+                let mode_name_enum = mode_names.and_then(|m| m.remove(key));
+                let (mut next_modes, cur_mode_name) = match mode_name_enum {
+                    Some(ModeNameEnum::Submode { name, keys }) => (Some(keys), name),
+                    Some(ModeNameEnum::Name(name)) => (None, Some(name)),
+                    None => (None, None),
+                };
+                Some(KeyActionTree::Mode {
+                    keys: m
+                        .into_iter()
+                        .filter_map(|(k, a)| {
+                            let v = KeyActionTree::try_from_stringy_lenient(
+                                section,
+                                &k,
+                                a,
+                                next_modes.as_mut(),
+                            )?;
+                            Some((k, v))
+                        })
+                        .collect(),
+                    name: cur_mode_name,
+                })
+            }
+        }
     }
     /// # Note
     /// Currently, visibility for a mode can't be set in config, so it is set to
@@ -936,10 +1041,6 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('s')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleShuffle)),
-                    ),
-                    (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('A')),
-                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SetBestQuality)),
                     ),
                     (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('c')),
@@ -2257,5 +2358,44 @@ mod lyrics_test {
     fn test_view_lyrics_parse() {
         let action: AppAction = "playlist.view_lyrics".to_string().try_into().unwrap();
         assert_eq!(action, AppAction::Playlist(PlaylistAction::ViewLyrics));
+    }
+    #[test]
+    fn test_lenient_skips_unknown_action() {
+        use super::KeyActionTree;
+        use crate::config::keymap::KeyStringTree;
+        use crate::keyaction::KeyAction;
+        use crate::keybind::Keybind;
+        use std::collections::BTreeMap;
+        let key = Keybind::new_unmodified(crossterm::event::KeyCode::Char('a'));
+        let bad = KeyStringTree::Key(KeyAction {
+            action: "playlist.set_best_quality".to_string(),
+            visibility: Default::default(),
+        });
+        assert!(
+            KeyActionTree::<AppAction>::try_from_stringy_lenient("playlist", &key, bad, None)
+                .is_none()
+        );
+        let good_key = Keybind::new_unmodified(crossterm::event::KeyCode::Char('b'));
+        let good = KeyStringTree::Key(KeyAction {
+            action: "playlist.view_lyrics".to_string(),
+            visibility: Default::default(),
+        });
+        let mut children = BTreeMap::new();
+        children.insert(
+            key.clone(),
+            KeyStringTree::Key(KeyAction {
+                action: "playlist.set_best_quality".to_string(),
+                visibility: Default::default(),
+            }),
+        );
+        children.insert(good_key, good);
+        let mode = KeyStringTree::Mode(children);
+        let parsed =
+            KeyActionTree::<AppAction>::try_from_stringy_lenient("playlist", &key, mode, None)
+                .expect("mode with one bad child still parses");
+        match parsed {
+            KeyActionTree::Mode { keys, .. } => assert_eq!(keys.len(), 1),
+            KeyActionTree::Key(_) => panic!("expected mode"),
+        }
     }
 }

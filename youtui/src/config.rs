@@ -245,9 +245,9 @@ raisevolume = {action = "vol_up", visiblity = "hidden"}"#;
         let ir: Result<ConfigIR, _> = config_toml.try_into();
         assert!(ir.is_err());
     }
-    #[tokio::test]
-    #[ignore = "Example config drifts from defaults - manually verify"]
-    async fn test_default_config_equals_deserialized_config() {
+#[tokio::test]
+#[ignore = "Example config drifts from defaults - manually verify"]
+async fn test_default_config_equals_deserialized_config() {
         let config_file = example_config_file().await;
         let ConfigIR {
             auth_type,

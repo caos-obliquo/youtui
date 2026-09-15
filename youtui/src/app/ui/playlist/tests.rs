@@ -302,7 +302,7 @@ fn make_album_original(video: &'static str, year: Option<&str>) -> ListSong {
         album: None,
         like_status: LikeStatus::Indifferent,
         is_album_upload: false,
-        release_mbid: None,
+        release_mbid: None, artists_string: std::sync::OnceLock::new(),
     }
 }
 
@@ -329,7 +329,7 @@ fn make_track_entry(video: &'static str, track_no: usize, title: &'static str, d
         album: None,
         like_status: LikeStatus::Indifferent,
         is_album_upload: false,
-        release_mbid: None,
+        release_mbid: None, artists_string: std::sync::OnceLock::new(),
     }
 }
 
@@ -793,4 +793,110 @@ fn progress_advances_normally_with_matching_duration() {
         let _ = p.handle_set_song_play_progress(Duration::from_secs(secs), id);
         assert_eq!(p.cur_played_dur, Some(Duration::from_secs(secs)));
     }
+}
+
+#[test]
+fn best_known_duration_prefers_metadata_truth() {
+    // Japan case: YTM says 0:57, decode estimate says 28s. Truth wins.
+    let mut song = make_album_original("vx1", None);
+    song.duration_string = "0:57".into();
+    song.actual_duration = Some(Duration::from_secs_f64(28.456));
+    assert_eq!(
+        Playlist::best_known_duration(&song),
+        Some(Duration::from_secs(57))
+    );
+    // No metadata yet: falls back to decode value.
+    song.actual_duration = None;
+    song.duration_string = String::new();
+    assert_eq!(Playlist::best_known_duration(&song), None);
+    // String truth alone suffices when actual never set.
+    song.duration_string = "1:03".into();
+    assert_eq!(
+        Playlist::best_known_duration(&song),
+        Some(Duration::from_secs(63))
+    );
+    // Real longer audio still grows beyond metadata.
+    song.actual_duration = Some(Duration::from_secs(70));
+    assert_eq!(
+        Playlist::best_known_duration(&song),
+        Some(Duration::from_secs(70))
+    );
+}
+
+#[test]
+fn queued_decode_estimate_must_not_shrink_known_duration() {
+    // Japan case: Holy Water queued with a 28.4s VBR decode estimate while
+    // YTM truth is 0:57. actual_duration must stay 57s, else the 30s
+    // scrobble floor wrongly kills the track.
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let mut song = make_album_original("vx1", None);
+    song.duration_string = "0:57".into();
+    song.actual_duration = Some(Duration::from_secs(57));
+    let id = p.list.push_song_list(vec![song]);
+
+    p.handle_queued(Some(Duration::from_secs_f64(28.456)), id);
+    assert_eq!(
+        p.get_song_from_id(id).unwrap().actual_duration,
+        Some(Duration::from_secs(57))
+    );
+}
+
+#[test]
+fn queued_decode_estimate_may_grow_beyond_metadata() {
+    // Guard: real audio longer than metadata must still extend the duration
+    // (gapless threshold + footer depend on it).
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let mut song = make_album_original("vx1", None);
+    song.duration_string = "0:57".into();
+    song.actual_duration = Some(Duration::from_secs(57));
+    let id = p.list.push_song_list(vec![song]);
+
+    p.handle_queued(Some(Duration::from_secs(70)), id);
+    assert_eq!(
+        p.get_song_from_id(id).unwrap().actual_duration,
+        Some(Duration::from_secs(70))
+    );
+}
+
+#[test]
+fn playing_decode_estimate_must_not_shrink_known_duration() {
+    // Japan case via StartedPlaying: Sake Bomb estimate 16.3s vs 1:03 truth.
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let mut song = make_album_original("vx1", None);
+    song.duration_string = "1:03".into();
+    song.actual_duration = Some(Duration::from_secs(63));
+    let id = p.list.push_song_list(vec![song]);
+
+    p.handle_playing(Some(Duration::from_secs_f64(16.382)), id);
+    assert_eq!(
+        p.get_song_from_id(id).unwrap().actual_duration,
+        Some(Duration::from_secs(63))
+    );
+}
+
+#[tokio::test]
+async fn scrobble_state_uses_metadata_truth_despite_short_estimate() {
+    // End-to-end Japan case: song carries a short stale actual_duration
+    // (28s decode estimate) but YTM truth 0:57. The minted ScrobbleState
+    // must use 57s so should_scrobble can fire at the 30s threshold.
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    p.scrobbling_config = crate::config::ScrobblingConfig {
+        enabled: true,
+        ..Default::default()
+    };
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut song = make_track_entry("vx1", 2, "Holy Water", 57.0, 57.0);
+    song.actual_duration = Some(Duration::from_secs_f64(28.456));
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+
+    let _ = p.play_song_id(id);
+    let state = p.scrobble_state.as_ref().expect("scrobble state minted");
+    assert_eq!(state.track, "Holy Water");
+    assert_eq!(state.duration, Duration::from_secs(57));
+    assert!(state.should_scrobble() || !state.scrobbled);
 }

@@ -41,9 +41,11 @@ impl ScrobbleState {
 
     pub fn should_scrobble(&self) -> bool {
         if self.scrobbled { return false; }
+        if self.duration < Duration::from_secs(30) { return false; }
         let elapsed = self.start_time.elapsed().unwrap_or(Duration::ZERO);
-        let result = elapsed >= Duration::from_secs(15) || elapsed >= self.duration / 3;
-        tracing::info!("Scrobble check: elapsed={:?}, duration={:?}, should={}", elapsed, self.duration, result);
+        let threshold = (self.duration / 2).min(Duration::from_secs(240)).max(Duration::from_secs(30));
+        let result = elapsed >= threshold;
+        tracing::debug!("Scrobble check: elapsed={:?}, duration={:?}, threshold={:?}, should={}", elapsed, self.duration, threshold, result);
         result
     }
 }
@@ -604,6 +606,71 @@ mod tests {
         let state = ScrobbleState::new("A".into(), "B".into(), None, None, Duration::from_secs(240));
         // start_time is now, so elapsed ≈ 0
         assert!(!state.should_scrobble());
+    }
+
+    /// Helper: state with start_time backdated by `elapsed_secs`.
+    fn aged_state(duration_secs: u64, elapsed_secs: u64) -> ScrobbleState {
+        let mut state = ScrobbleState::new(
+            "A".into(), "B".into(), None, None,
+            Duration::from_secs(duration_secs),
+        );
+        state.start_time = SystemTime::now() - Duration::from_secs(elapsed_secs);
+        state
+    }
+
+    /// Last.fm spec: tracks shorter than 30s must NEVER scrobble.
+    #[test]
+    fn test_short_track_under_30s_never_scrobbles() {
+        // 20s track, played for 120s (looped) - still must not scrobble
+        assert!(!aged_state(20, 120).should_scrobble());
+        // 29s track, fully played many times over - still must not scrobble
+        assert!(!aged_state(29, 300).should_scrobble());
+    }
+
+    /// 0:57 track (user case): threshold = max(30, 57/2)=30s.
+    #[test]
+    fn test_57s_track_threshold_30s() {
+        assert!(!aged_state(57, 20).should_scrobble(), "20s into 57s track: too soon");
+        assert!(aged_state(57, 31).should_scrobble(), "31s into 57s track: scrobble");
+        assert!(aged_state(57, 57).should_scrobble(), "fully played 57s track: scrobble");
+    }
+
+    /// 1:03 / 1:22 / 1:28 / 1:39 user cases: threshold = half duration.
+    #[test]
+    fn test_short_album_tracks_half_duration() {
+        // 63s -> 31.5s
+        assert!(!aged_state(63, 30).should_scrobble());
+        assert!(aged_state(63, 32).should_scrobble());
+        // 82s -> 41s
+        assert!(!aged_state(82, 40).should_scrobble());
+        assert!(aged_state(82, 42).should_scrobble());
+        // 99s -> 49.5s
+        assert!(!aged_state(99, 49).should_scrobble());
+        assert!(aged_state(99, 50).should_scrobble());
+        // 127s (2:07) -> 63.5s
+        assert!(!aged_state(127, 63).should_scrobble());
+        assert!(aged_state(127, 64).should_scrobble());
+    }
+
+    /// 4:07 track: threshold = half duration (123.5s), not 15s.
+    #[test]
+    fn test_247s_track_half_duration() {
+        assert!(!aged_state(247, 120).should_scrobble(), "120s into 247s track: too soon");
+        assert!(aged_state(247, 124).should_scrobble(), "124s into 247s track: scrobble");
+    }
+
+    /// Long tracks cap at 240s (4 minutes), whichever comes first.
+    #[test]
+    fn test_long_track_capped_at_240s() {
+        assert!(!aged_state(600, 239).should_scrobble());
+        assert!(aged_state(600, 241).should_scrobble());
+    }
+
+    /// Exact 30s boundary track: threshold = max(30, 15) = 30s.
+    #[test]
+    fn test_30s_boundary_track() {
+        assert!(!aged_state(30, 29).should_scrobble());
+        assert!(aged_state(30, 30).should_scrobble());
     }
 
     /// Verify submit_scrobble silently returns when config not enabled
