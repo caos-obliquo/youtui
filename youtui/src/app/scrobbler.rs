@@ -231,7 +231,8 @@ pub(crate) async fn submit_scrobble_inner(
     if let Some(ref album_artist) = state.album_artist {
         params.push(("albumArtist".into(), album_artist.clone()));
     }
-    params.push(("duration".into(), state.duration.as_secs().to_string()));
+    let submit_duration = state.duration.as_secs().max(30).to_string();
+    params.push(("duration".into(), submit_duration));
     let api_sig = crate::config::sign_lastfm(&params, &config.api_secret);
     debug!("Scrobble params: {:?}, api_sig={}", params, api_sig);
     params.push(("api_sig".into(), api_sig));
@@ -357,7 +358,7 @@ pub async fn submit_now_playing(config: &crate::config::ScrobblingConfig, state:
     if let Some(ref album_artist) = state.album_artist {
         params.push(("albumArtist".into(), album_artist.clone()));
     }
-    params.push(("duration".into(), state.duration.as_secs().to_string()));
+    params.push(("duration".into(), state.duration.as_secs().max(30).to_string()));
     params.sort_by(|a, b| a.0.cmp(&b.0));
     let api_sig = crate::config::sign_lastfm(&params, &config.api_secret);
     params.push(("api_sig".into(), api_sig));

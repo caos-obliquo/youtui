@@ -902,7 +902,7 @@ impl Youtui {
                         }
                     });
                 if let Some(pos) = start_idx {
-                    let target_idx = pos.saturating_add(1).min(songs.len().saturating_sub(1));
+                    let target_idx = if pos + 1 >= songs.len() { 0 } else { pos + 1 };
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                         self.window_state.lyrics_viewing_idx = Some(target_idx);
@@ -924,7 +924,7 @@ impl Youtui {
                         }
                     });
                 if let Some(pos) = start_idx {
-                    let target_idx = pos.saturating_sub(1);
+                    let target_idx = if pos == 0 { songs.len().saturating_sub(1) } else { pos - 1 };
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                         self.window_state.lyrics_viewing_idx = Some(target_idx);
