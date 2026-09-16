@@ -108,6 +108,44 @@ const LOG_FILE_NAME: &str = "debug";
 const LOG_FILE_EXT: &str = "log";
 const MAX_LOG_FILES: u16 = 5;
 
+/// RAII guard (F1): restores the terminal on ANY exit path.
+/// Created right after EnterAlternateScreen succeeds; its Drop mirrors
+/// destruct_terminal so early Err returns from run(), panic unwinds, and
+/// normal exits all leave raw mode, leave the alternate screen, disable
+/// mouse/focus capture, and show the cursor. Best-effort only - Drop must
+/// never panic, so errors are logged and ignored.
+struct TerminalGuard;
+
+impl TerminalGuard {
+    fn new() -> Self {
+        info!("TerminalGuard armed - terminal will be restored on any exit path");
+        Self
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        // Best-effort restore. Ignore errors: Drop must not panic, and during
+        // panic unwind the panic hook already attempted cleanup.
+        if let Err(e) = disable_raw_mode() {
+            error!("TerminalGuard: disable_raw_mode failed during restore: {e}");
+        } else {
+            info!("TerminalGuard: raw mode disabled");
+        }
+        if let Err(e) = execute!(
+            io::stdout(),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            DisableFocusChange,
+            crossterm::cursor::Show
+        ) {
+            error!("TerminalGuard: alternate-screen restore failed: {e}");
+        } else {
+            info!("TerminalGuard: terminal restored (alt-screen left, cursor shown)");
+        }
+    }
+}
+
 pub struct Youtui {
     status: AppStatus,
     event_handler: EventHandler,
@@ -127,6 +165,9 @@ pub struct Youtui {
     play_debouncer: PlayDebouncer,
     /// Background retry interval for cached scrobbles during rate limit
     scrobble_retry_interval: tokio::time::Interval,
+    /// F1 guard: LAST field so it drops after all other fields, restoring
+    /// the terminal even if run() returns early or panics unwind.
+    _terminal_guard: TerminalGuard,
 }
 
 #[derive(PartialEq)]
@@ -266,6 +307,9 @@ impl Youtui {
         // By only performing panic cleanup from the main thread, this largely prevents
         // exits that occur part-way through a redraw.
         IS_MAIN_THREAD.with(|flag| flag.set(true));
+        // F1: arm the RAII terminal guard now that EnterAlternateScreen has
+        // succeeded. Any later exit restores the terminal via Drop.
+        let terminal_guard = TerminalGuard::new();
         std::panic::set_hook(Box::new(|panic_info| {
             if IS_MAIN_THREAD.with(|flag| flag.get()) {
                 tracing::error!(
@@ -325,9 +369,29 @@ impl Youtui {
             render_interval: tokio::time::interval(Duration::from_millis(33)),
             play_debouncer: PlayDebouncer::new(Duration::from_millis(300)),
             scrobble_retry_interval: tokio::time::interval(Duration::from_secs(300)),
+            _terminal_guard: terminal_guard,
         })
     }
+    /// F1: single cleanup funnel. run_inner uses `?` on draw/flush_sixel at
+    /// several sites; on ANY Err restore the terminal here before returning,
+    /// so a broken draw or stdout never leaks raw mode or alt-screen.
+    /// (The TerminalGuard field covers panic unwind and Youtui drop; this
+    /// covers early Err returns while the caller still holds Youtui.)
     pub async fn run(&mut self) -> Result<()> {
+        let outcome = self.run_inner().await;
+        if let Err(ref e) = outcome {
+            error!("run() exiting with error, restoring terminal: {e:#}");
+            if let Err(cleanup_err) = destruct_terminal() {
+                error!("run() error-path terminal restore failed: {cleanup_err:#}");
+            } else {
+                info!("run() error-path terminal restore done");
+            }
+        } else {
+            info!("run() completed without error");
+        }
+        outcome
+    }
+    async fn run_inner(&mut self) -> Result<()> {
         // Initial draw before first event
         self.terminal.draw(|f| {
             ui::draw::draw_app(
@@ -336,7 +400,7 @@ impl Youtui {
                 &self.terminal_image_capabilities,
             );
         })?;
-        self.flush_sixel()?;
+        self.flush_sixel();
         if let Some(media_controls) = &mut self.media_controls {
             media_controls.update_controls(
                 ui::draw_media_controls::draw_app_media_controls(&self.window_state),
@@ -371,7 +435,7 @@ impl Youtui {
                                         &self.terminal_image_capabilities,
                                     );
                                 })?;
-                                self.flush_sixel()?;
+                                self.flush_sixel();
                                 if let Some(media_controls) = &mut self.media_controls {
                                     media_controls.update_controls(
                                         ui::draw_media_controls::draw_app_media_controls(&self.window_state),
@@ -995,7 +1059,16 @@ impl Youtui {
         }
     }
 
-    fn flush_sixel(&mut self) -> Result<()> {
+    /// F4: sixel is cosmetic decoration - write failures (EPIPE, slow
+    /// terminal backpressure, tmux passthrough hiccup) only log and continue.
+    /// Never aborts run().
+    fn flush_sixel(&mut self) {
+        if let Err(e) = self.flush_sixel_inner() {
+            error!("flush_sixel failed, skipping sixel frame: {e:#}");
+        }
+    }
+
+    fn flush_sixel_inner(&mut self) -> Result<()> {
         use std::io::Write;
         let rect = self.window_state.sixel_rect;
         let sd = self.window_state.sixel_data.clone();
