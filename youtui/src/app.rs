@@ -903,6 +903,7 @@ impl Youtui {
                     });
                 if let Some(pos) = start_idx {
                     let target_idx = if pos + 1 >= songs.len() { 0 } else { pos + 1 };
+                    tracing::info!("ViewNext: pos={} len={} -> target={} (viewing={:?} playing={:?})", pos, songs.len(), target_idx, self.window_state.lyrics_viewing_idx, self.window_state.playlist.play_status);
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                         let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
@@ -925,6 +926,7 @@ impl Youtui {
                     });
                 if let Some(pos) = start_idx {
                     let target_idx = if pos == 0 { songs.len().saturating_sub(1) } else { pos - 1 };
+                    tracing::info!("ViewPrev: pos={} len={} -> target={} (viewing={:?} playing={:?})", pos, songs.len(), target_idx, self.window_state.lyrics_viewing_idx, self.window_state.playlist.play_status);
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                         let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
