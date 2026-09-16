@@ -1541,10 +1541,24 @@ impl YoutuiWindow {
             return AsyncTask::new_no_op();
         }
 
-        // LRU cache: skip fetch if cached
+        // LRU cache: still update displayed title even on hit
         if let Some(popup) = &self.lyrics_popup {
             if popup.lyrics_cache.peek(&cache_key).is_some() {
                 tracing::info!("Lyrics cache hit for {}", cache_key);
+                let mut new_popup = LyricsPopup::new(artist.clone(), title.clone());
+                if let Some(old) = &self.lyrics_popup {
+                    for (k, v) in old.lyrics_cache.iter() {
+                        new_popup.lyrics_cache.put(k.clone(), v.clone());
+                    }
+                    for (k, v) in old.error_cache.iter() {
+                        new_popup.error_cache.put(k.clone(), *v);
+                    }
+                }
+                if let Some(cached) = new_popup.lyrics_cache.peek(&cache_key).cloned() {
+                    new_popup.set_lyrics(cached);
+                }
+                new_popup.lyrics_cache_key = Some(cache_key.clone());
+                self.lyrics_popup = Some(new_popup);
                 return AsyncTask::new_no_op();
             }
             // Negative cache: skip if recent error (5 min TTL)
