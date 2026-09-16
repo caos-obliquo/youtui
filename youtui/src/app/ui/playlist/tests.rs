@@ -895,8 +895,9 @@ async fn scrobble_state_uses_metadata_truth_despite_short_estimate() {
     let id = p.list.push_song_list(vec![song]);
 
     let _ = p.play_song_id(id);
-    let state = p.scrobble_state.as_ref().expect("scrobble state minted");
+    let state = p.scrobble_state.as_mut().expect("scrobble state minted");
     assert_eq!(state.track, "Holy Water");
     assert_eq!(state.duration, Duration::from_secs(57));
-    assert!(state.should_scrobble() || !state.scrobbled);
+    state.start_time = std::time::SystemTime::now() - Duration::from_secs(31);
+    assert!(state.should_scrobble());
 }

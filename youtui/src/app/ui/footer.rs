@@ -81,7 +81,7 @@ pub fn draw_footer(
         }
         _ => 0.0,
     };
-    if progress.as_secs() > duration as u64 {
+    if duration > 0 && progress.as_secs() > duration as u64 {
         progress = Duration::from_secs(duration as u64);
     }
     let progress_str = secs_to_time_string(progress.as_secs() as usize);
