@@ -3504,12 +3504,13 @@ impl Playlist {
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
                 {
                     song.duration_string =
-                        super::footer::secs_to_time_string(dur.as_secs() as usize);
+                        super::footer::secs_to_time_string(dur.max(floor).as_secs() as usize);
                 }
                 // Update scrobble state duration if it was using the 240s fallback
+                let corrected = Self::best_known_duration(song).unwrap_or(dur);
                 if let Some(ref mut state) = self.scrobble_state.as_mut() {
                     if state.duration == Duration::from_secs(240) {
-                        state.duration = dur;
+                        state.duration = corrected;
                         debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
                     }
                 }
@@ -3545,12 +3546,13 @@ impl Playlist {
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
                 {
                     song.duration_string =
-                        super::footer::secs_to_time_string(dur.as_secs() as usize);
+                        super::footer::secs_to_time_string(dur.max(floor).as_secs() as usize);
                 }
                 // Update scrobble state duration if it was using the 240s fallback
+                let corrected = Self::best_known_duration(song).unwrap_or(dur);
                 if let Some(ref mut state) = self.scrobble_state.as_mut() {
                     if state.duration == Duration::from_secs(240) {
-                        state.duration = dur;
+                        state.duration = corrected;
                         debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
                     }
                 }

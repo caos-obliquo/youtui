@@ -892,7 +892,10 @@ impl Youtui {
             AppCallback::ViewNextInQueue => {
                 let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
                 let start_idx = self.window_state.lyrics_popup.as_ref()
-                    .and_then(|pop| songs.iter().position(|s| s.title == pop.title))
+                    .and_then(|pop| songs.iter().position(|s| {
+                        s.title == pop.title
+                            && s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ") == pop.artist
+                    }))
                     .or(self.window_state.lyrics_viewing_idx)
                     .or_else(|| {
                         use crate::app::structures::PlayState;
@@ -917,7 +920,10 @@ impl Youtui {
             AppCallback::ViewPrevInQueue => {
                 let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
                 let start_idx = self.window_state.lyrics_popup.as_ref()
-                    .and_then(|pop| songs.iter().position(|s| s.title == pop.title))
+                    .and_then(|pop| songs.iter().position(|s| {
+                        s.title == pop.title
+                            && s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ") == pop.artist
+                    }))
                     .or(self.window_state.lyrics_viewing_idx)
                     .or_else(|| {
                         use crate::app::structures::PlayState;
