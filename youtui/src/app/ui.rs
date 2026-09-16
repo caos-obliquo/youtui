@@ -1530,25 +1530,70 @@ impl YoutuiWindow {
         let gen_id = self.lyrics_generation;
 
         let cache_key = format!("{}||{}", artist, title);
-        self.lyrics_viewing_idx = self.playlist.list.get_list_iter()
-            .position(|s| s.title == title && s.artists.iter().any(|a| artist.contains(a.name.as_str()) || a.name.contains(&artist)));
-
-        // Inflight dedup: skip if already fetching
-        if self.lyrics_inflight.contains(&cache_key) {
-            tracing::info!("Lyrics inflight dedup: skip duplicate request for {}", cache_key);
-            return AsyncTask::new_no_op();
+        // Exact match only: fuzzy contains() matched wrong queue rows on
+        // duplicate titles and clobbered lyrics_viewing_idx. Only set when
+        // found, never clear (ViewNext/Prev set the target idx explicitly).
+        if let Some(pos) = self.playlist.list.get_list_iter().position(|s| {
+            s.title == title
+                && s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ") == artist
+        }) {
+            self.lyrics_viewing_idx = Some(pos);
         }
 
-        // LRU cache: skip fetch if cached
+        // Inflight dedup: true duplicate (popup already shows this key) -> skip.
+        // Stale popup (navigated away while a fetch was in flight) -> drop the
+        // stale entry and fall through to a fresh fetch; the orphaned fetch is
+        // discarded by the lyrics_generation check on completion.
+        if self.lyrics_inflight.contains(&cache_key) {
+            let already_showing = self.lyrics_popup.as_ref()
+                .is_some_and(|p| p.lyrics_cache_key.as_deref() == Some(cache_key.as_str()));
+            if already_showing {
+                tracing::info!("Lyrics inflight dedup: skip duplicate request for {}", cache_key);
+                return AsyncTask::new_no_op();
+            }
+            tracing::info!("Lyrics inflight stale for {}: refetch for current popup", cache_key);
+            self.lyrics_inflight.remove(&cache_key);
+        }
+
+        // LRU cache: still update displayed title even on hit
         if let Some(popup) = &self.lyrics_popup {
             if popup.lyrics_cache.peek(&cache_key).is_some() {
                 tracing::info!("Lyrics cache hit for {}", cache_key);
+                let mut new_popup = LyricsPopup::new(artist.clone(), title.clone());
+                if let Some(old) = &self.lyrics_popup {
+                    for (k, v) in old.lyrics_cache.iter() {
+                        new_popup.lyrics_cache.put(k.clone(), v.clone());
+                    }
+                    for (k, v) in old.error_cache.iter() {
+                        new_popup.error_cache.put(k.clone(), *v);
+                    }
+                }
+                if let Some(cached) = new_popup.lyrics_cache.peek(&cache_key).cloned() {
+                    new_popup.set_lyrics(cached);
+                }
+                new_popup.lyrics_cache_key = Some(cache_key.clone());
+                self.lyrics_popup = Some(new_popup);
                 return AsyncTask::new_no_op();
             }
-            // Negative cache: skip if recent error (5 min TTL)
+            // Negative cache: skip fetch if recent error (5 min TTL), but still
+            // swap the popup shell so title/artist follow the queue position.
             if let Some(cached_at) = popup.error_cache.peek(&cache_key) {
                 if cached_at.elapsed().as_secs() < 300 {
                     tracing::info!("Lyrics negative cache hit for {} (age={}s)", cache_key, cached_at.elapsed().as_secs());
+                    let mut new_popup = LyricsPopup::new(artist.clone(), title.clone());
+                    if let Some(old) = &self.lyrics_popup {
+                        for (k, v) in old.lyrics_cache.iter() {
+                            new_popup.lyrics_cache.put(k.clone(), v.clone());
+                        }
+                        for (k, v) in old.error_cache.iter() {
+                            new_popup.error_cache.put(k.clone(), *v);
+                        }
+                    }
+                    // set_error before lyrics_cache_key so the negative TTL is
+                    // not refreshed by merely viewing the cached failure.
+                    new_popup.set_error("No lyrics found for this track.".to_string());
+                    new_popup.lyrics_cache_key = Some(cache_key.clone());
+                    self.lyrics_popup = Some(new_popup);
                     return AsyncTask::new_no_op();
                 }
             }

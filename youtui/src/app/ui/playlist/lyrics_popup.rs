@@ -893,12 +893,14 @@ impl LyricsPopup {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::TogglePlayPause))
             }
-            KeyCode::Char('(') => {
+            KeyCode::Char(c) if c == '(' || (c == '9' && event.modifiers.contains(KeyModifiers::SHIFT)) => {
                 self.reset_count();
+                tracing::info!("lyrics prev: c={} mods={:?}", c, event.modifiers);
                 (AsyncTask::new_no_op(), Some(AppCallback::ViewPrevInQueue))
             }
-            KeyCode::Char(')') => {
+            KeyCode::Char(c) if c == ')' || (c == '0' && event.modifiers.contains(KeyModifiers::SHIFT)) => {
                 self.reset_count();
+                tracing::info!("lyrics next: c={} mods={:?}", c, event.modifiers);
                 (AsyncTask::new_no_op(), Some(AppCallback::ViewNextInQueue))
             }
             KeyCode::Char('<') => {
@@ -986,22 +988,14 @@ impl LyricsPopup {
                     .border_style(Style::default().fg(Color::Cyan));
                 let inner = block.inner(popup_area);
                 frame.render_widget(block, popup_area);
-                let (lyrics_area, ann_area, hint_area) = if split_view {
-                    let chunks = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([Constraint::Min(1), Constraint::Length(1)])
-                        .split(inner);
+                let (lyrics_area, ann_area) = if split_view {
                     let horiz = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-                        .split(chunks[0]);
-                    (horiz[0], Some(horiz[1]), chunks[1])
-                } else {
-                    let chunks = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([Constraint::Min(1), Constraint::Length(1)])
                         .split(inner);
-                    (chunks[0], None, chunks[1])
+                    (horiz[0], Some(horiz[1]))
+                } else {
+                    (inner, None)
                 };
                 let (header_area, song_area) = {
                     let vert = Layout::default()
@@ -1166,17 +1160,6 @@ impl LyricsPopup {
                         ann_inner,
                     );
                 }
-                let has_more = self.scroll_offset + visible_lines_count < line_count;
-                let _scroll_hint = if has_more { " j/k scroll " } else { "" };
-                let _ann_hint = if ann_count > 0 { " | a: Toggle annotations" } else { "" };
-                let mut hint_str = String::from("( ) Lyric | <> Song | [] Seek | Space Pause");
-                if ann_count > 0 { hint_str.push_str(" | Tab/Alt+h/l Focus | Enter Copy Ann"); }
-                if has_jp { hint_str.push_str(" | R Romaji"); }
-                hint_str.push_str(" | Esc/q Close");
-                let hint = Paragraph::new(hint_str)
-                    .style(Style::default().fg(Color::DarkGray))
-                    .alignment(Alignment::Center);
-                frame.render_widget(hint, hint_area);
             }
             LyricsPopupState::Error(err) => {
                 let block = Block::default()
@@ -1205,13 +1188,32 @@ impl LyricsPopup {
         }
     }
 
+    /// Key-hint line for the shared nav-hint slot above the Status footer.
+    /// Returns `Some` only once lyrics are loaded. The in-box hint row is
+    /// gone - parity with the queue page, which renders its hints outside
+    /// any box (`draw_nav_hint_bar` calls this while the popup is open).
+    pub fn hint_line(&self) -> Option<String> {
+        if !matches!(self.state, LyricsPopupState::Loaded(_)) {
+            return None;
+        }
+        let mut hint = String::from("( ) Lyric | <> Song | [] Seek | Space Pause");
+        if !self.annotations.is_empty() {
+            hint.push_str(" | Tab/Alt+h/l Focus | Enter Copy Ann");
+        }
+        if has_japanese(&self.original_lyrics) {
+            hint.push_str(" | R Romaji");
+        }
+        hint.push_str(" | Esc/q Close");
+        Some(hint)
+    }
+
     fn top_anchored_rect(r: Rect) -> Rect {
         let vert = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(0),
                 Constraint::Min(1),
-                Constraint::Length(5), // leave room for footer
+                Constraint::Length(6), // leave room for footer + nav-hint row
             ])
             .split(r);
         vert[1]

@@ -1,4 +1,3 @@
-use crate::app::AudioQuality;
 use crate::youtube_downloader::{YoutubeMusicDownload, YoutubeMusicDownloader};
 use bytes::Bytes;
 use futures::Stream;
@@ -50,7 +49,6 @@ impl YoutubeMusicDownloader for NativeYoutubeDownloader {
     async fn stream_song(
         &self,
         song_video_id: impl AsRef<str> + Send,
-        _audio_quality: AudioQuality,
     ) -> Result<
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
         Self::Error,

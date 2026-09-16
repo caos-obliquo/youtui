@@ -1,4 +1,4 @@
-use crate::app::component::actionhandler::{ComponentEffect, Action, ActionHandler, YoutuiEffect};
+use crate::app::component::actionhandler::ComponentEffect;
 use crate::app::ui::AppCallback;
 use async_callback_manager::AsyncTask;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -6,30 +6,13 @@ use crate::app::structures::Percentage;
 use crate::app::view::{BasicConstraint, basic_constraints_to_table_constraints};
 use crate::drawutils::{ROW_HIGHLIGHT_COLOUR, SELECTED_BORDER_COLOUR, TABLE_HEADINGS_COLOUR, TEXT_COLOUR};
 use crate::widgets::{ScrollingTable, ScrollingTableState};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph};
 use ratatui::Frame;
 use std::borrow::Cow;
 use tracing::{debug, info, warn};
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum RecommendationsAction {
-    Close,
-}
-
-impl Action for RecommendationsAction {
-    fn context(&self) -> Cow<'_, str> {
-        "Recommendations".into()
-    }
-    fn describe(&self) -> Cow<'_, str> {
-        match self {
-            RecommendationsAction::Close => "Close",
-        }
-        .into()
-    }
-}
 
 pub struct RecommendationsPopup {
     pub kind: crate::lastfm_recommend::RecKind,
@@ -47,14 +30,6 @@ pub struct RecommendationsPopup {
 }
 
 impl_youtui_component!(RecommendationsPopup);
-
-impl ActionHandler<RecommendationsAction> for RecommendationsPopup {
-    fn apply_action(&mut self, action: RecommendationsAction) -> impl Into<YoutuiEffect<Self>> {
-        match action {
-            RecommendationsAction::Close => (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup)),
-        }
-    }
-}
 
 impl RecommendationsPopup {
     pub fn new(kind: crate::lastfm_recommend::RecKind, loading: bool) -> Self {
@@ -123,8 +98,8 @@ impl RecommendationsPopup {
             return self.handle_menu_key(event);
         }
         match event.code {
-            KeyCode::Char('q') | KeyCode::Esc => {
-                info!("Closing recommendations popup: kind={:?} items={}", self.kind, self.items.len());
+            KeyCode::F(1) | KeyCode::F(2) | KeyCode::F(3) | KeyCode::Char('q') | KeyCode::Esc => {
+                info!("Closing recommendations popup: kind={:?} items={} via {:?}", self.kind, self.items.len(), event.code);
                 (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
             }
             KeyCode::Char('j') | KeyCode::Down => {

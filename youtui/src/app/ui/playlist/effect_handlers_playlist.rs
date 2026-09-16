@@ -1007,7 +1007,7 @@ fn convert_playlist_songs(songs: Vec<PlaylistSong>) -> Vec<ListSong> {
             album: list_album,
             like_status: s.like_status,
             is_album_upload: false,
-            release_mbid: None,
+            release_mbid: None, artists_string: std::sync::OnceLock::new(),
         });
     }
     list_songs
@@ -1165,7 +1165,7 @@ impl_youtui_task_handler!(
                     album: None,
                     like_status: ytmapi_rs::common::LikeStatus::Indifferent,
                     is_album_upload: false,
-                    release_mbid: None,
+                    release_mbid: None, artists_string: std::sync::OnceLock::new(),
                 }
             }).collect();
             let _task = this.insert_next_song_list(songs);
@@ -1301,7 +1301,7 @@ impl_youtui_task_handler!(
                 start_offset: None,
                 like_status: ytmapi_rs::common::LikeStatus::Indifferent,
                 is_album_upload: false,
-                release_mbid: None,
+                release_mbid: None, artists_string: std::sync::OnceLock::new(),
             };
             info!("Song Info: opening song info popup for '{}'", song.title);
             this.open_song_info_popup(song)
@@ -1365,7 +1365,7 @@ impl_youtui_task_handler!(
                     start_offset: None,
                     like_status: ytmapi_rs::common::LikeStatus::Indifferent,
                     is_album_upload: false,
-                    release_mbid: None,
+                    release_mbid: None, artists_string: std::sync::OnceLock::new(),
                 }
             }).collect();
             let effect = this.reset();

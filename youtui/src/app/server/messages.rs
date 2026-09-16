@@ -8,7 +8,6 @@ use super::song_downloader::{DownloadProgressUpdate, InMemSong};
 use super::song_thumbnail_downloader::SongThumbnail;
 use crate::app::server::api::GetPlaylistSongsProgressUpdate;
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
-use crate::app::AudioQuality;
 use crate::app::structures::ListSongID;
 use audio_player::rodio::decoder::DecoderError;
 use audio_player::{
@@ -1252,7 +1251,7 @@ impl BackendTask<ArcServer> for ReorderPlaylistItem {
 }
 
 #[derive(Debug)]
-pub struct DownloadSong(pub VideoID<'static>, pub ListSongID, pub Arc<CancellationToken>, pub AudioQuality);
+pub struct DownloadSong(pub VideoID<'static>, pub ListSongID, pub Arc<CancellationToken>);
 
 impl PartialEq for DownloadSong {
     fn eq(&self, other: &Self) -> bool {
@@ -1926,7 +1925,7 @@ impl BackendStreamingTask<ArcServer> for DownloadSong {
         backend: &ArcServer,
     ) -> impl futures::Stream<Item = Self::Output> + Send + Unpin + 'static {
         let backend = backend.clone();
-        backend.song_downloader.download_song(self.0, self.1, Some(self.2), self.3)
+        backend.song_downloader.download_song(self.0, self.1, Some(self.2))
     }
 }
 impl BackendTask<ArcServer> for Seek {

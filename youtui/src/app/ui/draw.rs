@@ -92,12 +92,8 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         return;
     }
 
-    // Logger fullscreen (f): take the whole screen, skip header/footer/nav.
-    if matches!(w.context, WindowContext::Logs) && w.logger_fullscreen {
-        let context_selected = !w.help.shown && !w.key_pending();
-        w.logger.draw_chunk(f, f.area(), context_selected);
-        return;
-    }
+    // Logger fullscreen (f): same chrome (header/footer/nav), selector pane
+    // hidden so the log takes the full content width.
 
     let [header_chunk, window_chunk, footer_chunk] = Layout::default()
         .direction(Direction::Vertical)
@@ -378,20 +374,40 @@ fn draw_popup(f: &mut Frame, w: &YoutuiWindow, chunk: Rect) {
 }
 
 fn draw_nav_hint_bar(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
+    // Lyrics parity: while loaded lyrics are open, this slot shows the lyrics
+    // keys outside the popup box - the same row the queue page hints sit on.
+    if let Some(popup) = &w.lyrics_popup {
+        if let Some(hint) = popup.hint_line() {
+            let hint = Paragraph::new(hint)
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Center);
+            f.render_widget(hint, chunk);
+            return;
+        }
+    }
     // Context-aware: music-player commands always; nav keys follow context.
     let nav_key = match w.context {
         WindowContext::Browser => "h/l",
+        WindowContext::Logs => "j/k",
         _ => "j/k",
     };
     #[rustfmt::skip]
-    let hints = [
+    let mut hints = vec![
         (nav_key, "Nav"),
         ("- / +", "Vol"),
         ("[ ]", "Seek"),
         ("< >", "Prev/Next"),
         ("Space", "Play/Pause"),
     ];
-    let hint = Paragraph::new(hints.map(|(k, a)| format!("{k} {a}")).join("  |  "))
+    if matches!(w.context, WindowContext::Logs) {
+        hints.push(("h/l", "Panes"));
+        if w.logger_fullscreen {
+            hints.push(("f", "Exit Full"));
+        } else {
+            hints.push(("f", "Fullscreen"));
+        }
+    }
+    let hint = Paragraph::new(hints.iter().map(|(k, a)| format!("{k} {a}")).collect::<Vec<_>>().join("  |  "))
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     f.render_widget(hint, chunk);

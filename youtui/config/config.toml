@@ -5,20 +5,24 @@ yt_dlp_command = "yt-dlp"
 
 # Global keybinds
 [keybinds.global]
+C-e = {action = "edit_config", visibility = "global"}
+":" = {action = "open_url", visibility = "global"}
 "+" = "vol_up"
 "-" = "vol_down"
 ">" = "next_song"
 "<" = "prev_song"
 "]" = "seek_forward"
 "[" = "seek_back"
-"?" = {action = "toggle_help", visibility = "global"}
 q = {action = "quit", visibility = "global"}
-F11 = {action = "view_logs", visibility = "global"}
+F1 = {action = "browser.search", visibility = "global"}
 F2 = {action = "toggle_browser", visibility = "global"}
 F3 = {action = "toggle_playlist", visibility = "global"}
+F4 = {action = "recommend", visibility = "global"}
+F11 = {action = "view_logs", visibility = "global"}
+"/" = {action = "fuzzy_finder", visibility = "global"}
 space = {action = "play_pause", visibility = "global"}
+"?" = {action = "toggle_help", visibility = "global"}
 C-c = "quit"
-C-e = {action = "edit_config", visibility = "global"}
 
 # Global keybind mode names
 [mode_names.global]
@@ -41,7 +45,6 @@ o.v = "playlist.view_album_cover"
 o.a = "playlist.go_to_artist"
 o.b = "playlist.go_to_album"
 o.s = "playlist.toggle_shuffle"
-o.A = "playlist.set_best_quality"
 o.c = "playlist.toggle_playlist_category_filter"
 o.D = "playlist.delete_all"
 o.I = "playlist.view_song_info"
@@ -55,7 +58,6 @@ d = "Delete"
 
 [keybinds.browser]
 "/" = {action = "browser.search", visibility = "global"}
-F1 = {action = "browser.search", visibility = "global"}
 h = "browser.left"
 l = "browser.right"
 F7 = {action = "browser.change_search_type", visibility = "global"}
@@ -168,12 +170,17 @@ left = "log.reduce_shown"
 right = "log.increase_shown"
 k = "log.up"
 j = "log.down"
+up = "log.up"
+down = "log.down"
 C-u = "log.page_up"
 C-d = "log.page_down"
 t = "log.toggle_hide_filtered"
-esc = "log.exit_page_mode"
-f = "log.toggle_target_focus"
-h = "log.toggle_target_selector"
+f = "log.toggle_fullscreen"
+h = "log.focus_selector"
+l = "log.focus_log"
+H = "log.toggle_target_selector"
+g = "log.chord_g"
+G = "log.last"
 
 [keybinds.text_entry]
 enter = {action = "text_entry.submit", visibility = "hidden"}

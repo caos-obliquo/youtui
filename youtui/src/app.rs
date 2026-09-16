@@ -74,7 +74,6 @@ pub enum NavTarget {
 use std::fmt::Display;
 use std::io;
 use std::sync::Arc;
-pub use structures::AudioQuality;
 use structures::{ListSong, ListSongID};
 use tracing::{error, info};
 use tracing_subscriber::prelude::*;
@@ -892,7 +891,9 @@ impl Youtui {
             }
             AppCallback::ViewNextInQueue => {
                 let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
-                let start_idx = self.window_state.lyrics_viewing_idx
+                let start_idx = self.window_state.lyrics_popup.as_ref()
+                    .and_then(|pop| songs.iter().position(|s| s.title == pop.title))
+                    .or(self.window_state.lyrics_viewing_idx)
                     .or_else(|| {
                         use crate::app::structures::PlayState;
                         match &self.window_state.playlist.play_status {
@@ -903,18 +904,21 @@ impl Youtui {
                         }
                     });
                 if let Some(pos) = start_idx {
-                    let target_idx = pos.saturating_add(1).min(songs.len().saturating_sub(1));
+                    let target_idx = if pos + 1 >= songs.len() { 0 } else { pos + 1 };
+                    tracing::info!("ViewNext: pos={} len={} -> target={} (viewing={:?} popup={:?} playing={:?})", pos, songs.len(), target_idx, self.window_state.lyrics_viewing_idx, self.window_state.lyrics_popup.as_ref().map(|p| &p.title), self.window_state.playlist.play_status);
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                        self.window_state.lyrics_viewing_idx = Some(target_idx);
                         let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                        self.window_state.lyrics_viewing_idx = Some(target_idx);
                         self.task_manager.spawn_task(&self.server, effect);
                     }
                 }
             }
             AppCallback::ViewPrevInQueue => {
                 let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
-                let start_idx = self.window_state.lyrics_viewing_idx
+                let start_idx = self.window_state.lyrics_popup.as_ref()
+                    .and_then(|pop| songs.iter().position(|s| s.title == pop.title))
+                    .or(self.window_state.lyrics_viewing_idx)
                     .or_else(|| {
                         use crate::app::structures::PlayState;
                         match &self.window_state.playlist.play_status {
@@ -925,11 +929,12 @@ impl Youtui {
                         }
                     });
                 if let Some(pos) = start_idx {
-                    let target_idx = pos.saturating_sub(1);
+                    let target_idx = if pos == 0 { songs.len().saturating_sub(1) } else { pos - 1 };
+                    tracing::info!("ViewPrev: pos={} len={} -> target={} (viewing={:?} popup={:?} playing={:?})", pos, songs.len(), target_idx, self.window_state.lyrics_viewing_idx, self.window_state.lyrics_popup.as_ref().map(|p| &p.title), self.window_state.playlist.play_status);
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                        self.window_state.lyrics_viewing_idx = Some(target_idx);
                         let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                        self.window_state.lyrics_viewing_idx = Some(target_idx);
                         self.task_manager.spawn_task(&self.server, effect);
                     }
                 }
@@ -978,6 +983,8 @@ impl Youtui {
             }
             AppCallback::ToggleLoggerFullscreen => {
                 self.window_state.toggle_logger_fullscreen();
+                let on = self.window_state.logger_fullscreen;
+                self.window_state.logger.set_fullscreen(on);
             }
         }
     }

@@ -209,10 +209,13 @@ pub fn draw_table_impl<'a>(
         .max_times_to_scroll(Some(MAX_TIMES_TO_SCROLL_LIST))
         .total_items(len)
         .column_spacing(1);
-    let scrollable_lines = len.saturating_sub(table_height);
-    let pos = state.offset().min(scrollable_lines);
+    // ScrollingTable::render uses visible_rows = area.height - 1 (subtracting 1 for heading).
+    // Match that here so the scrollbar range aligns with what the widget renders.
+    let visible_rows = table_height.saturating_sub(1);
+    let scrollable_lines = len.saturating_sub(visible_rows);
     let new_state = move_render_stateful_widget(f, table_widget, chunk, new_state);
-    // Call this after rendering table, as offset is mutated.
+    // Call this after rendering table, as offset is mutated by ScrollingTable's center-scroll logic.
+    let pos = new_state.offset().min(scrollable_lines);
     let scrollbar_state = ScrollbarState::default()
         .position(pos)
         .content_length(scrollable_lines);

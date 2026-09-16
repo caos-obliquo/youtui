@@ -11,7 +11,7 @@ use crate::app::server::{
     TaskMetadata, ValidateMetadata, AlbumTrack,
 };
 use crate::app::structures::{
-    fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
+    fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, BrowserSongsList, DownloadStatus,
     ListSong, ListSongDisplayableField, ListSongID, Percentage, PlayState, SongListComponent,
     Thumbnail,
 };
@@ -95,7 +95,6 @@ pub struct Playlist {
     pub play_status: PlayState,
     pub queue_status: QueueState,
     pub volume: Percentage,
-    pub audio_quality: AudioQuality,
     cur_selected: usize,
     pub widget_state: ScrollingTableState,
     pub shuffle_enabled: bool,
@@ -180,7 +179,6 @@ pub enum PlaylistAction {
     LoadQueue,
     DeleteQueue,
     ClearSearch,
-    SetBestQuality,
     SaveToNewPlaylist,
     LoadFromYTM,
     ViewLyrics,
@@ -232,7 +230,6 @@ impl Action for PlaylistAction {
             PlaylistAction::SaveQueue => "Save Queue",
             PlaylistAction::LoadQueue => "Load Queue",
             PlaylistAction::DeleteQueue => "Delete Queue",
-            PlaylistAction::SetBestQuality => "Set Best Quality",
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
             PlaylistAction::LoadFromYTM => "Load YouTube Music Playlist",
             PlaylistAction::ViewLyrics => "View Lyrics",
@@ -304,11 +301,6 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             }
             PlaylistAction::DeleteQueue => (AsyncTask::new_no_op(), None),
-            PlaylistAction::SetBestQuality => {
-                self.audio_quality = AudioQuality::Best;
-                info!("Audio quality set to: {:?}", self.audio_quality);
-                (AsyncTask::new_no_op(), None)
-            },
             PlaylistAction::SaveToNewPlaylist => {
                 let video_ids: Vec<VideoID<'static>> = self.list.get_list_iter()
                     .map(|song| song.video_id.clone())
@@ -886,13 +878,6 @@ impl HasTitle for Playlist {
             ""
         };
 
-        let quality_indicator = match self.audio_quality {
-            AudioQuality::Best => " [Q:Best]",
-            AudioQuality::High => " [Q:High]",
-            AudioQuality::Medium => " [Q:Medium]",
-            AudioQuality::Low => " [Q:Low]",
-        };
-
         let search_indicator = if !self.search_text.is_empty() {
             let total = self.search_indices.len();
             let cur = self.search_cur + 1;
@@ -913,9 +898,8 @@ impl HasTitle for Playlist {
         let err_indicator = self.last_error.as_ref().map(|e| format!(" [ERR: {}]", e)).unwrap_or_default();
         let status_indicator = self.last_status.as_ref().map(|s| format!(" [! {}]", s)).unwrap_or_default();
         format!(
-            "Local playlist - {} songs{}{}{}{}{}{}{}",
+            "Local playlist - {} songs{}{}{}{}{}{}",
             self.list.get_list_iter().len(),
-            quality_indicator,
             shuffle_indicator,
             search_indicator,
             cat_indicator,
@@ -948,7 +932,6 @@ impl Playlist {
             cur_played_dur: None,
             cur_selected: 0,
             queue_status: QueueState::NotQueued,
-            audio_quality: AudioQuality::default(),
             widget_state: Default::default(),
             shuffle_enabled: false,
             shuffle_indices: Vec::new(),
@@ -1125,7 +1108,7 @@ impl Playlist {
                 album: list_album,
                 like_status: src_like_status.clone(),
                 is_album_upload: false,
-                release_mbid: None,
+                release_mbid: None, artists_string: std::sync::OnceLock::new(),
             };
             self.list.insert_after(src_idx + i, list_song);
             accum += track.duration_secs;
@@ -1676,7 +1659,7 @@ impl Playlist {
                         let album = self.canonical_album_name.clone()
                             .or_else(|| song.album.as_ref().map(|a| a.name.clone()));
                         let album_artist = song.artists.first().map(|a| a.name.clone());
-                        let dur = song.actual_duration.unwrap_or(std::time::Duration::from_secs(240));
+                        let dur = Self::best_known_duration(song).unwrap_or(std::time::Duration::from_secs(240));
                         self.scrobble_state = Some(crate::app::scrobbler::ScrobbleState::new(artist, song.title.clone(), album, album_artist, dur));
                         // Send now-playing notification to Last.fm
                         if let Some(ref state) = self.scrobble_state {
@@ -1798,11 +1781,13 @@ impl Playlist {
                     let album = song.album.as_ref().map(|a| a.name.clone());
                     let title = song.title.clone();
                     let actual_dur = song.actual_duration;
-                    (artist, album, title, actual_dur, song.artists.first().map(|a| a.name.clone()))
+                    let dur_str_secs = super::footer::parse_simple_time_to_secs(&song.duration_string) as u64;
+                    (artist, album, title, actual_dur, song.artists.first().map(|a| a.name.clone()), dur_str_secs)
                 });
-                if let Some((song_artist, song_album, song_title, actual_dur, album_artist)) = song_data {
+                if let Some((song_artist, song_album, song_title, actual_dur, album_artist, dur_str_secs)) = song_data {
                     let album = self.canonical_album_name.clone().or_else(|| song_album.clone());
-                    let dur = actual_dur.unwrap_or(std::time::Duration::from_secs(240));
+                    let parsed = std::time::Duration::from_secs(dur_str_secs);
+                    let dur = actual_dur.map(|a| a.max(parsed)).or(if parsed.is_zero() { None } else { Some(parsed) }).unwrap_or(std::time::Duration::from_secs(240));
                     let state = crate::app::scrobbler::ScrobbleState::new(
                         song_artist.clone(), song_title, album,
                         album_artist, dur,
@@ -2394,7 +2379,7 @@ impl Playlist {
         debug!("download_song: starting download for {}", video_id);
 
         let effect = AsyncTask::new_stream(
-            DownloadSong(song.video_id.clone(), id, cancel_token.clone(), self.audio_quality),
+            DownloadSong(song.video_id.clone(), id, cancel_token.clone()),
             HandleSongDownloadProgressUpdate,
             None,
         );
@@ -3186,9 +3171,9 @@ impl Playlist {
                     effect = effect.push(self.download_song(next_id));
                 }
             }
-            DownloadProgressUpdateType::Error => {
-                self.last_error = Some("Download failed - check yt-dlp".to_string());
-                error!("download_error: song_id={}", video_id);
+            DownloadProgressUpdateType::Error(msg) => {
+                self.last_error = Some(format!("Download failed: {}", msg));
+                error!("download_error: song_id={}, reason={}", video_id, msg);
                 if let Some(idx) = self.get_index_from_id(id) {
                     if let Some(song) = self.list.get_list_iter_mut().nth(idx) {
                         song.download_status = DownloadStatus::Failed;
@@ -3484,12 +3469,36 @@ impl Playlist {
         );
     }
 
+    /// Best-known duration for scrobble/gapless decisions.
+    /// YTM `duration_string` ("0:57") and metadata track durations are ground
+    /// truth. Rodio's decoded `total_duration` is a byte-len/bitrate estimate
+    /// that runs ~2x short on VBR YouTube streams (e.g. 28s for a 57s track),
+    /// so it must never shrink a known duration - doing so drops real 57s+
+    /// tracks below the 30s scrobble floor and they never submit.
+    fn best_known_duration(song: &ListSong) -> Option<Duration> {
+        let parsed =
+            Duration::from_secs(super::footer::parse_simple_time_to_secs(&song.duration_string) as u64);
+        match song.actual_duration {
+            Some(a) => Some(a.max(parsed)),
+            None if parsed.is_zero() => None,
+            None => Some(parsed),
+        }
+    }
+
     pub fn handle_queued(&mut self, duration: Option<Duration>, id: ListSongID) {
         if let Some(song) = self.get_mut_song_from_id(id) {
             // Always update actual_duration from decoded audio when available.
             // The metadata duration (YTM duration_seconds) may be shorter than real audio.
             if let Some(dur) = duration {
-                song.actual_duration = Some(dur);
+                let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                if dur >= floor {
+                    song.actual_duration = Some(dur);
+                } else {
+                    info!(
+                        "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
+                        dur, song.title, floor
+                    );
+                }
                 // Backfill duration_string when YTM gave none or zero.
                 if song.duration_string.is_empty()
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
@@ -3521,7 +3530,16 @@ impl Playlist {
             // Always update actual_duration from decoded audio when available.
             // The metadata duration (YTM duration_seconds) may be shorter than real audio.
             if let Some(dur) = duration {
-                song.actual_duration = Some(dur);
+                // Never shrink: VBR decode estimates run short (see best_known_duration).
+                let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                if dur >= floor {
+                    song.actual_duration = Some(dur);
+                } else {
+                    info!(
+                        "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
+                        dur, song.title, floor
+                    );
+                }
                 // Backfill duration_string when YTM gave none or zero.
                 if song.duration_string.is_empty()
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0

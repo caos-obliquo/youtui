@@ -74,7 +74,7 @@ Commit rule: one commit per finished item below, small clean diffs. No batching.
 ## Low Priority
 - **Native streaming** - symphonia/basic-tcp-streaming prototype
 - **Artist album pagination** - `ParseFromContinuable` for `GetArtistAlbumsQuery`
-- **Upstream dep tracking** - `AudioQuality` removal from structures.rs
+- **Upstream dep tracking** - DONE: `AudioQuality` enum + downloader plumbing + `SetBestQuality` keymap binding removed (structures.rs, playlist.rs, keymap.rs, youtube_downloader)
 - **compute_artists_string** - minor perf: cached/footer duplication
 
 ## Blocked
