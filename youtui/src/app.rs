@@ -891,9 +891,7 @@ impl Youtui {
             }
             AppCallback::ViewNextInQueue => {
                 let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
-                let start_idx = self.window_state.lyrics_popup.as_ref()
-                    .and_then(|pop| songs.iter().position(|s| s.title == pop.title && s.artists.iter().any(|a| pop.artist.contains(a.name.as_str()) || a.name.contains(&pop.artist))))
-                    .or(self.window_state.lyrics_viewing_idx)
+                let start_idx = self.window_state.lyrics_viewing_idx
                     .or_else(|| {
                         use crate::app::structures::PlayState;
                         match &self.window_state.playlist.play_status {
@@ -905,7 +903,7 @@ impl Youtui {
                     });
                 if let Some(pos) = start_idx {
                     let target_idx = if pos + 1 >= songs.len() { 0 } else { pos + 1 };
-                    tracing::info!("ViewNext: pos={} len={} -> target={} (viewing={:?} popup={:?} playing={:?})", pos, songs.len(), target_idx, self.window_state.lyrics_viewing_idx, self.window_state.lyrics_popup.as_ref().map(|p| &p.title), self.window_state.playlist.play_status);
+                    tracing::info!("ViewNext: pos={} len={} -> target={} (viewing={:?} playing={:?})", pos, songs.len(), target_idx, self.window_state.lyrics_viewing_idx, self.window_state.playlist.play_status);
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                         let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
@@ -916,9 +914,7 @@ impl Youtui {
             }
             AppCallback::ViewPrevInQueue => {
                 let songs: Vec<_> = self.window_state.playlist.list.get_list_iter().collect();
-                let start_idx = self.window_state.lyrics_popup.as_ref()
-                    .and_then(|pop| songs.iter().position(|s| s.title == pop.title && s.artists.iter().any(|a| pop.artist.contains(a.name.as_str()) || a.name.contains(&pop.artist))))
-                    .or(self.window_state.lyrics_viewing_idx)
+                let start_idx = self.window_state.lyrics_viewing_idx
                     .or_else(|| {
                         use crate::app::structures::PlayState;
                         match &self.window_state.playlist.play_status {
@@ -930,7 +926,7 @@ impl Youtui {
                     });
                 if let Some(pos) = start_idx {
                     let target_idx = if pos == 0 { songs.len().saturating_sub(1) } else { pos - 1 };
-                    tracing::info!("ViewPrev: pos={} len={} -> target={} (viewing={:?} popup={:?} playing={:?})", pos, songs.len(), target_idx, self.window_state.lyrics_viewing_idx, self.window_state.lyrics_popup.as_ref().map(|p| &p.title), self.window_state.playlist.play_status);
+                    tracing::info!("ViewPrev: pos={} len={} -> target={} (viewing={:?} playing={:?})", pos, songs.len(), target_idx, self.window_state.lyrics_viewing_idx, self.window_state.playlist.play_status);
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
                         let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
