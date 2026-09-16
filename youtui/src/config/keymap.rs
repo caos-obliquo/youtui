@@ -2021,11 +2021,11 @@ fn default_log_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('h')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::ShowSelector)),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::FocusSelector)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('l')),
-            KeyActionTree::new_key(AppAction::Log(LoggerAction::HideSelector)),
+            KeyActionTree::new_key(AppAction::Log(LoggerAction::FocusLog)),
         ),
         (
             Keybind::new_unmodified(crossterm::event::KeyCode::Char('H')),

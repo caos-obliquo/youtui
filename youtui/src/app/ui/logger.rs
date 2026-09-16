@@ -22,8 +22,8 @@ pub enum LoggerAction {
     ToggleHideFiltered,
     Up,
     Down,
-    ShowSelector,
-    HideSelector,
+    FocusSelector,
+    FocusLog,
     PageUp,
     PageDown,
     ReduceShown,
@@ -49,8 +49,8 @@ impl Action for LoggerAction {
             LoggerAction::ToggleHideFiltered => "Toggle Hide Filtered Targets".into(),
             LoggerAction::Up => "Up - Selector".into(),
             LoggerAction::Down => "Down - Selector".into(),
-            LoggerAction::ShowSelector => "Show selector pane".into(),
-            LoggerAction::HideSelector => "Hide selector pane".into(),
+            LoggerAction::FocusSelector => "Focus selector (left)".into(),
+            LoggerAction::FocusLog => "Focus log (right)".into(),
             LoggerAction::PageUp => "Enter Page Mode, Scroll History Up".into(),
             LoggerAction::PageDown => "In Page Mode: Scroll History Down".into(),
             LoggerAction::ReduceShown => "Reduce SHOWN (!) Messages".into(),
@@ -71,6 +71,7 @@ pub struct Logger {
     second_char: Option<char>,
     last_key_press: std::time::Instant,
     selector_visible: bool,
+    focus_on: bool,
     fullscreen_hid_selector: bool,
 }
 impl_youtui_component!(Logger);
@@ -88,8 +89,8 @@ impl ActionHandler<LoggerAction> for Logger {
             LoggerAction::ToggleHideFiltered => self.handle_toggle_hide_filtered(),
             LoggerAction::Up => self.handle_up(),
             LoggerAction::Down => self.handle_down(),
-            LoggerAction::ShowSelector => self.show_selector(),
-            LoggerAction::HideSelector => self.hide_selector(),
+            LoggerAction::FocusSelector => self.focus_selector(),
+            LoggerAction::FocusLog => self.focus_log(),
             LoggerAction::PageUp => self.handle_pgup(),
             LoggerAction::PageDown => self.handle_pgdown(),
             LoggerAction::ReduceShown => self.handle_reduce_shown(),
@@ -154,19 +155,28 @@ impl Logger {
             second_char: None,
             last_key_press: std::time::Instant::now(),
             selector_visible: true,
+            focus_on: false,
             fullscreen_hid_selector: false,
         }
     }
-    pub fn show_selector(&mut self) {
+    pub fn focus_selector(&mut self) {
         if !self.selector_visible {
             self.logger_state.transition(TuiWidgetEvent::HideKey);
             self.selector_visible = true;
         }
+        if self.focus_on {
+            self.logger_state.transition(TuiWidgetEvent::FocusKey);
+            self.focus_on = false;
+        }
     }
-    pub fn hide_selector(&mut self) {
+    pub fn focus_log(&mut self) {
         if self.selector_visible {
             self.logger_state.transition(TuiWidgetEvent::HideKey);
             self.selector_visible = false;
+        }
+        if !self.focus_on {
+            self.logger_state.transition(TuiWidgetEvent::FocusKey);
+            self.focus_on = true;
         }
     }
     pub fn set_fullscreen(&mut self, on: bool) {
