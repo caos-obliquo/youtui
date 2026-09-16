@@ -22,8 +22,8 @@ pub enum LoggerAction {
     ToggleHideFiltered,
     Up,
     Down,
-    Left,
-    Right,
+    ShowSelector,
+    HideSelector,
     PageUp,
     PageDown,
     ReduceShown,
@@ -49,8 +49,8 @@ impl Action for LoggerAction {
             LoggerAction::ToggleHideFiltered => "Toggle Hide Filtered Targets".into(),
             LoggerAction::Up => "Up - Selector".into(),
             LoggerAction::Down => "Down - Selector".into(),
-            LoggerAction::Left => "Left".into(),
-            LoggerAction::Right => "Right".into(),
+            LoggerAction::ShowSelector => "Show selector pane".into(),
+            LoggerAction::HideSelector => "Hide selector pane".into(),
             LoggerAction::PageUp => "Enter Page Mode, Scroll History Up".into(),
             LoggerAction::PageDown => "In Page Mode: Scroll History Down".into(),
             LoggerAction::ReduceShown => "Reduce SHOWN (!) Messages".into(),
@@ -70,6 +70,8 @@ pub struct Logger {
     awaiting_second_char: bool,
     second_char: Option<char>,
     last_key_press: std::time::Instant,
+    selector_visible: bool,
+    fullscreen_hid_selector: bool,
 }
 impl_youtui_component!(Logger);
 
@@ -86,8 +88,8 @@ impl ActionHandler<LoggerAction> for Logger {
             LoggerAction::ToggleHideFiltered => self.handle_toggle_hide_filtered(),
             LoggerAction::Up => self.handle_up(),
             LoggerAction::Down => self.handle_down(),
-            LoggerAction::Left => self.handle_left(),
-            LoggerAction::Right => self.handle_right(),
+            LoggerAction::ShowSelector => self.show_selector(),
+            LoggerAction::HideSelector => self.hide_selector(),
             LoggerAction::PageUp => self.handle_pgup(),
             LoggerAction::PageDown => self.handle_pgdown(),
             LoggerAction::ReduceShown => self.handle_reduce_shown(),
@@ -151,6 +153,31 @@ impl Logger {
             awaiting_second_char: false,
             second_char: None,
             last_key_press: std::time::Instant::now(),
+            selector_visible: true,
+            fullscreen_hid_selector: false,
+        }
+    }
+    pub fn show_selector(&mut self) {
+        if !self.selector_visible {
+            self.logger_state.transition(TuiWidgetEvent::HideKey);
+            self.selector_visible = true;
+        }
+    }
+    pub fn hide_selector(&mut self) {
+        if self.selector_visible {
+            self.logger_state.transition(TuiWidgetEvent::HideKey);
+            self.selector_visible = false;
+        }
+    }
+    pub fn set_fullscreen(&mut self, on: bool) {
+        if on && self.selector_visible {
+            self.logger_state.transition(TuiWidgetEvent::HideKey);
+            self.selector_visible = false;
+            self.fullscreen_hid_selector = true;
+        } else if !on && self.fullscreen_hid_selector {
+            self.logger_state.transition(TuiWidgetEvent::HideKey);
+            self.selector_visible = true;
+            self.fullscreen_hid_selector = false;
         }
     }
     fn handle_view_browser(&mut self) -> YoutuiEffect<Self> {
@@ -165,12 +192,6 @@ impl Logger {
     }
     fn handle_down(&mut self) {
         self.logger_state.transition(TuiWidgetEvent::DownKey);
-    }
-    fn handle_left(&mut self) {
-        self.logger_state.transition(TuiWidgetEvent::LeftKey);
-    }
-    fn handle_right(&mut self) {
-        self.logger_state.transition(TuiWidgetEvent::RightKey);
     }
     fn handle_up(&mut self) {
         self.logger_state.transition(TuiWidgetEvent::UpKey);
@@ -231,6 +252,7 @@ impl Logger {
     }
     fn handle_toggle_target_selector(&mut self) {
         self.logger_state.transition(TuiWidgetEvent::HideKey);
+        self.selector_visible = !self.selector_visible;
     }
 }
 

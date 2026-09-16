@@ -983,6 +983,8 @@ impl Youtui {
             }
             AppCallback::ToggleLoggerFullscreen => {
                 self.window_state.toggle_logger_fullscreen();
+                let on = self.window_state.logger_fullscreen;
+                self.window_state.logger.set_fullscreen(on);
             }
         }
     }

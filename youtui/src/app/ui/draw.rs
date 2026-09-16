@@ -92,12 +92,8 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         return;
     }
 
-    // Logger fullscreen (f): take the whole screen, skip header/footer/nav.
-    if matches!(w.context, WindowContext::Logs) && w.logger_fullscreen {
-        let context_selected = !w.help.shown && !w.key_pending();
-        w.logger.draw_chunk(f, f.area(), context_selected);
-        return;
-    }
+    // Logger fullscreen (f): same chrome (header/footer/nav), selector pane
+    // hidden so the log takes the full content width.
 
     let [header_chunk, window_chunk, footer_chunk] = Layout::default()
         .direction(Direction::Vertical)
@@ -392,7 +388,7 @@ fn draw_nav_hint_bar(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
     // Context-aware: music-player commands always; nav keys follow context.
     let nav_key = match w.context {
         WindowContext::Browser => "h/l",
-        WindowContext::Logs => "h/j/k/l",
+        WindowContext::Logs => "j/k",
         _ => "j/k",
     };
     #[rustfmt::skip]
@@ -404,7 +400,12 @@ fn draw_nav_hint_bar(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
         ("Space", "Play/Pause"),
     ];
     if matches!(w.context, WindowContext::Logs) {
-        hints.push(("f", "Fullscreen"));
+        hints.push(("h/l", "Panes"));
+        if w.logger_fullscreen {
+            hints.push(("f", "Exit Full"));
+        } else {
+            hints.push(("f", "Fullscreen"));
+        }
     }
     let hint = Paragraph::new(hints.iter().map(|(k, a)| format!("{k} {a}")).collect::<Vec<_>>().join("  |  "))
         .style(Style::default().fg(Color::DarkGray))
