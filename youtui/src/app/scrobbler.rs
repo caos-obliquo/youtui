@@ -41,11 +41,14 @@ impl ScrobbleState {
 
     pub fn should_scrobble(&self) -> bool {
         if self.scrobbled { return false; }
-        if self.duration < Duration::from_secs(30) { return false; }
         let elapsed = self.start_time.elapsed().unwrap_or(Duration::ZERO);
-        let threshold = (self.duration / 2).min(Duration::from_secs(240)).max(Duration::from_secs(30));
-        let result = elapsed >= threshold;
-        tracing::debug!("Scrobble check: elapsed={:?}, duration={:?}, threshold={:?}, should={}", elapsed, self.duration, threshold, result);
+        // youtui policy: even 1s grind tracks (Napalm Death - You Suffer) must scrobble.
+        // Last.fm spec says <30s never, but user wants all. Threshold = half duration cap 240s, no 30s floor.
+        let threshold = (self.duration / 2).min(Duration::from_secs(240));
+        // For zero-length guard, require at least 1s elapsed to avoid instant scrobble on 0-duration glitch
+        let effective = if threshold.is_zero() { Duration::from_secs(1) } else { threshold };
+        let result = elapsed >= effective;
+        tracing::debug!("Scrobble check: elapsed={:?}, duration={:?}, threshold={:?}, should={}", elapsed, self.duration, effective, result);
         result
     }
 }
@@ -618,16 +621,14 @@ mod tests {
         state
     }
 
-    /// Last.fm spec: tracks shorter than 30s must NEVER scrobble.
     #[test]
-    fn test_short_track_under_30s_never_scrobbles() {
-        // 20s track, played for 120s (looped) - still must not scrobble
-        assert!(!aged_state(20, 120).should_scrobble());
-        // 29s track, fully played many times over - still must not scrobble
-        assert!(!aged_state(29, 300).should_scrobble());
+    fn test_short_track_under_30s_scrobbles_at_half() {
+        assert!(aged_state(20, 11).should_scrobble());
+        assert!(aged_state(29, 15).should_scrobble());
+        assert!(aged_state(1, 1).should_scrobble());
     }
 
-    /// 0:57 track (user case): threshold = max(30, 57/2)=30s.
+    /// 0:57 track (user case): threshold = 57/2=28s.
     #[test]
     fn test_57s_track_threshold_30s() {
         assert!(!aged_state(57, 20).should_scrobble(), "20s into 57s track: too soon");
@@ -669,8 +670,8 @@ mod tests {
     /// Exact 30s boundary track: threshold = max(30, 15) = 30s.
     #[test]
     fn test_30s_boundary_track() {
-        assert!(!aged_state(30, 29).should_scrobble());
-        assert!(aged_state(30, 30).should_scrobble());
+        assert!(!aged_state(30, 14).should_scrobble());
+        assert!(aged_state(30, 15).should_scrobble());
     }
 
     /// Verify submit_scrobble silently returns when config not enabled

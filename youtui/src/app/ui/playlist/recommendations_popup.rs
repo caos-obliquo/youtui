@@ -98,8 +98,8 @@ impl RecommendationsPopup {
             return self.handle_menu_key(event);
         }
         match event.code {
-            KeyCode::Char('q') | KeyCode::Esc => {
-                info!("Closing recommendations popup: kind={:?} items={}", self.kind, self.items.len());
+            KeyCode::F(1) | KeyCode::F(2) | KeyCode::F(3) | KeyCode::Char('q') | KeyCode::Esc => {
+                info!("Closing recommendations popup: kind={:?} items={} via {:?}", self.kind, self.items.len(), event.code);
                 (AsyncTask::new_no_op(), Some(AppCallback::ClosePopup))
             }
             KeyCode::Char('j') | KeyCode::Down => {

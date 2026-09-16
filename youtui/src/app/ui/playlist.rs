@@ -3344,10 +3344,6 @@ impl Playlist {
                         if new_index > self.album_current_track {
                             for scrobbled_idx in self.album_current_track..new_index {
                                 if let Some(track) = tracks.get(scrobbled_idx) {
-                                    if track.duration_secs < 30.0 {
-                                        info!("Album track skipped (under 30s): #{} {} ({})", scrobbled_idx + 1, track.title, track.duration_secs);
-                                        continue;
-                                    }
                                     let cfg = self.scrobbling_config.clone();
                                     let artist = self.get_cur_playing_song()
                                         .map(|s| s.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "))
