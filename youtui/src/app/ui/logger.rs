@@ -22,6 +22,8 @@ pub enum LoggerAction {
     ToggleHideFiltered,
     Up,
     Down,
+    Left,
+    Right,
     PageUp,
     PageDown,
     ReduceShown,
@@ -47,6 +49,8 @@ impl Action for LoggerAction {
             LoggerAction::ToggleHideFiltered => "Toggle Hide Filtered Targets".into(),
             LoggerAction::Up => "Up - Selector".into(),
             LoggerAction::Down => "Down - Selector".into(),
+            LoggerAction::Left => "Left".into(),
+            LoggerAction::Right => "Right".into(),
             LoggerAction::PageUp => "Enter Page Mode, Scroll History Up".into(),
             LoggerAction::PageDown => "In Page Mode: Scroll History Down".into(),
             LoggerAction::ReduceShown => "Reduce SHOWN (!) Messages".into(),
@@ -82,6 +86,8 @@ impl ActionHandler<LoggerAction> for Logger {
             LoggerAction::ToggleHideFiltered => self.handle_toggle_hide_filtered(),
             LoggerAction::Up => self.handle_up(),
             LoggerAction::Down => self.handle_down(),
+            LoggerAction::Left => self.handle_left(),
+            LoggerAction::Right => self.handle_right(),
             LoggerAction::PageUp => self.handle_pgup(),
             LoggerAction::PageDown => self.handle_pgdown(),
             LoggerAction::ReduceShown => self.handle_reduce_shown(),
@@ -159,6 +165,12 @@ impl Logger {
     }
     fn handle_down(&mut self) {
         self.logger_state.transition(TuiWidgetEvent::DownKey);
+    }
+    fn handle_left(&mut self) {
+        self.logger_state.transition(TuiWidgetEvent::LeftKey);
+    }
+    fn handle_right(&mut self) {
+        self.logger_state.transition(TuiWidgetEvent::RightKey);
     }
     fn handle_up(&mut self) {
         self.logger_state.transition(TuiWidgetEvent::UpKey);

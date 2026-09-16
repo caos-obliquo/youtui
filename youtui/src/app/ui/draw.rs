@@ -392,17 +392,21 @@ fn draw_nav_hint_bar(f: &mut Frame, w: &mut YoutuiWindow, chunk: Rect) {
     // Context-aware: music-player commands always; nav keys follow context.
     let nav_key = match w.context {
         WindowContext::Browser => "h/l",
+        WindowContext::Logs => "h/j/k/l",
         _ => "j/k",
     };
     #[rustfmt::skip]
-    let hints = [
+    let mut hints = vec![
         (nav_key, "Nav"),
         ("- / +", "Vol"),
         ("[ ]", "Seek"),
         ("< >", "Prev/Next"),
         ("Space", "Play/Pause"),
     ];
-    let hint = Paragraph::new(hints.map(|(k, a)| format!("{k} {a}")).join("  |  "))
+    if matches!(w.context, WindowContext::Logs) {
+        hints.push(("f", "Fullscreen"));
+    }
+    let hint = Paragraph::new(hints.iter().map(|(k, a)| format!("{k} {a}")).collect::<Vec<_>>().join("  |  "))
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
     f.render_widget(hint, chunk);
