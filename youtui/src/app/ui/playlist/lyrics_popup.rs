@@ -893,11 +893,11 @@ impl LyricsPopup {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::TogglePlayPause))
             }
-            KeyCode::Char('(') => {
+            KeyCode::Char(c) if c == '(' || (c == '9' && event.modifiers.contains(KeyModifiers::SHIFT)) => {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::ViewPrevInQueue))
             }
-            KeyCode::Char(')') => {
+            KeyCode::Char(c) if c == ')' || (c == '0' && event.modifiers.contains(KeyModifiers::SHIFT)) => {
                 self.reset_count();
                 (AsyncTask::new_no_op(), Some(AppCallback::ViewNextInQueue))
             }
