@@ -1031,6 +1031,14 @@ impl YoutuiWindow {
             Event::FocusLost => {
                 tracing::debug!("FocusLost: sixel persists until pane switch");
             }
+            Event::Resize(w, h) => {
+                // Terminal resize: stale sixel graphics live outside ratatui's
+                // text buffer, so force a re-emit and re-encode the Image
+                // protocol at the new chunk dims on the next draw.
+                self.force_sixel_redraw = true;
+                self.invalidate_protocol_cache();
+                tracing::debug!("Resize({w}, {h}): forcing redraw + sixel re-emit");
+            }
             other => tracing::warn!("Received unimplemented {:?} event", other),
         }
         AsyncTask::new_no_op().into()
