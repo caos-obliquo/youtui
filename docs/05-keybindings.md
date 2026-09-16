@@ -22,10 +22,14 @@ All default keybindings by context. Customizable in `config.toml`.
 | `F1` | Browser(BrowserAction::Search) | Toggle YTM search |
 | `F2` | ToggleBrowser | Toggle browser view |
 | `F3` | TogglePlaylist | Toggle queue view |
-| `F7` | Browser(BrowserAction::ChangeSearchType) | Switch search tab |
+| `F4` | Recommend | Open recommendations (F4 popup) |
 | `F11` | ViewLogs | Show logs |
 | `q` | Quit | Quit (with confirm) |
+| `C-c` | Quit | Quit |
+| `C-e` | EditConfig | Edit config.toml |
 | `:` | OpenUrl | Open command prompt |
+| `/` | FuzzyFinder | Global fuzzy finder |
+| `F7` | Browser(BrowserAction::ChangeSearchType) | Switch search tab (Browser context) |
 
 ## Playlist Context
 
