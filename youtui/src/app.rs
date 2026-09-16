@@ -905,8 +905,8 @@ impl Youtui {
                     let target_idx = if pos + 1 >= songs.len() { 0 } else { pos + 1 };
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                        self.window_state.lyrics_viewing_idx = Some(target_idx);
                         let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                        self.window_state.lyrics_viewing_idx = Some(target_idx);
                         self.task_manager.spawn_task(&self.server, effect);
                     }
                 }
@@ -927,8 +927,8 @@ impl Youtui {
                     let target_idx = if pos == 0 { songs.len().saturating_sub(1) } else { pos - 1 };
                     if let Some(song) = songs.get(target_idx) {
                         let artist = song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ");
-                        self.window_state.lyrics_viewing_idx = Some(target_idx);
                         let effect = self.window_state.open_lyrics_popup(artist, song.title.clone());
+                        self.window_state.lyrics_viewing_idx = Some(target_idx);
                         self.task_manager.spawn_task(&self.server, effect);
                     }
                 }

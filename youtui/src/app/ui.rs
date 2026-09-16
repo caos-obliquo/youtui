@@ -1530,8 +1530,10 @@ impl YoutuiWindow {
         let gen_id = self.lyrics_generation;
 
         let cache_key = format!("{}||{}", artist, title);
-        self.lyrics_viewing_idx = self.playlist.list.get_list_iter()
-            .position(|s| s.title == title && s.artists.iter().any(|a| artist.contains(a.name.as_str()) || a.name.contains(&artist)));
+        if let Some(pos) = self.playlist.list.get_list_iter()
+            .position(|s| s.title == title && s.artists.iter().any(|a| artist.contains(a.name.as_str()) || a.name.contains(&artist))) {
+            self.lyrics_viewing_idx = Some(pos);
+        }
 
         // Inflight dedup: skip if already fetching
         if self.lyrics_inflight.contains(&cache_key) {
