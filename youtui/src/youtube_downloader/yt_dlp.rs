@@ -301,6 +301,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "needs real YouTube access - blocked from CI sandboxes, run locally"]
     async fn test_downloading_a_song_with_ytdlp() {
         let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
         let YoutubeMusicDownload { song: stream, .. } =
