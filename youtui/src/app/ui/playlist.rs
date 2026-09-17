@@ -11,7 +11,7 @@ use crate::app::server::{
     TaskMetadata, ValidateMetadata, AlbumTrack,
 };
 use crate::app::structures::{
-    fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, BrowserSongsList, DownloadStatus,
+    fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
     ListSong, ListSongDisplayableField, ListSongID, Percentage, PlayState, SongListComponent,
     Thumbnail,
 };
@@ -95,6 +95,7 @@ pub struct Playlist {
     pub play_status: PlayState,
     pub queue_status: QueueState,
     pub volume: Percentage,
+    pub audio_quality: AudioQuality,
     cur_selected: usize,
     pub widget_state: ScrollingTableState,
     pub shuffle_enabled: bool,
@@ -179,6 +180,7 @@ pub enum PlaylistAction {
     LoadQueue,
     DeleteQueue,
     ClearSearch,
+    SetBestQuality,
     SaveToNewPlaylist,
     LoadFromYTM,
     ViewLyrics,
@@ -230,6 +232,7 @@ impl Action for PlaylistAction {
             PlaylistAction::SaveQueue => "Save Queue",
             PlaylistAction::LoadQueue => "Load Queue",
             PlaylistAction::DeleteQueue => "Delete Queue",
+            PlaylistAction::SetBestQuality => "Set Best Quality",
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
             PlaylistAction::LoadFromYTM => "Load YouTube Music Playlist",
             PlaylistAction::ViewLyrics => "View Lyrics",
@@ -301,6 +304,11 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             }
             PlaylistAction::DeleteQueue => (AsyncTask::new_no_op(), None),
+            PlaylistAction::SetBestQuality => {
+                self.audio_quality = AudioQuality::Best;
+                info!("Audio quality set to: {:?}", self.audio_quality);
+                (AsyncTask::new_no_op(), None)
+            },
             PlaylistAction::SaveToNewPlaylist => {
                 let video_ids: Vec<VideoID<'static>> = self.list.get_list_iter()
                     .map(|song| song.video_id.clone())
@@ -889,6 +897,12 @@ impl HasTitle for Playlist {
         };
 
         let romaji_indicator = if self.romaji_mode { " [Romaji]" } else { "" };
+        let quality_indicator = match self.audio_quality {
+            AudioQuality::Best => " [Q:Best]",
+            AudioQuality::High => " [Q:High]",
+            AudioQuality::Medium => " [Q:Medium]",
+            AudioQuality::Low => " [Q:Low]",
+        };
         let cat_indicator = match self.category_filter {
             Some("Album:") => " [Albums]",
             Some("EP:") => " [EPs]",
@@ -898,8 +912,9 @@ impl HasTitle for Playlist {
         let err_indicator = self.last_error.as_ref().map(|e| format!(" [ERR: {}]", e)).unwrap_or_default();
         let status_indicator = self.last_status.as_ref().map(|s| format!(" [! {}]", s)).unwrap_or_default();
         format!(
-            "Local playlist - {} songs{}{}{}{}{}{}",
+            "Queue - {} songs{}{}{}{}{}{}{}",
             self.list.get_list_iter().len(),
+            quality_indicator,
             shuffle_indicator,
             search_indicator,
             cat_indicator,
@@ -932,6 +947,7 @@ impl Playlist {
             cur_played_dur: None,
             cur_selected: 0,
             queue_status: QueueState::NotQueued,
+            audio_quality: AudioQuality::default(),
             widget_state: Default::default(),
             shuffle_enabled: false,
             shuffle_indices: Vec::new(),
@@ -2379,7 +2395,7 @@ impl Playlist {
         debug!("download_song: starting download for {}", video_id);
 
         let effect = AsyncTask::new_stream(
-            DownloadSong(song.video_id.clone(), id, cancel_token.clone()),
+            DownloadSong(song.video_id.clone(), id, cancel_token.clone(), self.audio_quality),
             HandleSongDownloadProgressUpdate,
             None,
         );

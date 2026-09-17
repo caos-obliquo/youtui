@@ -318,6 +318,31 @@ pub enum PlayState {
     Buffering(ListSongID),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub enum AudioQuality {
+    #[default]
+    Best,
+    High,
+    Medium,
+    Low,
+}
+
+impl AudioQuality {
+    /// yt-dlp `-f` format selector for this quality.
+    /// Best picks the highest-bitrate audio YouTube serves regardless of
+    /// container (often 160k opus in webm over 128k m4a). Non-m4a picks stay
+    /// playable: direct Symphonia decode, else the ffmpeg wav fallback
+    /// (ffmpeg is a required dependency).
+    pub fn format_string(&self) -> &'static str {
+        match self {
+            AudioQuality::Best => "bestaudio/best",
+            AudioQuality::High => "bestaudio[abr<=256]/bestaudio/best",
+            AudioQuality::Medium => "bestaudio[abr<=128]/bestaudio/best",
+            AudioQuality::Low => "bestaudio[abr<=70]/bestaudio/best",
+        }
+    }
+}
+
 impl PlayState {
     pub fn list_icon(&self) -> char {
         match self {
@@ -1125,6 +1150,37 @@ mod channel_title_tests {
     #[test]
     fn year_multiple_parentheticals() {
         assert_eq!(extract_year("Album (2005 Remaster) (2020 - Reissue)"), Some("2020".into()));
+    }
+}
+
+#[cfg(test)]
+mod audio_quality_tests {
+    use super::AudioQuality;
+
+    #[test]
+    fn default_is_best() {
+        assert_eq!(AudioQuality::default(), AudioQuality::Best);
+    }
+
+    #[test]
+    fn best_picks_highest_bitrate_any_container() {
+        assert_eq!(AudioQuality::Best.format_string(), "bestaudio/best");
+    }
+
+    #[test]
+    fn capped_qualities_map_to_abr_caps() {
+        assert_eq!(
+            AudioQuality::High.format_string(),
+            "bestaudio[abr<=256]/bestaudio/best"
+        );
+        assert_eq!(
+            AudioQuality::Medium.format_string(),
+            "bestaudio[abr<=128]/bestaudio/best"
+        );
+        assert_eq!(
+            AudioQuality::Low.format_string(),
+            "bestaudio[abr<=70]/bestaudio/best"
+        );
     }
 }
 

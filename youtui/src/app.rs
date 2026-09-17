@@ -74,6 +74,7 @@ pub enum NavTarget {
 use std::fmt::Display;
 use std::io;
 use std::sync::Arc;
+pub use structures::AudioQuality;
 use structures::{ListSong, ListSongID};
 use tracing::{error, info};
 use tracing_subscriber::prelude::*;

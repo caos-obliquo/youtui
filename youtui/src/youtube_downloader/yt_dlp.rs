@@ -1,3 +1,4 @@
+use crate::app::AudioQuality;
 use crate::youtube_downloader::{YoutubeMusicDownload, YoutubeMusicDownloader};
 use bytes::Bytes;
 use futures::Stream;
@@ -6,7 +7,7 @@ use std::ops::Deref;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
@@ -85,6 +86,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
     async fn stream_song(
         &self,
         song_video_id: impl AsRef<str> + Send,
+        quality: AudioQuality,
     ) -> Result<
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
         Self::Error,
@@ -92,24 +94,18 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         let command = self.yt_dlp_command.clone();
         async move {
             let video_id = song_video_id.as_ref().to_string();
-            info!(%video_id, "Starting yt-dlp download");
-            
-            // Write to temp file so yt-dlp applies FixupM4a/container post-processing.
-            // Stdout pipe (-o -) skips post-processing, producing corrupted data on yt-dlp 2026+.
-            // Use .m4a suffix so yt-dlp matches the format container.
-            // --force-overwrites needed: yt-dlp's resume feature treats pre-existing 0-byte
-            // files as "already complete" and writes nothing.
-            let tmpfile = tempfile::Builder::new()
-                .suffix(".m4a")
-                .tempfile()
-                .map_err(|e| {
-                    YtDlpDownloaderError::IoError {
-                        message: format!("Failed to create temp file: {e}"),
-                    }
-                })?;
-            let output_path = tmpfile.path().to_owned();
-            
-            let format_string = "bestaudio[ext=m4a][abr>=256]/bestaudio[ext=m4a]/bestaudio/best".to_string();
+            let format_string = quality.format_string().to_string();
+            info!(%video_id, quality = ?quality, format = %format_string, "Starting yt-dlp download");
+
+            // Temp dir with an %(ext)s template: Best can pick non-m4a audio
+            // (opus in webm), so the output extension is decided by yt-dlp.
+            let tmpdir = tempfile::tempdir().map_err(|e| {
+                YtDlpDownloaderError::IoError {
+                    message: format!("Failed to create temp dir: {e}"),
+                }
+            })?;
+            let template = tmpdir.path().join("audio.%(ext)s");
+            let output_template = template.to_str().unwrap().to_owned();
             
             // web_creator extractor needs cookies - only use it when configured
             // Default extractor works without auth for most videos
@@ -118,12 +114,14 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let mut stream_args = vec![
                 "--no-simulate",
                 "--force-overwrites",
-                "-q",
                 "--no-warnings",
+                "--no-progress",
+                "--print",
+                "after_move:YTDLP_META abr=%(abr)s ext=%(ext)s format=%(format_id)s",
                 "-f",
                 format_string.as_str(),
                 "-o",
-                output_path.to_str().unwrap(),
+                output_template.as_str(),
             ];
             if use_web_creator {
                 stream_args.push("--extractor-args");
@@ -138,7 +136,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let mut proc = tokio::process::Command::new(command.deref())
                 .args(&stream_args)
                 .stderr(Stdio::piped())
-                .stdout(Stdio::null())
+                .stdout(Stdio::piped())
                 .spawn()
                 .map_err(|e| {
                     error!(%video_id, error = %e, "Failed to spawn yt-dlp process");
@@ -149,6 +147,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             
             // Take stderr before spawn to avoid partial move
             let stderr = proc.stderr.take().unwrap();
+            let mut stdout = proc.stdout.take().unwrap();
             let video_id_clone = video_id.clone();
             tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
@@ -182,7 +181,41 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                     message: format!("yt-dlp exited with {status}"),
                 });
             }
-            
+
+            // --print output is one short line; process already exited so this returns at once.
+            let mut print_out = String::new();
+            let _ = stdout.read_to_string(&mut print_out).await;
+            let (dl_abr, dl_ext, dl_format) = parse_print_meta(&print_out);
+
+            // Find the downloaded file (extension decided by yt-dlp via %(ext)s).
+            let mut best_path: Option<(u64, std::path::PathBuf)> = None;
+            for entry in std::fs::read_dir(tmpdir.path()).map_err(|e| {
+                YtDlpDownloaderError::IoError {
+                    message: format!("Failed to list temp dir: {e}"),
+                }
+            })? {
+                let entry = entry.map_err(|e| YtDlpDownloaderError::IoError {
+                    message: format!("Failed to read temp dir entry: {e}"),
+                })?;
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                if path.extension().is_some_and(|e| e == "part") {
+                    continue;
+                }
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                if best_path.as_ref().is_none_or(|(s, _)| size > *s) {
+                    best_path = Some((size, path));
+                }
+            }
+            let (_, output_path) = best_path.ok_or_else(|| {
+                error!(%video_id, "yt-dlp produced no output file");
+                YtDlpDownloaderError::IoError {
+                    message: "yt-dlp produced no output file".to_string(),
+                }
+            })?;
+
             // Read completed file into memory
             let file_bytes = tokio::fs::read(&output_path).await.map_err(|e| {
                 error!(%video_id, error = %e, "Failed to read yt-dlp output");
@@ -190,9 +223,9 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                     message: format!("Failed to read output file: {e}"),
                 }
             })?;
-            
-            // Temp file cleaned up on drop
-            drop(tmpfile);
+
+            // Temp dir cleaned up on drop
+            drop(tmpdir);
             
             let total_size_bytes = file_bytes.len();
             
@@ -227,7 +260,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                 });
             }
             
-            info!(%video_id, %total_size_bytes, %format_name, "yt-dlp download completed");
+            info!(%video_id, quality = ?quality, format = %format_string, ext = %dl_ext, abr = %dl_abr, yt_format = %dl_format, bytes = %total_size_bytes, container = %format_name, "yt-dlp download completed");
             
             // Return as one-shot stream (consumer already collects all chunks)
             let song = futures::stream::once(async move { Ok(Bytes::from(file_bytes)) });
@@ -239,6 +272,29 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         }
         .await
     }
+}
+
+fn parse_print_meta(output: &str) -> (String, String, String) {
+    let mut abr = "unknown".to_string();
+    let mut ext = "unknown".to_string();
+    let mut format = "unknown".to_string();
+    for line in output.lines() {
+        let Some((_, rest)) = line.split_once("YTDLP_META ") else {
+            continue;
+        };
+        for token in rest.split_whitespace() {
+            let Some((k, v)) = token.split_once('=') else {
+                continue;
+            };
+            match k {
+                "abr" => abr = v.to_string(),
+                "ext" => ext = v.to_string(),
+                "format" => format = v.to_string(),
+                _ => {}
+            }
+        }
+    }
+    (abr, ext, format)
 }
 
 #[cfg(test)]
@@ -305,10 +361,27 @@ mod tests {
     async fn test_downloading_a_song_with_ytdlp() {
         let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
         let YoutubeMusicDownload { song: stream, .. } =
-            downloader.stream_song("lYBUbBu4W08").await.unwrap();
+            downloader.stream_song("lYBUbBu4W08", crate::app::AudioQuality::Best).await.unwrap();
         stream
             .map(|item| item.unwrap())
             .collect::<Vec<Bytes>>()
             .await;
+    }
+
+    #[test]
+    fn test_parse_print_meta() {
+        let (abr, ext, format) =
+            super::parse_print_meta("YTDLP_META abr=160 ext=webm format=251\n");
+        assert_eq!(abr, "160");
+        assert_eq!(ext, "webm");
+        assert_eq!(format, "251");
+    }
+
+    #[test]
+    fn test_parse_print_meta_missing() {
+        let (abr, ext, format) = super::parse_print_meta("some other output\n");
+        assert_eq!(abr, "unknown");
+        assert_eq!(ext, "unknown");
+        assert_eq!(format, "unknown");
     }
 }

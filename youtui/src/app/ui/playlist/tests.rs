@@ -901,3 +901,27 @@ async fn scrobble_state_uses_metadata_truth_despite_short_estimate() {
     state.start_time = std::time::SystemTime::now() - Duration::from_secs(31);
     assert!(state.should_scrobble());
 }
+
+#[test]
+fn title_shows_default_best_quality_indicator() {
+    use crate::app::structures::AudioQuality;
+    use crate::app::view::HasTitle;
+    let (p, _) = Playlist::new();
+    assert_eq!(p.audio_quality, AudioQuality::Best);
+    let title = p.get_title();
+    assert!(
+        title.contains("[Q:Best]"),
+        "title should carry quality indicator, got: {title}"
+    );
+}
+
+#[test]
+fn set_best_quality_action_sets_best() {
+    use crate::app::component::actionhandler::{ActionHandler, YoutuiEffect};
+    use crate::app::structures::AudioQuality;
+    use crate::app::ui::playlist::PlaylistAction;
+    let (mut p, _) = Playlist::new();
+    p.audio_quality = AudioQuality::Low;
+    let _effect: YoutuiEffect<Playlist> = p.apply_action(PlaylistAction::SetBestQuality).into();
+    assert_eq!(p.audio_quality, AudioQuality::Best);
+}
