@@ -3,7 +3,7 @@ use crate::app::server::ValidatedMetadata;
 
 use crate::app::server::{
     ArcServer, TaskMetadata, AddSongsToPlaylist, EnrichRelatedTracks, RemovePlaylistItems, ValidateMetadata,
-    EnrichedPlaylistTracks,
+    EnrichedPlaylistTracks, YtVideoMetadata,
 };
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSong, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
@@ -761,6 +761,27 @@ impl_youtui_task_handler!(
         MetadataEffect::ValidationError
     }
 );
+
+// F3 guard handlers: yt-dlp probe ran off the event loop. Insert the song
+// now that metadata arrived, or surface feedback on timeout/failure.
+#[derive(Debug, PartialEq)]
+pub struct HandleYtVideoMetadataOk(pub VideoID<'static>);
+#[derive(Debug, PartialEq)]
+pub struct HandleYtVideoMetadataError;
+
+impl_youtui_task_handler!(
+    HandleYtVideoMetadataOk,
+    YtVideoMetadata,
+    Playlist,
+    |this: HandleYtVideoMetadataOk, meta: YtVideoMetadata| {
+        move |target: &mut Playlist| {
+            info!("add_yt_video: background fetch done for {}", this.0.get_raw());
+            target.insert_yt_video_metadata(this.0, meta)
+        }
+    }
+);
+
+playlist_err_handler!(HandleYtVideoMetadataError, "fetch video metadata via yt-dlp", "Add failed");
 
 // Album art from Last.fm effect handlers
 

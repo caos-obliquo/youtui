@@ -48,6 +48,101 @@ pub struct GetAnnotations(pub String, pub String, pub String);
 #[derive(Debug, PartialEq)]
 pub struct ValidateMetadata(pub String, pub String, pub crate::app::structures::ListSongID, pub String, pub Option<String>, pub Option<String>, pub String, pub bool);
 
+/// Metadata for one YouTube video fetched via yt-dlp `--dump-json`.
+#[derive(Debug, PartialEq)]
+pub struct YtVideoMetadata {
+    pub title: String,
+    pub uploader: String,
+    pub duration_secs: Option<f64>,
+    pub year: Option<String>,
+}
+
+/// F3 guard task: runs the yt-dlp metadata probe off the UI event loop with
+/// a 60s timeout (same budget as the cookie-refresh path). The sync
+/// `Command::output()` previously stalled `handle_event` for a full network
+/// RTT and parked the watcher channel behind 256 queued inputs.
+#[derive(Debug, PartialEq)]
+pub struct FetchYtVideoMetadata(pub String, pub bool, pub String);
+
+/// Pure parse of yt-dlp `--dump-json` stdout. Falls back to the raw video id
+/// and generic uploader when JSON is missing or malformed.
+pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
+    let v: serde_json::Value = match serde_json::from_str(stdout) {
+        Ok(v) => v,
+        Err(_) => {
+            return YtVideoMetadata {
+                title: raw_id.to_string(),
+                uploader: "YouTube".to_string(),
+                duration_secs: None,
+                year: None,
+            }
+        }
+    };
+    let title = v
+        .get("title")
+        .and_then(|s| s.as_str())
+        .unwrap_or(raw_id)
+        .to_string();
+    let uploader = v
+        .get("uploader")
+        .and_then(|s| s.as_str())
+        .unwrap_or("Unknown")
+        .to_string();
+    let duration_secs = v.get("duration").and_then(|s| s.as_f64());
+    let year = v
+        .get("release_year")
+        .and_then(|s| s.as_i64())
+        .or_else(|| {
+            v.get("upload_date")
+                .and_then(|s| s.as_str())
+                .and_then(|d| d.get(..4))
+                .and_then(|y| y.parse::<i64>().ok())
+        })
+        .map(|y| y.to_string());
+    YtVideoMetadata {
+        title,
+        uploader,
+        duration_secs,
+        year,
+    }
+}
+
+impl BackendTask<ArcServer> for FetchYtVideoMetadata {
+    type Output = Result<YtVideoMetadata>;
+    type MetadataType = TaskMetadata;
+    fn into_future(self, _backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+        async move {
+            let raw_id = self.0;
+            let mut cmd = tokio::process::Command::new("yt-dlp");
+            cmd.args(["--dump-json", "--no-warnings", "--flat-playlist"]);
+            if self.1 {
+                cmd.args(["--cookies-from-browser", &self.2]);
+            }
+            cmd.arg(format!("https://youtu.be/{}", raw_id));
+            let output = match tokio::time::timeout(Duration::from_secs(60), cmd.kill_on_drop(true).output()).await
+            {
+                Ok(Ok(out)) => out,
+                Ok(Err(e)) => anyhow::bail!(
+                    "Failed to spawn yt-dlp for video {} (is it on PATH?): {e}",
+                    raw_id
+                ),
+                Err(_) => anyhow::bail!(
+                    "yt-dlp timed out after 60s fetching metadata for video {}",
+                    raw_id
+                ),
+            };
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                anyhow::bail!("yt-dlp failed for video {}: {}", raw_id, stderr.trim());
+            }
+            Ok(parse_yt_dlp_video_json(
+                &String::from_utf8_lossy(&output.stdout),
+                &raw_id,
+            ))
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct GetSearchSuggestions(pub String);
 #[derive(Debug, PartialEq)]
@@ -2173,5 +2268,50 @@ mod test_config {
         fn eq(&self, _: &Self) -> bool {
             panic!("Unable to compare QueueSong");
         }
+    }
+}
+
+#[cfg(test)]
+mod fetch_yt_video_metadata_tests {
+    use super::parse_yt_dlp_video_json;
+
+    #[test]
+    fn full_json_parses_all_fields() {
+        let m = parse_yt_dlp_video_json(
+            r#"{"title":"Artist - Song","uploader":"Uploader","duration":184.0,"release_year":2021}"#,
+            "rawid",
+        );
+        assert_eq!(m.title, "Artist - Song");
+        assert_eq!(m.uploader, "Uploader");
+        assert_eq!(m.duration_secs, Some(184.0));
+        assert_eq!(m.year.as_deref(), Some("2021"));
+    }
+
+    #[test]
+    fn year_falls_back_to_upload_date() {
+        let m = parse_yt_dlp_video_json(
+            r#"{"title":"T","uploader":"U","upload_date":"20190315"}"#,
+            "rawid",
+        );
+        assert_eq!(m.year.as_deref(), Some("2019"));
+        assert_eq!(m.duration_secs, None);
+    }
+
+    #[test]
+    fn missing_fields_use_fallbacks() {
+        let m = parse_yt_dlp_video_json(r#"{}"#, "rawid");
+        assert_eq!(m.title, "rawid");
+        assert_eq!(m.uploader, "Unknown");
+        assert_eq!(m.duration_secs, None);
+        assert_eq!(m.year, None);
+    }
+
+    #[test]
+    fn garbage_stdout_uses_raw_id_fallback() {
+        let m = parse_yt_dlp_video_json("not json at all", "rawid");
+        assert_eq!(m.title, "rawid");
+        assert_eq!(m.uploader, "YouTube");
+        assert_eq!(m.duration_secs, None);
+        assert_eq!(m.year, None);
     }
 }

@@ -8,7 +8,7 @@ use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::server::{
     AutoplayDecodedSong, DecodeSong, DownloadSong, GetSongThumbnail, IncreaseVolume, Pause,
     PausePlay, PlayDecodedSong, QueueDecodedSong, Resume, Seek, SeekTo, Stop, StopAll,
-    TaskMetadata, ValidateMetadata, AlbumTrack,
+    TaskMetadata, ValidateMetadata, AlbumTrack, FetchYtVideoMetadata, YtVideoMetadata,
 };
 use crate::app::structures::{
     fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
@@ -24,6 +24,7 @@ use crate::app::ui::playlist::effect_handlers::{
 };
 use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleMetadataValidated, HandleMetadataValidationError,
+    HandleYtVideoMetadataOk, HandleYtVideoMetadataError,
     HandleRateSongOk, HandleRateSongErr,
     HandleFetchAlbumArtOk, HandleFetchAlbumArtErr,
     HandleEnrichSongYearOk, HandleEnrichSongYearErr,
@@ -1414,49 +1415,39 @@ impl Playlist {
             return AsyncTask::new_no_op();
         }
 
-        // Fetch metadata via yt-dlp
+        // F3 guard: yt-dlp network RTT runs in a backend task with a 60s
+        // timeout. Return pending state immediately, insert on completion.
+        info!("add_yt_video: fetching metadata in background for {}", raw_id);
+        AsyncTask::new_future_try(
+            FetchYtVideoMetadata(raw_id, self.yt_dlp_cookie_path.is_some(), self.cookie_browser.clone()),
+            HandleYtVideoMetadataOk(video_id),
+            HandleYtVideoMetadataError,
+            None,
+        )
+    }
+
+    pub fn insert_yt_video_metadata(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, meta: YtVideoMetadata) -> ComponentEffect<Self> {
+        use ytmapi_rs::common::YoutubeID;
+        let raw_id = video_id.get_raw().to_string();
+        let title = meta.title;
+        let uploader = meta.uploader;
+
+        // Try to extract real artist from title ("Artist - Song"), fallback to uploader
+        let artist = if title.contains(" - ") {
+            title.splitn(2, " - ").next().map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty() && s.len() < 80)
+                .unwrap_or_else(|| uploader.clone())
+        } else {
+            uploader.clone()
+        };
         let mut duration = String::from("0");
         let mut duration_secs: f64 = 0.0;
-        let mut meta_cmd = std::process::Command::new("yt-dlp");
-        meta_cmd.args(["--dump-json", "--no-warnings", "--flat-playlist"]);
-        if self.yt_dlp_cookie_path.is_some() {
-            meta_cmd.args(["--cookies-from-browser", &self.cookie_browser]);
+        if let Some(d) = meta.duration_secs {
+            duration_secs = d;
+            let secs = d as u64;
+            duration = format!("{}:{:02}", secs / 60, secs % 60);
         }
-        meta_cmd.arg(&format!("https://youtu.be/{}", raw_id));
-        let (title, artist, year) = match meta_cmd.output()
-        {
-            Ok(out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
-                    let t = v.get("title").and_then(|s| s.as_str()).unwrap_or(&raw_id).to_string();
-                    let uploader = v.get("uploader").and_then(|s| s.as_str()).unwrap_or("Unknown").to_string();
-                    // Try to extract real artist from title ("Artist - Song"), fallback to uploader
-                    let a = if t.contains(" - ") {
-                        t.splitn(2, " - ").next().map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty() && s.len() < 80)
-                            .unwrap_or_else(|| uploader.clone())
-                    } else {
-                        uploader.clone()
-                    };
-                    if let Some(d) = v.get("duration").and_then(|s| s.as_f64()) {
-                        duration_secs = d;
-                        let secs = d as u64;
-                        duration = format!("{}:{:02}", secs / 60, secs % 60);
-                    }
-                    let year = v.get("release_year")
-                        .and_then(|s| s.as_i64())
-                        .or_else(|| {
-                            v.get("upload_date")
-                                .and_then(|s| s.as_str())
-                                .and_then(|d| d.get(..4))
-                                .and_then(|y| y.parse::<i64>().ok())
-                        })
-                        .map(|y| y.to_string());
-                    (t, a, year)
-                } else { (raw_id.clone(), "YouTube".to_string(), None) }
-            }
-            _ => (raw_id.clone(), "YouTube".to_string(), None),
-        };
+        let year = meta.year;
 
         // Extract year from title parenthetical as fallback when yt-dlp has no year
         // e.g., "Anti-Everything E.P. (2003)" → "2003", "Scat Blast FULL ALBUM (2021...)" → "2021"

@@ -1030,6 +1030,29 @@ pub fn has_japanese(text: &str) -> bool {
     })
 }
 
+/// Poll a child for exit until `timeout` elapses. Returns the exit status on
+/// timely exit, `None` on timeout or wait error. Sync-context helper: the
+/// clipboard path runs on the key-event thread where async timeouts are out
+/// of reach, and `Child::wait_timeout` is still nightly-only.
+fn wait_for_child_with_timeout(
+    child: &mut std::process::Child,
+    timeout: Duration,
+) -> Option<std::process::ExitStatus> {
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Some(status),
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
 /// Copy text to system clipboard.
 /// Fallback chain: wl-copy (Wayland) -> xclip -> xsel -> pbcopy (macOS).
 /// Silently no-op if none found.
@@ -1048,8 +1071,19 @@ pub fn copy_to_clipboard(text: &str) {
                 .spawn()
             {
                 use std::io::Write;
-                let _ = child.stdin.as_mut().map(|stdin| stdin.write_all(text.as_bytes()));
-                let _ = child.wait();
+                // Take stdin so the pipe closes (EOF) after the write.
+                // Holding it open while waiting deadlocks: pbcopy waits for
+                // EOF, we wait for pbcopy.
+                if let Some(mut stdin) = child.stdin.take() {
+                    let _ = stdin.write_all(text.as_bytes());
+                }
+                // F5 guard: a wedged clipboard manager must not stall the
+                // key-event path forever. Kill the child on timeout.
+                if wait_for_child_with_timeout(&mut child, Duration::from_secs(5)).is_none() {
+                    tracing::warn!("copy_to_clipboard: '{}' hung, killing", cmd);
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
                 return;
             }
         } else if std::process::Command::new(cmd)
@@ -1181,6 +1215,34 @@ mod audio_quality_tests {
             AudioQuality::Low.format_string(),
             "bestaudio[abr<=70]/bestaudio/best"
         );
+    }
+}
+
+#[cfg(test)]
+mod clipboard_wait_tests {
+    use super::wait_for_child_with_timeout;
+    use std::time::Duration;
+
+    #[test]
+    fn fast_child_returns_status() {
+        let mut child = std::process::Command::new("true")
+            .spawn()
+            .expect("true must exist on unix PATH");
+        let status = wait_for_child_with_timeout(&mut child, Duration::from_secs(5));
+        assert!(status.is_some());
+        assert!(status.unwrap().success());
+    }
+
+    #[test]
+    fn hung_child_hits_timeout_and_kill_reaps() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("sleep must exist on unix PATH");
+        assert!(wait_for_child_with_timeout(&mut child, Duration::from_millis(50)).is_none());
+        child.kill().expect("kill must succeed on hung child");
+        let status = child.wait().expect("reap must succeed");
+        assert!(!status.success());
     }
 }
 
