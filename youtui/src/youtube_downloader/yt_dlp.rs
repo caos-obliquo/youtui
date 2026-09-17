@@ -309,6 +309,9 @@ fn build_stream_args<'a>(
         args.push("--cookies-from-browser");
         args.push(browser);
     }
+    // End-of-options separator: video ids can start with a dash
+    // (e.g. -nIkN6le_wY) and yt-dlp would parse them as flags.
+    args.push("--");
     args.push(video_id);
     args
 }
@@ -448,6 +451,22 @@ mod tests {
         assert!(!args.iter().any(|a| *a == "--cookies"));
         assert!(!args.iter().any(|a| *a == "--cookies-from-browser"));
         assert!(!args.iter().any(|a| *a == "--extractor-args"));
+    }
+
+    #[test]
+    fn test_build_stream_args_end_of_options_before_id() {
+        for id in ["videoid123", "-nIkN6le_wY"] {
+            let args = super::build_stream_args(
+                "bestaudio/best",
+                "/tmp/audio.%(ext)s",
+                id,
+                None,
+                None,
+            );
+            let id_pos = args.iter().position(|a| *a == id).unwrap();
+            assert_eq!(args[id_pos - 1], "--");
+            assert_eq!(args.last().unwrap(), &id);
+        }
     }
 
     #[test]
