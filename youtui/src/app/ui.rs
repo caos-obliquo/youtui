@@ -108,11 +108,17 @@ pub struct YoutuiWindow {
     pub last_sixel_rect: Option<ratatui::layout::Rect>,
     /// When true, `flush_sixel` must re-emit the current sixel even if the image
     /// data is unchanged (e.g. after tmux wiped the graphics layer on a pane/window
-    /// switch). Set on `FocusGained` and by the keepalive timer. Consumed by
+    /// switch or an idle compositor reset). Set on `FocusGained`, on debounced
+    /// `Resize`, and every 30th `handle_tick` while art is present. Consumed by
     /// `flush_sixel` via `std::mem::take` (reset to false after a re-emit).
     pub force_sixel_redraw: bool,
-    pub cached_album_protocol: Option<ratatui_image::protocol::Protocol>,
-    pub cached_album_chunk: Option<ratatui::layout::Rect>,
+    pub last_resize_time: Option<std::time::Instant>,
+    /// Set on `FocusLost`, cleared on `FocusGained` or on the next Key/Mouse
+    /// input. While set, `handle_tick` forces a sixel re-emit every 3rd tick
+    /// so art returns even when the terminal never sends `FocusGained`
+    /// (e.g. foot Wayland window switch to a browser and back).
+    pub focus_lost_seen: bool,
+    pub cached_album_protocol: Option<ratatui_image::protocol::Protocol>,    pub cached_album_chunk: Option<ratatui::layout::Rect>,
     pub logger_fullscreen: bool,
 }
 impl_youtui_component!(YoutuiWindow);
@@ -669,6 +675,8 @@ impl YoutuiWindow {
             sixel_rect: None,
             last_sixel_rect: None,
             force_sixel_redraw: false,
+            last_resize_time: None,
+            focus_lost_seen: false,
             cached_album_protocol: None,
             cached_album_chunk: None,
             logger_fullscreen: false,
@@ -723,6 +731,20 @@ impl YoutuiWindow {
         &mut self,
         event: crossterm::event::Event,
     ) -> YoutuiEffect<Self> {
+        // Focus fallback: if a FocusLost was seen and the terminal never sent
+        // FocusGained (browser switch on foot Wayland), the first Key/Mouse
+        // input after return re-emits the art. Clears the tick fallback flag.
+        if matches!(
+            event,
+            Event::Key(_) | Event::Mouse(_)
+        ) && self.focus_lost_seen
+            && self.sixel_data.is_some()
+        {
+            self.focus_lost_seen = false;
+            self.force_sixel_redraw = true;
+            self.invalidate_protocol_cache();
+            tracing::debug!("input after FocusLost: forcing sixel album art re-emit");
+        }
         // Config editor popup intercepts events
         if self.config_editor_popup.is_some() {
             if let Event::Key(k) = event {
@@ -1026,10 +1048,32 @@ impl YoutuiWindow {
                 // also re-encodes the ratatui Image path on the next draw.
                 self.force_sixel_redraw = true;
                 self.invalidate_protocol_cache();
+                self.focus_lost_seen = false;
                 tracing::debug!("FocusGained: forcing sixel album art re-emit");
             }
             Event::FocusLost => {
-                tracing::debug!("FocusLost: sixel persists until pane switch");
+                // Flag the loss so tick + next-input fallbacks re-emit even
+                // when no FocusGained ever arrives (browser switch case).
+                self.focus_lost_seen = true;
+                tracing::debug!("FocusLost: flagging for sixel re-emit on return");
+            }
+            Event::Resize(w, h) => {
+                // Terminal resize: stale sixel graphics live outside ratatui's
+                // text buffer, so force a re-emit and re-encode the Image
+                // protocol at the new chunk dims on the next draw.
+                // A resize drag fires a storm of events; each one triggers a
+                // full sixel re-encode, so debounce the re-emit to one per
+                // 200ms while still invalidating the cache every time.
+                let now = std::time::Instant::now();
+                let debounced = self
+                    .last_resize_time
+                    .is_some_and(|t| now.duration_since(t).as_millis() < 200);
+                self.last_resize_time = Some(now);
+                if !debounced {
+                    self.force_sixel_redraw = true;
+                }
+                self.invalidate_protocol_cache();
+                tracing::debug!("Resize({w}, {h}): forcing redraw + sixel re-emit");
             }
             other => tracing::warn!("Received unimplemented {:?} event", other),
         }
@@ -1085,12 +1129,30 @@ impl YoutuiWindow {
         self.playlist.handle_tick().await;
         // dirge pattern: periodically re-arm focus reporting so FocusGained
         // keeps firing after an external reset (tmux detach/reattach, terminal
-        // reset) turns ?1004 off. Guarded by TMUX env to avoid writes outside
-        // tmux where the mode is already stable.
-        if self.tick % 3 == 0 && std::env::var("TMUX").is_ok() {
+        // reset, Wayland window switch) turns ?1004 off. Unconditional: bare
+        // foot needs this as much as tmux does. Writes are tiny and harmless
+        // where the mode is already on.
+        if self.tick % 3 == 0 {
             use std::io::Write;
             let _ = std::io::stdout().write_all(b"\x1b[?1004h");
             let _ = std::io::stdout().flush();
+        }
+        // Focus fallback: FocusLost seen but no FocusGained arrived (browser
+        // switch case). Re-emit every 3rd tick while art is present so the
+        // return restores within seconds with zero input. Flag clears on
+        // FocusGained or on the next Key/Mouse event (see handle_crossterm).
+        if self.focus_lost_seen && self.tick % 3 == 0 && self.sixel_data.is_some() {
+            self.force_sixel_redraw = true;
+            tracing::debug!("tick {}: focus-return fallback sixel re-emit", self.tick);
+        }
+        // Idle self-heal: compositors can wipe the sixel graphics layer with no
+        // FocusGained/Resize event to tell us. Re-emit flicker-free (no DCS
+        // clear, steady-idle skip path bypassed by the force flag) every 30th
+        // tick while art is present. Guarded by sixel_data so an empty footer
+        // never paints blanks.
+        if self.tick % 30 == 0 && self.sixel_data.is_some() {
+            self.force_sixel_redraw = true;
+            tracing::debug!("tick {}: forcing periodic sixel re-emit", self.tick);
         }
     }
     pub fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
@@ -1971,6 +2033,55 @@ mod tests {
         window.invalidate_protocol_cache();
         window.invalidate_protocol_cache();
         assert!(window.cached_album_protocol.is_none());
+    }
+
+    #[tokio::test]
+    async fn focus_lost_sets_flag_for_fallback() {
+        let (mut window, _) = YoutuiWindow::new(Config::default(), None, None);
+        assert!(!window.focus_lost_seen);
+        window
+            .handle_crossterm_event(crossterm::event::Event::FocusLost)
+            .await;
+        assert!(window.focus_lost_seen);
+    }
+
+    #[tokio::test]
+    async fn focus_gained_clears_flag_and_forces_reemit() {
+        let (mut window, _) = YoutuiWindow::new(Config::default(), None, None);
+        window.focus_lost_seen = true;
+        window.sixel_data = Some("art".to_string());
+        window
+            .handle_crossterm_event(crossterm::event::Event::FocusGained)
+            .await;
+        assert!(!window.focus_lost_seen);
+        assert!(window.force_sixel_redraw);
+    }
+
+    #[tokio::test]
+    async fn tick_fallback_forces_reemit_after_focus_lost() {
+        let (mut window, _) = YoutuiWindow::new(Config::default(), None, None);
+        window.focus_lost_seen = true;
+        window.sixel_data = Some("art".to_string());
+        window.tick = 2;
+        window.handle_tick().await;
+        assert!(window.force_sixel_redraw);
+    }
+
+    #[tokio::test]
+    async fn input_after_focus_lost_forces_reemit_and_clears() {
+        use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+        let (mut window, _) = YoutuiWindow::new(Config::default(), None, None);
+        window.focus_lost_seen = true;
+        window.sixel_data = Some("art".to_string());
+        let key = Event::Key(KeyEvent {
+            code: KeyCode::Char('z'),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        });
+        window.handle_crossterm_event(key).await;
+        assert!(!window.focus_lost_seen);
+        assert!(window.force_sixel_redraw);
     }
 
     #[test]

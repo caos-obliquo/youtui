@@ -263,6 +263,9 @@ impl Logger {
     fn handle_toggle_target_selector(&mut self) {
         self.logger_state.transition(TuiWidgetEvent::HideKey);
         self.selector_visible = !self.selector_visible;
+        if self.fullscreen_hid_selector {
+            self.fullscreen_hid_selector = false;
+        }
     }
 }
 

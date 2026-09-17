@@ -7,14 +7,14 @@ File: `youtui/src/app/server/song_downloader.rs` + `youtui/src/app/server/messag
 ### yt-dlp (default)
 
 ```rust
-yt-dlp --print-json {url}              ← metadata fetch (add_yt_video)
-yt-dlp -f bestaudio -o {tempfile} {url} ← audio download
+yt-dlp --dump-json --no-warnings {url} ← metadata fetch (add_yt_video, async FetchYtVideoMetadata backend task, 60s timeout, optimistic pending row replaced on HandleYtVideoMetadataOk, removed on HandleYtVideoMetadataError; full JSON keeps title/uploader/duration/thumbnail/channel fields)
+yt-dlp -f bestaudio/best --cookies {cookie.txt} -o {tempfile} -- {video_id} ← audio download (`--` end-of-options guard so dash-leading ids never parse as flags)
 ```
 
 **Key flags:**
 - `--force-overwrites` - prevents yt-dlp resume from treating 0-byte temp files as complete
 - `--extractor-args youtube:player_client=web_creator` - only with cookie_path
-- `--cookies-from-browser chromium` - when cookie path configured
+- `--cookies {cookie.txt}` - exported cookie file when present (legacy `--cookies-from-browser chromium` fallback otherwise)
 - Writes to tempfile via `tempfile::Builder::new().suffix(".m4a")`
 
 **Timeout:** 5-minute proc wait prevents hung processes.

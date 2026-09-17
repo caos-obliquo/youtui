@@ -92,7 +92,7 @@ cargo build --release
 target/release/youtui
 
 # Tests
-cargo test --release -p youtui               # 180 pass, 4 ignore
+cargo test --release -p youtui               # 264 pass, 3 ignore
 cargo test --release -p vi-text-editor       # 67 tests
 cargo test --release -p metadata-provider    # 110 tests
 cargo test --release -p ytmapi-rs --lib      # 82 tests (no auth)
@@ -120,7 +120,7 @@ All paths use XDG convention (`~/.config/youtui/`, `~/.local/share/youtui/`) - c
 
 | Crate | Tests | Description |
 |-------|-------|-------------|
-| `youtui` | 180 pass, 4 ignore | Main binary |
+| `youtui` | 264 pass, 3 ignore | Main binary |
 | `ytmapi-rs` | 82 lib + 29/51 auth | YT Music API client |
 | `metadata-provider` | 110 | Metadata trait + 6 provider impls |
 | `vi-text-editor` | 67 | Vim text editor widget |

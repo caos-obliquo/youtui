@@ -30,6 +30,18 @@ pub fn like_icon(status: ytmapi_rs::common::LikeStatus) -> &'static str {
 
 pub const ALBUM_ART_WIDTH: u16 = 7;
 
+// Minimum footer art chunk (chars) worth encoding. Below this the pane is too
+// narrow - show a placeholder and clear sixel_data instead of encoding.
+// Normal chunk is 7x3; a 0-dim chunk would panic new_protocol and trip the
+// u16 underflow in middle_of_rect, so the 0 case skips the placeholder render.
+// Art auto-restores on space return via chunk_changed re-encode.
+pub const MIN_ART_WIDTH: u16 = 4;
+pub const MIN_ART_HEIGHT: u16 = 2;
+
+pub fn art_chunk_big_enough(chunk: Rect) -> bool {
+    chunk.width >= MIN_ART_WIDTH && chunk.height >= MIN_ART_HEIGHT
+}
+
 pub fn secs_to_time_string(secs: usize) -> String {
     // Naive implementation
     let hours = secs / 3600;
@@ -81,7 +93,7 @@ pub fn draw_footer(
         }
         _ => 0.0,
     };
-    if progress.as_secs() > duration as u64 {
+    if duration > 0 && progress.as_secs() > duration as u64 {
         progress = Duration::from_secs(duration as u64);
     }
     let progress_str = secs_to_time_string(progress.as_secs() as usize);
@@ -171,6 +183,15 @@ pub fn draw_footer(
     // Invalidate protocol cache when chunk dimensions change (terminal resize)
     let chunk_changed = w.cached_album_chunk.map_or(true, |c| c != album_art_chunk);
     w.cached_album_chunk = Some(album_art_chunk);
+    // Size gate: 0-dim chunks panic new_protocol and tiny slivers waste a
+    // re-encode per frame during pane drags. Placeholder + clear sixel_data;
+    // art auto-restores via chunk_changed re-encode when space returns.
+    if !art_chunk_big_enough(album_art_chunk) {
+        w.sixel_data = None;
+        if album_art_chunk.width > 0 && album_art_chunk.height > 0 {
+            f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
+        }
+    } else {
     match album_art {
         Some(AlbumArtState::Downloaded(album_art)) => {
             let art_changed = w.last_album_art.as_ref()
@@ -246,7 +267,8 @@ pub fn draw_footer(
                 f.render_widget(Paragraph::new(" ").centered(), middle_of_rect(album_art_chunk));
             }
         }
-    };
+    }
+    }
     let [line1, album_line_chunk, bar_chunk] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
@@ -383,8 +405,11 @@ mod tests {
         let start = src.find("Some(AlbumArtState::Init)")
             .expect("AlbumArtState::Init branch");
         let arm = &src[start..];
-        let end = arm.find("};")
-            .expect("semicolon after Init arm");
+        // Init is the last match arm: bound it at the next stable statement
+        // after draw_footer (the line1/album/bar destructure), not at an
+        // exact brace sequence that shifts with every gate edit.
+        let end = arm.find("\n    let [line1")
+            .expect("line1 destructure after footer match");
         let arm = &arm[..=end];
         assert!(
             !arm.contains("sixel_data = None"),
@@ -485,5 +510,16 @@ mod tests {
             popup_branch.contains("self.window_state.last_sixel_rect = None;"),
             "flush_sixel must reset last_sixel_rect when popup open"
         );
+    }
+
+    #[test]
+    fn art_chunk_size_gate() {
+        let normal = Rect::new(0, 0, ALBUM_ART_WIDTH, 3);
+        assert!(art_chunk_big_enough(normal), "normal 7x3 footer chunk must encode");
+        assert!(!art_chunk_big_enough(Rect::new(0, 0, 0, 3)), "0-width chunk must not encode");
+        assert!(!art_chunk_big_enough(Rect::new(0, 0, 7, 0)), "0-height chunk must not encode");
+        assert!(!art_chunk_big_enough(Rect::new(0, 0, 0, 0)), "0-dim chunk must not encode");
+        assert!(!art_chunk_big_enough(Rect::new(0, 0, 2, 3)), "narrow sliver must show placeholder");
+        assert!(!art_chunk_big_enough(Rect::new(0, 0, 7, 1)), "1-line sliver must show placeholder");
     }
 }

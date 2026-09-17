@@ -9,7 +9,7 @@ use tokio::signal::unix::SignalKind;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
-use tracing::warn;
+use tracing::{error, warn};
 
 const TICK_RATE: Duration = Duration::from_secs(1);
 
@@ -164,27 +164,56 @@ impl EventSpawner<CrosstermWatcher> {
         let _spawner_type = CrosstermWatcher;
         let mut events = EventStream::new();
         let _handler = tokio::spawn(async move {
-            while let Some(Ok(event)) = events.next().await {
-                match event {
-                    // Don't send mouse move or drag events back to application -
-                    // Each application event causes a UI render.
-                    Event::Mouse(MouseEvent {
-                        kind: MouseEventKind::Drag(_) | MouseEventKind::Moved,
-                        ..
-                    }) => (),
-                    // Avoid duplicate keypresses on Windows.
-                    // https://ratatui.rs/faq/duplicate-key-events-windows.html
-                    // NOTE: There is also a Repeat KeyEventKind which we aren't ignoring for now.
-                    Event::Key(KeyEvent {
-                        kind: KeyEventKind::Release,
-                        ..
-                    }) => (),
-                    _ => handler_tx
-                        .send(AppEvent::Crossterm(event))
-                        .await
-                        .unwrap_or_else(|e| {
-                            warn!("Error {:?} receieved when sending Crossterm event", e)
-                        }),
+            // F2 guard: never silently exit the watcher. Log + continue on
+            // Err, rebuild EventStream on None, QuitSignal only if dead.
+            let mut consecutive_ends: u32 = 0;
+            loop {
+                match events.next().await {
+                    Some(Ok(event)) => {
+                        consecutive_ends = 0;
+                        match event {
+                            // Don't send mouse move or drag events back to application -
+                            // Each application event causes a UI render.
+                            Event::Mouse(MouseEvent {
+                                kind: MouseEventKind::Drag(_) | MouseEventKind::Moved,
+                                ..
+                            }) => (),
+                            // Avoid duplicate keypresses on Windows.
+                            // https://ratatui.rs/faq/duplicate-key-events-windows.html
+                            // NOTE: There is also a Repeat KeyEventKind which we aren't ignoring for now.
+                            Event::Key(KeyEvent {
+                                kind: KeyEventKind::Release,
+                                ..
+                            }) => (),
+                            _ => handler_tx
+                                .send(AppEvent::Crossterm(event))
+                                .await
+                                .unwrap_or_else(|e| {
+                                    warn!("Error {:?} received when sending Crossterm event", e)
+                                }),
+                        }
+                    }
+                    Some(Err(e)) => {
+                        error!("Crossterm event stream error, continuing watch: {:?}", e);
+                        continue;
+                    }
+                    None => {
+                        consecutive_ends += 1;
+                        error!(
+                            "Crossterm event stream ended ({} in a row), rebuilding EventStream",
+                            consecutive_ends
+                        );
+                        if consecutive_ends >= 10 {
+                            error!("Crossterm event stream permanently dead, escalating to QuitSignal");
+                            handler_tx.send(AppEvent::QuitSignal).await.unwrap_or_else(|e| {
+                                warn!("Error {:?} received when sending QuitSignal after watcher death", e)
+                            });
+                            return;
+                        }
+                        events = EventStream::new();
+                        // Backoff so a permanently dead stream does not hot-spin.
+                        tokio::time::sleep(Duration::from_millis(250)).await;
+                    }
                 }
             }
         });
