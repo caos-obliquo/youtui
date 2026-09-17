@@ -108,7 +108,8 @@ pub struct YoutuiWindow {
     pub last_sixel_rect: Option<ratatui::layout::Rect>,
     /// When true, `flush_sixel` must re-emit the current sixel even if the image
     /// data is unchanged (e.g. after tmux wiped the graphics layer on a pane/window
-    /// switch). Set on `FocusGained` and by the keepalive timer. Consumed by
+    /// switch or an idle compositor reset). Set on `FocusGained`, on debounced
+    /// `Resize`, and every 30th `handle_tick` while art is present. Consumed by
     /// `flush_sixel` via `std::mem::take` (reset to false after a re-emit).
     pub force_sixel_redraw: bool,
     pub last_resize_time: Option<std::time::Instant>,
@@ -1110,6 +1111,15 @@ impl YoutuiWindow {
             use std::io::Write;
             let _ = std::io::stdout().write_all(b"\x1b[?1004h");
             let _ = std::io::stdout().flush();
+        }
+        // Idle self-heal: compositors can wipe the sixel graphics layer with no
+        // FocusGained/Resize event to tell us. Re-emit flicker-free (no DCS
+        // clear, steady-idle skip path bypassed by the force flag) every 30th
+        // tick while art is present. Guarded by sixel_data so an empty footer
+        // never paints blanks.
+        if self.tick % 30 == 0 && self.sixel_data.is_some() {
+            self.force_sixel_redraw = true;
+            tracing::debug!("tick {}: forcing periodic sixel re-emit", self.tick);
         }
     }
     pub fn handle_key_event(&mut self, key_event: crossterm::event::KeyEvent) -> YoutuiEffect<Self> {
