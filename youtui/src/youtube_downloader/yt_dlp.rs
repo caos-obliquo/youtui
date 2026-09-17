@@ -107,29 +107,24 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let template = tmpdir.path().join("audio.%(ext)s");
             let output_template = template.to_str().unwrap().to_owned();
             
-            // web_creator extractor needs cookies - only use it when configured
-            // Default extractor works without auth for most videos
-            let use_web_creator = self.cookie_path.is_some();
-            
-            let mut stream_args = vec![
-                "--no-simulate",
-                "--force-overwrites",
-                "--no-warnings",
-                "--no-progress",
-                "--print",
-                "after_move:YTDLP_META abr=%(abr)s ext=%(ext)s format=%(format_id)s",
-                "-f",
+            // The cookie file holds a single consistent session. Gate on file
+            // existence at download time: cookie_path is always Some (see
+            // main.rs), so Option::is_some alone cannot tell a real session
+            // from a missing file.
+            let cookie_file = effective_cookie_file(self.cookie_path.as_deref());
+            let browser_fallback =
+                if cookie_file.is_none() && self.cookie_path.is_some() {
+                    Some(self.cookie_browser.as_str())
+                } else {
+                    None
+                };
+            let stream_args = build_stream_args(
                 format_string.as_str(),
-                "-o",
                 output_template.as_str(),
-            ];
-            if use_web_creator {
-                stream_args.push("--extractor-args");
-                stream_args.push("youtube:player_client=web_creator");
-                stream_args.push("--cookies-from-browser");
-                stream_args.push(&self.cookie_browser);
-            }
-            stream_args.push(song_video_id.as_ref());
+                song_video_id.as_ref(),
+                cookie_file,
+                browser_fallback,
+            );
             
             debug!(%video_id, ?stream_args, "yt-dlp args");
             
@@ -186,6 +181,9 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let mut print_out = String::new();
             let _ = stdout.read_to_string(&mut print_out).await;
             let (dl_abr, dl_ext, dl_format) = parse_print_meta(&print_out);
+            if is_progressive_fallback(&dl_format) {
+                error!(%video_id, format = %dl_format, abr = %dl_abr, ext = %dl_ext, "progressive fallback format picked, audio is ~96k - check cookie/auth");
+            }
 
             // Find the downloaded file (extension decided by yt-dlp via %(ext)s).
             let mut best_path: Option<(u64, std::path::PathBuf)> = None;
@@ -272,6 +270,51 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         }
         .await
     }
+}
+
+fn effective_cookie_file(cookie_path: Option<&str>) -> Option<&str> {
+    cookie_path.filter(|p| std::path::Path::new(p).exists())
+}
+
+fn build_stream_args<'a>(
+    format_string: &'a str,
+    output_template: &'a str,
+    video_id: &'a str,
+    cookie_file: Option<&'a str>,
+    cookie_browser: Option<&'a str>,
+) -> Vec<&'a str> {
+    let mut args = vec![
+        "--no-simulate",
+        "--force-overwrites",
+        "--no-warnings",
+        "--no-progress",
+        "--print",
+        "after_move:YTDLP_META abr=%(abr)s ext=%(ext)s format=%(format_id)s",
+        "-f",
+        format_string,
+        "-o",
+        output_template,
+    ];
+    if let Some(path) = cookie_file {
+        // Single consistent session from the exported file. The live browser
+        // profile can merge cookies from multiple sessions which YouTube
+        // rejects, so it is dropped here.
+        args.push("--extractor-args");
+        args.push("youtube:player_client=web_creator");
+        args.push("--cookies");
+        args.push(path);
+    } else if let Some(browser) = cookie_browser {
+        args.push("--extractor-args");
+        args.push("youtube:player_client=web_creator");
+        args.push("--cookies-from-browser");
+        args.push(browser);
+    }
+    args.push(video_id);
+    args
+}
+
+fn is_progressive_fallback(format_id: &str) -> bool {
+    format_id == "18" || format_id == "22"
 }
 
 fn parse_print_meta(output: &str) -> (String, String, String) {
@@ -366,6 +409,69 @@ mod tests {
             .map(|item| item.unwrap())
             .collect::<Vec<Bytes>>()
             .await;
+    }
+
+    #[test]
+    fn test_build_stream_args_with_cookie_file() {
+        let args = super::build_stream_args(
+            "bestaudio/best",
+            "/tmp/audio.%(ext)s",
+            "videoid123",
+            Some("/home/user/.config/youtui/cookie.txt"),
+            None,
+        );
+        let cookies_pos = args.iter().position(|a| *a == "--cookies").unwrap();
+        assert_eq!(args[cookies_pos + 1], "/home/user/.config/youtui/cookie.txt");
+        assert!(args.contains(&"youtube:player_client=web_creator"));
+        assert!(!args.iter().any(|a| *a == "--cookies-from-browser"));
+        assert_eq!(args.last().unwrap(), &"videoid123");
+    }
+
+    #[test]
+    fn test_build_stream_args_browser_fallback() {
+        let args = super::build_stream_args(
+            "bestaudio/best",
+            "/tmp/audio.%(ext)s",
+            "videoid123",
+            None,
+            Some("chromium"),
+        );
+        let pos = args.iter().position(|a| *a == "--cookies-from-browser").unwrap();
+        assert_eq!(args[pos + 1], "chromium");
+        assert!(!args.iter().any(|a| *a == "--cookies"));
+    }
+
+    #[test]
+    fn test_build_stream_args_no_auth() {
+        let args =
+            super::build_stream_args("bestaudio/best", "/tmp/audio.%(ext)s", "videoid123", None, None);
+        assert!(!args.iter().any(|a| *a == "--cookies"));
+        assert!(!args.iter().any(|a| *a == "--cookies-from-browser"));
+        assert!(!args.iter().any(|a| *a == "--extractor-args"));
+    }
+
+    #[test]
+    fn test_effective_cookie_file_missing() {
+        assert!(super::effective_cookie_file(None).is_none());
+        assert!(super::effective_cookie_file(Some("/nonexistent/path/cookie.txt")).is_none());
+    }
+
+    #[test]
+    fn test_effective_cookie_file_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cookie.txt");
+        std::fs::write(&path, "# cookie data").unwrap();
+        let path_str = path.to_string_lossy().to_string();
+        assert_eq!(super::effective_cookie_file(Some(&path_str)), Some(path_str.as_str()));
+    }
+
+    #[test]
+    fn test_is_progressive_fallback() {
+        assert!(super::is_progressive_fallback("18"));
+        assert!(super::is_progressive_fallback("22"));
+        assert!(!super::is_progressive_fallback("251"));
+        assert!(!super::is_progressive_fallback("140"));
+        assert!(!super::is_progressive_fallback("unknown"));
     }
 
     #[test]
