@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui                      # 180 pass, 4 ignore
+cargo test --release -p youtui                      # 264 pass, 3 ignore
 cargo test --release -p metadata-provider           # 110 pass (+62 new)
 cargo test --release -p vi-text-editor              # 67 pass
 cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
@@ -62,7 +62,7 @@ cargo test --release -p json-crawler                # 2 pass
 cargo test --release -p lrclib-rs                   # 4 pass
 cargo test --release -p rym-genre-data              # 10 pass
 ```
-Total: **~539/539 pass, 0 fail, 4 ignored, 0 warnings** (180+4 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 539)
+Total: **~619/622 pass, 0 fail, 3 ignored, 0 warnings** (264+3 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 622)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -211,7 +211,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## 12 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 180 |
+| `youtui` | Main binary | 264 |
 | `ytmapi-rs` | YT Music API client | 83 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 67 |
 | `metadata-provider` | Metadata trait + 6 provider impls | 110 |
@@ -302,7 +302,7 @@ See `docs/09-roadmap.md` for detailed session history.
 - **MA_COOKIE**: `cf_clearance` cookie from Metal Archives expires ~30 min. Must be refreshed manually via browser DevTools > Application > Cookies. The `metal-proxy` crate has been removed from workspace (backend API returns 500).
 - **Album `audio_playlist_id`**: May be `None` for some album types (singles/EPs). `o.t` shows feedback message now.
 - **Playlist editor modified check**: `Esc`/`:q` warns on unsaved changes. `:q!` force-quits.
-- **Sixel album art**: Focus reporting (`?1004h`) enabled at startup, re-emits on `FocusGained` in tmux, rect-tracking eliminates art-change flash, 3s keepalive re-arms focus reporting. Set `focus-events on` + `allow-passthrough on` in tmux.conf.
+- **Sixel album art**: Focus reporting (`?1004h`) enabled at startup, re-emits on `FocusGained` in tmux, rect-tracking eliminates art-change flash, 3s keepalive re-arms focus reporting. Resize re-emits debounced at 200ms. Idle self-heal: every 30th tick re-emits while `sixel_data` present (covers compositor wipes with no Focus/Resize event). Sub-4x2 chunks show a placeholder instead of encoding. Set `focus-events on` + `allow-passthrough on` in tmux.conf.
 - **Scrobbler rate limit**: Rescrobbled systemd service double-submits scrobbles. Must stop/disable rescrobbled before using native scrobbler. `sudo systemctl stop --user rescrobbled && sudo systemctl disable --user rescrobbled`.
 - **Scrobble cache**: Persistent retry file at `~/.config/youtui/scrobble_cache.json`. Failed scrobbles saved to disk with retry count (max 3). Retried on startup + background 5-min loop. Rate limit stops retries to avoid hammering.
 - **Protocol cache (chunk dimensions)**: `cached_album_chunk` tracks image chunk dimensions in footer. `chunk_changed` comparison prevents 8-bit fallback on terminal resize (PR #8).
@@ -437,7 +437,7 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 181/181 pass, 4 ignored, 0 warnings across workspace
+- 264 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
 - Suckless refactoring adds 0 tests (refactors existing code only)
 
 ## Inspirations & Thanks

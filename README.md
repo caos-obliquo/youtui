@@ -181,8 +181,8 @@ Full keybinds by context: `docs/05-keybindings.md`
 cargo build --release
 ./target/release/youtui
 
-cargo test --release -p youtui                      # 180 pass (4 ignored)
-cargo test --workspace --release                    # 564 pass (4 ignored)
+cargo test --release -p youtui                      # 264 pass (3 ignored)
+cargo test --workspace --release                    # 647 pass (3 ignored)
 cargo clippy --workspace -- -A warnings                # lint (0 warnings)
 ```
 
