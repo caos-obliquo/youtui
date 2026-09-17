@@ -935,3 +935,54 @@ fn set_best_quality_action_cycles_quality() {
         assert_eq!(p.audio_quality, want);
     }
 }
+
+#[test]
+fn pending_row_inserted_on_add_yt_video() {
+    // Given: an empty queue
+    // When: add_yt_video is called
+    // Then: a fetching placeholder row is visible immediately
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let vid = VideoID::from_raw("dQw4w9WgXcQ".to_string());
+    let _ = p.add_yt_video(vid, "https://youtu.be/dQw4w9WgXcQ");
+    assert_eq!(p.list.get_list_iter().count(), 1);
+    let song = p.list.get_list_iter().next().expect("pending row");
+    assert!(song.title.starts_with("fetching..."), "got: {}", song.title);
+    assert!(song.title.contains("dQw4w9WgXcQ"), "got: {}", song.title);
+}
+
+#[test]
+fn pending_row_replaced_on_metadata_resolve() {
+    // Given: a pending fetching row
+    // When: the probe metadata arrives
+    // Then: the same row is updated in place, no duplicate appended
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let vid = VideoID::from_raw("dQw4w9WgXcQ".to_string());
+    let _ = p.add_yt_video(vid.clone(), "https://youtu.be/dQw4w9WgXcQ");
+    let meta = crate::app::server::YtVideoMetadata {
+        title: "Artist - Real Title".to_string(),
+        uploader: "Uploader".to_string(),
+        duration_secs: Some(184.0),
+        year: Some("2021".to_string()),
+        thumbnail_url: Some("https://x/high.jpg".to_string()),
+    };
+    let _ = p.insert_yt_video_metadata(vid, meta);
+    assert_eq!(p.list.get_list_iter().count(), 1);
+    let song = p.list.get_list_iter().next().expect("resolved row");
+    assert!(!song.title.starts_with("fetching..."), "got: {}", song.title);
+    assert!(song.title.contains("Real Title"), "got: {}", song.title);
+}
+
+#[test]
+fn pending_row_removed_on_probe_error() {
+    // Given: a pending fetching row
+    // When: the probe fails
+    // Then: the placeholder row is removed
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let vid = VideoID::from_raw("dQw4w9WgXcQ".to_string());
+    let _ = p.add_yt_video(vid, "https://youtu.be/dQw4w9WgXcQ");
+    assert!(p.remove_pending_yt_video("dQw4w9WgXcQ"));
+    assert_eq!(p.list.get_list_iter().count(), 0);
+}

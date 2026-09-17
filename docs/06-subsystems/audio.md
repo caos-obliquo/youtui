@@ -7,7 +7,7 @@ File: `youtui/src/app/server/song_downloader.rs` + `youtui/src/app/server/messag
 ### yt-dlp (default)
 
 ```rust
-yt-dlp --dump-json --no-warnings --flat-playlist {url} ← metadata fetch (add_yt_video, async FetchYtVideoMetadata backend task, 60s timeout, insert on HandleYtVideoMetadataOk)
+yt-dlp --dump-json --no-warnings {url} ← metadata fetch (add_yt_video, async FetchYtVideoMetadata backend task, 60s timeout, optimistic pending row replaced on HandleYtVideoMetadataOk, removed on HandleYtVideoMetadataError; full JSON keeps title/uploader/duration/thumbnail/channel fields)
 yt-dlp -f bestaudio/best --cookies {cookie.txt} -o {tempfile} -- {video_id} ← audio download (`--` end-of-options guard so dash-leading ids never parse as flags)
 ```
 

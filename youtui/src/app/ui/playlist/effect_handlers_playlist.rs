@@ -767,7 +767,7 @@ impl_youtui_task_handler!(
 #[derive(Debug, PartialEq)]
 pub struct HandleYtVideoMetadataOk(pub VideoID<'static>);
 #[derive(Debug, PartialEq)]
-pub struct HandleYtVideoMetadataError;
+pub struct HandleYtVideoMetadataError(pub VideoID<'static>);
 
 impl_youtui_task_handler!(
     HandleYtVideoMetadataOk,
@@ -775,13 +775,32 @@ impl_youtui_task_handler!(
     Playlist,
     |this: HandleYtVideoMetadataOk, meta: YtVideoMetadata| {
         move |target: &mut Playlist| {
-            info!("add_yt_video: background fetch done for {}", this.0.get_raw());
+            info!(
+                "add_yt_video: background fetch done for {} title={:?} thumb={}",
+                this.0.get_raw(),
+                meta.title,
+                meta.thumbnail_url.is_some()
+            );
             target.insert_yt_video_metadata(this.0, meta)
         }
     }
 );
 
-playlist_err_handler!(HandleYtVideoMetadataError, "fetch video metadata via yt-dlp", "Add failed");
+impl_youtui_task_handler!(
+    HandleYtVideoMetadataError,
+    anyhow::Error,
+    Playlist,
+    |this: HandleYtVideoMetadataError, err: anyhow::Error| {
+        let raw = this.0.get_raw().to_string();
+        let msg = err.to_string();
+        move |target: &mut Playlist| {
+            error!("Failed to fetch video metadata via yt-dlp: {}", msg);
+            target.remove_pending_yt_video(&raw);
+            target.last_error = Some(format!("Add failed: {}", msg));
+            AsyncTask::new_no_op()
+        }
+    }
+);
 
 // Album art from Last.fm effect handlers
 

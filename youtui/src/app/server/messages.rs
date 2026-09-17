@@ -55,6 +55,7 @@ pub struct YtVideoMetadata {
     pub uploader: String,
     pub duration_secs: Option<f64>,
     pub year: Option<String>,
+    pub thumbnail_url: Option<String>,
 }
 
 /// F3 guard task: runs the yt-dlp metadata probe off the UI event loop with
@@ -75,6 +76,7 @@ pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
                 uploader: "YouTube".to_string(),
                 duration_secs: None,
                 year: None,
+                thumbnail_url: None,
             }
         }
     };
@@ -86,6 +88,8 @@ pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
     let uploader = v
         .get("uploader")
         .and_then(|s| s.as_str())
+        .or_else(|| v.get("channel").and_then(|s| s.as_str()))
+        .or_else(|| v.get("creator").and_then(|s| s.as_str()))
         .unwrap_or("Unknown")
         .to_string();
     let duration_secs = v.get("duration").and_then(|s| s.as_f64());
@@ -99,11 +103,24 @@ pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
                 .and_then(|y| y.parse::<i64>().ok())
         })
         .map(|y| y.to_string());
+    let thumbnail_url = v
+        .get("thumbnail")
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            v.get("thumbnails").and_then(|t| t.as_array()).and_then(|arr| {
+                arr.iter()
+                    .rev()
+                    .find_map(|e| e.get("url").and_then(|u| u.as_str()))
+                    .map(|s| s.to_string())
+            })
+        });
     YtVideoMetadata {
         title,
         uploader,
         duration_secs,
         year,
+        thumbnail_url,
     }
 }
 
@@ -114,11 +131,12 @@ impl BackendTask<ArcServer> for FetchYtVideoMetadata {
         async move {
             let raw_id = self.0;
             let mut cmd = tokio::process::Command::new("yt-dlp");
-            cmd.args(["--dump-json", "--no-warnings", "--flat-playlist"]);
+            cmd.args(["--dump-json", "--no-warnings"]);
             if self.1 {
                 cmd.args(["--cookies-from-browser", &self.2]);
             }
             cmd.arg(format!("https://youtu.be/{}", raw_id));
+            tracing::info!("FetchYtVideoMetadata: full probe for video {}", raw_id);
             let output = match tokio::time::timeout(Duration::from_secs(60), cmd.kill_on_drop(true).output()).await
             {
                 Ok(Ok(out)) => out,
@@ -135,10 +153,18 @@ impl BackendTask<ArcServer> for FetchYtVideoMetadata {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 anyhow::bail!("yt-dlp failed for video {}: {}", raw_id, stderr.trim());
             }
-            Ok(parse_yt_dlp_video_json(
+            let meta = parse_yt_dlp_video_json(
                 &String::from_utf8_lossy(&output.stdout),
                 &raw_id,
-            ))
+            );
+            tracing::info!(
+                "FetchYtVideoMetadata: probe ok for {} title={:?} uploader={:?} thumb={}",
+                raw_id,
+                meta.title,
+                meta.uploader,
+                meta.thumbnail_url.is_some()
+            );
+            Ok(meta)
         }
     }
 }
@@ -2313,5 +2339,34 @@ mod fetch_yt_video_metadata_tests {
         assert_eq!(m.uploader, "YouTube");
         assert_eq!(m.duration_secs, None);
         assert_eq!(m.year, None);
+    }
+
+    #[test]
+    fn full_probe_json_carries_thumbnail_and_channel() {
+        // Given: full (non-flat) probe JSON with channel + thumbnail fields
+        // When: parsing the probe stdout
+        // Then: uploader falls back to channel and thumbnail url is kept
+        let m = parse_yt_dlp_video_json(
+            r#"{"title":"Artist - Song","channel":"SomeChannel","duration":184.0,"upload_date":"20210315","thumbnail":"https://i.ytimg.com/vi/rawid/hqdefault.jpg"}"#,
+            "rawid",
+        );
+        assert_eq!(m.uploader, "SomeChannel");
+        assert_eq!(
+            m.thumbnail_url.as_deref(),
+            Some("https://i.ytimg.com/vi/rawid/hqdefault.jpg")
+        );
+        assert_eq!(m.year.as_deref(), Some("2021"));
+    }
+
+    #[test]
+    fn thumbnails_array_falls_back_to_last_url() {
+        // Given: probe JSON with a thumbnails array and no top-level thumbnail
+        // When: parsing the probe stdout
+        // Then: the last (highest-res) thumbnail url is kept
+        let m = parse_yt_dlp_video_json(
+            r#"{"title":"T","uploader":"U","thumbnails":[{"url":"https://x/low.jpg"},{"url":"https://x/high.jpg"}]}"#,
+            "rawid",
+        );
+        assert_eq!(m.thumbnail_url.as_deref(), Some("https://x/high.jpg"));
     }
 }

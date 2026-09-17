@@ -12,7 +12,7 @@ use crate::app::server::{
 };
 use crate::app::structures::{
     fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
-    ListSong, ListSongDisplayableField, ListSongID, Percentage, PlayState, SongListComponent,
+    ListSong, ListSongArtist, ListSongDisplayableField, ListSongID, MaybeRc, Percentage, PlayState, SongListComponent,
     Thumbnail,
 };
 use std::collections::VecDeque;
@@ -1415,15 +1415,55 @@ impl Playlist {
             return AsyncTask::new_no_op();
         }
 
+        // Optimistic pending row so the queue shows instant feedback while the
+        // yt-dlp probe runs (up to 60s). Replaced on resolve, removed on error.
+        self.insert_pending_yt_video_row(video_id.clone());
         // F3 guard: yt-dlp network RTT runs in a backend task with a 60s
         // timeout. Return pending state immediately, insert on completion.
         info!("add_yt_video: fetching metadata in background for {}", raw_id);
         AsyncTask::new_future_try(
             FetchYtVideoMetadata(raw_id, self.yt_dlp_cookie_path.is_some(), self.cookie_browser.clone()),
-            HandleYtVideoMetadataOk(video_id),
-            HandleYtVideoMetadataError,
+            HandleYtVideoMetadataOk(video_id.clone()),
+            HandleYtVideoMetadataError(video_id),
             None,
         )
+    }
+
+    fn insert_pending_yt_video_row(&mut self, video_id: ytmapi_rs::common::VideoID<'static>) -> ListSongID {
+        use ytmapi_rs::common::YoutubeID;
+        let raw_id = video_id.get_raw().to_string();
+        let song = ytmapi_rs::parse::SearchResultSong {
+            title: format!("fetching... {}", raw_id),
+            artist: "YouTube".to_string(),
+            album: None,
+            duration: String::from("0:00"),
+            plays: String::new(),
+            explicit: ytmapi_rs::common::Explicit::NotExplicit,
+            video_id,
+            thumbnails: vec![],
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+        };
+        let id = self.list.append_raw_search_result_songs(vec![song]);
+        self.cur_selected = self.list.get_list_iter().count().saturating_sub(1);
+        info!("add_yt_video: pending row for {}", raw_id);
+        id
+    }
+
+    pub fn remove_pending_yt_video(&mut self, raw_id: &str) -> bool {
+        if let Some(idx) = self
+            .list
+            .get_list_iter()
+            .position(|s| s.video_id.get_raw() == raw_id && s.title.starts_with("fetching..."))
+        {
+            self.list.remove_song_index(idx);
+            let len = self.list.get_list_iter().len();
+            if self.cur_selected >= len {
+                self.cur_selected = len.saturating_sub(1);
+            }
+            warn!("add_yt_video: probe failed for {}, pending row removed", raw_id);
+            return true;
+        }
+        false
     }
 
     pub fn insert_yt_video_metadata(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, meta: YtVideoMetadata) -> ComponentEffect<Self> {
@@ -1482,21 +1522,49 @@ impl Playlist {
         } else {
             (artist.clone(), clean_title.clone())
         };
-        let song = ytmapi_rs::parse::SearchResultSong {
-            title: meta_title.clone(),
-            artist: meta_artist.clone(),
-            album: None,
-            duration: format!("{}", duration),
-            plays: String::new(),
-            explicit: ytmapi_rs::common::Explicit::NotExplicit,
-            video_id,
-            thumbnails: vec![],
-            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+        let thumb_vec: Vec<Thumbnail> = meta
+            .thumbnail_url
+            .clone()
+            .map(|url| Thumbnail { height: 0, width: 0, url })
+            .into_iter()
+            .collect();
+        let pending_idx = self.list.get_list_iter().position(|s| {
+            s.video_id.get_raw() == raw_id && s.title.starts_with("fetching...")
+        });
+        let id_opt = if let Some(idx) = pending_idx {
+            if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
+                s.title = meta_title.clone();
+                s.artists = MaybeRc::Owned(vec![ListSongArtist {
+                    name: meta_artist.clone(),
+                    id: None,
+                }]);
+                s.duration_string = duration.clone();
+                s.thumbnails = MaybeRc::Owned(thumb_vec.clone());
+            }
+            info!("add_yt_video: pending row resolved for {}", raw_id);
+            self.get_id_from_index(idx)
+        } else {
+            let song = ytmapi_rs::parse::SearchResultSong {
+                title: meta_title.clone(),
+                artist: meta_artist.clone(),
+                album: None,
+                duration: format!("{}", duration),
+                plays: String::new(),
+                explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                video_id,
+                thumbnails: thumb_vec,
+                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+            };
+            let old_count = self.list.get_list_iter().count();
+            let id = self.list.append_raw_search_result_songs(vec![song]);
+            if self.list.get_list_iter().count() > old_count {
+                self.cur_selected = self.list.get_list_iter().count().saturating_sub(1);
+                Some(id)
+            } else {
+                None
+            }
         };
-        let old_count = self.list.get_list_iter().count();
-        let id = self.list.append_raw_search_result_songs(vec![song]);
-        if self.list.get_list_iter().count() > old_count {
-            self.cur_selected = self.list.get_list_iter().count().saturating_sub(1);
+        if let Some(id) = id_opt {
             // Set initial album name from YouTube video title (before metadata overwrites)
             if let Some(idx) = self.get_index_from_id(id) {
                 if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
