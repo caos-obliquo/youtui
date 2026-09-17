@@ -39,7 +39,7 @@ pub const MIN_ART_WIDTH: u16 = 4;
 pub const MIN_ART_HEIGHT: u16 = 2;
 
 pub fn art_chunk_big_enough(chunk: Rect) -> bool {
-    chunk.width >= MIN_ART_WIDTH && chunk.height >= MIN_ART_HEIGHT && chunk.width > 0 && chunk.height > 0
+    chunk.width >= MIN_ART_WIDTH && chunk.height >= MIN_ART_HEIGHT
 }
 
 pub fn secs_to_time_string(secs: usize) -> String {
@@ -405,10 +405,11 @@ mod tests {
         let start = src.find("Some(AlbumArtState::Init)")
             .expect("AlbumArtState::Init branch");
         let arm = &src[start..];
-        // Init is the last match arm: its end is the arm close followed by
-        // the match close and the size-gate else close (no trailing semicolon).
-        let end = arm.find("\n        }\n    }\n    }")
-            .expect("Init arm end before match/else close");
+        // Init is the last match arm: bound it at the next stable statement
+        // after draw_footer (the line1/album/bar destructure), not at an
+        // exact brace sequence that shifts with every gate edit.
+        let end = arm.find("\n    let [line1")
+            .expect("line1 destructure after footer match");
         let arm = &arm[..=end];
         assert!(
             !arm.contains("sixel_data = None"),

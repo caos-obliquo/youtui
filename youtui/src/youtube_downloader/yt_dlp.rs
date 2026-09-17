@@ -112,6 +112,12 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             // main.rs), so Option::is_some alone cannot tell a real session
             // from a missing file.
             let cookie_file = effective_cookie_file(self.cookie_path.as_deref());
+            if video_id.is_empty() {
+                error!("yt-dlp download rejected: empty video id");
+                return Err(YtDlpDownloaderError::IoError {
+                    message: "empty video id".to_string(),
+                });
+            }
             let browser_fallback =
                 if cookie_file.is_none() && self.cookie_path.is_some() {
                     Some(self.cookie_browser.as_str())

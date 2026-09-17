@@ -1078,21 +1078,31 @@ pub fn copy_to_clipboard(text: &str) {
                     let _ = stdin.write_all(text.as_bytes());
                 }
                 // F5 guard: a wedged clipboard manager must not stall the
-                // key-event path forever. Kill the child on timeout.
-                if wait_for_child_with_timeout(&mut child, Duration::from_secs(5)).is_none() {
-                    tracing::warn!("copy_to_clipboard: '{}' hung, killing", cmd);
+                // key-event path. Kill the child on timeout.
+                if wait_for_child_with_timeout(&mut child, Duration::from_millis(500)).is_none() {
+                    tracing::warn!(
+                        "copy_to_clipboard: '{}' hung ({} bytes), killing",
+                        cmd,
+                        text.len()
+                    );
                     let _ = child.kill();
                     let _ = child.wait();
                 }
                 return;
             }
-        } else if std::process::Command::new(cmd)
+        } else if let Ok(mut child) = std::process::Command::new(cmd)
             .args(args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .is_ok()
         {
+            // Reap the child so fire-and-forget spawns do not linger as
+            // zombies. Kill on timeout, same as the pbcopy path.
+            if wait_for_child_with_timeout(&mut child, Duration::from_millis(500)).is_none() {
+                tracing::warn!("copy_to_clipboard: '{}' hung ({} bytes), killing", cmd, text.len());
+                let _ = child.kill();
+            }
+            let _ = child.wait();
             return;
         }
     }
