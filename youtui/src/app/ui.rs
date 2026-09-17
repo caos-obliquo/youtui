@@ -111,8 +111,8 @@ pub struct YoutuiWindow {
     /// switch). Set on `FocusGained` and by the keepalive timer. Consumed by
     /// `flush_sixel` via `std::mem::take` (reset to false after a re-emit).
     pub force_sixel_redraw: bool,
-    pub cached_album_protocol: Option<ratatui_image::protocol::Protocol>,
-    pub cached_album_chunk: Option<ratatui::layout::Rect>,
+    pub last_resize_time: Option<std::time::Instant>,
+    pub cached_album_protocol: Option<ratatui_image::protocol::Protocol>,    pub cached_album_chunk: Option<ratatui::layout::Rect>,
     pub logger_fullscreen: bool,
 }
 impl_youtui_component!(YoutuiWindow);
@@ -669,6 +669,7 @@ impl YoutuiWindow {
             sixel_rect: None,
             last_sixel_rect: None,
             force_sixel_redraw: false,
+            last_resize_time: None,
             cached_album_protocol: None,
             cached_album_chunk: None,
             logger_fullscreen: false,
@@ -1035,7 +1036,17 @@ impl YoutuiWindow {
                 // Terminal resize: stale sixel graphics live outside ratatui's
                 // text buffer, so force a re-emit and re-encode the Image
                 // protocol at the new chunk dims on the next draw.
-                self.force_sixel_redraw = true;
+                // A resize drag fires a storm of events; each one triggers a
+                // full sixel re-encode, so debounce the re-emit to one per
+                // 200ms while still invalidating the cache every time.
+                let now = std::time::Instant::now();
+                let debounced = self
+                    .last_resize_time
+                    .is_some_and(|t| now.duration_since(t).as_millis() < 200);
+                self.last_resize_time = Some(now);
+                if !debounced {
+                    self.force_sixel_redraw = true;
+                }
                 self.invalidate_protocol_cache();
                 tracing::debug!("Resize({w}, {h}): forcing redraw + sixel re-emit");
             }

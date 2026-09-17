@@ -7,8 +7,31 @@ use anyhow::Context;
 use futures::Stream;
 use std::io::Cursor;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tracing::info;
+
+/// Monotonic counter so concurrent splits never share tmp file names
+/// (pid alone collides across in-flight extract_section calls).
+static SEEK_TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn sniff_audio_ext(data: &[u8]) -> &'static str {
+    if data.len() >= 8 && &data[4..8] == b"ftyp" {
+        "m4a"
+    } else if data.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
+        "webm"
+    } else if data.starts_with(b"OggS") {
+        "ogg"
+    } else if data.starts_with(b"RIFF") {
+        "wav"
+    } else if data.starts_with(b"ID3")
+        || (data.len() >= 2 && data[0] == 0xFF && (data[1] & 0xE0) == 0xE0)
+    {
+        "mp3"
+    } else {
+        "m4a"
+    }
+}
 
 pub struct DecodedInMemSong(Decoder<Cursor<ArcInMemSong>>);
 struct ArcInMemSong(Arc<InMemSong>);
@@ -247,9 +270,11 @@ fn remux_moov(in_file: &str) -> bool {
 /// Falls back to accurate decode-based seek if fast path produces garbage.
 fn extract_section(song: &Arc<InMemSong>, offset: Duration, duration: Option<Duration>) -> anyhow::Result<InMemSong> {
     let pid = std::process::id();
+    let uniq = SEEK_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let ext = sniff_audio_ext(&song.as_ref().0);
     let tmp = std::env::temp_dir();
-    let in_file = tmp.join(format!("youtui_seek_{}.m4a", pid)).to_string_lossy().into_owned();
-    let out_file = tmp.join(format!("youtui_seek_{}_out.m4a", pid)).to_string_lossy().into_owned();
+    let in_file = tmp.join(format!("youtui_seek_{}_{}.{}", pid, uniq, ext)).to_string_lossy().into_owned();
+    let out_file = tmp.join(format!("youtui_seek_{}_{}_out.m4a", pid, uniq)).to_string_lossy().into_owned();
 
     std::fs::write(&in_file, &song.as_ref().0).context("write temp input")?;
 
@@ -364,4 +389,23 @@ fn extract_accurate(in_file: &str, out_file: &str, start_fmt: &str, dur_fmt: &st
     }
     let data = std::fs::read(out_file).context("read ffmpeg accurate output")?;
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sniff_audio_ext;
+
+    #[test]
+    fn sniff_detects_common_containers() {
+        let mut mp4 = vec![0u8; 8];
+        mp4[4..8].copy_from_slice(b"ftyp");
+        assert_eq!(sniff_audio_ext(&mp4), "m4a");
+        assert_eq!(sniff_audio_ext(&[0x1A, 0x45, 0xDF, 0xA3, 0x00]), "webm");
+        assert_eq!(sniff_audio_ext(b"OggSabcdef"), "ogg");
+        assert_eq!(sniff_audio_ext(b"RIFF....WAVE"), "wav");
+        assert_eq!(sniff_audio_ext(b"ID3\x04\x00"), "mp3");
+        assert_eq!(sniff_audio_ext(&[0xFF, 0xFB, 0x90, 0x00]), "mp3");
+        assert_eq!(sniff_audio_ext(b"????"), "m4a");
+        assert_eq!(sniff_audio_ext(&[]), "m4a");
+    }
 }

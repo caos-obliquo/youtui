@@ -231,6 +231,7 @@ fn download_task_creation() {
     let cancel_token = Arc::new(tokio_util::sync::CancellationToken::new());
     let task = DownloadTask {
         cancel_token,
+        quality: crate::app::structures::AudioQuality::Best,
     };
     
     assert!(task.cancel_token.is_cancelled() == false);
@@ -631,7 +632,7 @@ fn cancel_all_downloads_triggers_tokens() {
     let p = get_dummy_playlist();
     // Register a download task
     let cancel_token = Arc::new(tokio_util::sync::CancellationToken::new());
-    let task = DownloadTask { cancel_token: cancel_token.clone() };
+    let task = DownloadTask { cancel_token: cancel_token.clone(), quality: crate::app::structures::AudioQuality::Best };
     p.active_downloads.lock().unwrap().push((ListSongID(999), task));
 
     assert_eq!(p.active_downloads.lock().unwrap().len(), 1);
@@ -657,9 +658,9 @@ fn cancel_all_downloads_multiple_tasks() {
     let token1 = Arc::new(tokio_util::sync::CancellationToken::new());
     let token2 = Arc::new(tokio_util::sync::CancellationToken::new());
     let token3 = Arc::new(tokio_util::sync::CancellationToken::new());
-    p.active_downloads.lock().unwrap().push((ListSongID(1), DownloadTask { cancel_token: token1.clone() }));
-    p.active_downloads.lock().unwrap().push((ListSongID(2), DownloadTask { cancel_token: token2.clone() }));
-    p.active_downloads.lock().unwrap().push((ListSongID(3), DownloadTask { cancel_token: token3.clone() }));
+    p.active_downloads.lock().unwrap().push((ListSongID(1), DownloadTask { cancel_token: token1.clone(), quality: crate::app::structures::AudioQuality::Best }));
+    p.active_downloads.lock().unwrap().push((ListSongID(2), DownloadTask { cancel_token: token2.clone(), quality: crate::app::structures::AudioQuality::Best }));
+    p.active_downloads.lock().unwrap().push((ListSongID(3), DownloadTask { cancel_token: token3.clone(), quality: crate::app::structures::AudioQuality::Best }));
 
     p.cancel_all_downloads();
 
@@ -916,12 +917,21 @@ fn title_shows_default_best_quality_indicator() {
 }
 
 #[test]
-fn set_best_quality_action_sets_best() {
+fn set_best_quality_action_cycles_quality() {
     use crate::app::component::actionhandler::{ActionHandler, YoutuiEffect};
     use crate::app::structures::AudioQuality;
     use crate::app::ui::playlist::PlaylistAction;
     let (mut p, _) = Playlist::new();
-    p.audio_quality = AudioQuality::Low;
-    let _effect: YoutuiEffect<Playlist> = p.apply_action(PlaylistAction::SetBestQuality).into();
     assert_eq!(p.audio_quality, AudioQuality::Best);
+    let expected = [
+        AudioQuality::High,
+        AudioQuality::Medium,
+        AudioQuality::Low,
+        AudioQuality::Best,
+        AudioQuality::High,
+    ];
+    for want in expected {
+        let _effect: YoutuiEffect<Playlist> = p.apply_action(PlaylistAction::SetBestQuality).into();
+        assert_eq!(p.audio_quality, want);
+    }
 }

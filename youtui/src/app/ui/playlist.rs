@@ -86,6 +86,7 @@ pub enum QueueState {
 #[derive(Debug, Clone)]
 pub struct DownloadTask {
     cancel_token: Arc<tokio_util::sync::CancellationToken>,
+    quality: AudioQuality,
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +166,12 @@ pub struct Playlist {
 
 const MAX_AUDIO_CACHE_SIZE: usize = 50;
 
+/// Cache key includes requested quality so a re-download at a different
+/// quality does not collapse into (or resurrect) stale bytes.
+fn audio_cache_key(video_raw: &str, quality: AudioQuality) -> String {
+    format!("{video_raw}#{quality:?}")
+}
+
 impl_youtui_component!(Playlist);
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -232,7 +239,7 @@ impl Action for PlaylistAction {
             PlaylistAction::SaveQueue => "Save Queue",
             PlaylistAction::LoadQueue => "Load Queue",
             PlaylistAction::DeleteQueue => "Delete Queue",
-            PlaylistAction::SetBestQuality => "Set Best Quality",
+            PlaylistAction::SetBestQuality => "Cycle Audio Quality",
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
             PlaylistAction::LoadFromYTM => "Load YouTube Music Playlist",
             PlaylistAction::ViewLyrics => "View Lyrics",
@@ -305,7 +312,12 @@ impl ActionHandler<PlaylistAction> for Playlist {
             }
             PlaylistAction::DeleteQueue => (AsyncTask::new_no_op(), None),
             PlaylistAction::SetBestQuality => {
-                self.audio_quality = AudioQuality::Best;
+                self.audio_quality = match self.audio_quality {
+                    AudioQuality::Best => AudioQuality::High,
+                    AudioQuality::High => AudioQuality::Medium,
+                    AudioQuality::Medium => AudioQuality::Low,
+                    AudioQuality::Low => AudioQuality::Best,
+                };
                 info!("Audio quality set to: {:?}", self.audio_quality);
                 (AsyncTask::new_no_op(), None)
             },
@@ -2072,7 +2084,8 @@ impl Playlist {
         // Restore cached audio for songs previously downloaded
         for song in &mut song_list {
             let video_raw = song.video_id.get_raw().to_string();
-            if let Some(cached) = self.audio_cache.get(&video_raw) {
+            let key = audio_cache_key(&video_raw, self.audio_quality);
+            if let Some(cached) = self.audio_cache.get(&key) {
                 song.download_status = DownloadStatus::Downloaded(cached.clone());
                 debug!("audio_cache: restored {} from cache", video_raw);
             }
@@ -2392,7 +2405,10 @@ impl Playlist {
         }
 
         let cancel_token = Arc::new(tokio_util::sync::CancellationToken::new());
-        debug!("download_song: starting download for {}", video_id);
+        debug!(
+            "download_song: starting download for {} (requested quality: {:?})",
+            video_id, self.audio_quality
+        );
 
         let effect = AsyncTask::new_stream(
             DownloadSong(song.video_id.clone(), id, cancel_token.clone(), self.audio_quality),
@@ -2406,6 +2422,7 @@ impl Playlist {
             id,
             DownloadTask {
                 cancel_token,
+                quality: self.audio_quality,
             },
         ));
 
@@ -3168,7 +3185,15 @@ impl Playlist {
                             if self.audio_cache.len() >= MAX_AUDIO_CACHE_SIZE {
                                 self.audio_cache.clear();
                             }
-                            self.audio_cache.insert(video_id.clone(), arc);
+                            let quality = self
+                                .active_downloads
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .find(|(song_id, _)| *song_id == id)
+                                .map(|(_, task)| task.quality)
+                                .unwrap_or(self.audio_quality);
+                            self.audio_cache.insert(audio_cache_key(&video_id, quality), arc);
                             info!("download_status_updated: song_id={} -> Downloaded", video_id);
                         }
                     }
