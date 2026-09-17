@@ -871,7 +871,7 @@ fn playing_decode_estimate_must_not_shrink_known_duration() {
     song.actual_duration = Some(Duration::from_secs(63));
     let id = p.list.push_song_list(vec![song]);
 
-    p.handle_playing(Some(Duration::from_secs_f64(16.382)), id);
+    let _ = p.handle_playing(Some(Duration::from_secs_f64(16.382)), id);
     assert_eq!(
         p.get_song_from_id(id).unwrap().actual_duration,
         Some(Duration::from_secs(63))
@@ -985,4 +985,124 @@ fn pending_row_removed_on_probe_error() {
     let _ = p.add_yt_video(vid, "https://youtu.be/dQw4w9WgXcQ");
     assert!(p.remove_pending_yt_video("dQw4w9WgXcQ"));
     assert_eq!(p.list.get_list_iter().count(), 0);
+}
+
+// --- Split-track progress/seek regression (Japan bar pinned full) ---
+// Track 3 "Worst Party Ever": 167s long, starts at 351s into the video.
+// When ffmpeg extract fails the decoder plays FULL video audio while the
+// song still carries track_no/start_offset, so sink positions are absolute.
+
+#[test]
+fn fallback_progress_converts_absolute_to_track_relative() {
+    // Given: split track decoded as full audio (extract failed)
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut song = make_track_entry("vjapan", 3, "Worst Party Ever", 167.0, 351.0);
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+    p.play_status = PlayState::Playing(id);
+    let _ = p.handle_playing(Some(Duration::from_secs(800)), id);
+    // When: sink reports absolute 361s (10s into track 3)
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(361), id);
+    // Then: bar shows track-relative 10s, not pinned full
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(10)));
+}
+
+#[test]
+fn extracted_progress_stays_track_relative() {
+    // Given: split track decoded as extracted section (normal case)
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut song = make_track_entry("vjapan", 3, "Worst Party Ever", 167.0, 351.0);
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+    p.play_status = PlayState::Playing(id);
+    let _ = p.handle_playing(Some(Duration::from_secs(167)), id);
+    // When: sink reports track-relative 100s
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(100), id);
+    // Then: bar shows 100s unchanged
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(100)));
+}
+
+#[test]
+fn normal_track_progress_identity() {
+    // Given: regular track with no offset
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut song = make_album_original("vx1", None);
+    song.duration_string = "03:59".into();
+    song.actual_duration = Some(Duration::from_secs(239));
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+    p.play_status = PlayState::Playing(id);
+    // When/Then: progress passes through 1:1
+    let _ = p.handle_set_song_play_progress(Duration::from_secs(60), id);
+    assert_eq!(p.cur_played_dur, Some(Duration::from_secs(60)));
+}
+
+#[test]
+fn fallback_seek_to_adds_offset() {
+    // Given: split track decoded as full audio
+    use crate::app::server::SeekTo;
+    use crate::app::ui::playlist::effect_handlers::HandleSetSongPlayProgress;
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut song = make_track_entry("vjapan", 3, "Worst Party Ever", 167.0, 351.0);
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+    p.play_status = PlayState::Playing(id);
+    let _ = p.handle_playing(Some(Duration::from_secs(800)), id);
+    // When: user seeks to track-relative 30s
+    let effect = p.handle_seek_to(Duration::from_secs(30));
+    // Then: sink gets absolute 381s (351 + 30)
+    let expected = AsyncTask::new_future_option(
+        SeekTo { position: Duration::from_secs(381), id },
+        HandleSetSongPlayProgress,
+        None,
+    );
+    assert!(effect.contains(&expected), "seek-to must add track offset for full-audio fallback");
+}
+
+#[test]
+fn extracted_seek_to_sends_relative() {
+    // Given: split track decoded as extracted section
+    use crate::app::server::SeekTo;
+    use crate::app::ui::playlist::effect_handlers::HandleSetSongPlayProgress;
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut song = make_track_entry("vjapan", 3, "Worst Party Ever", 167.0, 351.0);
+    song.download_status = DownloadStatus::Downloaded(data);
+    let id = p.list.push_song_list(vec![song]);
+    p.play_status = PlayState::Playing(id);
+    let _ = p.handle_playing(Some(Duration::from_secs(167)), id);
+    // When: user seeks to track-relative 30s
+    let effect = p.handle_seek_to(Duration::from_secs(30));
+    // Then: sink gets 30s unchanged (extracted audio is track-relative)
+    let expected = AsyncTask::new_future_option(
+        SeekTo { position: Duration::from_secs(30), id },
+        HandleSetSongPlayProgress,
+        None,
+    );
+    assert!(effect.contains(&expected), "seek-to must stay relative for extracted split track");
+}
+
+#[test]
+fn fallback_does_not_overwrite_track_duration() {
+    // Given: split track with 167s metadata truth
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let song = make_track_entry("vjapan", 3, "Worst Party Ever", 167.0, 351.0);
+    let id = p.list.push_song_list(vec![song]);
+    // When: decoded full-audio duration (800s) arrives
+    let _ = p.handle_playing(Some(Duration::from_secs(800)), id);
+    // Then: track keeps its 167s duration, not the full video length
+    assert_eq!(
+        p.get_song_from_id(id).unwrap().actual_duration,
+        Some(Duration::from_secs(167))
+    );
 }

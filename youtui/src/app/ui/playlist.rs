@@ -163,6 +163,10 @@ pub struct Playlist {
     /// Cache of downloaded audio by video_id. Survives reset() so replaying
     /// same song from browser doesn't re-download.
     audio_cache: HashMap<String, Arc<crate::app::server::song_downloader::InMemSong>>,
+    /// Split tracks whose ffmpeg extract failed, so the decoder plays FULL
+    /// video audio while the song keeps track_no/start_offset. Sink positions
+    /// are absolute there and need offset conversion both directions.
+    split_fallback: std::collections::HashSet<ListSongID>,
 }
 
 const MAX_AUDIO_CACHE_SIZE: usize = 50;
@@ -1008,6 +1012,7 @@ impl Playlist {
             last_rated_video_id: None,
             last_rated_like_status: None,
             audio_cache: HashMap::new(),
+            split_fallback: std::collections::HashSet::new(),
         };
 
         (playlist, task)
@@ -2645,8 +2650,17 @@ impl Playlist {
             PlayState::Playing(id) | PlayState::Paused(id) => id,
             _ => return AsyncTask::new_no_op(),
         };
+        // Full-audio fallback: bar is track-relative but sink is absolute.
+        let target = match self.get_song_from_id(id).and_then(|s| s.start_offset) {
+            Some(offset) if self.split_fallback.contains(&id) => {
+                let abs = offset.saturating_add(position);
+                info!("SeekTo fallback: track-relative {:?} -> absolute {:?}", position, abs);
+                abs
+            }
+            _ => position,
+        };
 
-        AsyncTask::new_future_option(SeekTo { position, id }, HandleSetSongPlayProgress, None)
+        AsyncTask::new_future_option(SeekTo { position: target, id }, HandleSetSongPlayProgress, None)
     }
 
     pub fn handle_next(&mut self) -> ComponentEffect<Self> {
@@ -3310,7 +3324,9 @@ impl Playlist {
             PlayUpdate::PlayProgress(duration, id) => {
                 return self.handle_set_song_play_progress(duration, id);
             }
-            PlayUpdate::Playing(duration, id) => self.handle_playing(duration, id),
+            PlayUpdate::Playing(duration, id) => {
+                return self.handle_playing(duration, id);
+            }
             PlayUpdate::DonePlaying(id) => return self.handle_done_playing(id),
             PlayUpdate::Error(e) => error!("{e}"),
         }
@@ -3340,7 +3356,9 @@ impl Playlist {
             AutoplayUpdate::PlayProgress(duration, id) => {
                 return self.handle_set_song_play_progress(duration, id);
             }
-            AutoplayUpdate::Playing(duration, id) => self.handle_playing(duration, id),
+            AutoplayUpdate::Playing(duration, id) => {
+                return self.handle_playing(duration, id);
+            }
             AutoplayUpdate::DonePlaying(id) => return self.handle_done_playing(id),
             AutoplayUpdate::AutoplayQueued(id) => self.handle_autoplay_queued(id),
             AutoplayUpdate::Error(e) => error!("{e}"),
@@ -3363,8 +3381,14 @@ impl Playlist {
         }).unwrap_or((None, false));
 
         // Convert absolute progress to track-relative for album tracks
-        // When ffmpeg extraction was used, d is already track-relative
+        // When ffmpeg extraction was used, d is already track-relative.
+        // On full-audio fallback the sink reports absolute video positions.
         let track_rel = match start_offset {
+            Some(offset) if is_album_track && self.split_fallback.contains(&id) => {
+                let rel = d.saturating_sub(offset);
+                debug!("Progress fallback: absolute {:?} -> track-relative {:?}", d, rel);
+                rel
+            }
             Some(_) if is_album_track => d,
             Some(offset) => d.saturating_sub(offset),
             None => d,
@@ -3585,26 +3609,66 @@ impl Playlist {
         }
     }
 
+    /// True when a decoded duration proves the sink plays FULL video audio
+    /// for a split track (ffmpeg extract failed). VBR decode estimates run
+    /// short, never long, so a decode much longer than the track that also
+    /// reaches past offset + track length means fallback.
+    fn is_full_audio_decode(decoded: Duration, offset: Duration, track_dur: Duration) -> bool {
+        decoded > track_dur.saturating_add(Duration::from_secs(30))
+            && decoded
+                >= offset
+                    .saturating_add(track_dur)
+                    .saturating_sub(Duration::from_secs(5))
+    }
+
     pub fn handle_queued(&mut self, duration: Option<Duration>, id: ListSongID) {
+        // Detect full-audio fallback before mutating: a split track decoded
+        // much longer than its track length plays the whole video.
+        let fallback = match duration {
+            Some(dur) => self.get_song_from_id(id).map(|s| {
+                match (s.track_no, s.start_offset) {
+                    (Some(_), Some(offset)) => {
+                        let floor = Self::best_known_duration(s).unwrap_or(Duration::ZERO);
+                        Self::is_full_audio_decode(dur, offset, floor)
+                    }
+                    _ => false,
+                }
+            }).unwrap_or(false),
+            None => false,
+        };
+        if fallback {
+            self.split_fallback.insert(id);
+        } else if duration.is_some() {
+            self.split_fallback.remove(&id);
+        }
         if let Some(song) = self.get_mut_song_from_id(id) {
             // Always update actual_duration from decoded audio when available.
             // The metadata duration (YTM duration_seconds) may be shorter than real audio.
             if let Some(dur) = duration {
-                let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
-                if dur >= floor {
-                    song.actual_duration = Some(dur);
-                } else {
+                if fallback {
                     info!(
-                        "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
-                        dur, song.title, floor
+                        "Ignoring full-audio decode {:?} for split track '{}', keeping track duration",
+                        dur, song.title
                     );
+                } else {
+                    let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                    if dur >= floor {
+                        song.actual_duration = Some(dur);
+                    } else {
+                        info!(
+                            "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
+                            dur, song.title, floor
+                        );
+                    }
                 }
                 // Backfill duration_string when YTM gave none or zero.
                 if song.duration_string.is_empty()
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
                 {
+                    let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                    let fill = if fallback { floor } else { dur.max(floor) };
                     song.duration_string =
-                        super::footer::secs_to_time_string(dur.max(floor).as_secs() as usize);
+                        super::footer::secs_to_time_string(fill.as_secs() as usize);
                 }
                 // Update scrobble state duration if it was using the 240s fallback
                 let corrected = Self::best_known_duration(song).unwrap_or(dur);
@@ -3626,27 +3690,54 @@ impl Playlist {
         }
     }
 
-    pub fn handle_playing(&mut self, duration: Option<Duration>, id: ListSongID) {
+    pub fn handle_playing(&mut self, duration: Option<Duration>, id: ListSongID) -> ComponentEffect<Self> {
+        // Same fallback detection as handle_queued (see above).
+        let fallback = match duration {
+            Some(dur) => self.get_song_from_id(id).map(|s| {
+                match (s.track_no, s.start_offset) {
+                    (Some(_), Some(offset)) => {
+                        let floor = Self::best_known_duration(s).unwrap_or(Duration::ZERO);
+                        Self::is_full_audio_decode(dur, offset, floor)
+                    }
+                    _ => false,
+                }
+            }).unwrap_or(false),
+            None => false,
+        };
+        if fallback {
+            self.split_fallback.insert(id);
+        } else if duration.is_some() {
+            self.split_fallback.remove(&id);
+        }
         if let Some(song) = self.get_mut_song_from_id(id) {
             // Always update actual_duration from decoded audio when available.
             // The metadata duration (YTM duration_seconds) may be shorter than real audio.
             if let Some(dur) = duration {
-                // Never shrink: VBR decode estimates run short (see best_known_duration).
-                let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
-                if dur >= floor {
-                    song.actual_duration = Some(dur);
-                } else {
+                if fallback {
                     info!(
-                        "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
-                        dur, song.title, floor
+                        "Ignoring full-audio decode {:?} for split track '{}', keeping track duration",
+                        dur, song.title
                     );
+                } else {
+                    // Never shrink: VBR decode estimates run short (see best_known_duration).
+                    let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                    if dur >= floor {
+                        song.actual_duration = Some(dur);
+                    } else {
+                        info!(
+                            "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
+                            dur, song.title, floor
+                        );
+                    }
                 }
                 // Backfill duration_string when YTM gave none or zero.
                 if song.duration_string.is_empty()
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
                 {
+                    let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                    let fill = if fallback { floor } else { dur.max(floor) };
                     song.duration_string =
-                        super::footer::secs_to_time_string(dur.max(floor).as_secs() as usize);
+                        super::footer::secs_to_time_string(fill.as_secs() as usize);
                 }
                 // Update scrobble state duration if it was using the 240s fallback
                 let corrected = Self::best_known_duration(song).unwrap_or(dur);
@@ -3664,6 +3755,28 @@ impl Playlist {
         {
             self.play_status = PlayState::Playing(id)
         }
+
+        // Full-audio fallback starts at video position 0, so jump the sink
+        // to the track offset to hear the right audio.
+        if fallback {
+            let cur = match self.play_status {
+                PlayState::Playing(cur) | PlayState::Paused(cur) => cur == id,
+                _ => false,
+            };
+            if cur {
+                if let Some(offset) = self.get_song_from_id(id).and_then(|s| s.start_offset) {
+                    if !offset.is_zero() {
+                        info!("Playing fallback: seeking sink to track offset {:?}", offset);
+                        return AsyncTask::new_future_option(
+                            SeekTo { position: offset, id },
+                            HandleSetSongPlayProgress,
+                            None,
+                        );
+                    }
+                }
+            }
+        }
+        AsyncTask::new_no_op()
     }
 
     pub fn handle_set_to_error(&mut self, id: ListSongID) {
