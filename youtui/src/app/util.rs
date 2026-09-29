@@ -65,12 +65,37 @@ pub async fn fetch_yt_dlp_album_tracks(
             return Vec::new();
         }
     };
+    album_tracks_from_json(&json, video_id)
+}
+
+/// Pick an album tracklist from yt-dlp JSON: uploader-authored description
+/// first, chapters last. YouTube auto-generated chapters can be garbage:
+/// Vomitoma CDsJBLrT_UM ships 25 chapters whose `start_time`s are the
+/// tracklist DURATION values sorted ascending (23 after dedup, wrong track
+/// order, final pseudo-track 32:25) while the description lists all 27
+/// tracks in correct order with correct per-track durations.
+pub fn album_tracks_from_json(json: &serde_json::Value, video_id: &str) -> Vec<AlbumTrack> {
     let duration_secs: u64 = json
         .get("duration")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
 
-    // Chapters first
+    if let Some(desc) = json.get("description").and_then(|v| v.as_str()) {
+        if let Some(tracks) = parse_description_timestamps(desc, duration_secs) {
+            if !tracks.is_empty() {
+                info!("yt-dlp fallback: parsed {} tracks from description for video {}", tracks.len(), video_id);
+                return tracks;
+            }
+        }
+        // Some channel uploads list per-track durations at line end ("01. Untitled 00:59").
+        if let Some(tracks) = parse_description_durations(desc, duration_secs) {
+            if !tracks.is_empty() {
+                info!("yt-dlp fallback: parsed {} tracks from description durations for video {}", tracks.len(), video_id);
+                return tracks;
+            }
+        }
+    }
+
     if let Some(chapters_arr) = json.get("chapters").and_then(|c| c.as_array()) {
         let chapters: Vec<(f64, &str)> = chapters_arr
             .iter()
@@ -86,22 +111,6 @@ pub async fn fetch_yt_dlp_album_tracks(
                     info!("yt-dlp fallback: parsed {} tracks from chapters for video {}", tracks.len(), video_id);
                     return tracks;
                 }
-            }
-        }
-    }
-
-    if let Some(desc) = json.get("description").and_then(|v| v.as_str()) {
-        if let Some(tracks) = parse_description_timestamps(desc, duration_secs) {
-            if !tracks.is_empty() {
-                info!("yt-dlp fallback: parsed {} tracks from description for video {}", tracks.len(), video_id);
-                return tracks;
-            }
-        }
-        // Some channel uploads list per-track durations at line end ("01. Untitled 00:59").
-        if let Some(tracks) = parse_description_durations(desc, duration_secs) {
-            if !tracks.is_empty() {
-                info!("yt-dlp fallback: parsed {} tracks from description durations for video {}", tracks.len(), video_id);
-                return tracks;
             }
         }
     }
@@ -543,5 +552,55 @@ mod tests {
         // Sum of durations 2220s, within 30s of the 2244s video.
         let sum: u64 = t.iter().map(|x| x.duration_secs as u64).sum();
         assert!((sum as i64 - 2244).abs() <= 30);
+    }
+
+    #[test]
+    fn vomitoma_description_beats_garbage_chapters() {
+        // Real yt-dlp JSON shape for CDsJBLrT_UM: YouTube auto-generated
+        // chapters whose starts are the tracklist duration values sorted
+        // ascending (25 entries, duplicates at 43 and 59), while the
+        // description carries the correct 27-track order and durations.
+        let json: serde_json::Value = serde_json::json!({
+            "duration": 2244,
+            "chapters": [
+                {"start_time": 0, "title": "<Untitled Chapter 1>"},
+                {"start_time": 26, "title": "22. Untitled"},
+                {"start_time": 34, "title": "15. Untitled"},
+                {"start_time": 37, "title": "18. Untitled"},
+                {"start_time": 43, "title": "03. Untitled"},
+                {"start_time": 43, "title": "19. Untitled"},
+                {"start_time": 48, "title": "16. Untitled"},
+                {"start_time": 50, "title": "05. Untitled"},
+                {"start_time": 54, "title": "26. Untitled"},
+                {"start_time": 55, "title": "06. Untitled"},
+                {"start_time": 57, "title": "20. Untitled"},
+                {"start_time": 58, "title": "04. Untitled"},
+                {"start_time": 59, "title": "01. Untitled"},
+                {"start_time": 59, "title": "02. Untitled"},
+                {"start_time": 60, "title": "25. Untitled"},
+                {"start_time": 61, "title": "13. Untitled"},
+                {"start_time": 66, "title": "27. Untitled"},
+                {"start_time": 67, "title": "23. Untitled"},
+                {"start_time": 69, "title": "07. Untitled"},
+                {"start_time": 74, "title": "17. Untitled"},
+                {"start_time": 80, "title": "21. Untitled"},
+                {"start_time": 84, "title": "24. Untitled"},
+                {"start_time": 151, "title": "12. Untitled"},
+                {"start_time": 273, "title": "10. Untitled"},
+                {"start_time": 299, "title": "08. Untitled"}
+            ],
+            "description": "'' Nuclear Cesspool Of Parasitic Scum '' 2009\nTracklist:\n01. Untitled 00:59\n02. Untitled 00:59\n03. Untitled 00:43\n04. Untitled 00:58\n05. Untitled 00:50\n06. Untitled 00:55\n07. Untitled 01:09\n08. Untitled 04:59\n09. Untitled 02;26\n10. Untitled 04:33\n11. Untitled 02;12\n12. Untitled 02:31\n13. Untitled 01:01\n14. Untitled 00;35\n15. Untitled 00:34\n16. Untitled 00:48\n17. Untitled 01:14\n18. Untitled 00:37\n19. Untitled 00:43\n20. Untitled 00:57\n21. Untitled 01:20\n22. Untitled 00:26\n23. Untitled 01:07\n24. Untitled 01:24\n25. Untitled 01:00\n26. Untitled 00:54\n27. Untitled 01:06"
+        });
+        let t = album_tracks_from_json(&json, "CDsJBLrT_UM");
+        assert_eq!(t.len(), 27, "must prefer description's 27 tracks over chapters' 23");
+        // Correct order: track 01 first (59s), not chapter-garbage order.
+        assert_eq!(t[0].title, "Untitled");
+        assert_eq!(t[0].duration_secs, 59.0);
+        assert_eq!(t[1].duration_secs, 59.0);
+        assert_eq!(t[2].duration_secs, 43.0);
+        // Track 09 (semicolon typo 02;26 = 146s) survives at position 8.
+        assert_eq!(t[8].duration_secs, 146.0);
+        // Last track 27 = 66s, not the 32:25 pseudo-track from chapters.
+        assert_eq!(t[26].duration_secs, 66.0);
     }
 }
