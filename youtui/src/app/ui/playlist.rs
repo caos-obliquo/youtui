@@ -1552,6 +1552,9 @@ impl Playlist {
                     name: meta_artist.clone(),
                     id: None,
                 }]);
+                // Drop the cached artist string: it was computed from the
+                // pending row's source label (YouTube/Bandcamp) on first render.
+                s.artists_string.take();
                 s.duration_string = duration.clone();
                 s.thumbnails = MaybeRc::Owned(thumb_vec.clone());
             }
@@ -1579,12 +1582,14 @@ impl Playlist {
             }
         };
         if let Some(id) = id_opt {
-            // Set initial album name from YouTube video title (before metadata overwrites)
+            // Set initial album name from the yt-dlp album field when present
+            // (Bandcamp track JSON carries the real album), else fall back to
+            // the video title (before metadata overwrites).
             if let Some(idx) = self.get_index_from_id(id) {
                 if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
                     s.album = Some(crate::app::structures::MaybeRc::Owned(
                         crate::app::structures::ListSongAlbum {
-                            name: meta_title.clone(),
+                            name: meta.album.clone().unwrap_or_else(|| meta_title.clone()),
                             id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
                         },
                     ));

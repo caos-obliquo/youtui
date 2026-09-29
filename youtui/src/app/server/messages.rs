@@ -69,6 +69,7 @@ pub struct YtVideoMetadata {
     pub duration_secs: Option<f64>,
     pub year: Option<String>,
     pub thumbnail_url: Option<String>,
+    pub album: Option<String>,
 }
 
 /// F3 guard task: runs the yt-dlp metadata probe off the UI event loop with
@@ -90,6 +91,7 @@ pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
                 duration_secs: None,
                 year: None,
                 thumbnail_url: None,
+                album: None,
             }
         }
     };
@@ -128,12 +130,14 @@ pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
                     .map(|s| s.to_string())
             })
         });
+    let album = v.get("album").and_then(|s| s.as_str()).map(|s| s.to_string());
     YtVideoMetadata {
         title,
         uploader,
         duration_secs,
         year,
         thumbnail_url,
+        album,
     }
 }
 
@@ -2372,13 +2376,14 @@ mod fetch_yt_video_metadata_tests {
     #[test]
     fn full_json_parses_all_fields() {
         let m = parse_yt_dlp_video_json(
-            r#"{"title":"Artist - Song","uploader":"Uploader","duration":184.0,"release_year":2021}"#,
+            r#"{"title":"Artist - Song","uploader":"Uploader","duration":184.0,"release_year":2021,"album":"Real Album"}"#,
             "rawid",
         );
         assert_eq!(m.title, "Artist - Song");
         assert_eq!(m.uploader, "Uploader");
         assert_eq!(m.duration_secs, Some(184.0));
         assert_eq!(m.year.as_deref(), Some("2021"));
+        assert_eq!(m.album.as_deref(), Some("Real Album"));
     }
 
     #[test]
@@ -2398,6 +2403,7 @@ mod fetch_yt_video_metadata_tests {
         assert_eq!(m.uploader, "Unknown");
         assert_eq!(m.duration_secs, None);
         assert_eq!(m.year, None);
+        assert_eq!(m.album, None);
     }
 
     #[test]

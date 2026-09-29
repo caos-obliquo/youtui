@@ -966,12 +966,24 @@ fn pending_row_replaced_on_metadata_resolve() {
         duration_secs: Some(184.0),
         year: Some("2021".to_string()),
         thumbnail_url: Some("https://x/high.jpg".to_string()),
+        album: Some("Real Album".to_string()),
     };
     let _ = p.insert_yt_video_metadata(vid, meta);
     assert_eq!(p.list.get_list_iter().count(), 1);
     let song = p.list.get_list_iter().next().expect("resolved row");
     assert!(!song.title.starts_with("fetching..."), "got: {}", song.title);
     assert!(song.title.contains("Real Title"), "got: {}", song.title);
+    let artist = song.artists.first().map(|a| a.name.clone()).unwrap_or_default();
+    assert_eq!(artist, "Artist", "artist should come from title split, got: {}", artist);
+    assert_eq!(
+        song.album.as_ref().map(|a| a.name.clone()),
+        Some("Real Album".to_string()),
+        "album should come from yt-dlp album field"
+    );
+    assert!(
+        song.artists_string.get().is_none(),
+        "cached artist string must be cleared after metadata resolve"
+    );
 }
 
 #[test]
