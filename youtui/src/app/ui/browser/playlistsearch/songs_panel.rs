@@ -76,8 +76,8 @@ impl Action for BrowserPlaylistSongsAction {
         match &self {
             BrowserPlaylistSongsAction::PlaySong => "Play song",
             BrowserPlaylistSongsAction::PlaySongs => "Play songs",
-            BrowserPlaylistSongsAction::AddSongToPlaylist => "Add song to playlist",
-            BrowserPlaylistSongsAction::AddSongsToPlaylist => "Add songs to playlist",
+            BrowserPlaylistSongsAction::AddSongToPlaylist => "Add Song to Queue",
+            BrowserPlaylistSongsAction::AddSongsToPlaylist => "Add Songs to Queue",
             BrowserPlaylistSongsAction::Sort => "Sort",
             BrowserPlaylistSongsAction::Filter => "Filter",
             BrowserPlaylistSongsAction::ViewLyrics => "View Lyrics",

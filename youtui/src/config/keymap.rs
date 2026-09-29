@@ -1043,6 +1043,10 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::ToggleShuffle)),
                     ),
                     (
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('A')),
+                        KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SetBestQuality)),
+                    ),
+                    (
                         Keybind::new_unmodified(crossterm::event::KeyCode::Char('c')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::TogglePlaylistCategoryFilter)),
                     ),
@@ -2376,7 +2380,7 @@ mod lyrics_test {
         use std::collections::BTreeMap;
         let key = Keybind::new_unmodified(crossterm::event::KeyCode::Char('a'));
         let bad = KeyStringTree::Key(KeyAction {
-            action: "playlist.set_best_quality".to_string(),
+            action: "playlist.nonexistent_action_for_test".to_string(),
             visibility: Default::default(),
         });
         assert!(
@@ -2392,7 +2396,7 @@ mod lyrics_test {
         children.insert(
             key.clone(),
             KeyStringTree::Key(KeyAction {
-                action: "playlist.set_best_quality".to_string(),
+                action: "playlist.nonexistent_action_for_test".to_string(),
                 visibility: Default::default(),
             }),
         );

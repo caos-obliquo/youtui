@@ -81,7 +81,7 @@ set -g focus-events on
 
 The `terminal-overrides` line tells tmux to pass through the sixel escape sequence for your specific terminal type. Without it, tmux blocks all escape sequences it does not recognize.
 
-`set -g focus-events on` makes tmux forward focus in/out to the pane. Youtui enables focus reporting (`?1004h`) at startup and re-emits the album art on `FocusGained`, so the cover returns after a pane/window switch without a keypress.
+`set -g focus-events on` makes tmux forward focus in/out to the pane. Youtui enables focus reporting (`?1004h`) at startup and re-emits the album art on `FocusGained`, so the cover returns after a pane/window switch without a keypress. Resize re-emits debounced at 200ms, and idle self-heal re-emits every 30th tick while art is present (covers compositor wipes with no Focus/Resize event).
 
 ### Why `:reload` fixes it
 

@@ -6,7 +6,7 @@ individual tracks with metadata, seeking offsets, and gapless playback.
 ## Flow
 
 ```
-1. add_yt_video or push_song_list → title cleaned, ValidateMetadata spawned
+1. add_yt_video dispatches async metadata probe (FetchYtVideoMetadata, 60s timeout), insert happens in HandleYtVideoMetadataOk → title cleaned, ValidateMetadata spawned; or push_song_list → title cleaned, ValidateMetadata spawned
 2. ValidateMetadata → identifies album with tracklist via MetadataProvider pipeline
 3. Duration ratio gate: video_dur / metadata_total >= 0.3 (or tag/10min/4-track fallback)
 4. insert_album_tracks → creates per-track ListSong entries
@@ -117,7 +117,7 @@ progress = progress.min(song.actual_duration.unwrap_or(progress));
 
 ## Title Cleaning (4 stages)
 
-File: `youtui/src/app/ui/playlist.rs` - `add_yt_video`
+File: `youtui/src/app/ui/playlist.rs` - `add_yt_video` (dispatches probe) / `insert_yt_video_metadata` (title cleaning + insert)
 
 1. **Artist prefix strip**: If title starts with artist name followed by `-` or
    `--`, remove the prefix. Single-char artist name guard prevents corruption.

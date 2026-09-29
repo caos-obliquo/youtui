@@ -3,7 +3,7 @@ use crate::app::server::ValidatedMetadata;
 
 use crate::app::server::{
     ArcServer, TaskMetadata, AddSongsToPlaylist, EnrichRelatedTracks, RemovePlaylistItems, ValidateMetadata,
-    EnrichedPlaylistTracks,
+    EnrichedPlaylistTracks, YtVideoMetadata,
 };
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSong, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
@@ -759,6 +759,46 @@ impl_youtui_task_handler!(
     |_, error: anyhow::Error| {
         error!("Metadata validation error: {}", error);
         MetadataEffect::ValidationError
+    }
+);
+
+// F3 guard handlers: yt-dlp probe ran off the event loop. Insert the song
+// now that metadata arrived, or surface feedback on timeout/failure.
+#[derive(Debug, PartialEq)]
+pub struct HandleYtVideoMetadataOk(pub VideoID<'static>);
+#[derive(Debug, PartialEq)]
+pub struct HandleYtVideoMetadataError(pub VideoID<'static>);
+
+impl_youtui_task_handler!(
+    HandleYtVideoMetadataOk,
+    YtVideoMetadata,
+    Playlist,
+    |this: HandleYtVideoMetadataOk, meta: YtVideoMetadata| {
+        move |target: &mut Playlist| {
+            info!(
+                "add_yt_video: background fetch done for {} title={:?} thumb={}",
+                this.0.get_raw(),
+                meta.title,
+                meta.thumbnail_url.is_some()
+            );
+            target.insert_yt_video_metadata(this.0, meta)
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleYtVideoMetadataError,
+    anyhow::Error,
+    Playlist,
+    |this: HandleYtVideoMetadataError, err: anyhow::Error| {
+        let raw = this.0.get_raw().to_string();
+        let msg = err.to_string();
+        move |target: &mut Playlist| {
+            error!("Failed to fetch video metadata via yt-dlp: {}", msg);
+            target.remove_pending_yt_video(&raw);
+            target.last_error = Some(format!("Add failed: {}", msg));
+            AsyncTask::new_no_op()
+        }
     }
 );
 

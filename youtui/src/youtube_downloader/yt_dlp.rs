@@ -1,3 +1,4 @@
+use crate::app::AudioQuality;
 use crate::youtube_downloader::{YoutubeMusicDownload, YoutubeMusicDownloader};
 use bytes::Bytes;
 use futures::Stream;
@@ -6,7 +7,7 @@ use std::ops::Deref;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
@@ -85,6 +86,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
     async fn stream_song(
         &self,
         song_video_id: impl AsRef<str> + Send,
+        quality: AudioQuality,
     ) -> Result<
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
         Self::Error,
@@ -92,53 +94,50 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         let command = self.yt_dlp_command.clone();
         async move {
             let video_id = song_video_id.as_ref().to_string();
-            info!(%video_id, "Starting yt-dlp download");
+            let format_string = quality.format_string().to_string();
+            info!(%video_id, quality = ?quality, format = %format_string, "Starting yt-dlp download");
+
+            // Temp dir with an %(ext)s template: Best can pick non-m4a audio
+            // (opus in webm), so the output extension is decided by yt-dlp.
+            let tmpdir = tempfile::tempdir().map_err(|e| {
+                YtDlpDownloaderError::IoError {
+                    message: format!("Failed to create temp dir: {e}"),
+                }
+            })?;
+            let template = tmpdir.path().join("audio.%(ext)s");
+            let output_template = template.to_str().unwrap().to_owned();
             
-            // Write to temp file so yt-dlp applies FixupM4a/container post-processing.
-            // Stdout pipe (-o -) skips post-processing, producing corrupted data on yt-dlp 2026+.
-            // Use .m4a suffix so yt-dlp matches the format container.
-            // --force-overwrites needed: yt-dlp's resume feature treats pre-existing 0-byte
-            // files as "already complete" and writes nothing.
-            let tmpfile = tempfile::Builder::new()
-                .suffix(".m4a")
-                .tempfile()
-                .map_err(|e| {
-                    YtDlpDownloaderError::IoError {
-                        message: format!("Failed to create temp file: {e}"),
-                    }
-                })?;
-            let output_path = tmpfile.path().to_owned();
-            
-            let format_string = "bestaudio[ext=m4a][abr>=256]/bestaudio[ext=m4a]/bestaudio/best".to_string();
-            
-            // web_creator extractor needs cookies - only use it when configured
-            // Default extractor works without auth for most videos
-            let use_web_creator = self.cookie_path.is_some();
-            
-            let mut stream_args = vec![
-                "--no-simulate",
-                "--force-overwrites",
-                "-q",
-                "--no-warnings",
-                "-f",
-                format_string.as_str(),
-                "-o",
-                output_path.to_str().unwrap(),
-            ];
-            if use_web_creator {
-                stream_args.push("--extractor-args");
-                stream_args.push("youtube:player_client=web_creator");
-                stream_args.push("--cookies-from-browser");
-                stream_args.push(&self.cookie_browser);
+            // The cookie file holds a single consistent session. Gate on file
+            // existence at download time: cookie_path is always Some (see
+            // main.rs), so Option::is_some alone cannot tell a real session
+            // from a missing file.
+            let cookie_file = effective_cookie_file(self.cookie_path.as_deref());
+            if video_id.is_empty() {
+                error!("yt-dlp download rejected: empty video id");
+                return Err(YtDlpDownloaderError::IoError {
+                    message: "empty video id".to_string(),
+                });
             }
-            stream_args.push(song_video_id.as_ref());
+            let browser_fallback =
+                if cookie_file.is_none() && self.cookie_path.is_some() {
+                    Some(self.cookie_browser.as_str())
+                } else {
+                    None
+                };
+            let stream_args = build_stream_args(
+                format_string.as_str(),
+                output_template.as_str(),
+                song_video_id.as_ref(),
+                cookie_file,
+                browser_fallback,
+            );
             
             debug!(%video_id, ?stream_args, "yt-dlp args");
             
             let mut proc = tokio::process::Command::new(command.deref())
                 .args(&stream_args)
                 .stderr(Stdio::piped())
-                .stdout(Stdio::null())
+                .stdout(Stdio::piped())
                 .spawn()
                 .map_err(|e| {
                     error!(%video_id, error = %e, "Failed to spawn yt-dlp process");
@@ -149,6 +148,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             
             // Take stderr before spawn to avoid partial move
             let stderr = proc.stderr.take().unwrap();
+            let mut stdout = proc.stdout.take().unwrap();
             let video_id_clone = video_id.clone();
             tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
@@ -182,7 +182,44 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                     message: format!("yt-dlp exited with {status}"),
                 });
             }
-            
+
+            // --print output is one short line; process already exited so this returns at once.
+            let mut print_out = String::new();
+            let _ = stdout.read_to_string(&mut print_out).await;
+            let (dl_abr, dl_ext, dl_format) = parse_print_meta(&print_out);
+            if is_progressive_fallback(&dl_format) {
+                error!(%video_id, format = %dl_format, abr = %dl_abr, ext = %dl_ext, "progressive fallback format picked, audio is ~96k - check cookie/auth");
+            }
+
+            // Find the downloaded file (extension decided by yt-dlp via %(ext)s).
+            let mut best_path: Option<(u64, std::path::PathBuf)> = None;
+            for entry in std::fs::read_dir(tmpdir.path()).map_err(|e| {
+                YtDlpDownloaderError::IoError {
+                    message: format!("Failed to list temp dir: {e}"),
+                }
+            })? {
+                let entry = entry.map_err(|e| YtDlpDownloaderError::IoError {
+                    message: format!("Failed to read temp dir entry: {e}"),
+                })?;
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                if path.extension().is_some_and(|e| e == "part") {
+                    continue;
+                }
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                if best_path.as_ref().is_none_or(|(s, _)| size > *s) {
+                    best_path = Some((size, path));
+                }
+            }
+            let (_, output_path) = best_path.ok_or_else(|| {
+                error!(%video_id, "yt-dlp produced no output file");
+                YtDlpDownloaderError::IoError {
+                    message: "yt-dlp produced no output file".to_string(),
+                }
+            })?;
+
             // Read completed file into memory
             let file_bytes = tokio::fs::read(&output_path).await.map_err(|e| {
                 error!(%video_id, error = %e, "Failed to read yt-dlp output");
@@ -190,9 +227,9 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                     message: format!("Failed to read output file: {e}"),
                 }
             })?;
-            
-            // Temp file cleaned up on drop
-            drop(tmpfile);
+
+            // Temp dir cleaned up on drop
+            drop(tmpdir);
             
             let total_size_bytes = file_bytes.len();
             
@@ -227,7 +264,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                 });
             }
             
-            info!(%video_id, %total_size_bytes, %format_name, "yt-dlp download completed");
+            info!(%video_id, quality = ?quality, format = %format_string, ext = %dl_ext, abr = %dl_abr, yt_format = %dl_format, bytes = %total_size_bytes, container = %format_name, "yt-dlp download completed");
             
             // Return as one-shot stream (consumer already collects all chunks)
             let song = futures::stream::once(async move { Ok(Bytes::from(file_bytes)) });
@@ -239,6 +276,77 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         }
         .await
     }
+}
+
+fn effective_cookie_file(cookie_path: Option<&str>) -> Option<&str> {
+    cookie_path.filter(|p| std::path::Path::new(p).exists())
+}
+
+fn build_stream_args<'a>(
+    format_string: &'a str,
+    output_template: &'a str,
+    video_id: &'a str,
+    cookie_file: Option<&'a str>,
+    cookie_browser: Option<&'a str>,
+) -> Vec<&'a str> {
+    let mut args = vec![
+        "--no-simulate",
+        "--force-overwrites",
+        "--no-warnings",
+        "--no-progress",
+        "--print",
+        "after_move:YTDLP_META abr=%(abr)s ext=%(ext)s format=%(format_id)s",
+        "-f",
+        format_string,
+        "-o",
+        output_template,
+    ];
+    if let Some(path) = cookie_file {
+        // Single consistent session from the exported file. The live browser
+        // profile can merge cookies from multiple sessions which YouTube
+        // rejects, so it is dropped here.
+        args.push("--extractor-args");
+        args.push("youtube:player_client=web_creator");
+        args.push("--cookies");
+        args.push(path);
+    } else if let Some(browser) = cookie_browser {
+        args.push("--extractor-args");
+        args.push("youtube:player_client=web_creator");
+        args.push("--cookies-from-browser");
+        args.push(browser);
+    }
+    // End-of-options separator: video ids can start with a dash
+    // (e.g. -nIkN6le_wY) and yt-dlp would parse them as flags.
+    args.push("--");
+    args.push(video_id);
+    args
+}
+
+fn is_progressive_fallback(format_id: &str) -> bool {
+    format_id == "18" || format_id == "22"
+}
+
+fn parse_print_meta(output: &str) -> (String, String, String) {
+    let mut abr = "unknown".to_string();
+    let mut ext = "unknown".to_string();
+    let mut format = "unknown".to_string();
+    for line in output.lines() {
+        let Some((_, rest)) = line.split_once("YTDLP_META ") else {
+            continue;
+        };
+        for token in rest.split_whitespace() {
+            let Some((k, v)) = token.split_once('=') else {
+                continue;
+            };
+            match k {
+                "abr" => abr = v.to_string(),
+                "ext" => ext = v.to_string(),
+                "format" => format = v.to_string(),
+                _ => {}
+            }
+        }
+    }
+    (abr, ext, format)
 }
 
 #[cfg(test)]
@@ -305,10 +413,106 @@ mod tests {
     async fn test_downloading_a_song_with_ytdlp() {
         let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
         let YoutubeMusicDownload { song: stream, .. } =
-            downloader.stream_song("lYBUbBu4W08").await.unwrap();
+            downloader.stream_song("lYBUbBu4W08", crate::app::AudioQuality::Best).await.unwrap();
         stream
             .map(|item| item.unwrap())
             .collect::<Vec<Bytes>>()
             .await;
+    }
+
+    #[test]
+    fn test_build_stream_args_with_cookie_file() {
+        let args = super::build_stream_args(
+            "bestaudio/best",
+            "/tmp/audio.%(ext)s",
+            "videoid123",
+            Some("/home/user/.config/youtui/cookie.txt"),
+            None,
+        );
+        let cookies_pos = args.iter().position(|a| *a == "--cookies").unwrap();
+        assert_eq!(args[cookies_pos + 1], "/home/user/.config/youtui/cookie.txt");
+        assert!(args.contains(&"youtube:player_client=web_creator"));
+        assert!(!args.iter().any(|a| *a == "--cookies-from-browser"));
+        assert_eq!(args.last().unwrap(), &"videoid123");
+    }
+
+    #[test]
+    fn test_build_stream_args_browser_fallback() {
+        let args = super::build_stream_args(
+            "bestaudio/best",
+            "/tmp/audio.%(ext)s",
+            "videoid123",
+            None,
+            Some("chromium"),
+        );
+        let pos = args.iter().position(|a| *a == "--cookies-from-browser").unwrap();
+        assert_eq!(args[pos + 1], "chromium");
+        assert!(!args.iter().any(|a| *a == "--cookies"));
+    }
+
+    #[test]
+    fn test_build_stream_args_no_auth() {
+        let args =
+            super::build_stream_args("bestaudio/best", "/tmp/audio.%(ext)s", "videoid123", None, None);
+        assert!(!args.iter().any(|a| *a == "--cookies"));
+        assert!(!args.iter().any(|a| *a == "--cookies-from-browser"));
+        assert!(!args.iter().any(|a| *a == "--extractor-args"));
+    }
+
+    #[test]
+    fn test_build_stream_args_end_of_options_before_id() {
+        for id in ["videoid123", "-nIkN6le_wY"] {
+            let args = super::build_stream_args(
+                "bestaudio/best",
+                "/tmp/audio.%(ext)s",
+                id,
+                None,
+                None,
+            );
+            let id_pos = args.iter().position(|a| *a == id).unwrap();
+            assert_eq!(args[id_pos - 1], "--");
+            assert_eq!(args.last().unwrap(), &id);
+        }
+    }
+
+    #[test]
+    fn test_effective_cookie_file_missing() {
+        assert!(super::effective_cookie_file(None).is_none());
+        assert!(super::effective_cookie_file(Some("/nonexistent/path/cookie.txt")).is_none());
+    }
+
+    #[test]
+    fn test_effective_cookie_file_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cookie.txt");
+        std::fs::write(&path, "# cookie data").unwrap();
+        let path_str = path.to_string_lossy().to_string();
+        assert_eq!(super::effective_cookie_file(Some(&path_str)), Some(path_str.as_str()));
+    }
+
+    #[test]
+    fn test_is_progressive_fallback() {
+        assert!(super::is_progressive_fallback("18"));
+        assert!(super::is_progressive_fallback("22"));
+        assert!(!super::is_progressive_fallback("251"));
+        assert!(!super::is_progressive_fallback("140"));
+        assert!(!super::is_progressive_fallback("unknown"));
+    }
+
+    #[test]
+    fn test_parse_print_meta() {
+        let (abr, ext, format) =
+            super::parse_print_meta("YTDLP_META abr=160 ext=webm format=251\n");
+        assert_eq!(abr, "160");
+        assert_eq!(ext, "webm");
+        assert_eq!(format, "251");
+    }
+
+    #[test]
+    fn test_parse_print_meta_missing() {
+        let (abr, ext, format) = super::parse_print_meta("some other output\n");
+        assert_eq!(abr, "unknown");
+        assert_eq!(ext, "unknown");
+        assert_eq!(format, "unknown");
     }
 }

@@ -8,11 +8,11 @@ use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::server::{
     AutoplayDecodedSong, DecodeSong, DownloadSong, GetSongThumbnail, IncreaseVolume, Pause,
     PausePlay, PlayDecodedSong, QueueDecodedSong, Resume, Seek, SeekTo, Stop, StopAll,
-    TaskMetadata, ValidateMetadata, AlbumTrack,
+    TaskMetadata, ValidateMetadata, AlbumTrack, FetchYtVideoMetadata, YtVideoMetadata,
 };
 use crate::app::structures::{
-    fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, BrowserSongsList, DownloadStatus,
-    ListSong, ListSongDisplayableField, ListSongID, Percentage, PlayState, SongListComponent,
+    fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
+    ListSong, ListSongArtist, ListSongDisplayableField, ListSongID, MaybeRc, Percentage, PlayState, SongListComponent,
     Thumbnail,
 };
 use std::collections::VecDeque;
@@ -24,6 +24,7 @@ use crate::app::ui::playlist::effect_handlers::{
 };
 use crate::app::ui::playlist::effect_handlers_playlist::{
     HandleMetadataValidated, HandleMetadataValidationError,
+    HandleYtVideoMetadataOk, HandleYtVideoMetadataError,
     HandleRateSongOk, HandleRateSongErr,
     HandleFetchAlbumArtOk, HandleFetchAlbumArtErr,
     HandleEnrichSongYearOk, HandleEnrichSongYearErr,
@@ -86,6 +87,7 @@ pub enum QueueState {
 #[derive(Debug, Clone)]
 pub struct DownloadTask {
     cancel_token: Arc<tokio_util::sync::CancellationToken>,
+    quality: AudioQuality,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +97,7 @@ pub struct Playlist {
     pub play_status: PlayState,
     pub queue_status: QueueState,
     pub volume: Percentage,
+    pub audio_quality: AudioQuality,
     cur_selected: usize,
     pub widget_state: ScrollingTableState,
     pub shuffle_enabled: bool,
@@ -160,9 +163,19 @@ pub struct Playlist {
     /// Cache of downloaded audio by video_id. Survives reset() so replaying
     /// same song from browser doesn't re-download.
     audio_cache: HashMap<String, Arc<crate::app::server::song_downloader::InMemSong>>,
+    /// Split tracks whose ffmpeg extract failed, so the decoder plays FULL
+    /// video audio while the song keeps track_no/start_offset. Sink positions
+    /// are absolute there and need offset conversion both directions.
+    split_fallback: std::collections::HashSet<ListSongID>,
 }
 
 const MAX_AUDIO_CACHE_SIZE: usize = 50;
+
+/// Cache key includes requested quality so a re-download at a different
+/// quality does not collapse into (or resurrect) stale bytes.
+fn audio_cache_key(video_raw: &str, quality: AudioQuality) -> String {
+    format!("{video_raw}#{quality:?}")
+}
 
 impl_youtui_component!(Playlist);
 
@@ -179,6 +192,7 @@ pub enum PlaylistAction {
     LoadQueue,
     DeleteQueue,
     ClearSearch,
+    SetBestQuality,
     SaveToNewPlaylist,
     LoadFromYTM,
     ViewLyrics,
@@ -230,6 +244,7 @@ impl Action for PlaylistAction {
             PlaylistAction::SaveQueue => "Save Queue",
             PlaylistAction::LoadQueue => "Load Queue",
             PlaylistAction::DeleteQueue => "Delete Queue",
+            PlaylistAction::SetBestQuality => "Cycle Audio Quality",
             PlaylistAction::SaveToNewPlaylist => "Save Queue to New Playlist",
             PlaylistAction::LoadFromYTM => "Load YouTube Music Playlist",
             PlaylistAction::ViewLyrics => "View Lyrics",
@@ -301,6 +316,16 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 (AsyncTask::new_no_op(), None)
             }
             PlaylistAction::DeleteQueue => (AsyncTask::new_no_op(), None),
+            PlaylistAction::SetBestQuality => {
+                self.audio_quality = match self.audio_quality {
+                    AudioQuality::Best => AudioQuality::High,
+                    AudioQuality::High => AudioQuality::Medium,
+                    AudioQuality::Medium => AudioQuality::Low,
+                    AudioQuality::Low => AudioQuality::Best,
+                };
+                info!("Audio quality set to: {:?}", self.audio_quality);
+                (AsyncTask::new_no_op(), None)
+            },
             PlaylistAction::SaveToNewPlaylist => {
                 let video_ids: Vec<VideoID<'static>> = self.list.get_list_iter()
                     .map(|song| song.video_id.clone())
@@ -889,6 +914,12 @@ impl HasTitle for Playlist {
         };
 
         let romaji_indicator = if self.romaji_mode { " [Romaji]" } else { "" };
+        let quality_indicator = match self.audio_quality {
+            AudioQuality::Best => " [Q:Best]",
+            AudioQuality::High => " [Q:High]",
+            AudioQuality::Medium => " [Q:Medium]",
+            AudioQuality::Low => " [Q:Low]",
+        };
         let cat_indicator = match self.category_filter {
             Some("Album:") => " [Albums]",
             Some("EP:") => " [EPs]",
@@ -898,8 +929,9 @@ impl HasTitle for Playlist {
         let err_indicator = self.last_error.as_ref().map(|e| format!(" [ERR: {}]", e)).unwrap_or_default();
         let status_indicator = self.last_status.as_ref().map(|s| format!(" [! {}]", s)).unwrap_or_default();
         format!(
-            "Local playlist - {} songs{}{}{}{}{}{}",
+            "Queue - {} songs{}{}{}{}{}{}{}",
             self.list.get_list_iter().len(),
+            quality_indicator,
             shuffle_indicator,
             search_indicator,
             cat_indicator,
@@ -932,6 +964,7 @@ impl Playlist {
             cur_played_dur: None,
             cur_selected: 0,
             queue_status: QueueState::NotQueued,
+            audio_quality: AudioQuality::default(),
             widget_state: Default::default(),
             shuffle_enabled: false,
             shuffle_indices: Vec::new(),
@@ -979,6 +1012,7 @@ impl Playlist {
             last_rated_video_id: None,
             last_rated_like_status: None,
             audio_cache: HashMap::new(),
+            split_fallback: std::collections::HashSet::new(),
         };
 
         (playlist, task)
@@ -1386,49 +1420,79 @@ impl Playlist {
             return AsyncTask::new_no_op();
         }
 
-        // Fetch metadata via yt-dlp
+        // Optimistic pending row so the queue shows instant feedback while the
+        // yt-dlp probe runs (up to 60s). Replaced on resolve, removed on error.
+        self.insert_pending_yt_video_row(video_id.clone());
+        // F3 guard: yt-dlp network RTT runs in a backend task with a 60s
+        // timeout. Return pending state immediately, insert on completion.
+        info!("add_yt_video: fetching metadata in background for {}", raw_id);
+        AsyncTask::new_future_try(
+            FetchYtVideoMetadata(raw_id, self.yt_dlp_cookie_path.is_some(), self.cookie_browser.clone()),
+            HandleYtVideoMetadataOk(video_id.clone()),
+            HandleYtVideoMetadataError(video_id),
+            None,
+        )
+    }
+
+    fn insert_pending_yt_video_row(&mut self, video_id: ytmapi_rs::common::VideoID<'static>) -> ListSongID {
+        use ytmapi_rs::common::YoutubeID;
+        let raw_id = video_id.get_raw().to_string();
+        let song = ytmapi_rs::parse::SearchResultSong {
+            title: format!("fetching... {}", raw_id),
+            artist: "YouTube".to_string(),
+            album: None,
+            duration: String::from("0:00"),
+            plays: String::new(),
+            explicit: ytmapi_rs::common::Explicit::NotExplicit,
+            video_id,
+            thumbnails: vec![],
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+        };
+        let id = self.list.append_raw_search_result_songs(vec![song]);
+        self.cur_selected = self.list.get_list_iter().count().saturating_sub(1);
+        info!("add_yt_video: pending row for {}", raw_id);
+        id
+    }
+
+    pub fn remove_pending_yt_video(&mut self, raw_id: &str) -> bool {
+        if let Some(idx) = self
+            .list
+            .get_list_iter()
+            .position(|s| s.video_id.get_raw() == raw_id && s.title.starts_with("fetching..."))
+        {
+            self.list.remove_song_index(idx);
+            let len = self.list.get_list_iter().len();
+            if self.cur_selected >= len {
+                self.cur_selected = len.saturating_sub(1);
+            }
+            warn!("add_yt_video: probe failed for {}, pending row removed", raw_id);
+            return true;
+        }
+        false
+    }
+
+    pub fn insert_yt_video_metadata(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, meta: YtVideoMetadata) -> ComponentEffect<Self> {
+        use ytmapi_rs::common::YoutubeID;
+        let raw_id = video_id.get_raw().to_string();
+        let title = meta.title;
+        let uploader = meta.uploader;
+
+        // Try to extract real artist from title ("Artist - Song"), fallback to uploader
+        let artist = if title.contains(" - ") {
+            title.splitn(2, " - ").next().map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty() && s.len() < 80)
+                .unwrap_or_else(|| uploader.clone())
+        } else {
+            uploader.clone()
+        };
         let mut duration = String::from("0");
         let mut duration_secs: f64 = 0.0;
-        let mut meta_cmd = std::process::Command::new("yt-dlp");
-        meta_cmd.args(["--dump-json", "--no-warnings", "--flat-playlist"]);
-        if self.yt_dlp_cookie_path.is_some() {
-            meta_cmd.args(["--cookies-from-browser", &self.cookie_browser]);
+        if let Some(d) = meta.duration_secs {
+            duration_secs = d;
+            let secs = d as u64;
+            duration = format!("{}:{:02}", secs / 60, secs % 60);
         }
-        meta_cmd.arg(&format!("https://youtu.be/{}", raw_id));
-        let (title, artist, year) = match meta_cmd.output()
-        {
-            Ok(out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&stdout) {
-                    let t = v.get("title").and_then(|s| s.as_str()).unwrap_or(&raw_id).to_string();
-                    let uploader = v.get("uploader").and_then(|s| s.as_str()).unwrap_or("Unknown").to_string();
-                    // Try to extract real artist from title ("Artist - Song"), fallback to uploader
-                    let a = if t.contains(" - ") {
-                        t.splitn(2, " - ").next().map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty() && s.len() < 80)
-                            .unwrap_or_else(|| uploader.clone())
-                    } else {
-                        uploader.clone()
-                    };
-                    if let Some(d) = v.get("duration").and_then(|s| s.as_f64()) {
-                        duration_secs = d;
-                        let secs = d as u64;
-                        duration = format!("{}:{:02}", secs / 60, secs % 60);
-                    }
-                    let year = v.get("release_year")
-                        .and_then(|s| s.as_i64())
-                        .or_else(|| {
-                            v.get("upload_date")
-                                .and_then(|s| s.as_str())
-                                .and_then(|d| d.get(..4))
-                                .and_then(|y| y.parse::<i64>().ok())
-                        })
-                        .map(|y| y.to_string());
-                    (t, a, year)
-                } else { (raw_id.clone(), "YouTube".to_string(), None) }
-            }
-            _ => (raw_id.clone(), "YouTube".to_string(), None),
-        };
+        let year = meta.year;
 
         // Extract year from title parenthetical as fallback when yt-dlp has no year
         // e.g., "Anti-Everything E.P. (2003)" → "2003", "Scat Blast FULL ALBUM (2021...)" → "2021"
@@ -1463,21 +1527,49 @@ impl Playlist {
         } else {
             (artist.clone(), clean_title.clone())
         };
-        let song = ytmapi_rs::parse::SearchResultSong {
-            title: meta_title.clone(),
-            artist: meta_artist.clone(),
-            album: None,
-            duration: format!("{}", duration),
-            plays: String::new(),
-            explicit: ytmapi_rs::common::Explicit::NotExplicit,
-            video_id,
-            thumbnails: vec![],
-            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+        let thumb_vec: Vec<Thumbnail> = meta
+            .thumbnail_url
+            .clone()
+            .map(|url| Thumbnail { height: 0, width: 0, url })
+            .into_iter()
+            .collect();
+        let pending_idx = self.list.get_list_iter().position(|s| {
+            s.video_id.get_raw() == raw_id && s.title.starts_with("fetching...")
+        });
+        let id_opt = if let Some(idx) = pending_idx {
+            if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
+                s.title = meta_title.clone();
+                s.artists = MaybeRc::Owned(vec![ListSongArtist {
+                    name: meta_artist.clone(),
+                    id: None,
+                }]);
+                s.duration_string = duration.clone();
+                s.thumbnails = MaybeRc::Owned(thumb_vec.clone());
+            }
+            info!("add_yt_video: pending row resolved for {}", raw_id);
+            self.get_id_from_index(idx)
+        } else {
+            let song = ytmapi_rs::parse::SearchResultSong {
+                title: meta_title.clone(),
+                artist: meta_artist.clone(),
+                album: None,
+                duration: format!("{}", duration),
+                plays: String::new(),
+                explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                video_id,
+                thumbnails: thumb_vec,
+                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+            };
+            let old_count = self.list.get_list_iter().count();
+            let id = self.list.append_raw_search_result_songs(vec![song]);
+            if self.list.get_list_iter().count() > old_count {
+                self.cur_selected = self.list.get_list_iter().count().saturating_sub(1);
+                Some(id)
+            } else {
+                None
+            }
         };
-        let old_count = self.list.get_list_iter().count();
-        let id = self.list.append_raw_search_result_songs(vec![song]);
-        if self.list.get_list_iter().count() > old_count {
-            self.cur_selected = self.list.get_list_iter().count().saturating_sub(1);
+        if let Some(id) = id_opt {
             // Set initial album name from YouTube video title (before metadata overwrites)
             if let Some(idx) = self.get_index_from_id(id) {
                 if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
@@ -2056,7 +2148,8 @@ impl Playlist {
         // Restore cached audio for songs previously downloaded
         for song in &mut song_list {
             let video_raw = song.video_id.get_raw().to_string();
-            if let Some(cached) = self.audio_cache.get(&video_raw) {
+            let key = audio_cache_key(&video_raw, self.audio_quality);
+            if let Some(cached) = self.audio_cache.get(&key) {
                 song.download_status = DownloadStatus::Downloaded(cached.clone());
                 debug!("audio_cache: restored {} from cache", video_raw);
             }
@@ -2376,10 +2469,13 @@ impl Playlist {
         }
 
         let cancel_token = Arc::new(tokio_util::sync::CancellationToken::new());
-        debug!("download_song: starting download for {}", video_id);
+        debug!(
+            "download_song: starting download for {} (requested quality: {:?})",
+            video_id, self.audio_quality
+        );
 
         let effect = AsyncTask::new_stream(
-            DownloadSong(song.video_id.clone(), id, cancel_token.clone()),
+            DownloadSong(song.video_id.clone(), id, cancel_token.clone(), self.audio_quality),
             HandleSongDownloadProgressUpdate,
             None,
         );
@@ -2390,6 +2486,7 @@ impl Playlist {
             id,
             DownloadTask {
                 cancel_token,
+                quality: self.audio_quality,
             },
         ));
 
@@ -2553,8 +2650,17 @@ impl Playlist {
             PlayState::Playing(id) | PlayState::Paused(id) => id,
             _ => return AsyncTask::new_no_op(),
         };
+        // Full-audio fallback: bar is track-relative but sink is absolute.
+        let target = match self.get_song_from_id(id).and_then(|s| s.start_offset) {
+            Some(offset) if self.split_fallback.contains(&id) => {
+                let abs = offset.saturating_add(position);
+                info!("SeekTo fallback: track-relative {:?} -> absolute {:?}", position, abs);
+                abs
+            }
+            _ => position,
+        };
 
-        AsyncTask::new_future_option(SeekTo { position, id }, HandleSetSongPlayProgress, None)
+        AsyncTask::new_future_option(SeekTo { position: target, id }, HandleSetSongPlayProgress, None)
     }
 
     pub fn handle_next(&mut self) -> ComponentEffect<Self> {
@@ -3152,7 +3258,15 @@ impl Playlist {
                             if self.audio_cache.len() >= MAX_AUDIO_CACHE_SIZE {
                                 self.audio_cache.clear();
                             }
-                            self.audio_cache.insert(video_id.clone(), arc);
+                            let quality = self
+                                .active_downloads
+                                .lock()
+                                .unwrap()
+                                .iter()
+                                .find(|(song_id, _)| *song_id == id)
+                                .map(|(_, task)| task.quality)
+                                .unwrap_or(self.audio_quality);
+                            self.audio_cache.insert(audio_cache_key(&video_id, quality), arc);
                             info!("download_status_updated: song_id={} -> Downloaded", video_id);
                         }
                     }
@@ -3210,7 +3324,9 @@ impl Playlist {
             PlayUpdate::PlayProgress(duration, id) => {
                 return self.handle_set_song_play_progress(duration, id);
             }
-            PlayUpdate::Playing(duration, id) => self.handle_playing(duration, id),
+            PlayUpdate::Playing(duration, id) => {
+                return self.handle_playing(duration, id);
+            }
             PlayUpdate::DonePlaying(id) => return self.handle_done_playing(id),
             PlayUpdate::Error(e) => error!("{e}"),
         }
@@ -3240,7 +3356,9 @@ impl Playlist {
             AutoplayUpdate::PlayProgress(duration, id) => {
                 return self.handle_set_song_play_progress(duration, id);
             }
-            AutoplayUpdate::Playing(duration, id) => self.handle_playing(duration, id),
+            AutoplayUpdate::Playing(duration, id) => {
+                return self.handle_playing(duration, id);
+            }
             AutoplayUpdate::DonePlaying(id) => return self.handle_done_playing(id),
             AutoplayUpdate::AutoplayQueued(id) => self.handle_autoplay_queued(id),
             AutoplayUpdate::Error(e) => error!("{e}"),
@@ -3263,8 +3381,14 @@ impl Playlist {
         }).unwrap_or((None, false));
 
         // Convert absolute progress to track-relative for album tracks
-        // When ffmpeg extraction was used, d is already track-relative
+        // When ffmpeg extraction was used, d is already track-relative.
+        // On full-audio fallback the sink reports absolute video positions.
         let track_rel = match start_offset {
+            Some(offset) if is_album_track && self.split_fallback.contains(&id) => {
+                let rel = d.saturating_sub(offset);
+                debug!("Progress fallback: absolute {:?} -> track-relative {:?}", d, rel);
+                rel
+            }
             Some(_) if is_album_track => d,
             Some(offset) => d.saturating_sub(offset),
             None => d,
@@ -3485,31 +3609,72 @@ impl Playlist {
         }
     }
 
+    /// True when a decoded duration proves the sink plays FULL video audio
+    /// for a split track (ffmpeg extract failed). VBR decode estimates run
+    /// short, never long, so a decode much longer than the track that also
+    /// reaches past offset + track length means fallback.
+    fn is_full_audio_decode(decoded: Duration, offset: Duration, track_dur: Duration) -> bool {
+        decoded > track_dur.saturating_add(Duration::from_secs(30))
+            && decoded
+                >= offset
+                    .saturating_add(track_dur)
+                    .saturating_sub(Duration::from_secs(5))
+    }
+
     pub fn handle_queued(&mut self, duration: Option<Duration>, id: ListSongID) {
+        // Detect full-audio fallback before mutating: a split track decoded
+        // much longer than its track length plays the whole video.
+        let fallback = match duration {
+            Some(dur) => self.get_song_from_id(id).map(|s| {
+                match (s.track_no, s.start_offset) {
+                    (Some(_), Some(offset)) => {
+                        let floor = Self::best_known_duration(s).unwrap_or(Duration::ZERO);
+                        Self::is_full_audio_decode(dur, offset, floor)
+                    }
+                    _ => false,
+                }
+            }).unwrap_or(false),
+            None => false,
+        };
+        if fallback {
+            self.split_fallback.insert(id);
+        } else if duration.is_some() {
+            self.split_fallback.remove(&id);
+        }
         if let Some(song) = self.get_mut_song_from_id(id) {
             // Always update actual_duration from decoded audio when available.
             // The metadata duration (YTM duration_seconds) may be shorter than real audio.
             if let Some(dur) = duration {
-                let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
-                if dur >= floor {
-                    song.actual_duration = Some(dur);
-                } else {
+                if fallback {
                     info!(
-                        "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
-                        dur, song.title, floor
+                        "Ignoring full-audio decode {:?} for split track '{}', keeping track duration",
+                        dur, song.title
                     );
+                } else {
+                    let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                    if dur >= floor {
+                        song.actual_duration = Some(dur);
+                    } else {
+                        info!(
+                            "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
+                            dur, song.title, floor
+                        );
+                    }
                 }
                 // Backfill duration_string when YTM gave none or zero.
                 if song.duration_string.is_empty()
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
                 {
+                    let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                    let fill = if fallback { floor } else { dur.max(floor) };
                     song.duration_string =
-                        super::footer::secs_to_time_string(dur.as_secs() as usize);
+                        super::footer::secs_to_time_string(fill.as_secs() as usize);
                 }
                 // Update scrobble state duration if it was using the 240s fallback
+                let corrected = Self::best_known_duration(song).unwrap_or(dur);
                 if let Some(ref mut state) = self.scrobble_state.as_mut() {
                     if state.duration == Duration::from_secs(240) {
-                        state.duration = dur;
+                        state.duration = corrected;
                         debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
                     }
                 }
@@ -3525,32 +3690,60 @@ impl Playlist {
         }
     }
 
-    pub fn handle_playing(&mut self, duration: Option<Duration>, id: ListSongID) {
+    pub fn handle_playing(&mut self, duration: Option<Duration>, id: ListSongID) -> ComponentEffect<Self> {
+        // Same fallback detection as handle_queued (see above).
+        let fallback = match duration {
+            Some(dur) => self.get_song_from_id(id).map(|s| {
+                match (s.track_no, s.start_offset) {
+                    (Some(_), Some(offset)) => {
+                        let floor = Self::best_known_duration(s).unwrap_or(Duration::ZERO);
+                        Self::is_full_audio_decode(dur, offset, floor)
+                    }
+                    _ => false,
+                }
+            }).unwrap_or(false),
+            None => false,
+        };
+        if fallback {
+            self.split_fallback.insert(id);
+        } else if duration.is_some() {
+            self.split_fallback.remove(&id);
+        }
         if let Some(song) = self.get_mut_song_from_id(id) {
             // Always update actual_duration from decoded audio when available.
             // The metadata duration (YTM duration_seconds) may be shorter than real audio.
             if let Some(dur) = duration {
-                // Never shrink: VBR decode estimates run short (see best_known_duration).
-                let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
-                if dur >= floor {
-                    song.actual_duration = Some(dur);
-                } else {
+                if fallback {
                     info!(
-                        "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
-                        dur, song.title, floor
+                        "Ignoring full-audio decode {:?} for split track '{}', keeping track duration",
+                        dur, song.title
                     );
+                } else {
+                    // Never shrink: VBR decode estimates run short (see best_known_duration).
+                    let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                    if dur >= floor {
+                        song.actual_duration = Some(dur);
+                    } else {
+                        info!(
+                            "Ignoring short decode estimate {:?} for '{}' (known duration {:?})",
+                            dur, song.title, floor
+                        );
+                    }
                 }
                 // Backfill duration_string when YTM gave none or zero.
                 if song.duration_string.is_empty()
                     || super::footer::parse_simple_time_to_secs(&song.duration_string) == 0
                 {
+                    let floor = Self::best_known_duration(song).unwrap_or(Duration::ZERO);
+                    let fill = if fallback { floor } else { dur.max(floor) };
                     song.duration_string =
-                        super::footer::secs_to_time_string(dur.as_secs() as usize);
+                        super::footer::secs_to_time_string(fill.as_secs() as usize);
                 }
                 // Update scrobble state duration if it was using the 240s fallback
+                let corrected = Self::best_known_duration(song).unwrap_or(dur);
                 if let Some(ref mut state) = self.scrobble_state.as_mut() {
                     if state.duration == Duration::from_secs(240) {
-                        state.duration = dur;
+                        state.duration = corrected;
                         debug!("Updated scrobble state duration to {:?} for track {}", dur, state.track);
                     }
                 }
@@ -3562,6 +3755,28 @@ impl Playlist {
         {
             self.play_status = PlayState::Playing(id)
         }
+
+        // Full-audio fallback starts at video position 0, so jump the sink
+        // to the track offset to hear the right audio.
+        if fallback {
+            let cur = match self.play_status {
+                PlayState::Playing(cur) | PlayState::Paused(cur) => cur == id,
+                _ => false,
+            };
+            if cur {
+                if let Some(offset) = self.get_song_from_id(id).and_then(|s| s.start_offset) {
+                    if !offset.is_zero() {
+                        info!("Playing fallback: seeking sink to track offset {:?}", offset);
+                        return AsyncTask::new_future_option(
+                            SeekTo { position: offset, id },
+                            HandleSetSongPlayProgress,
+                            None,
+                        );
+                    }
+                }
+            }
+        }
+        AsyncTask::new_no_op()
     }
 
     pub fn handle_set_to_error(&mut self, id: ListSongID) {

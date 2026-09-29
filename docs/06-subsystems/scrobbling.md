@@ -24,7 +24,7 @@ listenbrainz_token = ""   # optional; empty = no ListenBrainz submission
    POST /2.0/?method=track.updateNowPlaying&...
    Params sorted alphabetically before HMAC signing (Last.fm requirement)
 
-2. Song plays for `max(30s, min(240s, duration/2))` -> scrobble submitted (Last.fm spec: >=30s, >=50% duration, cap 240s; tracks <30s never scrobble)
+2. Song plays for `min(240s, duration/2)` -> scrobble submitted (youtui policy, not Last.fm spec: no 30s floor, even 1s tracks scrobble; zero-duration guard requires 1s elapsed)
    POST /2.0/?method=track.scrobble&...
    album param sent only if album name is available
    Duration source: `best_known_duration()` = max(actual_duration, parsed duration_string) - VBR decode estimate (rodio byte-len/bitrate ~2x short) never shrinks known duration (fixes 0:57 becoming 16s)
