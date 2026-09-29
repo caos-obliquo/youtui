@@ -70,6 +70,9 @@ pub struct YtVideoMetadata {
     pub year: Option<String>,
     pub thumbnail_url: Option<String>,
     pub album: Option<String>,
+    /// Clean song name from yt-dlp `track` field (Bandcamp label-hosted
+    /// pages: title carries a label prefix, `track` carries the real song).
+    pub track: Option<String>,
 }
 
 /// F3 guard task: runs the yt-dlp metadata probe off the UI event loop with
@@ -92,6 +95,7 @@ pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
                 year: None,
                 thumbnail_url: None,
                 album: None,
+                track: None,
             }
         }
     };
@@ -131,6 +135,7 @@ pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
             })
         });
     let album = v.get("album").and_then(|s| s.as_str()).map(|s| s.to_string());
+    let track = v.get("track").and_then(|s| s.as_str()).map(|s| s.to_string());
     YtVideoMetadata {
         title,
         uploader,
@@ -138,6 +143,7 @@ pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
         year,
         thumbnail_url,
         album,
+        track,
     }
 }
 
@@ -2470,7 +2476,7 @@ mod fetch_yt_video_metadata_tests {
     #[test]
     fn full_json_parses_all_fields() {
         let m = parse_yt_dlp_video_json(
-            r#"{"title":"Artist - Song","uploader":"Uploader","duration":184.0,"release_year":2021,"album":"Real Album"}"#,
+            r#"{"title":"Artist - Song","uploader":"Uploader","duration":184.0,"release_year":2021,"album":"Real Album","track":"Song"}"#,
             "rawid",
         );
         assert_eq!(m.title, "Artist - Song");
@@ -2478,6 +2484,7 @@ mod fetch_yt_video_metadata_tests {
         assert_eq!(m.duration_secs, Some(184.0));
         assert_eq!(m.year.as_deref(), Some("2021"));
         assert_eq!(m.album.as_deref(), Some("Real Album"));
+        assert_eq!(m.track.as_deref(), Some("Song"));
     }
 
     #[test]
@@ -2498,6 +2505,7 @@ mod fetch_yt_video_metadata_tests {
         assert_eq!(m.duration_secs, None);
         assert_eq!(m.year, None);
         assert_eq!(m.album, None);
+        assert_eq!(m.track, None);
     }
 
     #[test]

@@ -107,6 +107,79 @@ fn url_to_host(url: &str) -> Option<&str> {
     }
 }
 
+/// Cleaned bandcamp track metadata, resolved from the raw yt-dlp fields.
+///
+/// Bandcamp pages are owned by either the artist (`domnoise.bandcamp.com`)
+/// or a label hosting many artists (`sphcrecords.bandcamp.com`). When the
+/// page owner is a label, yt-dlp reports the label as uploader/artist and
+/// the real artist only appears as the leading segment of the album name
+/// ("Putrefação Humana - Colhendo Desespero EP (SPHC)"). This resolves both
+/// layouts and prefers yt-dlp's `track` field (the definitive song name).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedBandcampMetadata {
+    pub artist: String,
+    pub title: String,
+    pub album: Option<String>,
+}
+
+/// Resolve real artist, clean title, and album for a bandcamp track.
+///
+/// Priority for artist:
+/// 1. album-name prefix when it differs from the page owner (label-hosted
+///    albums, e.g. "Putrefação Humana - Colhendo Desespero EP (SPHC)")
+/// 2. title prefix when it differs from the page owner
+/// 3. title prefix (artist pages self-prefix, e.g. "D.O.M. - Song")
+/// 4. uploader as last resort
+///
+/// Title prefers the `track` field (yt-dlp's definitive song name), else the
+/// raw title with the owner/artist prefix stripped. Album keeps its name
+/// with the resolved artist prefix removed.
+pub fn resolve_bandcamp_metadata(
+    raw_title: &str,
+    uploader: &str,
+    album: Option<&str>,
+    track: Option<&str>,
+) -> ResolvedBandcampMetadata {
+    fn split_prefix(s: &str) -> Option<(&str, &str)> {
+        s.split_once(" - ")
+            .map(|(a, b)| (a.trim(), b.trim()))
+            .filter(|(a, b)| !a.is_empty() && !b.is_empty())
+    }
+    let title_prefix = split_prefix(raw_title);
+    let album_prefix = album.and_then(split_prefix);
+
+    let artist = match (album_prefix, title_prefix) {
+        (Some((ap, _)), _) if ap != uploader => ap.to_string(),
+        (_, Some((tp, _))) if tp != uploader => tp.to_string(),
+        (_, Some((tp, _))) => tp.to_string(),
+        _ => uploader.to_string(),
+    };
+
+    let album = match (album, album_prefix) {
+        (Some(a), Some((ap, _))) if ap != uploader => Some(
+            a.split_once(" - ")
+                .map(|(_, b)| b.trim().to_string())
+                .unwrap_or_else(|| a.to_string()),
+        ),
+        (Some(a), _) => Some(a.to_string()),
+        (None, _) => None,
+    };
+
+    let title = match track.filter(|t| !t.trim().is_empty()) {
+        Some(t) => t.trim().to_string(),
+        None => {
+            let rest = raw_title
+                .strip_prefix(uploader)
+                .and_then(|r| r.strip_prefix(" - "))
+                .or_else(|| raw_title.strip_prefix(&format!("{} - ", artist)))
+                .unwrap_or(raw_title);
+            rest.trim().to_string()
+        }
+    };
+
+    ResolvedBandcampMetadata { artist, title, album }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,5 +281,73 @@ mod tests {
         assert!(parse_bandcamp_album_entries("this is not json").is_empty());
         let only_playlist = r#"{"_type":"playlist","title":"Nested","entries":[]}"#;
         assert!(parse_bandcamp_album_entries(only_playlist).is_empty());
+    }
+
+    #[test]
+    fn resolve_artist_page_uses_title_prefix() {
+        // domnoise case: artist owns the page, title self-prefixes
+        let m = resolve_bandcamp_metadata(
+            "D.O.M. - Do Suor Do Teu Rosto Comerás O Pão (Versão Modificada)",
+            "D.O.M.",
+            Some("Diariamente Obrigação Maltrata"),
+            Some("Do Suor Do Teu Rosto Comerás O Pão (Versão Modificada)"),
+        );
+        assert_eq!(m.artist, "D.O.M.");
+        assert_eq!(m.title, "Do Suor Do Teu Rosto Comerás O Pão (Versão Modificada)");
+        assert_eq!(m.album.as_deref(), Some("Diariamente Obrigação Maltrata"));
+    }
+
+    #[test]
+    fn resolve_label_hosted_album_uses_album_prefix() {
+        // SPHC case: label owns the page, real artist is album-name prefix
+        let m = resolve_bandcamp_metadata(
+            "SPHC Records - side A (50 songs)",
+            "SPHC Records",
+            Some("Putrefação Humana - Colhendo Desespero EP (SPHC)"),
+            Some("side A (50 songs)"),
+        );
+        assert_eq!(m.artist, "Putrefação Humana");
+        assert_eq!(m.title, "side A (50 songs)");
+        assert_eq!(m.album.as_deref(), Some("Colhendo Desespero EP (SPHC)"));
+    }
+
+    #[test]
+    fn resolve_label_hosted_without_track_field() {
+        // No track field: title falls back to raw title with owner prefix stripped
+        let m = resolve_bandcamp_metadata(
+            "SPHC Records - side A (50 songs)",
+            "SPHC Records",
+            Some("Putrefação Humana - Colhendo Desespero EP (SPHC)"),
+            None,
+        );
+        assert_eq!(m.artist, "Putrefação Humana");
+        assert_eq!(m.title, "side A (50 songs)");
+        assert_eq!(m.album.as_deref(), Some("Colhendo Desespero EP (SPHC)"));
+    }
+
+    #[test]
+    fn resolve_no_prefixes_falls_back_to_uploader() {
+        let m = resolve_bandcamp_metadata(
+            "Just A Song",
+            "Some Artist",
+            None,
+            None,
+        );
+        assert_eq!(m.artist, "Some Artist");
+        assert_eq!(m.title, "Just A Song");
+        assert_eq!(m.album, None);
+    }
+
+    #[test]
+    fn resolve_empty_track_ignored() {
+        let m = resolve_bandcamp_metadata(
+            "Artist - Song",
+            "Artist",
+            Some("Album Name"),
+            Some("   "),
+        );
+        assert_eq!(m.artist, "Artist");
+        assert_eq!(m.title, "Song");
+        assert_eq!(m.album.as_deref(), Some("Album Name"));
     }
 }

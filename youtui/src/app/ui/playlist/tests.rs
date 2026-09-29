@@ -967,6 +967,7 @@ fn pending_row_replaced_on_metadata_resolve() {
         year: Some("2021".to_string()),
         thumbnail_url: Some("https://x/high.jpg".to_string()),
         album: Some("Real Album".to_string()),
+        track: None,
     };
     let _ = p.insert_yt_video_metadata(vid, meta);
     assert_eq!(p.list.get_list_iter().count(), 1);
@@ -1025,6 +1026,7 @@ fn first_album_entry_downloads_first_when_idle() {
         year: None,
         thumbnail_url: None,
         album: Some("Real Album".to_string()),
+        track: None,
     };
     let _ = p.insert_yt_video_metadata(v1, meta);
 
@@ -1062,6 +1064,7 @@ fn metadata_resolve_while_playing_does_not_rescope() {
         year: None,
         thumbnail_url: None,
         album: Some("Real Album".to_string()),
+        track: None,
     };
     let _ = p.insert_yt_video_metadata(vid, meta);
 

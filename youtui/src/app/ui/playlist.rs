@@ -1505,13 +1505,33 @@ impl Playlist {
         let title = meta.title;
         let uploader = meta.uploader;
 
-        // Try to extract real artist from title ("Artist - Song"), fallback to uploader
-        let artist = if title.contains(" - ") {
-            title.splitn(2, " - ").next().map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty() && s.len() < 80)
-                .unwrap_or_else(|| uploader.clone())
+        // Bandcamp rail guard: label-hosted pages name the label in
+        // title/uploader; the real artist appears only as the album-name
+        // prefix and `track` carries the clean song name. Resolve all three
+        // in one place; YouTube keeps the legacy title-split logic.
+        let is_bandcamp = crate::bandcamp::is_bandcamp_url(&raw_id);
+        let (artist, clean_src, bandcamp_album) = if is_bandcamp {
+            let resolved = crate::bandcamp::resolve_bandcamp_metadata(
+                &title,
+                &uploader,
+                meta.album.as_deref(),
+                meta.track.as_deref(),
+            );
+            info!(
+                "add_yt_video: bandcamp metadata -> artist={}, title={}, album={:?}",
+                resolved.artist, resolved.title, resolved.album
+            );
+            (resolved.artist, resolved.title, resolved.album)
         } else {
-            uploader.clone()
+            // Try to extract real artist from title ("Artist - Song"), fallback to uploader
+            let artist = if title.contains(" - ") {
+                title.splitn(2, " - ").next().map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty() && s.len() < 80)
+                    .unwrap_or_else(|| uploader.clone())
+            } else {
+                uploader.clone()
+            };
+            (artist, title.clone(), None)
         };
         let mut duration = String::from("0");
         let mut duration_secs: f64 = 0.0;
@@ -1539,7 +1559,7 @@ impl Playlist {
         };
         let year = year.or(title_year);
 
-        let clean_title = Self::clean_title_for_metadata(&artist, &title);
+        let clean_title = Self::clean_title_for_metadata(&artist, &clean_src);
         // Handle " // " convention: "Artist // Album Title" (common YouTube album upload)
         // e.g., "band - Artist // Album Title" -> artist="Artist", title="Album Title"
         // After artist prefix strip, remaining title still has "Artist // Album Title".
@@ -1608,7 +1628,7 @@ impl Playlist {
                 if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
                     s.album = Some(crate::app::structures::MaybeRc::Owned(
                         crate::app::structures::ListSongAlbum {
-                            name: meta.album.clone().unwrap_or_else(|| meta_title.clone()),
+                            name: bandcamp_album.clone().or_else(|| meta.album.clone()).unwrap_or_else(|| meta_title.clone()),
                             id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
                         },
                     ));
