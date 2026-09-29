@@ -6,13 +6,14 @@
 //! See study report for the YVdaCDJ1s-E case (3847s, 10 tracks from description).
 
 use crate::app::server::AlbumTrack;
+use crate::app::server::yt_dlp_target_arg;
 use serde_json;
 use tracing::{debug, info};
 
 /// Fetch yt-dlp JSON for `video_id` and parse chapters/description into AlbumTracks.
 pub async fn fetch_yt_dlp_album_tracks(video_id: &str) -> Vec<AlbumTrack> {
     let output = match tokio::process::Command::new("yt-dlp")
-        .args(["--dump-json", "--no-warnings", &format!("https://youtu.be/{}", video_id)])
+        .args(["--dump-json", "--no-warnings", &yt_dlp_target_arg(video_id)])
         .output()
         .await
     {

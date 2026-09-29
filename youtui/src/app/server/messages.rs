@@ -28,6 +28,19 @@ use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSon
 use std::path::PathBuf;
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use crate::app::server::api::stream_api_with_retry_n;
+use crate::bandcamp::is_bandcamp_url;
+
+/// Build the URL/path argument to pass to yt-dlp for a raw id.
+///
+/// Bandcamp URLs are passed through verbatim (yt-dlp's Bandcamp extractors
+/// handle the full URL); anything else is wrapped as a youtu.be watch URL.
+pub fn yt_dlp_target_arg(raw_id: &str) -> String {
+    if is_bandcamp_url(raw_id) {
+        raw_id.to_string()
+    } else {
+        format!("https://youtu.be/{}", raw_id)
+    }
+}
 
 #[derive(PartialEq, Debug)]
 pub enum TaskMetadata {
@@ -135,7 +148,7 @@ impl BackendTask<ArcServer> for FetchYtVideoMetadata {
             if self.1 {
                 cmd.args(["--cookies-from-browser", &self.2]);
             }
-            cmd.arg(format!("https://youtu.be/{}", raw_id));
+            cmd.arg(yt_dlp_target_arg(&raw_id));
             tracing::info!("FetchYtVideoMetadata: full probe for video {}", raw_id);
             let output = match tokio::time::timeout(Duration::from_secs(60), cmd.kill_on_drop(true).output()).await
             {
@@ -797,7 +810,7 @@ impl BackendTask<ArcServer> for EnrichRelatedTracks {
                     let _permit = sem.acquire().await.unwrap();
                     let output = tokio::process::Command::new("yt-dlp")
                         .args(["--dump-json", "--no-warnings", "--flat-playlist",
-                               &format!("https://youtu.be/{}", video_id)])
+                               &yt_dlp_target_arg(&video_id)])
                         .output().await;
                     match output {
                         Ok(out) if out.status.success() => {
@@ -2376,5 +2389,27 @@ mod fetch_yt_video_metadata_tests {
             "rawid",
         );
         assert_eq!(m.thumbnail_url.as_deref(), Some("https://x/high.jpg"));
+    }
+}
+
+#[cfg(test)]
+mod yt_dlp_target_arg_tests {
+    use super::yt_dlp_target_arg;
+
+    #[test]
+    fn youtube_id_wraps_as_youtu_be_url() {
+        assert_eq!(yt_dlp_target_arg("dQw4w9WgXcQ"), "https://youtu.be/dQw4w9WgXcQ");
+    }
+
+    #[test]
+    fn bandcamp_url_passes_through_unchanged() {
+        let url = "https://domnoise.bandcamp.com/album/diariamente-obriga-o-maltrata";
+        assert_eq!(yt_dlp_target_arg(url), url);
+    }
+
+    #[test]
+    fn bandcamp_track_url_passes_through() {
+        let url = "https://domnoise.bandcamp.com/track/x";
+        assert_eq!(yt_dlp_target_arg(url), url);
     }
 }
