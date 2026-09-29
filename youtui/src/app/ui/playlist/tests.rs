@@ -1285,3 +1285,61 @@ fn youtube_track_keeps_legacy_provider_override() {
         vec!["Rick Astley"]
     );
 }
+
+#[test]
+fn strip_artist_prefix_trims_double_space_separator() {
+    // Given: a title where the artist is separated by double spaces
+    // (defeats the "{artist} - " single-space branch)
+    // When: the artist prefix is stripped
+    let out = Playlist::strip_artist_prefix(
+        "Vomitoma",
+        "Vomitoma  -  Nuclear Cesspool Of Parasitic Scum [FULLALBUM]",
+    );
+    // Then: no leading "-  " separator survives
+    assert_eq!(out, "Nuclear Cesspool Of Parasitic Scum [FULLALBUM]");
+}
+
+#[test]
+fn strip_artist_prefix_trims_em_dash_separator() {
+    // Given: an em-dash separator after the artist prefix
+    // When: the artist prefix is stripped
+    let out = Playlist::strip_artist_prefix("Band", "Band \u{2014} Song Title");
+    // Then: the em-dash is trimmed too
+    assert_eq!(out, "Song Title");
+}
+
+#[test]
+fn clean_title_strips_concatenated_fullalbum_tag() {
+    // Given: a title with the concatenated [FULLALBUM] tag
+    // When: clean_title_for_metadata runs
+    let out = Playlist::clean_title_for_metadata(
+        "Vomitoma",
+        "Vomitoma  -  Nuclear Cesspool Of Parasitic Scum [FULLALBUM]",
+    );
+    // Then: artist prefix, separators and the bracket tag are all gone
+    assert_eq!(out, "Nuclear Cesspool Of Parasitic Scum");
+}
+
+#[test]
+fn insert_yt_video_metadata_sets_album_upload_on_fullalbum_tag() {
+    // Given: a resolved yt-dlp probe for a [FULLALBUM] title with short duration
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let url = "https://www.youtube.com/watch?v=CDsJBLrT_UM";
+    let vid = VideoID::from_raw("CDsJBLrT_UM");
+    let _ = p.add_yt_video(vid.clone(), url);
+    let meta = crate::app::server::YtVideoMetadata {
+        title: "Vomitoma  -  Nuclear Cesspool Of Parasitic Scum [FULLALBUM]".into(),
+        uploader: "MAIGORENOISE".into(),
+        duration_secs: Some(600.0),
+        year: Some("2014".into()),
+        thumbnail_url: None,
+        album: None,
+        track: None,
+    };
+    // When: metadata resolves (short duration < 900s so the tag must do the work)
+    p.insert_yt_video_metadata(vid, meta);
+    // Then: the song is flagged as album upload via the compact tag match
+    let song = p.list.get_list_iter().next().unwrap();
+    assert!(song.is_album_upload);
+}

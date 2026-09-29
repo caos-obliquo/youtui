@@ -476,6 +476,27 @@ impl Default for BrowserSongsList {
     }
 }
 
+/// Detect album-upload indicator tags in a title using compact matching.
+/// Non-alphanumeric characters are dropped so "full album", "FULLALBUM",
+/// "[FULLALBUM]" and "full-album" all match the same compact tag "fullalbum".
+/// This is the single source of truth for album-upload detection; every
+/// call site must use it instead of its own `contains("full album")` list
+/// (concatenated tags like "[FULLALBUM]" never matched the spaced forms).
+pub fn has_album_upload_tag(title: &str) -> bool {
+    let compact: String = title
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    const TAGS: [&str; 14] = [
+        "fullalbum", "fullep", "fulllp", "fulldemo", "fullsingle",
+        "fulllength", "studioalbum", "livealbum", "officialalbum",
+        "compilation", "bootleg", "anthology", "collection",
+        "selftitled",
+    ];
+    TAGS.iter().any(|tag| compact.contains(tag))
+}
+
 impl BrowserSongsList {
     pub fn len(&self) -> usize {
         self.list.len()
@@ -605,6 +626,8 @@ fn clean_channel_album_name(name: &str) -> String {
             "full-length album", "full-length",
             "official album", "official audio", "official video",
             "lyric video", "lyrics",
+            "fullalbum", "fullep", "fulllp", "fulldemo", "fullsingle",
+            "fulllength", "officialalbum",
         ];
         let mut s = name.trim().to_string();
         loop {
@@ -658,21 +681,7 @@ fn clean_channel_album_name(name: &str) -> String {
                 }
                 // Check if original title has album indicator tags (e.g. "Full Album")
                 let lower_second = second.to_lowercase();
-                is_album_upload = lower_second.contains("full album")
-                    || lower_second.contains("full ep")
-                    || lower_second.contains("full lp")
-                    || lower_second.contains("full demo")
-                    || lower_second.contains("full single")
-                    || lower_second.contains("full-length")
-                    || lower_second.contains("studio album")
-                    || lower_second.contains("live album")
-                    || lower_second.contains("official album")
-                    || lower_second.contains("compilation")
-                    || lower_second.contains("bootleg")
-                    || lower_second.contains("anthology")
-                    || lower_second.contains("collection")
-                    || lower_second.contains("self-titled")
-                    || lower_second.contains("self titled");
+                is_album_upload = has_album_upload_tag(&lower_second);
                 // Extract year from parenthetical group before stripping (e.g., "(2020 - Goregrind)")
                 channel_year = Self::extract_year_from_title(&second);
                 // Strip artist prefix from title, keep only the song/album part
@@ -1284,5 +1293,52 @@ mod fuzzy_tests {
         let s1 = fuzzy_match("ab", "abc").unwrap();
         let s2 = fuzzy_match("ab", "xab").unwrap();
         assert!(s1 > s2, "earlier match should score higher");
+    }
+}
+
+#[cfg(test)]
+mod has_album_upload_tag_tests {
+    use super::has_album_upload_tag;
+
+    #[test]
+    fn spaced_full_album_matches() {
+        assert!(has_album_upload_tag("Nuclear Cesspool Of Parasitic Scum Full Album"));
+    }
+
+    #[test]
+    fn concatenated_fullalbum_matches() {
+        assert!(has_album_upload_tag("Nuclear Cesspool Of Parasitic Scum [FULLALBUM]"));
+    }
+
+    #[test]
+    fn bracketed_spaced_full_album_matches() {
+        assert!(has_album_upload_tag("Nuclear Cesspool Of Parasitic Scum [ FULL ALBUM]"));
+    }
+
+    #[test]
+    fn hyphenated_fulllength_matches() {
+        assert!(has_album_upload_tag("Nuclear Cesspool Of Parasitic Scum [full-length]"));
+    }
+
+    #[test]
+    fn full_ep_concatenated_matches() {
+        assert!(has_album_upload_tag("Demo 2024 [FULLEP]"));
+    }
+
+    #[test]
+    fn self_titled_forms_match() {
+        assert!(has_album_upload_tag("Untitled Self-Titled"));
+        assert!(has_album_upload_tag("Untitled Self Titled"));
+    }
+
+    #[test]
+    fn plain_song_title_does_not_match() {
+        assert!(!has_album_upload_tag("Such Luck"));
+        assert!(!has_album_upload_tag("Two Beers In"));
+    }
+
+    #[test]
+    fn album_word_alone_does_not_match() {
+        assert!(!has_album_upload_tag("Nuclear Cesspool Album"));
     }
 }

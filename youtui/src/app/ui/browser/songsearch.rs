@@ -1079,7 +1079,7 @@ impl_youtui_task_handler!(
 
 #[cfg(test)]
 mod tests {
-    use crate::app::server::{SearchBandcamp, SearchSongs};
+    use crate::app::server::SearchSongs;
     use crate::app::ui::browser::songsearch::{
         HandleBandcampSearchErr, HandleBandcampSearchOk, HandleSearchSongsErr, HandleSearchSongsOk,
         SongSearchBrowser,

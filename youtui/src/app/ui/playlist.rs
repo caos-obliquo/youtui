@@ -1274,13 +1274,20 @@ impl Playlist {
     fn strip_artist_prefix(artist: &str, title: &str) -> String {
         let lower = title.to_lowercase();
         let art_lower = artist.to_lowercase();
-        if lower.starts_with(&format!("{} - ", art_lower)) {
+        let stripped = if lower.starts_with(&format!("{} - ", art_lower)) {
             title[artist.len() + 3..].trim().to_string()
         } else if artist.len() >= 2 && lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
             title[artist.len()..].trim().to_string()
         } else {
             title.to_string()
-        }
+        };
+        // Trim leading separators left behind by multi-space titles like
+        // "Artist  -  Song" (double space defeats the "{} - " branch above,
+        // and the plain prefix branch keeps the "-  " separator).
+        stripped
+            .trim_start_matches(|c: char| c == '-' || c == '–' || c == '—' || c == '|')
+            .trim()
+            .to_string()
     }
 
     /// Strip YouTube noise patterns (official audio, lyrics, etc.) from title end
@@ -1291,6 +1298,7 @@ impl Playlist {
             "com legendado", "legendado pt", "legendado pt-br",
             "subtitle", "subtitles",
             "full album", "full ep", "full lp", "full demo", "full single",
+            "fullalbum", "fullep", "fulllp", "fulldemo", "fullsingle",
         ];
         let mut s = title.to_string();
         loop {
@@ -1299,10 +1307,10 @@ impl Playlist {
             for tag in &noise_tags {
                 if let Some(pos) = lower.rfind(tag) {
                     let before = &s[..pos].trim();
-                    let cut = if let Some(paren_start) = before.rfind('(') {
-                        let between = &before[paren_start..];
+                    let cut = if let Some(open_start) = before.rfind(|c| c == '(' || c == '[') {
+                        let between = &before[open_start..];
                         if between.to_lowercase().contains(tag) {
-                            &before[..paren_start.max(1).saturating_sub(1)]
+                            &before[..open_start.max(1).saturating_sub(1)]
                         } else {
                             &s[..pos]
                         }
@@ -1317,7 +1325,7 @@ impl Playlist {
                 }
             }
             if !found {
-                s = s.trim_end_matches(|c| c == '(').trim().to_string();
+                s = s.trim_end_matches(|c| c == '(' || c == '[').trim().to_string();
                 break;
             }
         }
@@ -1360,7 +1368,7 @@ impl Playlist {
                             if tag_tokens.is_empty() { return false; }
                             group_tokens.windows(tag_tokens.len())
                                 .any(|w| w == tag_tokens.as_slice())
-                        });
+                        }) || crate::app::structures::has_album_upload_tag(&group_lower);
                         if has_tag {
                             let before: String = chars[..open].iter().collect();
                             let after: String = chars[i..].iter().collect();
@@ -1644,21 +1652,7 @@ impl Playlist {
             // Check if raw yt-dlp title has album indicator tags (were stripped by clean_title_for_metadata)
             // or if video is album-length (>15 min). If so, allow album splitting.
             let lower_raw = title.to_lowercase();
-            let has_raw_tags = lower_raw.contains("full album")
-                || lower_raw.contains("full ep")
-                || lower_raw.contains("full lp")
-                || lower_raw.contains("full demo")
-                || lower_raw.contains("full single")
-                || lower_raw.contains("full-length")
-                || lower_raw.contains("studio album")
-                || lower_raw.contains("live album")
-                || lower_raw.contains("official album")
-                || lower_raw.contains("compilation")
-                || lower_raw.contains("bootleg")
-                || lower_raw.contains("anthology")
-                || lower_raw.contains("collection")
-                || lower_raw.contains("self-titled")
-                || lower_raw.contains("self titled");
+            let has_raw_tags = crate::app::structures::has_album_upload_tag(&lower_raw);
             if has_raw_tags || duration_secs > 900.0 {
                 if let Some(idx) = self.get_index_from_id(id) {
                     if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
