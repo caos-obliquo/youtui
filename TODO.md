@@ -71,6 +71,10 @@ Commit rule: one commit per finished item below, small clean diffs. No batching.
 - **CLI log access**: `youtui log` subcommand added - supports `--follow`, `--filter`, `--since`, `--level`, `--json`. Reads the same `get_data_dir()/debug*.log` files `init_tracing` writes.
 - **Progress bar accuracy**: `duration_string` backfilled from decoded duration in `handle_queued`/`handle_playing` when YTM gave none; footer shows the real total instead of `00:00/00:00`.
 
+## Active (branch: fix/albums-tab-freeze)
+Commit rule: one commit per finished item below, small clean diffs. No batching.
+- [ ] **Albums tab freeze** - Albums browser tab completely freezes after F1 search -> Enter (no cursor movement, no panel switch, nothing responds). Root cause: `handle_text_entry_action` Submit arm in `albumsearch.rs` never resets `input_routing` to `List` (Songs tab does at `songsearch.rs:775`). Fix: routing reset on all submit paths + explicit-close (not toggle) for Esc + SearchAlbums kill_same_type/60s-timeout hardening + regression tests. Files: `youtui/src/app/ui/browser/albumsearch.rs`, `youtui/src/app/server/messages.rs`. Estimate: 1-2h. Plan: `.omo/plans/albums-tab-freeze.md`.
+
 ## Low Priority
 - **Native streaming** - symphonia/basic-tcp-streaming prototype
 - **Artist album pagination** - `ParseFromContinuable` for `GetArtistAlbumsQuery`
