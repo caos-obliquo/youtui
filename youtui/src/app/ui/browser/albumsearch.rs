@@ -710,7 +710,10 @@ impl ActionHandler<BrowserSearchAction> for AlbumSearchBrowser {
                 self.search.increment_list(1);
             }
             BrowserSearchAction::Close => {
-                self.handle_toggle_search();
+                if self.search_popped {
+                    self.search_popped = false;
+                    self.input_routing = InputRouting::List;
+                }
             }
         }
         (AsyncTask::new_no_op(), None)
