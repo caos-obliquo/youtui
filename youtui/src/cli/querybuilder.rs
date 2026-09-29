@@ -784,6 +784,9 @@ pub async fn command_to_query(
         Command::TestCaa { .. } => {
             anyhow::bail!("TestCaa is a standalone CLI command, not an API query")
         }
+        Command::BandcampResolve { .. } => {
+            anyhow::bail!("BandcampResolve is a standalone CLI command, not an API query")
+        }
         Command::EnrichCache { .. } => {
             anyhow::bail!("EnrichCache is a standalone CLI command, not an API query")
         }

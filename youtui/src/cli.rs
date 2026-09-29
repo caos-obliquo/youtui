@@ -104,6 +104,28 @@ fn validate_uuid(arg: &str, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Run yt-dlp with the given args (excluding the binary name) and return the
+/// captured output. Fails fast with the stderr tail when yt-dlp errors.
+async fn run_yt_dlp(args: &[&str]) -> Result<std::process::Output> {
+    let output = tokio::time::timeout(
+        CLI_TIMEOUT,
+        tokio::process::Command::new("yt-dlp").args(args).kill_on_drop(true).output(),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("[ERROR] BandcampResolve: yt-dlp timed out after {}s", CLI_TIMEOUT.as_secs()))?
+    .map_err(|e| anyhow::anyhow!("[ERROR] BandcampResolve: failed to run yt-dlp: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let tail = stderr.lines().rev().take(5).collect::<Vec<_>>().join("\n");
+        return Err(anyhow::anyhow!(
+            "[ERROR] BandcampResolve: yt-dlp exited with {}:\n{}",
+            output.status,
+            tail
+        ));
+    }
+    Ok(output)
+}
+
 pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
     let config = rt.config;
     // Handle TestScrobble - not a YTM API command
@@ -441,6 +463,44 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                     }
                 }
                 None => println!("No result from MusicBrainz"),
+            }
+            return Ok(());
+        }
+        Some(crate::Command::BandcampResolve { url }) => {
+            use crate::bandcamp::{
+                BandcampKind, bandcamp_kind, is_bandcamp_url, normalize_bandcamp_url,
+                parse_bandcamp_album_entries,
+            };
+            require_non_empty(url, "url")?;
+            if !is_bandcamp_url(url) {
+                eprintln!("[ERROR] BandcampResolve: not a bandcamp.com URL: {url}");
+                return Ok(());
+            }
+            let normalized = normalize_bandcamp_url(url);
+            let kind = bandcamp_kind(&normalized);
+            println!("URL={url}");
+            println!("NORMALIZED={normalized}");
+            println!("KIND={:?}", kind);
+            match kind {
+                Some(BandcampKind::Track) => {
+                    let out = run_yt_dlp(&["--dump-json", "--no-warnings", "--", &normalized]).await?;
+                    println!("--- Track JSON ---");
+                    println!("{}", String::from_utf8_lossy(&out.stdout).trim());
+                }
+                Some(BandcampKind::Album) | Some(BandcampKind::Discography) => {
+                    let out = run_yt_dlp(
+                        &["--flat-playlist", "--dump-json", "--no-warnings", "--", &normalized],
+                    )
+                    .await?;
+                    let entries = parse_bandcamp_album_entries(&String::from_utf8_lossy(&out.stdout));
+                    println!("--- {} entries ---", entries.len());
+                    for (i, e) in entries.iter().enumerate() {
+                        println!("{}. {}", i + 1, e);
+                    }
+                }
+                None => {
+                    eprintln!("[ERROR] BandcampResolve: unsupported bandcamp URL path: {normalized}");
+                }
             }
             return Ok(());
         }

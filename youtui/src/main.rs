@@ -444,6 +444,12 @@ enum Command {
         #[arg(long)]
         retry: bool,
     },
+    /// Resolve a Bandcamp URL: normalize it, detect kind (track/album/discography),
+    /// and list the playable entries via yt-dlp. Debug tool for the Bandcamp flow.
+    BandcampResolve {
+        /// Bandcamp URL (track, album, or artist discography page)
+        url: String,
+    },
     /// View TUI log files written by init_tracing (same content as the F11 view).
     Log {
         /// Follow the latest log file live (like tail -f). Ctrl-C to exit.
