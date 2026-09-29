@@ -1422,7 +1422,12 @@ impl Playlist {
 
         // Optimistic pending row so the queue shows instant feedback while the
         // yt-dlp probe runs (up to 60s). Replaced on resolve, removed on error.
-        self.insert_pending_yt_video_row(video_id.clone());
+        let source = if crate::bandcamp::is_bandcamp_url(&raw_id) {
+            "Bandcamp"
+        } else {
+            "YouTube"
+        };
+        self.insert_pending_yt_video_row(video_id.clone(), source);
         // F3 guard: yt-dlp network RTT runs in a backend task with a 60s
         // timeout. Return pending state immediately, insert on completion.
         info!("add_yt_video: fetching metadata in background for {}", raw_id);
@@ -1434,12 +1439,16 @@ impl Playlist {
         )
     }
 
-    fn insert_pending_yt_video_row(&mut self, video_id: ytmapi_rs::common::VideoID<'static>) -> ListSongID {
+    fn insert_pending_yt_video_row(
+        &mut self,
+        video_id: ytmapi_rs::common::VideoID<'static>,
+        source: &str,
+    ) -> ListSongID {
         use ytmapi_rs::common::YoutubeID;
         let raw_id = video_id.get_raw().to_string();
         let song = ytmapi_rs::parse::SearchResultSong {
             title: format!("fetching... {}", raw_id),
-            artist: "YouTube".to_string(),
+            artist: source.to_string(),
             album: None,
             duration: String::from("0:00"),
             plays: String::new(),
