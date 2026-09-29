@@ -25,6 +25,27 @@ debug tool exercising the same resolution off the TUI.
 tralbum data"). Free streams are mp3-128 only; stream tokens expire in minutes
 and are never cached.
 
+## Bandcamp Search Merge (Phase 2)
+
+Songs-tab F1 search and the `:` command fallback run a merged search:
+`SearchSongs` (YouTube) and `SearchBandcamp` (Bandcamp) dispatch concurrently
+(`AsyncTask::push` -> Multi); bandcamp rows append after the YouTube results
+(deterministic via the `search_pending`/`pending_bandcamp` gate on
+`SongSearchBrowser`). Bandcamp rows carry a `BC` badge in the `Src` column
+(`source_badge_for_song`, `is_bandcamp_url` on `video_id`). The bandcamp
+`video_id` IS the track URL, so playing a merged row flows through the exact
+`add_yt_video` path from Phase 1.
+
+`SearchBandcamp` POSTs to
+`https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic`
+(body `{"fan_id":null,"full_page":false,"search_filter":"t","search_text":q}`,
+Firefox UA + `https://bandcamp.com/search` Referer; no Client Challenge on this
+endpoint). One defensive 3s sleep retry on 429 (onetagger pattern). Pure fn
+`parse_bandcamp_search_results(json)` maps `auto.results[]` track rows to
+`SearchResultSong` (title, `band_name` artist, `album_name` album, URL as
+video_id), filtering out non-track rows. SPIKE evidence:
+`.omo/evidence/bandcamp-search-spike.md`.
+
 **Key flags:**
 - `--force-overwrites` - prevents yt-dlp resume from treating 0-byte temp files as complete
 - `--extractor-args youtube:player_client=web_creator` - only with cookie_path
