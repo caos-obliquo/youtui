@@ -45,11 +45,11 @@ If things break, rollback and re-apply one-by-one.
 - Workspace root: `/home/caos/builds/youtui/`
 - Rust nightly (1.97.0)
 - Binary: `cargo build --release` -> `target/release/youtui`
-- Dependencies: yt-dlp, ffmpeg (all platforms). Linux: alsa-lib (pacman). macOS: CoreAudio (built-in). BSD: OSS (built-in)
+- Dependencies: yt-dlp, ffmpeg (all platforms). Linux: alsa-lib (pacman). macOS: CoreAudio (built-in). BSD: OSS (built-in). Bandcamp support requires the uv-tool yt-dlp with curl_cffi (`~/.local/bin/yt-dlp` from `uv tool install yt-dlp`); the distro `/usr/bin/yt-dlp` fails on the Bandcamp Client Challenge ("Unable to extract tralbum data")
 
 ## Tests
 ```bash
-cargo test --release -p youtui                      # 283 pass, 3 ignore
+cargo test --release -p youtui                      # 299 pass, 3 ignore
 cargo test --release -p metadata-provider           # 110 pass (+62 new)
 cargo test --release -p vi-text-editor              # 67 pass
 cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
@@ -62,7 +62,7 @@ cargo test --release -p json-crawler                # 2 pass
 cargo test --release -p lrclib-rs                   # 4 pass
 cargo test --release -p rym-genre-data              # 10 pass
 ```
-Total: **~638/641 pass, 0 fail, 3 ignored, 0 warnings** (283+3 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 641)
+Total: **~654/657 pass, 0 fail, 3 ignored, 0 warnings** (299+3 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 657)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -211,7 +211,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## 12 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 264 |
+| `youtui` | Main binary | 299 |
 | `ytmapi-rs` | YT Music API client | 83 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 67 |
 | `metadata-provider` | Metadata trait + 6 provider impls | 110 |
@@ -307,6 +307,7 @@ See `docs/09-roadmap.md` for detailed session history.
 - **Scrobble cache**: Persistent retry file at `~/.config/youtui/scrobble_cache.json`. Failed scrobbles saved to disk with retry count (max 3). Retried on startup + background 5-min loop. Rate limit stops retries to avoid hammering.
 - **Protocol cache (chunk dimensions)**: `cached_album_chunk` tracks image chunk dimensions in footer. `chunk_changed` comparison prevents 8-bit fallback on terminal resize (PR #8).
 - **o.v zero-pixel guard**: Zero-width/height `in_mem_image` shows 'No image data' instead of attempting to render empty sixel (PR #9).
+- **Bandcamp**: Free streams are mp3-128 only (higher quality needs purchased downloads + cookies). Stream tokens expire in minutes, never cached. Requires uv-tool yt-dlp with curl_cffi for the 2026 Client Challenge. Purchased-only tracks need cookies (`--cookies-from-browser`).
 
 ## Scrobbler Integration
 
@@ -437,7 +438,7 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 283 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
+- 299 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
 - Suckless refactoring adds 0 tests (refactors existing code only)
 
 ## Inspirations & Thanks

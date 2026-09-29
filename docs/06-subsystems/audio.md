@@ -11,6 +11,20 @@ yt-dlp --dump-json --no-warnings {url} ← metadata fetch (add_yt_video, async F
 yt-dlp -f bestaudio/best --cookies {cookie.txt} -o {tempfile} -- {video_id} ← audio download (`--` end-of-options guard so dash-leading ids never parse as flags)
 ```
 
+Bandcamp URLs flow through the same pipeline: `yt_dlp_target_arg()` passes a
+bandcamp URL verbatim to yt-dlp (anything else is wrapped as `https://youtu.be/`).
+Track URLs queue like YouTube videos (`add_yt_video`, `VideoID` holds the full
+normalized URL); album/discography URLs resolve to their track list via the
+`FetchBandcampAlbumEntries` backend task (`--flat-playlist --dump-json`, 60s
+timeout) and each entry queues individually. `bandcamp-resolve <url>` is the CLI
+debug tool exercising the same resolution off the TUI.
+
+**Bandcamp requirement:** yt-dlp must be the uv-tool install with `curl_cffi`
+(`~/.local/bin/yt-dlp`, from `uv tool install yt-dlp`). The distro
+`/usr/bin/yt-dlp` fails on the 2026 Bandcamp Client Challenge ("Unable to extract
+tralbum data"). Free streams are mp3-128 only; stream tokens expire in minutes
+and are never cached.
+
 **Key flags:**
 - `--force-overwrites` - prevents yt-dlp resume from treating 0-byte temp files as complete
 - `--extractor-args youtube:player_client=web_creator` - only with cookie_path
@@ -19,12 +33,13 @@ yt-dlp -f bestaudio/best --cookies {cookie.txt} -o {tempfile} -- {video_id} ← 
 
 **Timeout:** 5-minute proc wait prevents hung processes.
 
-**Container validation:** Post-download checks for valid audio header:
+**Container validation:** Post-download `detect_container()` checks for valid audio header:
 - MP4: `ftyp` magic bytes
 - M4A: M4A brand in ftyp
 - WebM: `\x1a\x45\xdf\xa3` (EBML)
 - WAV: `RIFF`
 - Ogg: `OggS`
+- MP3: `ID3` tag or MPEG frame sync (`0xFF` + 3-bit version/algo bits) - needed for Bandcamp streams
 
 ### Native (rusty_ytdl, broken)
 
