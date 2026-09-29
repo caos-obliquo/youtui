@@ -28,7 +28,7 @@ use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSon
 use std::path::PathBuf;
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use crate::app::server::api::stream_api_with_retry_n;
-use crate::bandcamp::is_bandcamp_url;
+use crate::bandcamp::{is_bandcamp_url, parse_bandcamp_album_entries};
 
 /// Build the URL/path argument to pass to yt-dlp for a raw id.
 ///
@@ -178,6 +178,53 @@ impl BackendTask<ArcServer> for FetchYtVideoMetadata {
                 meta.thumbnail_url.is_some()
             );
             Ok(meta)
+        }
+    }
+}
+
+/// Off-UI-thread resolution of a Bandcamp album or discography URL into its
+/// playable track URLs. Runs `yt-dlp --flat-playlist --dump-json` (the same
+/// probe the CLI debug tool uses) so the TUI never blocks on the network.
+#[derive(Debug, PartialEq)]
+pub struct FetchBandcampAlbumEntries(pub String, pub bool, pub String);
+
+impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
+    type Output = Result<Vec<String>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(self, _backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+        async move {
+            let url = self.0;
+            let mut cmd = tokio::process::Command::new("yt-dlp");
+            cmd.args(["--flat-playlist", "--dump-json", "--no-warnings"]);
+            if self.1 {
+                cmd.args(["--cookies-from-browser", &self.2]);
+            }
+            cmd.arg("--").arg(&url);
+            tracing::info!("FetchBandcampAlbumEntries: resolve entries for {}", url);
+            let output = match tokio::time::timeout(
+                Duration::from_secs(60),
+                cmd.kill_on_drop(true).output(),
+            )
+            .await
+            {
+                Ok(Ok(out)) => out,
+                Ok(Err(e)) => anyhow::bail!(
+                    "Failed to spawn yt-dlp for {} (is it on PATH?): {e}",
+                    url
+                ),
+                Err(_) => anyhow::bail!("yt-dlp timed out after 60s resolving {}", url),
+            };
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                anyhow::bail!("yt-dlp failed for {}: {}", url, stderr.trim());
+            }
+            let entries = parse_bandcamp_album_entries(&String::from_utf8_lossy(&output.stdout));
+            tracing::info!(
+                "FetchBandcampAlbumEntries: {} resolved to {} entries",
+                url,
+                entries.len()
+            );
+            Ok(entries)
         }
     }
 }
@@ -2411,5 +2458,29 @@ mod yt_dlp_target_arg_tests {
     fn bandcamp_track_url_passes_through() {
         let url = "https://domnoise.bandcamp.com/track/x";
         assert_eq!(yt_dlp_target_arg(url), url);
+    }
+}
+
+#[cfg(test)]
+mod fetch_bandcamp_album_entries_tests {
+    use super::FetchBandcampAlbumEntries;
+    use async_callback_manager::BackendTask;
+
+    #[test]
+    fn task_fields_carry_url_cookie_flag_and_browser() {
+        let task = FetchBandcampAlbumEntries(
+            "https://domnoise.bandcamp.com/album/x".to_string(),
+            true,
+            "chromium".to_string(),
+        );
+        assert_eq!(task.0, "https://domnoise.bandcamp.com/album/x");
+        assert!(task.1);
+        assert_eq!(task.2, "chromium");
+    }
+
+    #[test]
+    fn task_type_is_assertable_without_backend() {
+        fn assert_task<T: BackendTask<super::ArcServer>>() {}
+        assert_task::<FetchBandcampAlbumEntries>();
     }
 }
