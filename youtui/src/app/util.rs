@@ -12,11 +12,31 @@ use std::time::Duration;
 use tracing::{debug, info};
 
 /// Fetch yt-dlp JSON for `video_id` and parse chapters/description into AlbumTracks.
-pub async fn fetch_yt_dlp_album_tracks(video_id: &str, yt_dlp_command: &str) -> Vec<AlbumTrack> {
+///
+/// `cookie_path`/`cookie_browser` mirror the probe (`FetchYtVideoMetadata`):
+/// age-restricted uploads fail with "Sign in to confirm your age" without
+/// cookies, so pass `--cookies-from-browser` when cookie support is configured.
+pub async fn fetch_yt_dlp_album_tracks(
+    video_id: &str,
+    yt_dlp_command: &str,
+    cookie_path: Option<&str>,
+    cookie_browser: &str,
+) -> Vec<AlbumTrack> {
+    let use_cookie = cookie_path.is_some() && !cookie_browser.is_empty();
+    let mut args: Vec<String> = vec![
+        "--dump-json".into(),
+        "--no-warnings".into(),
+        yt_dlp_target_arg(video_id),
+    ];
+    if use_cookie {
+        args.push("--cookies-from-browser".into());
+        args.push(cookie_browser.to_string());
+        info!("yt-dlp fallback: using --cookies-from-browser {} for video {}", cookie_browser, video_id);
+    }
     let output = match tokio::time::timeout(
         Duration::from_secs(60),
         tokio::process::Command::new(yt_dlp_command)
-            .args(["--dump-json", "--no-warnings", &yt_dlp_target_arg(video_id)])
+            .args(&args)
             .kill_on_drop(true)
             .output(),
     )

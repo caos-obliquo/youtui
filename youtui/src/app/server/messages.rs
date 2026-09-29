@@ -2022,6 +2022,8 @@ impl BackendTask<ArcServer> for ValidateMetadata {
         let registry = backend.metadata_registry.clone();
         let api = backend.api.clone();
         let yt_dlp_command = backend.yt_dlp_command.clone();
+        let cookie_path = backend.cookie_path.clone();
+        let cookie_browser = backend.cookie_browser.clone();
         async move {
             let artist = self.0;
             let title = self.1;
@@ -2056,7 +2058,7 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                                     tracing::debug!("YTM API unavailable for enrichment: {}", e);
                                     if is_album_upload && result.album_tracks.is_empty() {
                                         tracing::info!("yt-dlp fallback: album enrichment unavailable, trying description/chapters for video_id={}", video_id);
-                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
+                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command, cookie_path.as_deref(), &cookie_browser).await;
                                     }
                                     return Ok(result);
                                 }
@@ -2076,7 +2078,7 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                                     tracing::debug!("YTM album detail fetch failed: {}", e);
                                     if is_album_upload && result.album_tracks.is_empty() {
                                         tracing::info!("yt-dlp fallback: album detail failed, trying description/chapters for video_id={}", video_id);
-                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
+                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command, cookie_path.as_deref(), &cookie_browser).await;
                                     }
                                 }
                             }
@@ -2086,14 +2088,14 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                         tracing::debug!("YTM album search failed: {}", e);
                                     if is_album_upload && result.album_tracks.is_empty() {
                                         tracing::info!("yt-dlp fallback: album search failed, trying description/chapters for video_id={}", video_id);
-                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
+                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command, cookie_path.as_deref(), &cookie_browser).await;
                                     }
                     }
                 }
             }
 
             if is_album_upload {
-                let dlp_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
+                let dlp_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command, cookie_path.as_deref(), &cookie_browser).await;
                 if !dlp_tracks.is_empty() {
                     // yt-dlp description/chapters is authoritative for channel uploads:
                     // it lists the exact tracks the uploader encoded. Prefer it over
