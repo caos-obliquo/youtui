@@ -36,17 +36,29 @@ pub enum SongThumbnailID<'a> {
 impl<'a> From<&'a ListSong> for SongThumbnailID<'a> {
     fn from(song: &'a ListSong) -> SongThumbnailID<'a> {
         match song.album.as_deref() {
+            // URL-added songs (YouTube URL or Bandcamp) carry an empty album id
+            // (playlist.rs insert_yt_video_metadata). Keying art on that empty
+            // id would collapse every URL-added song onto one cache entry, so
+            // fall back to the unique video id (the URL itself).
             Some(ListSongAlbum {
                 id: AlbumOrUploadAlbumID::Album(a),
                 ..
-            }) => SongThumbnailID::Album(a.into()),
+            }) if !a.get_raw().is_empty() => SongThumbnailID::Album(a.into()),
             Some(ListSongAlbum {
                 id: AlbumOrUploadAlbumID::UploadAlbum(a),
                 ..
-            }) => SongThumbnailID::UploadAlbum(a.into()),
-            None => SongThumbnailID::Video((&song.video_id).into()),
+            }) if !a.get_raw().is_empty() => SongThumbnailID::UploadAlbum(a.into()),
+            _ => SongThumbnailID::Video((&song.video_id).into()),
         }
     }
+}
+
+/// Filesystem-safe cache key for a thumbnail id. The key becomes part of the
+/// on-disk filename (`YAA_{key}.{ext}`), so path separators in ids (e.g. full
+/// Bandcamp URLs used as video ids) must be replaced or they would create
+/// nested directories.
+fn thumbnail_cache_key(id: &SongThumbnailID<'_>) -> String {
+    id.to_string().replace(['/', ':'], "_")
 }
 impl std::fmt::Display for SongThumbnailID<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -168,7 +180,11 @@ impl SongThumbnailDownloader {
             .format()
             .context("Unable to determine album art image format")?;
         let on_disk_path = get_album_art_dir()?
-            .join(format!("{}{}", ALBUM_ART_FILENAME_PREFIX, thumbnail_id))
+            .join(format!(
+                "{}{}",
+                ALBUM_ART_FILENAME_PREFIX,
+                thumbnail_cache_key(&thumbnail_id)
+            ))
             .with_extension(image_format.extensions_str()[0]);
         let image_decoding_task = tokio::task::spawn_blocking(|| image_reader.decode());
         let (in_mem_image, _) = try_join(
@@ -212,7 +228,11 @@ impl SongThumbnailDownloader {
             .format()
             .context("Unable to determine album art image format")?;
         let on_disk_path = get_album_art_dir()?
-            .join(format!("{}{}", ALBUM_ART_FILENAME_PREFIX, thumbnail_id))
+            .join(format!(
+                "{}{}",
+                ALBUM_ART_FILENAME_PREFIX,
+                thumbnail_cache_key(&thumbnail_id)
+            ))
             .with_extension(image_format.extensions_str()[0]);
         let image_decoding_task = tokio::task::spawn_blocking(|| image_reader.decode());
         let (in_mem_image, _) = try_join(
@@ -267,7 +287,12 @@ async fn get_cached_album_art(thumbnail_id: SongThumbnailID<'_>) -> Option<SongT
             // are not from Youtui.
             .is_none_or(|dir_file_prefix| {
                 dir_file_prefix
-                    != format!("{}{}", ALBUM_ART_FILENAME_PREFIX, thumbnail_id_clone).as_str()
+                    != format!(
+                        "{}{}",
+                        ALBUM_ART_FILENAME_PREFIX,
+                        thumbnail_cache_key(&thumbnail_id_clone)
+                    )
+                    .as_str()
             })
         {
             warn!(
@@ -333,4 +358,99 @@ async fn get_cached_album_art(thumbnail_id: SongThumbnailID<'_>) -> Option<SongT
         });
     };
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::structures::{ListSongArtist, MaybeRc};
+    use ytmapi_rs::common::{AlbumID, VideoID};
+
+    #[test]
+    fn cache_key_sanitizes_bandcamp_url_video_ids() {
+        let id = SongThumbnailID::Video(VideoID::from_raw(
+            "https://domnoise.bandcamp.com/track/do-suor-do-teu-rosto",
+        ));
+        let key = thumbnail_cache_key(&id);
+        assert!(!key.contains('/'), "cache key must not contain path separators: {key}");
+        assert_eq!(key, "V_https___domnoise.bandcamp.com_track_do-suor-do-teu-rosto");
+    }
+
+    #[test]
+    fn cache_key_leaves_safe_ids_unchanged() {
+        let id = SongThumbnailID::Album(AlbumID::from_raw("MPREb_abc123"));
+        assert_eq!(thumbnail_cache_key(&id), "A_MPREb_abc123");
+    }
+
+    #[test]
+    fn empty_album_id_falls_back_to_video_id() {
+        let song = ListSong {
+            video_id: VideoID::from_raw("https://domnoise.bandcamp.com/track/one"),
+            track_no: None,
+            plays: String::new(),
+            title: "One".into(),
+            explicit: None,
+            download_status: crate::app::structures::DownloadStatus::None,
+            id: crate::app::structures::ListSongID(0),
+            duration_string: "3:00".into(),
+            actual_duration: None,
+            start_offset: None,
+            year: None,
+            album_art: crate::app::structures::AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
+            artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
+            thumbnails: MaybeRc::Owned(Vec::new()),
+            album: Some(MaybeRc::Owned(ListSongAlbum {
+                name: "Some Album".into(),
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+            })),
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+            is_album_upload: false,
+            release_mbid: None,
+            artists_string: std::sync::OnceLock::new(),
+        };
+        let id = SongThumbnailID::from(&song);
+        match id {
+            SongThumbnailID::Video(v) => {
+                assert_eq!(v.get_raw(), "https://domnoise.bandcamp.com/track/one");
+            }
+            other => panic!("expected Video variant for empty album id, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn real_album_id_stays_album_variant() {
+        let song = ListSong {
+            video_id: VideoID::from_raw("dQw4w9WgXcQ"),
+            track_no: None,
+            plays: String::new(),
+            title: "Song".into(),
+            explicit: None,
+            download_status: crate::app::structures::DownloadStatus::None,
+            id: crate::app::structures::ListSongID(0),
+            duration_string: "3:00".into(),
+            actual_duration: None,
+            start_offset: None,
+            year: None,
+            album_art: crate::app::structures::AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
+            artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
+            thumbnails: MaybeRc::Owned(Vec::new()),
+            album: Some(MaybeRc::Owned(ListSongAlbum {
+                name: "Some Album".into(),
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("MPREb_abc123")),
+            })),
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+            is_album_upload: false,
+            release_mbid: None,
+            artists_string: std::sync::OnceLock::new(),
+        };
+        let id = SongThumbnailID::from(&song);
+        match id {
+            SongThumbnailID::Album(a) => assert_eq!(a.get_raw(), "MPREb_abc123"),
+            other => panic!("expected Album variant for real album id, got {other:?}"),
+        }
+    }
 }
