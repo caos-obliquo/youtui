@@ -239,6 +239,9 @@ pub struct GetSearchSuggestions(pub String);
 pub struct SearchArtists(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchSongs(pub String);
+/// Bandcamp track search via bcsearch_public_api; rows carry the bandcamp URL as video_id (the item_service marker).
+#[derive(Debug, PartialEq)]
+pub struct SearchBandcamp(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchPlaylists(pub String);
 #[derive(Debug, PartialEq)]
@@ -1718,6 +1721,97 @@ impl BackendTask<ArcServer> for SearchSongs {
         }
     }
 }
+/// Map a bcsearch_public_api autocomplete response into SearchResultSong rows.
+/// Only track entries (type "t") are kept; each row's video_id is the full
+/// bandcamp track URL (the item_service marker, detectable via is_bandcamp_url).
+fn parse_bandcamp_search_results(json: &serde_json::Value) -> Vec<SearchResultSong> {
+    json.get("auto")
+        .and_then(|a| a.get("results"))
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    let name = v.get("name")?.as_str()?;
+                    let band_name = v.get("band_name").and_then(|b| b.as_str()).unwrap_or("Unknown");
+                    let url_path = v.get("item_url_path")?.as_str()?;
+                    let album_name = v.get("album_name").and_then(|a| a.as_str());
+                    let vid: VideoID<'static> = VideoID::from_raw(url_path.to_string());
+                    let album_id: AlbumID<'static> =
+                        AlbumID::from_raw(url_path.to_string());
+                    let album = album_name.map(|n| ytmapi_rs::parse::ParsedSongAlbum {
+                        name: n.to_string(),
+                        id: album_id,
+                    });
+                    Some(ytmapi_rs::parse::SearchResultSong {
+                        title: name.to_string(),
+                        artist: band_name.to_string(),
+                        album,
+                        duration: String::new(),
+                        plays: String::new(),
+                        explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                        video_id: vid,
+                        thumbnails: vec![],
+                        like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+impl BackendTask<ArcServer> for SearchBandcamp {
+    type Output = Result<Vec<SearchResultSong>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(
+        self,
+        backend: &ArcServer,
+    ) -> impl Future<Output = Self::Output> + Send + 'static {
+        let query = self.0;
+        let client = backend.http_client.clone();
+        async move {
+            // bcsearch_public_api returns max 50 results; track filter "t" gives
+            // rows with name (title), band_name (artist), album_name, item_url_path.
+            let url = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic";
+            let body = serde_json::json!({
+                "fan_id": null,
+                "full_page": false,
+                "search_filter": "t",
+                "search_text": query,
+            });
+            let mut response = client
+                .post(url)
+                .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0")
+                .header("Referer", "https://bandcamp.com/search")
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| anyhow::anyhow!("Bandcamp search request failed: {}", e))?;
+            // 429 rate limit: one defensive 3s retry (onetagger pattern).
+            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                tracing::warn!("Bandcamp search rate limited, retrying in 3s");
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                response = client
+                    .post(url)
+                    .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0")
+                    .header("Referer", "https://bandcamp.com/search")
+                    .json(&body)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Bandcamp search retry failed: {}", e))?;
+            }
+            if !response.status().is_success() {
+                return Err(anyhow::anyhow!("Bandcamp search returned status {}", response.status()));
+            }
+            let json: serde_json::Value = response
+                .json()
+                .await
+                .map_err(|e| anyhow::anyhow!("Bandcamp search parse failed: {}", e))?;
+            let results = parse_bandcamp_search_results(&json);
+            tracing::info!("Bandcamp search '{}' returned {} results", query, results.len());
+            Ok(results)
+        }
+    }
+}
 impl BackendTask<ArcServer> for GetAnnotations {
     type Output = Result<Vec<(String, String)>>;
     type MetadataType = TaskMetadata;
@@ -2488,5 +2582,63 @@ mod fetch_bandcamp_album_entries_tests {
     fn task_type_is_assertable_without_backend() {
         fn assert_task<T: BackendTask<super::ArcServer>>() {}
         assert_task::<FetchBandcampAlbumEntries>();
+    }
+}
+
+#[cfg(test)]
+mod search_bandcamp_tests {
+    use super::parse_bandcamp_search_results;
+    use crate::bandcamp::is_bandcamp_url;
+    use ytmapi_rs::common::YoutubeID;
+
+    fn sample_response() -> serde_json::Value {
+        serde_json::json!({
+            "auto": {
+                "results": [
+                    {
+                        "type": "t",
+                        "id": 1319807,
+                        "name": "Do Suor Do Teu Rosto Comerás O Pão (Versão Modificada)",
+                        "band_id": 4242,
+                        "band_name": "D.O.M.",
+                        "album_name": "Diariamente Obrigação Maltrata",
+                        "item_url_root": "https://domnoise.bandcamp.com",
+                        "item_url_path": "https://domnoise.bandcamp.com/track/do-suor-do-teu-rosto-comer-s-o-p-o-vers-o-modificada",
+                        "img": "https://f4.bcbits.com/img/a123_3.jpg",
+                        "album_id": 1234
+                    },
+                    {
+                        "type": "a",
+                        "name": "not a track",
+                        "band_name": "X",
+                        "item_url_root": "https://x.bandcamp.com"
+                    }
+                ]
+            },
+            "tag": {},
+            "genre": {}
+        })
+    }
+
+    #[test]
+    fn track_entries_map_to_search_result_songs() {
+        let songs = parse_bandcamp_search_results(&sample_response());
+        assert_eq!(songs.len(), 1);
+        assert_eq!(songs[0].title, "Do Suor Do Teu Rosto Comerás O Pão (Versão Modificada)");
+        assert_eq!(songs[0].artist, "D.O.M.");
+        let album = songs[0].album.as_ref().expect("album present");
+        assert_eq!(album.name, "Diariamente Obrigação Maltrata");
+    }
+
+    #[test]
+    fn video_id_carries_bandcamp_url_as_item_service_marker() {
+        let songs = parse_bandcamp_search_results(&sample_response());
+        assert!(is_bandcamp_url(songs[0].video_id.get_raw()));
+    }
+
+    #[test]
+    fn missing_auto_field_yields_empty_list() {
+        let songs = parse_bandcamp_search_results(&serde_json::json!({}));
+        assert!(songs.is_empty());
     }
 }
