@@ -201,6 +201,7 @@ impl AlbumSearchBrowser {
                 TextEntryAction::Submit => {
                     let query = self.search.search_contents.get_text().to_string();
                     self.search_popped = false;
+                    self.input_routing = InputRouting::List;
                     self.search = SearchBlock::default();
                     if !query.is_empty() {
                         return self.search_albums_query(query).0;
@@ -224,9 +225,11 @@ impl AlbumSearchBrowser {
             self.albums = cached.clone();
             self.album_selected = 0;
             self.show_tracks = false;
+            self.input_routing = InputRouting::List;
             return (AsyncTask::new_no_op(), None);
         }
         self.last_search_query = Some(query.clone());
+        self.input_routing = InputRouting::List;
         let task = AsyncTask::new_future_try(
             SearchAlbums(query),
             HandleSearchAlbumsOk,
