@@ -892,10 +892,11 @@ impl YoutuiWindow {
                             if cmd.starts_with("http://") || cmd.starts_with("https://") || cmd.starts_with("youtu") {
                                 return self.play_yt_url(cmd).into();
                             }
-                            // Treat as raw search query
-                            let encoded: String = cmd.split_whitespace().collect::<Vec<_>>().join("+");
-                            let search_url = format!("https://music.youtube.com/search?q={}", encoded);
-                            return self.play_yt_url(search_url).into();
+                            // Treat as raw search query: merged YouTube + Bandcamp search
+                            self.prev_context = self.context;
+                            self.context = WindowContext::Browser;
+                            let effect = self.browser.run_merged_search(cmd);
+                            return effect.map_frontend(|this: &mut Self| &mut this.browser).into();
                         }
                         self.command_editor.clear();
                     }
