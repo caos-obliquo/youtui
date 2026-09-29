@@ -2030,6 +2030,10 @@ impl BackendTask<ArcServer> for ValidateMetadata {
             let video_id = self.6;
             let is_album_upload = self.7;
             let mut result = registry.resolve(&artist, &title, album.as_deref()).await?;
+            tracing::info!(
+                "ValidateMetadata: provider resolved artist={:?} album={:?} year={:?} track_no={:?} album_tracks={}",
+                result.artist, result.album, result.year, result.track_no, result.album_tracks.len()
+            );
 
             if result.year.is_none() || result.album.is_none() {
                 let search_query = match album {
@@ -2091,6 +2095,9 @@ impl BackendTask<ArcServer> for ValidateMetadata {
             if is_album_upload && result.album_tracks.is_empty() {
                 tracing::info!("yt-dlp fallback: no tracks from any provider, trying description/chapters for video_id={}", video_id);
                 result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
+                tracing::info!("yt-dlp fallback: parsed {} tracks from description/chapters for video_id={}", result.album_tracks.len(), video_id);
+            } else if is_album_upload {
+                tracing::info!("yt-dlp fallback: SKIPPED for video_id={} - provider already returned {} tracks", video_id, result.album_tracks.len());
             }
 
             Ok(result)

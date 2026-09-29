@@ -742,6 +742,8 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                     // Allow 20% tolerance: sum within 1.2x of song duration
                     diff <= song_dur_secs / 5 || diff <= 30
                 };
+                info!("Album split decision for song {:?}: is_album_upload={}, pre_track_no={:?}, pre_has_album={}, album_tracks={}, song_dur_secs={}, dur_match={}",
+                    song_id, is_album_upload, pre_track_no, pre_has_album, data.album_tracks.len(), song_dur_secs, dur_match);
                 let needs_split = (is_album_upload
                     || pre_track_no.is_none()
                     || !pre_has_album) && dur_match;
