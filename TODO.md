@@ -73,7 +73,7 @@ Commit rule: one commit per finished item below, small clean diffs. No batching.
 
 ## Active (branch: fix/albums-tab-freeze)
 Commit rule: one commit per finished item below, small clean diffs. No batching.
-- [ ] **Albums tab freeze** - Albums browser tab completely freezes after F1 search -> Enter (no cursor movement, no panel switch, nothing responds). Root cause: `handle_text_entry_action` Submit arm in `albumsearch.rs` never resets `input_routing` to `List` (Songs tab does at `songsearch.rs:775`). Fix: routing reset on all submit paths + explicit-close (not toggle) for Esc + SearchAlbums kill_same_type/60s-timeout hardening + regression tests. Files: `youtui/src/app/ui/browser/albumsearch.rs`, `youtui/src/app/server/messages.rs`. Estimate: 1-2h. Plan: `.omo/plans/albums-tab-freeze.md`.
+- [x] **Albums tab freeze** - Albums browser tab completely freezes after F1 search -> Enter (no cursor movement, no panel switch, nothing responds). Root cause: `handle_text_entry_action` Submit arm in `albumsearch.rs` never resets `input_routing` to `List` (Songs tab does at `songsearch.rs:775`). Fix: routing reset on all submit paths + explicit-close (not toggle) for Esc + SearchAlbums kill_same_type/60s-timeout hardening + regression tests. Files: `youtui/src/app/ui/browser/albumsearch.rs`, `youtui/src/app/server/messages.rs`. Estimate: 1-2h. Plan: `.omo/plans/albums-tab-freeze.md`. Status: implemented (commits 4f5402b, 1068250, 060cf4f, 58c2317), 4 regression tests green, pending user TUI validation.
 
 ## Low Priority
 - **Native streaming** - symphonia/basic-tcp-streaming prototype
