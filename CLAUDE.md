@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui                      # 264 pass, 3 ignore
+cargo test --release -p youtui                      # 283 pass, 3 ignore
 cargo test --release -p metadata-provider           # 110 pass (+62 new)
 cargo test --release -p vi-text-editor              # 67 pass
 cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
@@ -62,7 +62,7 @@ cargo test --release -p json-crawler                # 2 pass
 cargo test --release -p lrclib-rs                   # 4 pass
 cargo test --release -p rym-genre-data              # 10 pass
 ```
-Total: **~619/622 pass, 0 fail, 3 ignored, 0 warnings** (264+3 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 622)
+Total: **~638/641 pass, 0 fail, 3 ignored, 0 warnings** (283+3 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 641)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -437,7 +437,7 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 264 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
+- 283 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
 - Suckless refactoring adds 0 tests (refactors existing code only)
 
 ## Inspirations & Thanks

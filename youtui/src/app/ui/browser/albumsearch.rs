@@ -20,7 +20,7 @@ use super::shared_components::{
 };
 use super::songsearch::BrowserSongsAction;
 use anyhow::{Result, bail};
-use async_callback_manager::{AsyncTask, BackendTask};
+use async_callback_manager::{AsyncTask, BackendTask, Constraint};
 use itertools::Either;
 use lru::LruCache;
 use std::borrow::Cow;
@@ -201,6 +201,7 @@ impl AlbumSearchBrowser {
                 TextEntryAction::Submit => {
                     let query = self.search.search_contents.get_text().to_string();
                     self.search_popped = false;
+                    self.input_routing = InputRouting::List;
                     self.search = SearchBlock::default();
                     if !query.is_empty() {
                         return self.search_albums_query(query).0;
@@ -224,14 +225,16 @@ impl AlbumSearchBrowser {
             self.albums = cached.clone();
             self.album_selected = 0;
             self.show_tracks = false;
+            self.input_routing = InputRouting::List;
             return (AsyncTask::new_no_op(), None);
         }
         self.last_search_query = Some(query.clone());
+        self.input_routing = InputRouting::List;
         let task = AsyncTask::new_future_try(
             SearchAlbums(query),
             HandleSearchAlbumsOk,
             HandleSearchAlbumsError,
-            None,
+            Some(Constraint::new_kill_same_type()),
         ).map_frontend(|this: &mut Self| &mut *this);
         (task, None)
     }
@@ -707,7 +710,10 @@ impl ActionHandler<BrowserSearchAction> for AlbumSearchBrowser {
                 self.search.increment_list(1);
             }
             BrowserSearchAction::Close => {
-                self.handle_toggle_search();
+                if self.search_popped {
+                    self.search_popped = false;
+                    self.input_routing = InputRouting::List;
+                }
             }
         }
         (AsyncTask::new_no_op(), None)
@@ -821,3 +827,53 @@ impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<AlbumSearchItem>, AlbumSearc
 impl_youtui_task_handler!(HandleSearchAlbumsError, anyhow::Error, AlbumSearchBrowser, |_, _err: anyhow::Error| {
     |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op()
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn get_dummy_album_search_browser() -> AlbumSearchBrowser {
+        AlbumSearchBrowser::new()
+    }
+
+    #[test]
+    fn test_submit_resets_input_routing_to_list() {
+        let mut browser = get_dummy_album_search_browser();
+        browser.handle_toggle_search();
+        assert!(browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::Search));
+        browser.search.search_contents.set_text("Some Album");
+        let _ = browser.handle_text_entry_action(TextEntryAction::Submit);
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+    }
+
+    #[test]
+    fn test_submit_empty_query_resets_input_routing_to_list() {
+        let mut browser = get_dummy_album_search_browser();
+        browser.handle_toggle_search();
+        let _ = browser.handle_text_entry_action(TextEntryAction::Submit);
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+    }
+
+    #[test]
+    fn test_close_from_search_resets_routing() {
+        let mut browser = get_dummy_album_search_browser();
+        browser.handle_toggle_search();
+        assert!(matches!(browser.input_routing, InputRouting::Search));
+        let _ = browser.apply_action(BrowserSearchAction::Close);
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+    }
+
+    #[test]
+    fn test_close_from_list_does_not_reopen_search() {
+        let mut browser = get_dummy_album_search_browser();
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+        let _ = browser.apply_action(BrowserSearchAction::Close);
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+    }
+}

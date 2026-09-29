@@ -1147,10 +1147,12 @@ impl YoutuiWindow {
         }
         // Idle self-heal: compositors can wipe the sixel graphics layer with no
         // FocusGained/Resize event to tell us. Re-emit flicker-free (no DCS
-        // clear, steady-idle skip path bypassed by the force flag) every 30th
-        // tick while art is present. Guarded by sixel_data so an empty footer
-        // never paints blanks.
-        if self.tick % 30 == 0 && self.sixel_data.is_some() {
+        // clear, steady-idle skip path bypassed by the force flag) every 3rd
+        // tick while art is present. NOTE: tick rate is 1s (appevent.rs
+        // TICK_RATE), so % 3 = 3s worst-case heal gap; a 30s gap left art
+        // vanished under an idle compositor wipe. Guarded by sixel_data so an
+        // empty footer never paints blanks.
+        if self.tick % 3 == 0 && self.sixel_data.is_some() {
             self.force_sixel_redraw = true;
             tracing::debug!("tick {}: forcing periodic sixel re-emit", self.tick);
         }
