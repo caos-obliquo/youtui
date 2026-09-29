@@ -68,6 +68,13 @@ pub async fn fetch_yt_dlp_album_tracks(video_id: &str, yt_dlp_command: &str) -> 
                 return tracks;
             }
         }
+        // Some channel uploads list per-track durations at line end ("01. Untitled 00:59").
+        if let Some(tracks) = parse_description_durations(desc, duration_secs) {
+            if !tracks.is_empty() {
+                info!("yt-dlp fallback: parsed {} tracks from description durations for video {}", tracks.len(), video_id);
+                return tracks;
+            }
+        }
     }
 
     Vec::new()
@@ -216,6 +223,85 @@ fn try_extract_timestamp(line: &str) -> Option<(u64, &str)> {
         return None;
     }
     Some((total, title))
+}
+
+/// Parse per-track durations from a hand-typed tracklist line of the form
+/// `NN. Title MM:SS` where the timestamp is a DURATION at line end (not a
+/// position). Tolerates semicolon typos like `02;26`. Returns
+/// `(duration_secs, title)`.
+fn try_extract_trailing_duration(line: &str) -> Option<(u64, String)> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    // Normalize semicolon typos: "02;26" -> "02:26"
+    let norm = line.replace(';', ":");
+    // Find the LAST "MM:SS" / "HH:MM:SS" at end of line.
+    let colon = norm.rfind(':')?;
+    let after_colon = &norm[colon + 1..];
+    let secs: u64 = after_colon.trim().parse().ok()?;
+    if secs >= 60 {
+        return None;
+    }
+    let before = &norm[..colon];
+    let before_trim = before.trim_end();
+    let mins_start = before_trim
+        .bytes()
+        .rev()
+        .position(|b| !b.is_ascii_digit())
+        .map(|p| before_trim.len() - p)
+        .unwrap_or(0);
+    let mins: u64 = before_trim[mins_start..].parse().ok()?;
+    if mins >= 100 {
+        return None;
+    }
+    let total = mins * 60 + secs;
+    // The prefix before the timestamp is the track title (strip "NN. " numbering).
+    let mut title = before_trim[..mins_start].trim().to_string();
+    let number_end = title.find(|c: char| !c.is_ascii_digit() && c != '.' && c != ')' && c != '-').unwrap_or(title.len());
+    let after_number = title[number_end..].trim().to_string();
+    if after_number.len() < title.len() {
+        title = after_number;
+    }
+    if title.is_empty() || title.len() < 1 {
+        return None;
+    }
+    // Reject metadata lines, not tracks.
+    if title.starts_with("Tracklist") || title.starts_with("Track List") || title.starts_with("Total") {
+        return None;
+    }
+    Some((total, title))
+}
+
+/// Parse a description whose tracklist uses per-track DURATIONS at line end
+/// (`NN. Title MM:SS`). Sum of durations must reach at least 30% of total and
+/// >= 2 tracks must be present.
+pub fn parse_description_durations(
+    description: &str,
+    total_duration_secs: u64,
+) -> Option<Vec<AlbumTrack>> {
+    let mut tracks: Vec<AlbumTrack> = Vec::new();
+    for line in description.lines() {
+        if let Some((dur, title)) = try_extract_trailing_duration(line) {
+            tracks.push(AlbumTrack {
+                title,
+                duration_secs: dur as f64,
+                artist: None,
+            });
+        }
+    }
+    if tracks.len() < 2 {
+        debug!("parse_durations: only {} duration lines found, need >= 2", tracks.len());
+        return None;
+    }
+    let sum: u64 = tracks.iter().map(|t| t.duration_secs as u64).sum();
+    let total = total_duration_secs as f64;
+    if total > 0.0 && (sum as f64) < total * 0.3 {
+        debug!("parse_durations: sum {sum}s < 30% of {total}s, rejecting");
+        return None;
+    }
+    debug!("parse_durations: parsed {} tracks, sum {sum}s", tracks.len());
+    Some(tracks)
 }
 
 /// Parse a YouTube description string into an ordered tracklist.
@@ -387,5 +473,46 @@ mod tests {
         assert_eq!(t[0].duration_secs, 180.0);
         assert_eq!(t[1].duration_secs, 180.0);
         assert_eq!(t[2].duration_secs, 120.0);
+    }
+
+    #[test]
+    fn trailing_duration_format() {
+        let desc = "01. Untitled 00:59\n02. Untitled 00:59\n03. Untitled 00:43";
+        let t = parse_description_durations(desc, 161).expect("should parse");
+        assert_eq!(t.len(), 3);
+        assert_eq!(t[0].title, "Untitled");
+        assert_eq!(t[0].duration_secs, 59.0);
+        assert_eq!(t[2].duration_secs, 43.0);
+    }
+
+    #[test]
+    fn trailing_duration_semicolon_typo() {
+        let desc = "01. Untitled 00:59\n09. Untitled 02;26\n27. Untitled 01:06";
+        let t = parse_description_durations(desc, 300).expect("should parse");
+        assert_eq!(t.len(), 3);
+        assert_eq!(t[1].duration_secs, 146.0);
+    }
+
+    #[test]
+    fn trailing_duration_rejects_tracklist_header() {
+        let desc = "Tracklist:\n01. Untitled 00:59";
+        assert!(parse_description_durations(desc, 60).is_none());
+    }
+
+    #[test]
+    fn trailing_duration_coverage_rejected() {
+        // Only 2 tracks, sum 90s out of 900s total = 10% -> None
+        let desc = "01. Untitled 00:30\n02. Untitled 01:00";
+        assert!(parse_description_durations(desc, 900).is_none());
+    }
+
+    #[test]
+    fn vomitoma_full_description_parses() {
+        let desc = "'' Nuclear Cesspool Of Parasitic Scum '' 2009\nTracklist:\n01. Untitled 00:59\n02. Untitled 00:59\n03. Untitled 00:43\n04. Untitled 00:58\n05. Untitled 00:50\n06. Untitled 00:55\n07. Untitled 01:09\n08. Untitled 04:59\n09. Untitled 02;26\n10. Untitled 04:33\n11. Untitled 02;12\n12. Untitled 02:31\n13. Untitled 01:01\n14. Untitled 00;35\n15. Untitled 00:34\n16. Untitled 00:48\n17. Untitled 01:14\n18. Untitled 00:37\n19. Untitled 00:43\n20. Untitled 00:57\n21. Untitled 01:20\n22. Untitled 00:26\n23. Untitled 01:07\n24. Untitled 01:24\n25. Untitled 01:00\n26. Untitled 00:54\n27. Untitled 01:06";
+        let t = parse_description_durations(desc, 2244).expect("should parse");
+        assert_eq!(t.len(), 27);
+        // Sum of durations 2220s, within 30s of the 2244s video.
+        let sum: u64 = t.iter().map(|x| x.duration_secs as u64).sum();
+        assert!((sum as i64 - 2244).abs() <= 30);
     }
 }

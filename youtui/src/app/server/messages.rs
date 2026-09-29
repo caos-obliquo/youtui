@@ -2092,12 +2092,17 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                 }
             }
 
-            if is_album_upload && result.album_tracks.is_empty() {
-                tracing::info!("yt-dlp fallback: no tracks from any provider, trying description/chapters for video_id={}", video_id);
-                result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
-                tracing::info!("yt-dlp fallback: parsed {} tracks from description/chapters for video_id={}", result.album_tracks.len(), video_id);
-            } else if is_album_upload {
-                tracing::info!("yt-dlp fallback: SKIPPED for video_id={} - provider already returned {} tracks", video_id, result.album_tracks.len());
+            if is_album_upload {
+                let dlp_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
+                if !dlp_tracks.is_empty() {
+                    // yt-dlp description/chapters is authoritative for channel uploads:
+                    // it lists the exact tracks the uploader encoded. Prefer it over
+                    // any provider tracklist that may point at a different album.
+                    tracing::info!("yt-dlp fallback: overriding provider tracks ({} -> {} from yt-dlp) for video_id={}", result.album_tracks.len(), dlp_tracks.len(), video_id);
+                    result.album_tracks = dlp_tracks;
+                } else if result.album_tracks.is_empty() {
+                    tracing::info!("yt-dlp fallback: no tracks from any source for video_id={}", video_id);
+                }
             }
 
             Ok(result)
