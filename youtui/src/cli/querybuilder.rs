@@ -108,6 +108,7 @@ pub async fn command_to_query(
     command: Command,
     cli_query: CliQuery,
     yt: DynamicYtMusic,
+    yt_dlp_command: &str,
 ) -> anyhow::Result<String> {
     // Validate max_pages arguments before any network call (0 would fetch nothing).
     validate_command_max_pages(&command)?;
@@ -208,7 +209,7 @@ pub async fn command_to_query(
                 Err(e) => writeln!(out, "Error: {}", e)?,
             }
             writeln!(out, "--- yt-dlp YouTube Full-Album Candidates (>20min or 'full album' title) ---")?;
-            match tokio::process::Command::new("yt-dlp")
+            match tokio::process::Command::new(yt_dlp_command)
                 .args(["--flat-playlist", "--dump-json", "--no-warnings",
                        &format!("ytsearch10:{}", query)])
                 .output().await

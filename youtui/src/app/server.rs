@@ -33,6 +33,7 @@ pub struct Server {
     pub metadata_registry: Arc<MetadataRegistry>,
     pub cookie_browser: String,
     pub yt_dlp_command: String,
+    pub bandcamp_yt_dlp_command: Option<String>,
 }
 
 impl Server {
@@ -80,6 +81,7 @@ impl Server {
             metadata_registry,
             cookie_browser: config.cookie_browser.clone(),
             yt_dlp_command: config.yt_dlp_command.clone(),
+            bandcamp_yt_dlp_command: config.bandcamp_yt_dlp_command.clone(),
         }
     }
 }

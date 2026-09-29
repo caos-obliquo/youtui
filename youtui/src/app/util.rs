@@ -11,8 +11,8 @@ use serde_json;
 use tracing::{debug, info};
 
 /// Fetch yt-dlp JSON for `video_id` and parse chapters/description into AlbumTracks.
-pub async fn fetch_yt_dlp_album_tracks(video_id: &str) -> Vec<AlbumTrack> {
-    let output = match tokio::process::Command::new("yt-dlp")
+pub async fn fetch_yt_dlp_album_tracks(video_id: &str, yt_dlp_command: &str) -> Vec<AlbumTrack> {
+    let output = match tokio::process::Command::new(yt_dlp_command)
         .args(["--dump-json", "--no-warnings", &yt_dlp_target_arg(video_id)])
         .output()
         .await

@@ -150,10 +150,17 @@ pub fn parse_yt_dlp_video_json(stdout: &str, raw_id: &str) -> YtVideoMetadata {
 impl BackendTask<ArcServer> for FetchYtVideoMetadata {
     type Output = Result<YtVideoMetadata>;
     type MetadataType = TaskMetadata;
-    fn into_future(self, _backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+    fn into_future(self, backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+        let yt_cmd = backend.yt_dlp_command.clone();
+        let bandcamp_cmd = backend.bandcamp_yt_dlp_command.clone();
         async move {
             let raw_id = self.0;
-            let mut cmd = tokio::process::Command::new("yt-dlp");
+            let cmd_name = if crate::bandcamp::is_bandcamp_url(&raw_id) {
+                bandcamp_cmd.as_deref().unwrap_or(&yt_cmd)
+            } else {
+                &yt_cmd
+            };
+            let mut cmd = tokio::process::Command::new(cmd_name);
             cmd.args(["--dump-json", "--no-warnings"]);
             if self.1 {
                 cmd.args(["--cookies-from-browser", &self.2]);
@@ -201,10 +208,14 @@ pub struct FetchBandcampAlbumEntries(pub String, pub bool, pub String);
 impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
     type Output = Result<Vec<String>>;
     type MetadataType = TaskMetadata;
-    fn into_future(self, _backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+    fn into_future(self, backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+        let cmd_name = backend
+            .bandcamp_yt_dlp_command
+            .clone()
+            .unwrap_or_else(|| backend.yt_dlp_command.clone());
         async move {
             let url = self.0;
-            let mut cmd = tokio::process::Command::new("yt-dlp");
+            let mut cmd = tokio::process::Command::new(&cmd_name);
             cmd.args(["--flat-playlist", "--dump-json", "--no-warnings"]);
             if self.1 {
                 cmd.args(["--cookies-from-browser", &self.2]);
@@ -857,18 +868,20 @@ impl BackendTask<ArcServer> for EnrichRelatedTracks {
     type MetadataType = TaskMetadata;
     fn into_future(
         self,
-        _backend: &ArcServer,
+        backend: &ArcServer,
     ) -> impl Future<Output = Self::Output> + Send + 'static {
         let total = self.0.len();
         let count = total.min(30);
+        let yt_cmd = backend.yt_dlp_command.clone();
         async move {
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
             let mut handles = Vec::with_capacity(count);
             for (idx, video_id, _artist, _title) in self.0.into_iter().take(30) {
                 let sem = semaphore.clone();
+                let yt_cmd = yt_cmd.clone();
                 let handle = tokio::spawn(async move {
                     let _permit = sem.acquire().await.unwrap();
-                    let output = tokio::process::Command::new("yt-dlp")
+                    let output = tokio::process::Command::new(&yt_cmd)
                         .args(["--dump-json", "--no-warnings", "--flat-playlist",
                                &yt_dlp_target_arg(&video_id)])
                         .output().await;
@@ -1674,7 +1687,7 @@ impl BackendTask<ArcServer> for SearchSongs {
                 Err(e) => tracing::warn!("YTMusic search error: {}, trying YouTube fallback", e),
             }
             // Fallback: yt-dlp YouTube search
-            let output = tokio::process::Command::new("yt-dlp")
+            let output = tokio::process::Command::new(&backend.yt_dlp_command)
                 .args([
                     "--flat-playlist", "--dump-json", "--no-warnings",
                     &format!("ytsearch10:{}", query),
@@ -2008,6 +2021,7 @@ impl BackendTask<ArcServer> for ValidateMetadata {
     fn into_future(self, backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
         let registry = backend.metadata_registry.clone();
         let api = backend.api.clone();
+        let yt_dlp_command = backend.yt_dlp_command.clone();
         async move {
             let artist = self.0;
             let title = self.1;
@@ -2038,7 +2052,7 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                                     tracing::debug!("YTM API unavailable for enrichment: {}", e);
                                     if is_album_upload && result.album_tracks.is_empty() {
                                         tracing::info!("yt-dlp fallback: album enrichment unavailable, trying description/chapters for video_id={}", video_id);
-                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id).await;
+                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
                                     }
                                     return Ok(result);
                                 }
@@ -2058,7 +2072,7 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                                     tracing::debug!("YTM album detail fetch failed: {}", e);
                                     if is_album_upload && result.album_tracks.is_empty() {
                                         tracing::info!("yt-dlp fallback: album detail failed, trying description/chapters for video_id={}", video_id);
-                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id).await;
+                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
                                     }
                                 }
                             }
@@ -2068,7 +2082,7 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                         tracing::debug!("YTM album search failed: {}", e);
                                     if is_album_upload && result.album_tracks.is_empty() {
                                         tracing::info!("yt-dlp fallback: album search failed, trying description/chapters for video_id={}", video_id);
-                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id).await;
+                                        result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
                                     }
                     }
                 }
@@ -2076,7 +2090,7 @@ impl BackendTask<ArcServer> for ValidateMetadata {
 
             if is_album_upload && result.album_tracks.is_empty() {
                 tracing::info!("yt-dlp fallback: no tracks from any provider, trying description/chapters for video_id={}", video_id);
-                result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id).await;
+                result.album_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command).await;
             }
 
             Ok(result)
@@ -2135,7 +2149,7 @@ impl BackendTask<ArcServer> for SearchAlbums {
             }
             // yt-dlp fallback for YouTube full-album videos
             let fallback = async {
-                tokio::process::Command::new("yt-dlp")
+                tokio::process::Command::new(&backend.yt_dlp_command)
                     .args(["--flat-playlist", "--dump-json", "--no-warnings",
                            &format!("ytsearch10:{}", query)])
                     .kill_on_drop(true)

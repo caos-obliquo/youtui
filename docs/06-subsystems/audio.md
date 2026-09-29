@@ -19,11 +19,17 @@ normalized URL); album/discography URLs resolve to their track list via the
 timeout) and each entry queues individually. `bandcamp-resolve <url>` is the CLI
 debug tool exercising the same resolution off the TUI.
 
-**Bandcamp requirement:** yt-dlp must be the uv-tool install with `curl_cffi`
-(`~/.local/bin/yt-dlp`, from `uv tool install yt-dlp`). The distro
+**Bandcamp requirement:** Bandcamp needs the uv-tool yt-dlp install with
+`curl_cffi` (`~/.local/bin/yt-dlp`, from `uv tool install yt-dlp`). The distro
 `/usr/bin/yt-dlp` fails on the 2026 Bandcamp Client Challenge ("Unable to extract
-tralbum data"). Free streams are mp3-128 only; stream tokens expire in minutes
-and are never cached.
+tralbum data"). The reverse is also true: the uv-tool binary fails on YouTube
+("Requested format is not available" with cookies, "Please sign in" without),
+so the two sources need different binaries. Set `yt_dlp_command` (distro, for
+YouTube) and `bandcamp_yt_dlp_command` (uv-tool, for Bandcamp) in
+`~/.config/youtui/config.toml`; the per-source pick happens in
+`YtDlpDownloader::stream_song` and `FetchYtVideoMetadata` via
+`is_bandcamp_url`. Free streams are mp3-128 only; stream tokens expire in
+minutes and are never cached.
 
 ## Bandcamp Search Merge (Phase 2)
 

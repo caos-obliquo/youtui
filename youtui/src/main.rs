@@ -650,6 +650,7 @@ async fn try_main() -> anyhow::Result<()> {
     if let Some(ref cp) = cookie_path {
         let cp = cp.clone();
         let cookie_browser = config.cookie_browser.clone();
+        let yt_dlp_command = config.yt_dlp_command.clone();
         tokio::spawn(async move {
             // Only auto-refresh when there is no existing cookie file. A fresh
             // yt-dlp merge from a multi-session browser profile can pair SID/
@@ -661,7 +662,7 @@ async fn try_main() -> anyhow::Result<()> {
             }
             let tmp = format!("{cp}.tmp");
             let _ = tokio::fs::remove_file(&tmp).await;
-            match tokio::process::Command::new("yt-dlp")
+            match tokio::process::Command::new(&yt_dlp_command)
                 .args([
                     "--cookies-from-browser",
                     &cookie_browser,

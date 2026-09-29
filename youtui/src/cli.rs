@@ -106,10 +106,10 @@ fn validate_uuid(arg: &str, name: &str) -> Result<()> {
 
 /// Run yt-dlp with the given args (excluding the binary name) and return the
 /// captured output. Fails fast with the stderr tail when yt-dlp errors.
-async fn run_yt_dlp(args: &[&str]) -> Result<std::process::Output> {
+async fn run_yt_dlp(command: &str, args: &[&str]) -> Result<std::process::Output> {
     let output = tokio::time::timeout(
         CLI_TIMEOUT,
-        tokio::process::Command::new("yt-dlp").args(args).kill_on_drop(true).output(),
+        tokio::process::Command::new(command).args(args).kill_on_drop(true).output(),
     )
     .await
     .map_err(|_| anyhow::anyhow!("[ERROR] BandcampResolve: yt-dlp timed out after {}s", CLI_TIMEOUT.as_secs()))?
@@ -478,17 +478,22 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
             }
             let normalized = normalize_bandcamp_url(url);
             let kind = bandcamp_kind(&normalized);
+            let bc_cmd = config
+                .bandcamp_yt_dlp_command
+                .as_deref()
+                .unwrap_or(&config.yt_dlp_command);
             println!("URL={url}");
             println!("NORMALIZED={normalized}");
             println!("KIND={:?}", kind);
             match kind {
                 Some(BandcampKind::Track) => {
-                    let out = run_yt_dlp(&["--dump-json", "--no-warnings", "--", &normalized]).await?;
+                    let out = run_yt_dlp(bc_cmd, &["--dump-json", "--no-warnings", "--", &normalized]).await?;
                     println!("--- Track JSON ---");
                     println!("{}", String::from_utf8_lossy(&out.stdout).trim());
                 }
                 Some(BandcampKind::Album) | Some(BandcampKind::Discography) => {
                     let out = run_yt_dlp(
+                        bc_cmd,
                         &["--flat-playlist", "--dump-json", "--no-warnings", "--", &normalized],
                     )
                     .await?;
@@ -732,7 +737,7 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 show_source,
             };
             let api = get_api(&config).await?;
-            let res = with_timeout("API command", command_to_query(command, cli_query, api))
+            let res = with_timeout("API command", command_to_query(command, cli_query, api, &config.yt_dlp_command))
                 .await
                 .context("YTM API command failed")?;
             println!("{res}");
@@ -747,7 +752,7 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                 show_source,
             };
             let api = get_api(&config).await?;
-            let res = with_timeout("API command", command_to_query(command, cli_query, api))
+            let res = with_timeout("API command", command_to_query(command, cli_query, api, &config.yt_dlp_command))
                 .await
                 .context("YTM API command failed")?;
             println!("{res}");

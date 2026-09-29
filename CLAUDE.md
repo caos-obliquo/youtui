@@ -45,7 +45,7 @@ If things break, rollback and re-apply one-by-one.
 - Workspace root: `/home/caos/builds/youtui/`
 - Rust nightly (1.97.0)
 - Binary: `cargo build --release` -> `target/release/youtui`
-- Dependencies: yt-dlp, ffmpeg (all platforms). Linux: alsa-lib (pacman). macOS: CoreAudio (built-in). BSD: OSS (built-in). Bandcamp support requires the uv-tool yt-dlp with curl_cffi (`~/.local/bin/yt-dlp` from `uv tool install yt-dlp`); the distro `/usr/bin/yt-dlp` fails on the Bandcamp Client Challenge ("Unable to extract tralbum data")
+- Dependencies: yt-dlp, ffmpeg (all platforms). Linux: alsa-lib (pacman). macOS: CoreAudio (built-in). BSD: OSS (built-in). Bandcamp support requires the uv-tool yt-dlp with curl_cffi (`~/.local/bin/yt-dlp` from `uv tool install yt-dlp`); the distro `/usr/bin/yt-dlp` fails on the Bandcamp Client Challenge ("Unable to extract tralbum data"). The uv-tool binary fails on YouTube ("Requested format is not available"), so `config.toml` sets `yt_dlp_command` = distro binary and `bandcamp_yt_dlp_command` = uv-tool binary; the per-source pick happens via `is_bandcamp_url` in `YtDlpDownloader::stream_song` and `FetchYtVideoMetadata`
 
 ## Tests
 ```bash

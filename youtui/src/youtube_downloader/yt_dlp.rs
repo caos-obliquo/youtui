@@ -17,6 +17,7 @@ use tracing::{debug, error, info, warn};
 /// Cheap to clone due to use of Arc to store internals.
 pub struct YtDlpDownloader {
     yt_dlp_command: Arc<OsString>,
+    bandcamp_yt_dlp_command: Option<Arc<OsString>>,
     po_token: Option<String>,
     cookie_path: Option<String>,
     cookie_browser: String,
@@ -58,9 +59,16 @@ impl std::fmt::Display for YtDlpDownloaderError {
 }
 
 impl YtDlpDownloader {
-    pub fn new(yt_dlp_command: String, po_token: Option<String>, cookie_path: Option<String>, cookie_browser: String) -> Self {
+    pub fn new(
+        yt_dlp_command: String,
+        bandcamp_yt_dlp_command: Option<String>,
+        po_token: Option<String>,
+        cookie_path: Option<String>,
+        cookie_browser: String,
+    ) -> Self {
         Self {
             yt_dlp_command: Arc::new(yt_dlp_command.into()),
+            bandcamp_yt_dlp_command: bandcamp_yt_dlp_command.map(|c| Arc::new(c.into())),
             po_token,
             cookie_path,
             cookie_browser,
@@ -91,7 +99,14 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
         Self::Error,
     > {
-        let command = self.yt_dlp_command.clone();
+        let command = if crate::bandcamp::is_bandcamp_url(song_video_id.as_ref()) {
+            self.bandcamp_yt_dlp_command
+                .as_ref()
+                .unwrap_or(&self.yt_dlp_command)
+        } else {
+            &self.yt_dlp_command
+        }
+        .clone();
         async move {
             let video_id = song_video_id.as_ref().to_string();
             let format_string = quality.format_string().to_string();
@@ -367,14 +382,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_yt_dlp_downloader_with_po_token() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), Some("test_po_token".to_string()), None, "chromium".to_string());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, Some("test_po_token".to_string()), None, "chromium".to_string());
         assert!(downloader.po_token.is_some());
         assert_eq!(downloader.po_token.unwrap(), "test_po_token");
     }
 
     #[tokio::test]
     async fn test_yt_dlp_downloader_without_po_token() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, None, "chromium".to_string());
         assert!(downloader.po_token.is_none());
     }
 
@@ -420,7 +435,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "needs real YouTube access - blocked from CI sandboxes, run locally"]
     async fn test_downloading_a_song_with_ytdlp() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, None, "chromium".to_string());
         let YoutubeMusicDownload { song: stream, .. } =
             downloader.stream_song("lYBUbBu4W08", crate::app::AudioQuality::Best).await.unwrap();
         stream
