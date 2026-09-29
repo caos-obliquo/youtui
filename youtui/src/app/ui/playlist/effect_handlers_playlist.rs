@@ -487,8 +487,16 @@ pub enum MetadataEffect {
 
 /// Apply metadata fields (album, year, artist, track_no, genres, styles) to a song.
 /// Returns the original album name before overwriting.
-fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -> Option<String> {
+pub(crate) fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -> Option<String> {
     let original_album = song.album.as_ref().map(|a| a.as_ref().name.clone());
+    // Bandcamp rail guard: yt-dlp album name comes straight from the bandcamp
+    // page and is authoritative even though the album id is always empty
+    // (bandcamp has no YTM-style album id). Providers often return wrong
+    // matches for underground releases (e.g. Last.fm resolved the SPHC track
+    // to a different artist's "Side B" album), so treat a non-empty bandcamp
+    // album like a YTM album: never let a provider override it.
+    let bandcamp_has_album = crate::bandcamp::is_bandcamp_url(song.video_id.get_raw())
+        && song.album.as_ref().map_or(false, |a| !a.as_ref().name.is_empty());
     if let Some(ref album) = data.album {
         // Only override album when YTM has none (preserve YTM's album to prevent
         // wrong metadata from overwriting correct data, e.g. Phyllomedusa albums)
@@ -496,7 +504,12 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
             a.as_ref().name.is_empty()
                 || matches!(&a.as_ref().id, AlbumOrUploadAlbumID::Album(id) if id.get_raw().is_empty())
         });
-        if ytm_empty {
+        if bandcamp_has_album {
+            debug!(
+                album = %album,
+                "ValidateMetadata: keeping yt-dlp bandcamp album, skipping provider override"
+            );
+        } else if ytm_empty {
             // Preserve original YTM album ID when overwriting album name
             // (e.g. when metadata provider fills in empty YTM album)
             let orig_id = song.album.as_ref()
@@ -527,13 +540,20 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
         }
     }
     if let Some(ref artist) = data.artist {
-        let normalized = crate::app::structures::normalize_artist_name(artist);
-        song.artists = MaybeRc::Owned(vec![
-            ListSongArtist {
-                name: normalized,
-                id: None,
-            },
-        ]);
+        if bandcamp_has_album {
+            debug!(
+                artist = %artist,
+                "ValidateMetadata: keeping yt-dlp bandcamp artist, skipping provider override"
+            );
+        } else {
+            let normalized = crate::app::structures::normalize_artist_name(artist);
+            song.artists = MaybeRc::Owned(vec![
+                ListSongArtist {
+                    name: normalized,
+                    id: None,
+                },
+            ]);
+        }
     }
     if let Some(tn) = data.track_no {
         song.track_no = Some(tn);

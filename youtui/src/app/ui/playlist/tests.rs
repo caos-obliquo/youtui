@@ -1204,3 +1204,84 @@ fn fallback_does_not_overwrite_track_duration() {
         Some(Duration::from_secs(167))
     );
 }
+
+// --- Bandcamp metadata rail guard regression tests ---
+use crate::app::ui::playlist::effect_handlers_playlist::apply_metadata_fields;
+use crate::app::structures::{AlbumOrUploadAlbumID, ListSongAlbum};
+use crate::app::server::ValidatedMetadata;
+
+#[test]
+fn bandcamp_album_artist_survive_wrong_provider_match() {
+    // Given: a bandcamp track with authoritative yt-dlp album and artist
+    let mut song = make_track_entry("https://x.bandcamp.com/track/side-b-35-songs", 2, "side B (35 songs)", 486.0, 0.0);
+    song.album = Some(MaybeRc::Owned(ListSongAlbum {
+        name: "Colhendo Desespero EP (SPHC)".into(),
+        id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+    }));
+    song.artists = MaybeRc::Owned(vec![ListSongArtist { name: "Putrefação Humana".into(), id: None }]);
+    // When: provider wrongly resolves to a different artist's album
+    let data = ValidatedMetadata {
+        artist: Some("Cuervo Messiah".into()),
+        album: Some("Side B".into()),
+        ..Default::default()
+    };
+    apply_metadata_fields(&mut song, &data);
+    // Then: bandcamp album and artist are preserved
+    assert_eq!(
+        song.album.as_ref().map(|a| a.as_ref().name.as_str()),
+        Some("Colhendo Desespero EP (SPHC)")
+    );
+    assert_eq!(
+        song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+        vec!["Putrefação Humana"]
+    );
+}
+
+#[test]
+fn empty_album_bandcamp_track_still_filled_by_provider() {
+    // Given: a bandcamp track whose yt-dlp fetch returned no album name
+    let mut song = make_track_entry("https://x.bandcamp.com/track/no-album", 1, "Some Song", 200.0, 0.0);
+    song.album = None;
+    // When: provider has a good match
+    let data = ValidatedMetadata {
+        artist: Some("Real Artist".into()),
+        album: Some("Real Album".into()),
+        ..Default::default()
+    };
+    apply_metadata_fields(&mut song, &data);
+    // Then: provider fills the gap (rail guard only protects non-empty album)
+    assert_eq!(
+        song.album.as_ref().map(|a| a.as_ref().name.as_str()),
+        Some("Real Album")
+    );
+    assert_eq!(
+        song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+        vec!["Real Artist"]
+    );
+}
+
+#[test]
+fn youtube_track_keeps_legacy_provider_override() {
+    // Given: a regular YouTube track with an empty placeholder album id
+    let mut song = make_track_entry("dQw4w9WgXcQ", 1, "Rick Astley - Never Gonna Give You Up", 212.0, 0.0);
+    song.album = Some(MaybeRc::Owned(ListSongAlbum {
+        name: "Never Gonna Give You Up".into(),
+        id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+    }));
+    // When: provider returns real metadata
+    let data = ValidatedMetadata {
+        artist: Some("Rick Astley".into()),
+        album: Some("Whenever You Need Somebody".into()),
+        ..Default::default()
+    };
+    apply_metadata_fields(&mut song, &data);
+    // Then: provider override still applies (bandcamp guard is URL-scoped)
+    assert_eq!(
+        song.album.as_ref().map(|a| a.as_ref().name.as_str()),
+        Some("Whenever You Need Somebody")
+    );
+    assert_eq!(
+        song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+        vec!["Rick Astley"]
+    );
+}
