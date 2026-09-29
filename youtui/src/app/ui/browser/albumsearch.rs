@@ -20,7 +20,7 @@ use super::shared_components::{
 };
 use super::songsearch::BrowserSongsAction;
 use anyhow::{Result, bail};
-use async_callback_manager::{AsyncTask, BackendTask};
+use async_callback_manager::{AsyncTask, BackendTask, Constraint};
 use itertools::Either;
 use lru::LruCache;
 use std::borrow::Cow;
@@ -234,7 +234,7 @@ impl AlbumSearchBrowser {
             SearchAlbums(query),
             HandleSearchAlbumsOk,
             HandleSearchAlbumsError,
-            None,
+            Some(Constraint::new_kill_same_type()),
         ).map_frontend(|this: &mut Self| &mut *this);
         (task, None)
     }

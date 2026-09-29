@@ -1970,12 +1970,17 @@ impl BackendTask<ArcServer> for SearchAlbums {
                 }
             }
             // yt-dlp fallback for YouTube full-album videos
-            match tokio::process::Command::new("yt-dlp")
-                .args(["--flat-playlist", "--dump-json", "--no-warnings",
-                       &format!("ytsearch10:{}", query)])
-                .output().await
+            let fallback = async {
+                tokio::process::Command::new("yt-dlp")
+                    .args(["--flat-playlist", "--dump-json", "--no-warnings",
+                           &format!("ytsearch10:{}", query)])
+                    .kill_on_drop(true)
+                    .output()
+                    .await
+            };
+            match tokio::time::timeout(Duration::from_secs(60), fallback).await
             {
-                Ok(output) => {
+                Ok(Ok(output)) => {
                     if let Ok(stdout) = String::from_utf8(output.stdout) {
                         for line in stdout.lines() {
                             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
@@ -2006,8 +2011,11 @@ impl BackendTask<ArcServer> for SearchAlbums {
                         }
                     }
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     tracing::warn!("Album search (yt-dlp) failed: {}.", e);
+                }
+                Err(_) => {
+                    tracing::warn!("Album search (yt-dlp) timed out after 60s for query: {}.", query);
                 }
             }
             Ok(items)
