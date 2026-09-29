@@ -8,18 +8,27 @@
 use crate::app::server::AlbumTrack;
 use crate::app::server::yt_dlp_target_arg;
 use serde_json;
+use std::time::Duration;
 use tracing::{debug, info};
 
 /// Fetch yt-dlp JSON for `video_id` and parse chapters/description into AlbumTracks.
 pub async fn fetch_yt_dlp_album_tracks(video_id: &str, yt_dlp_command: &str) -> Vec<AlbumTrack> {
-    let output = match tokio::process::Command::new(yt_dlp_command)
-        .args(["--dump-json", "--no-warnings", &yt_dlp_target_arg(video_id)])
-        .output()
-        .await
+    let output = match tokio::time::timeout(
+        Duration::from_secs(60),
+        tokio::process::Command::new(yt_dlp_command)
+            .args(["--dump-json", "--no-warnings", &yt_dlp_target_arg(video_id)])
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
     {
-        Ok(out) => out,
-        Err(e) => {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => {
             info!("yt-dlp fallback: failed to spawn yt-dlp for video {}: {}", video_id, e);
+            return Vec::new();
+        }
+        Err(_) => {
+            info!("yt-dlp fallback: timed out after 60s for video {}", video_id);
             return Vec::new();
         }
     };
