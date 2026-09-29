@@ -2094,9 +2094,21 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                 }
             }
 
-            if is_album_upload {
-                let dlp_tracks = crate::app::util::fetch_yt_dlp_album_tracks(&video_id, &yt_dlp_command, cookie_path.as_deref(), &cookie_browser).await;
+            if is_album_upload
+                && let Some(json) = crate::app::util::fetch_yt_dlp_json(&video_id, &yt_dlp_command, cookie_path.as_deref(), &cookie_browser).await
+            {
+                if result.year.is_none()
+                    && let Some(y) = crate::app::util::year_from_dlp_json(&json)
+                {
+                    tracing::info!("yt-dlp fallback: description/release year {} for video_id={} (upload-date year not used)", y, video_id);
+                    result.year = Some(y);
+                }
+                let mut dlp_tracks = crate::app::util::album_tracks_from_json(&json, &video_id);
                 if !dlp_tracks.is_empty() {
+                    let renamed = crate::app::util::fill_untitled_titles(&mut dlp_tracks, &result.album_tracks);
+                    if renamed > 0 {
+                        tracing::info!("yt-dlp fallback: renamed {} placeholder track titles from provider tracklist for video_id={}", renamed, video_id);
+                    }
                     // yt-dlp description/chapters is authoritative for channel uploads:
                     // it lists the exact tracks the uploader encoded. Prefer it over
                     // any provider tracklist that may point at a different album.
