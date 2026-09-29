@@ -811,7 +811,10 @@ impl SongSearchBrowser {
             SearchBandcamp(search_query),
             HandleBandcampSearchOk,
             HandleBandcampSearchErr,
-            None,
+            // Kill same type: a rapid second search must cancel the previous
+            // Bandcamp probe, or its stale results merge into the new list
+            // via pending_bandcamp (wrong-query contamination).
+            Some(Constraint::new_kill_same_type()),
         ))
     }
     pub fn play_song(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
@@ -1113,7 +1116,7 @@ mod tests {
             crate::app::server::SearchBandcamp("Search!".to_string()),
             HandleBandcampSearchOk,
             HandleBandcampSearchErr,
-            None,
+            Some(Constraint::new_kill_same_type()),
         ));
         assert_eq!(effect, expected_effect);
     }

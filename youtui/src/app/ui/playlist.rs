@@ -669,7 +669,7 @@ impl TextHandler for Playlist {
         self.update_search_indices();
     }
 
-fn clear_text(&mut self) -> bool {
+    fn clear_text(&mut self) -> bool {
         if !self.search_text.is_empty() {
             self.search_text.clear();
             self.update_search_indices();
