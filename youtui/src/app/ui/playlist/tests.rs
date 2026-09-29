@@ -999,6 +999,89 @@ fn pending_row_removed_on_probe_error() {
     assert_eq!(p.list.get_list_iter().count(), 0);
 }
 
+#[test]
+fn first_album_entry_downloads_first_when_idle() {
+    // Given: two pending bandcamp rows (album entries) with selection on the
+    // first entry (HandleBandcampAlbumEntriesOk sets cur_selected to track 1)
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let v1 = VideoID::from_raw("https://x.bandcamp.com/track/one".to_string());
+    let v2 = VideoID::from_raw("https://x.bandcamp.com/track/two".to_string());
+    let _ = p.add_yt_video(v1.clone(), "https://x.bandcamp.com/track/one");
+    let _ = p.add_yt_video(v2.clone(), "https://x.bandcamp.com/track/two");
+    let first = p.list.get_list_iter().next().unwrap().id;
+    let second = p.list.get_list_iter().nth(1).unwrap().id;
+    // When: the album handler selects the first entry (album tracklist order)
+    assert_eq!(
+        p.select_bandcamp_first_entry("https://x.bandcamp.com/track/one"),
+        Some(0)
+    );
+
+    // And: the first entry's metadata resolves while idle
+    let meta = crate::app::server::YtVideoMetadata {
+        title: "Artist - One".to_string(),
+        uploader: "Uploader".to_string(),
+        duration_secs: Some(100.0),
+        year: None,
+        thumbnail_url: None,
+        album: Some("Real Album".to_string()),
+    };
+    let _ = p.insert_yt_video_metadata(v1, meta);
+
+    // Then: track 1 is queued for download, track 2 remains queued after it
+    let songs: Vec<_> = p.list.get_list_iter().collect();
+    assert_eq!(
+        songs[0].download_status,
+        DownloadStatus::Queued,
+        "track 1 must be the one starting playback"
+    );
+    assert_eq!(p.download_queue.len(), 1);
+    assert_eq!(p.download_queue.front(), Some(&second));
+    assert_ne!(first, second);
+}
+
+#[test]
+fn metadata_resolve_while_playing_does_not_rescope() {
+    // Given: a song already playing with a downloaded buffer, and a new URL
+    // added on top (pending row appended)
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut playing = make_track_entry("vplaying", 1, "Playing Song", 200.0, 0.0);
+    playing.download_status = DownloadStatus::Downloaded(data);
+    let playing_id = p.list.push_song_list(vec![playing]);
+    p.play_status = PlayState::Playing(playing_id);
+    let vid = VideoID::from_raw("https://x.bandcamp.com/track/new".to_string());
+    let _ = p.add_yt_video(vid.clone(), "https://x.bandcamp.com/track/new");
+
+    // When: the new track's metadata resolves while playback is active
+    let meta = crate::app::server::YtVideoMetadata {
+        title: "Artist - New".to_string(),
+        uploader: "Uploader".to_string(),
+        duration_secs: Some(180.0),
+        year: None,
+        thumbnail_url: None,
+        album: Some("Real Album".to_string()),
+    };
+    let _ = p.insert_yt_video_metadata(vid, meta);
+
+    // Then: the download queue is untouched (no re-scope), the new track is
+    // not auto-queued, and the playing song is still the one downloaded
+    assert!(
+        p.download_queue.is_empty(),
+        "active queue must not be re-scoped: {:?}",
+        p.download_queue
+    );
+    let songs: Vec<_> = p.list.get_list_iter().collect();
+    assert_eq!(
+        songs[1].download_status,
+        DownloadStatus::None,
+        "new track must not be auto-downloaded while playing"
+    );
+    assert!(matches!(songs[0].download_status, DownloadStatus::Downloaded(_)));
+    assert_eq!(p.play_status, PlayState::Playing(playing_id));
+}
+
 // --- Split-track progress/seek regression (Japan bar pinned full) ---
 // Track 3 "Worst Party Ever": 167s long, starts at 351s into the video.
 // When ffmpeg extract fails the decoder plays FULL video audio while the

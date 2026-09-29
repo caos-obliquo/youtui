@@ -823,9 +823,16 @@ impl_youtui_task_handler!(
                 entries.len()
             );
             let mut effect = AsyncTask::new_no_op();
+            let first_entry = entries.first().cloned();
             for entry in entries {
                 let vid = VideoID::from_raw(entry.clone());
                 effect = effect.push(target.add_yt_video(vid, &entry));
+            }
+            // Select the first entry so the auto-download in
+            // insert_yt_video_metadata targets track 1 (album tracklist
+            // order), not the last inserted pending row.
+            if let Some(first_url) = first_entry {
+                target.select_bandcamp_first_entry(&first_url);
             }
             effect
         }

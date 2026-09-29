@@ -669,7 +669,7 @@ impl TextHandler for Playlist {
         self.update_search_indices();
     }
 
-    fn clear_text(&mut self) -> bool {
+fn clear_text(&mut self) -> bool {
         if !self.search_text.is_empty() {
             self.search_text.clear();
             self.update_search_indices();
@@ -1480,6 +1480,25 @@ impl Playlist {
         false
     }
 
+    /// Select the first queued bandcamp entry (album tracklist order) after
+    /// entries were appended. Returns the selected index.
+    pub fn select_bandcamp_first_entry(&mut self, first_url: &str) -> Option<usize> {
+        if let Some(idx) = self
+            .list
+            .get_list_iter()
+            .position(|s| s.video_id.get_raw() == first_url)
+        {
+            self.cur_selected = idx;
+            debug!(
+                "bandcamp album: selected first entry at index {} for tracklist order",
+                idx
+            );
+            Some(idx)
+        } else {
+            None
+        }
+    }
+
     pub fn insert_yt_video_metadata(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, meta: YtVideoMetadata) -> ComponentEffect<Self> {
         use ytmapi_rs::common::YoutubeID;
         let raw_id = video_id.get_raw().to_string();
@@ -1638,10 +1657,18 @@ impl Playlist {
                 HandleMetadataValidationError,
                 None,
             );
-            if let Some(song_id) = self.get_id_from_index(self.cur_selected) {
-                let dl_effect = self.download_upcoming_from_id(song_id);
-                return dl_effect.push(validation_task);
+            // Only auto-start playback when nothing is currently active. When
+            // a song is already Playing/Paused/Buffering, the resolved track
+            // stays appended to the queue and natural advancement picks it up.
+            // Re-scoping here would cancel the active queue's buffered
+            // downloads (user: add to queue, do not override the queue).
+            if matches!(self.play_status, PlayState::NotPlaying | PlayState::Stopped) {
+                if let Some(song_id) = self.get_id_from_index(self.cur_selected) {
+                    let dl_effect = self.download_upcoming_from_id(song_id);
+                    return dl_effect.push(validation_task);
+                }
             }
+            return validation_task;
         }
         AsyncTask::new_no_op()
     }
