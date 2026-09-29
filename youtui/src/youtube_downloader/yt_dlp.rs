@@ -234,15 +234,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let total_size_bytes = file_bytes.len();
             
             // Detect and log container format
-            let format_name = if file_bytes.len() >= 12 && file_bytes[4..8] == *b"ftyp" {
-                let brand = &file_bytes[8..12];
-                if brand == b"isom" { "MP4 (isom)" }
-                else if brand == b"M4A " { "M4A" }
-                else { "MP4" }
-            } else if file_bytes.starts_with(b"\x1a\x45\xdf\xa3") { "WebM" }
-            else if file_bytes.starts_with(b"RIFF") { "WAV" }
-            else if file_bytes.starts_with(b"OggS") { "Ogg" }
-            else { "unknown" };
+            let format_name = detect_container(&file_bytes).unwrap_or("unknown");
             
             // Validate the file has a recognizable audio container header
             // Guards against corrupted output (pipe bug), empty files (resume bug),
@@ -280,6 +272,23 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
 
 fn effective_cookie_file(cookie_path: Option<&str>) -> Option<&str> {
     cookie_path.filter(|p| std::path::Path::new(p).exists())
+}
+
+/// Detect the audio container format from magic bytes, or None when unknown.
+/// MP4: ftyp box, WebM: EBML magic, WAV: RIFF, Ogg: OggS, MP3: ID3 tag
+/// or MPEG frame sync (0xFF plus 3-bit version/algo bits set).
+fn detect_container(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() >= 12 && bytes[4..8] == *b"ftyp" {
+        let brand = &bytes[8..12];
+        if brand == b"isom" { Some("MP4 (isom)") }
+        else if brand == b"M4A " { Some("M4A") }
+        else { Some("MP4") }
+    } else if bytes.starts_with(b"\x1a\x45\xdf\xa3") { Some("WebM") }
+    else if bytes.starts_with(b"RIFF") { Some("WAV") }
+    else if bytes.starts_with(b"OggS") { Some("Ogg") }
+    else if bytes.starts_with(b"ID3") { Some("MP3") }
+    else if bytes.len() >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 { Some("MP3") }
+    else { None }
 }
 
 fn build_stream_args<'a>(
@@ -497,6 +506,51 @@ mod tests {
         assert!(!super::is_progressive_fallback("251"));
         assert!(!super::is_progressive_fallback("140"));
         assert!(!super::is_progressive_fallback("unknown"));
+    }
+
+    #[test]
+    fn test_detect_container_accepts_known_headers() {
+        let mut mp4 = vec![0u8; 128];
+        mp4[4..8].copy_from_slice(b"ftyp");
+        mp4[8..12].copy_from_slice(b"isom");
+        assert_eq!(super::detect_container(&mp4), Some("MP4 (isom)"));
+
+        let mut m4a = vec![0u8; 128];
+        m4a[4..8].copy_from_slice(b"ftyp");
+        m4a[8..12].copy_from_slice(b"M4A ");
+        assert_eq!(super::detect_container(&m4a), Some("M4A"));
+
+        let mut webm = vec![0u8; 128];
+        webm[..4].copy_from_slice(b"\x1a\x45\xdf\xa3");
+        assert_eq!(super::detect_container(&webm), Some("WebM"));
+
+        let mut wav = vec![0u8; 128];
+        wav[..4].copy_from_slice(b"RIFF");
+        assert_eq!(super::detect_container(&wav), Some("WAV"));
+
+        let mut ogg = vec![0u8; 128];
+        ogg[..4].copy_from_slice(b"OggS");
+        assert_eq!(super::detect_container(&ogg), Some("Ogg"));
+    }
+
+    #[test]
+    fn test_detect_container_accepts_mp3_headers() {
+        let mut id3 = vec![0u8; 128];
+        id3[..3].copy_from_slice(b"ID3");
+        assert_eq!(super::detect_container(&id3), Some("MP3"));
+
+        let mut frame_sync = vec![0u8; 128];
+        frame_sync[0] = 0xFF;
+        frame_sync[1] = 0xFB;
+        assert_eq!(super::detect_container(&frame_sync), Some("MP3"));
+    }
+
+    #[test]
+    fn test_detect_container_rejects_unknown_and_short() {
+        assert_eq!(super::detect_container(b""), None);
+        assert_eq!(super::detect_container(b"\x00\x01\x02\x03"), None);
+        // One byte with 0xFF but no second byte to pair the sync mask
+        assert_eq!(super::detect_container(&[0xFF]), None);
     }
 
     #[test]
