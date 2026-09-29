@@ -13,6 +13,7 @@ use ytmapi_rs::auth::OAuthToken;
 mod api;
 mod app;
 mod appevent;
+mod bandcamp;
 mod cli;
 mod config;
 mod core;
