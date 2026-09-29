@@ -827,3 +827,53 @@ impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<AlbumSearchItem>, AlbumSearc
 impl_youtui_task_handler!(HandleSearchAlbumsError, anyhow::Error, AlbumSearchBrowser, |_, _err: anyhow::Error| {
     |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op()
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn get_dummy_album_search_browser() -> AlbumSearchBrowser {
+        AlbumSearchBrowser::new()
+    }
+
+    #[test]
+    fn test_submit_resets_input_routing_to_list() {
+        let mut browser = get_dummy_album_search_browser();
+        browser.handle_toggle_search();
+        assert!(browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::Search));
+        browser.search.search_contents.set_text("Some Album");
+        let _ = browser.handle_text_entry_action(TextEntryAction::Submit);
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+    }
+
+    #[test]
+    fn test_submit_empty_query_resets_input_routing_to_list() {
+        let mut browser = get_dummy_album_search_browser();
+        browser.handle_toggle_search();
+        let _ = browser.handle_text_entry_action(TextEntryAction::Submit);
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+    }
+
+    #[test]
+    fn test_close_from_search_resets_routing() {
+        let mut browser = get_dummy_album_search_browser();
+        browser.handle_toggle_search();
+        assert!(matches!(browser.input_routing, InputRouting::Search));
+        let _ = browser.apply_action(BrowserSearchAction::Close);
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+    }
+
+    #[test]
+    fn test_close_from_list_does_not_reopen_search() {
+        let mut browser = get_dummy_album_search_browser();
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+        let _ = browser.apply_action(BrowserSearchAction::Close);
+        assert!(!browser.search_popped);
+        assert!(matches!(browser.input_routing, InputRouting::List));
+    }
+}
