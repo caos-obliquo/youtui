@@ -1730,6 +1730,44 @@ impl YoutuiWindow {
         self.prev_context = self.context;
         self.context = WindowContext::Playlist;
 
+        // Bandcamp URLs route through yt-dlp's bandcamp extractors. Track URLs
+        // add directly; album and discography URLs resolve to their track list
+        // first, then add each entry through the same queue path.
+        if crate::bandcamp::is_bandcamp_url(&url) {
+            use crate::app::server::FetchBandcampAlbumEntries;
+            use crate::app::ui::playlist::effect_handlers_playlist::{
+                HandleBandcampAlbumEntriesOk, HandleBandcampAlbumEntriesError,
+            };
+            let normalized = crate::bandcamp::normalize_bandcamp_url(&url);
+            match crate::bandcamp::bandcamp_kind(&normalized) {
+                Some(crate::bandcamp::BandcampKind::Track) => {
+                    let vid = ytmapi_rs::common::VideoID::from_raw(normalized.clone());
+                    return self
+                        .playlist
+                        .add_yt_video(vid, &normalized)
+                        .map_frontend(|this: &mut Self| &mut this.playlist);
+                }
+                Some(crate::bandcamp::BandcampKind::Album)
+                | Some(crate::bandcamp::BandcampKind::Discography) => {
+                    return AsyncTask::new_future_try(
+                        FetchBandcampAlbumEntries(
+                            normalized.clone(),
+                            self.playlist.yt_dlp_cookie_path.is_some(),
+                            self.playlist.cookie_browser.clone(),
+                        ),
+                        HandleBandcampAlbumEntriesOk(normalized.clone()),
+                        HandleBandcampAlbumEntriesError(normalized),
+                        None,
+                    )
+                    .map_frontend(|this: &mut Self| &mut this.playlist);
+                }
+                None => {
+                    tracing::warn!("Unsupported bandcamp URL: {}", url);
+                    return AsyncTask::new_no_op();
+                }
+            }
+        }
+
         // Check for playlist URL FIRST - before video extraction
         if let Some(list_id) = extract_playlist_id(&url) {
             let pl_id = ytmapi_rs::common::PlaylistID::from_raw(format!("VL{}", list_id));

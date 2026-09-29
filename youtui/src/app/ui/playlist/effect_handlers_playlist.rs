@@ -802,6 +802,51 @@ impl_youtui_task_handler!(
     }
 );
 
+// Bandcamp album/discography: entries arrive from the off-UI-thread
+// FetchBandcampAlbumEntries probe and reuse add_yt_video so dedup, pending
+// rows, and metadata fetch match the YouTube track path.
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampAlbumEntriesOk(pub String);
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampAlbumEntriesError(pub String);
+
+impl_youtui_task_handler!(
+    HandleBandcampAlbumEntriesOk,
+    Vec<String>,
+    Playlist,
+    |this: HandleBandcampAlbumEntriesOk, entries: Vec<String>| {
+        let url = this.0;
+        move |target: &mut Playlist| {
+            info!(
+                "bandcamp album {} resolved to {} entries",
+                url,
+                entries.len()
+            );
+            let mut effect = AsyncTask::new_no_op();
+            for entry in entries {
+                let vid = VideoID::from_raw(entry.clone());
+                effect = effect.push(target.add_yt_video(vid, &entry));
+            }
+            effect
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleBandcampAlbumEntriesError,
+    anyhow::Error,
+    Playlist,
+    |this: HandleBandcampAlbumEntriesError, err: anyhow::Error| {
+        let url = this.0;
+        let msg = err.to_string();
+        move |target: &mut Playlist| {
+            error!("Failed to resolve bandcamp album {}: {}", url, msg);
+            target.last_error = Some(format!("Album add failed: {}", msg));
+            AsyncTask::new_no_op()
+        }
+    }
+);
+
 // Album art from Last.fm effect handlers
 
 use crate::app::server::song_thumbnail_downloader::SongThumbnail;
