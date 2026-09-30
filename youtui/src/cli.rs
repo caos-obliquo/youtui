@@ -500,7 +500,7 @@ pub async fn handle_cli_command(cli: Cli, rt: RuntimeInfo) -> Result<()> {
                     let entries = parse_bandcamp_album_entries(&String::from_utf8_lossy(&out.stdout));
                     println!("--- {} entries ---", entries.len());
                     for (i, e) in entries.iter().enumerate() {
-                        println!("{}. {}", i + 1, e);
+                        println!("{}. {} ({})", i + 1, e.title, e.url);
                     }
                 }
                 None => {

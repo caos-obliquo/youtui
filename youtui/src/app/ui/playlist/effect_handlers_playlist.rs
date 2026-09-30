@@ -5,6 +5,7 @@ use crate::app::server::{
     ArcServer, TaskMetadata, AddSongsToPlaylist, EnrichRelatedTracks, RemovePlaylistItems, ValidateMetadata,
     EnrichedPlaylistTracks, YtVideoMetadata,
 };
+use crate::bandcamp::BandcampTrackEntry;
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSong, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
 use crate::app::ui::playlist::Playlist;
@@ -825,8 +826,9 @@ impl_youtui_task_handler!(
 );
 
 // Bandcamp album/discography: entries arrive from the off-UI-thread
-// FetchBandcampAlbumEntries probe and reuse add_yt_video so dedup, pending
-// rows, and metadata fetch match the YouTube track path.
+// FetchBandcampAlbumEntries probe as structured BandcampTrackEntry data
+// (parsed from flat-playlist JSONL). Insert directly into the queue,
+// bypassing the per-track FetchYtVideoMetadata probe that causes 429s.
 #[derive(Debug, PartialEq)]
 pub struct HandleBandcampAlbumEntriesOk(pub String);
 #[derive(Debug, PartialEq)]
@@ -834,9 +836,9 @@ pub struct HandleBandcampAlbumEntriesError(pub String);
 
 impl_youtui_task_handler!(
     HandleBandcampAlbumEntriesOk,
-    Vec<String>,
+    Vec<BandcampTrackEntry>,
     Playlist,
-    |this: HandleBandcampAlbumEntriesOk, entries: Vec<String>| {
+    |this: HandleBandcampAlbumEntriesOk, entries: Vec<BandcampTrackEntry>| {
         let url = this.0;
         move |target: &mut Playlist| {
             info!(
@@ -844,16 +846,12 @@ impl_youtui_task_handler!(
                 url,
                 entries.len()
             );
-            let mut effect = AsyncTask::new_no_op();
-            let first_entry = entries.first().cloned();
+            let effect = AsyncTask::new_no_op();
+            let first_url = entries.first().map(|e| e.url.clone());
             for entry in entries {
-                let vid = VideoID::from_raw(entry.clone());
-                effect = effect.push(target.add_yt_video(vid, &entry));
+                target.insert_bandcamp_track_entry(&entry);
             }
-            // Select the first entry so the auto-download in
-            // insert_yt_video_metadata targets track 1 (album tracklist
-            // order), not the last inserted pending row.
-            if let Some(first_url) = first_entry {
+            if let Some(first_url) = first_url {
                 target.select_bandcamp_first_entry(&first_url);
             }
             effect

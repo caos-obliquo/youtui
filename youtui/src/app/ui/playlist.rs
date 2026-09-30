@@ -10,6 +10,7 @@ use crate::app::server::{
     PausePlay, PlayDecodedSong, QueueDecodedSong, Resume, Seek, SeekTo, Stop, StopAll,
     TaskMetadata, ValidateMetadata, AlbumTrack, FetchYtVideoMetadata, YtVideoMetadata,
 };
+use crate::bandcamp::BandcampTrackEntry;
 use crate::app::structures::{
     fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
     ListSong, ListSongArtist, ListSongDisplayableField, ListSongID, MaybeRc, Percentage, PlayState, SongListComponent,
@@ -1486,6 +1487,56 @@ impl Playlist {
             return true;
         }
         false
+    }
+
+    /// Insert a Bandcamp track directly from flat-playlist JSONL data.
+    ///
+    /// Bypasses the pending-row + FetchYtVideoMetadata probe flow to avoid
+    /// 349 individual yt-dlp processes (one per track) which trigger Bandcamp
+    /// HTTP 429 rate limiting on large compilation albums.
+    pub fn insert_bandcamp_track_entry(&mut self, entry: &BandcampTrackEntry) -> Option<ListSongID> {
+        let resolved = crate::bandcamp::resolve_bandcamp_metadata(
+            &entry.title,
+            &entry.uploader,
+            entry.album.as_deref(),
+            entry.track.as_deref(),
+        );
+        info!(
+            "bandcamp track: artist={}, title={}, album={:?}, duration={}s",
+            resolved.artist, resolved.title, resolved.album, entry.duration_secs
+        );
+        let secs = entry.duration_secs as u64;
+        let duration = format!("{}:{:02}", secs / 60, secs % 60);
+        let song = ytmapi_rs::parse::SearchResultSong {
+            title: resolved.title.clone(),
+            artist: resolved.artist.clone(),
+            album: None,
+            duration,
+            plays: String::new(),
+            explicit: ytmapi_rs::common::Explicit::NotExplicit,
+            video_id: VideoID::from_raw(entry.url.clone()),
+            thumbnails: Vec::new(),
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+        };
+        let old_count = self.list.get_list_iter().count();
+        let id = self.list.append_raw_search_result_songs(vec![song]);
+        if self.list.get_list_iter().count() > old_count {
+            if let Some(idx) = self.get_index_from_id(id) {
+                if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
+                    s.album = Some(crate::app::structures::MaybeRc::Owned(
+                        crate::app::structures::ListSongAlbum {
+                            name: resolved
+                                .album
+                                .unwrap_or_else(|| resolved.title.clone()),
+                            id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+                        },
+                    ));
+                }
+            }
+            Some(id)
+        } else {
+            None
+        }
     }
 
     /// Select the first queued bandcamp entry (album tracklist order) after

@@ -31,6 +31,10 @@ pub async fn fetch_yt_dlp_album_tracks(
 /// Spawn yt-dlp `--dump-json` for `video_id` and parse stdout into JSON.
 /// Returns None on spawn failure, 60s timeout, non-zero exit, or parse error
 /// (each logged at info). Cookie args as in `fetch_yt_dlp_album_tracks`.
+///
+/// Retries up to 5 times with exponential backoff (3s, 6s, 12s, 24s, 48s) on
+/// failure. Bandcamp returns HTTP 429 for concurrent metadata probes; the
+/// backoff lets the rate limit window reset before the next attempt.
 pub async fn fetch_yt_dlp_json(
     video_id: &str,
     yt_dlp_command: &str,
@@ -48,38 +52,49 @@ pub async fn fetch_yt_dlp_json(
         args.push(cookie_browser.to_string());
         info!("yt-dlp fallback: using --cookies-from-browser {} for video {}", cookie_browser, video_id);
     }
-    let output = match tokio::time::timeout(
-        Duration::from_secs(60),
-        tokio::process::Command::new(yt_dlp_command)
-            .args(&args)
-            .kill_on_drop(true)
-            .output(),
-    )
-    .await
-    {
-        Ok(Ok(out)) => out,
-        Ok(Err(e)) => {
-            info!("yt-dlp fallback: failed to spawn yt-dlp for video {}: {}", video_id, e);
-            return None;
+    const MAX_RETRIES: u32 = 5;
+    const BASE_DELAY_SECS: u64 = 3;
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay = BASE_DELAY_SECS * 2_u64.pow(attempt - 1);
+            info!("yt-dlp fallback: retry {}/{} for video {} after {}s", attempt, MAX_RETRIES, video_id, delay);
+            tokio::time::sleep(Duration::from_secs(delay)).await;
         }
-        Err(_) => {
-            info!("yt-dlp fallback: timed out after 60s for video {}", video_id);
-            return None;
+        let output = match tokio::time::timeout(
+            Duration::from_secs(60),
+            tokio::process::Command::new(yt_dlp_command)
+                .args(&args)
+                .kill_on_drop(true)
+                .output(),
+        )
+        .await
+        {
+            Ok(Ok(out)) => out,
+            Ok(Err(e)) => {
+                info!("yt-dlp fallback: failed to spawn yt-dlp for video {}: {}", video_id, e);
+                continue;
+            }
+            Err(_) => {
+                info!("yt-dlp fallback: timed out after 60s for video {}", video_id);
+                continue;
+            }
+        };
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            info!("yt-dlp fallback: yt-dlp failed for video {}: {}", video_id, stderr.trim());
+            continue;
         }
-    };
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        info!("yt-dlp fallback: yt-dlp failed for video {}: {}", video_id, stderr.trim());
-        return None;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return match serde_json::from_str(&stdout) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                info!("yt-dlp fallback: JSON parse failed for video {}: {}", video_id, e);
+                None
+            }
+        };
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    match serde_json::from_str(&stdout) {
-        Ok(v) => Some(v),
-        Err(e) => {
-            info!("yt-dlp fallback: JSON parse failed for video {}: {}", video_id, e);
-            None
-        }
-    }
+    info!("yt-dlp fallback: exhausted {} retries for video {}", MAX_RETRIES, video_id);
+    None
 }
 
 /// Pick an album tracklist from yt-dlp JSON: uploader-authored description
@@ -149,30 +164,53 @@ pub fn year_from_dlp_json(json: &serde_json::Value) -> Option<String> {
 /// First standalone 1900-2099 digit run in `description`.
 /// Splits on non-digits so timestamps ("00:59", "02;26") and track numbers
 /// ("01.") never yield a false year (all 2-digit tokens).
+/// Requires word boundaries (non-alphanumeric before/after) to avoid false
+/// positives like "2000 copies" or "2400bps".
 pub fn extract_year_from_description(description: &str) -> Option<String> {
-    description
-        .split(|c: char| !c.is_ascii_digit())
-        .find_map(|token| {
-            if token.len() != 4 {
-                return None;
+    let bytes = description.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if !bytes[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        let run = &description[start..i];
+        if run.len() != 4 {
+            continue;
+        }
+        let before_ok = start == 0 || !bytes[start - 1].is_ascii_alphanumeric();
+        let after_ok = i >= bytes.len() || !bytes[i].is_ascii_alphanumeric();
+        if !before_ok || !after_ok {
+            continue;
+        }
+        if i < bytes.len() && bytes[i] == b' ' && bytes.get(i + 1).is_some_and(|&b| b.is_ascii_lowercase()) {
+            continue;
+        }
+        if let Ok(y) = run.parse::<u32>() {
+            if (1900..=2099).contains(&y) {
+                return Some(y.to_string());
             }
-            token
-                .parse::<u32>()
-                .ok()
-                .filter(|y| (1900..=2099).contains(y))
-                .map(|y| y.to_string())
-        })
+        }
+    }
+    None
 }
 
 /// True when `title` is a placeholder rather than a real track name:
-/// empty, "Untitled", "NN. Untitled", or an auto-chapter marker
-/// ("<Untitled Chapter 1>").
+/// empty, "Untitled", "NN. Untitled", "Track N", bare numbers, or an
+/// auto-chapter marker ("<Untitled Chapter 1>").
 pub fn is_placeholder_track_title(title: &str) -> bool {
     let t = title.trim().to_lowercase();
     t.is_empty()
         || t == "untitled"
         || t.ends_with(" untitled")
+        || t.contains(".untitled")
         || t.contains("untitled chapter")
+        || t.starts_with("track ")
+        || (t.len() >= 2 && t.chars().all(|c| c.is_ascii_digit()))
 }
 
 /// Duration-alignment score for one (dlp, provider) pair (integer, never 0
@@ -210,6 +248,10 @@ pub fn fill_untitled_titles(dlp: &mut [AlbumTrack], provider: &[AlbumTrack]) -> 
     }
     if !dlp.iter().any(|t| is_placeholder_track_title(&t.title)) {
         debug!("fill_untitled: no placeholder titles in {} dlp tracks, skipping", dlp.len());
+        return 0;
+    }
+    if !provider.iter().any(|t| !is_placeholder_track_title(&t.title)) {
+        debug!("fill_untitled: all {} provider titles are placeholders, skipping", provider.len());
         return 0;
     }
     let n = dlp.len();
@@ -267,6 +309,7 @@ pub fn fill_untitled_titles(dlp: &mut [AlbumTrack], provider: &[AlbumTrack]) -> 
             i -= 1;
             j -= 1;
         } else {
+            debug_assert!(score[i][j] == score[i - 1][j] - 10, "traceback: impossible state at ({}, {})", i, j);
             i -= 1;
         }
     }
@@ -973,9 +1016,38 @@ mod tests {
         assert!(is_placeholder_track_title("Untitled"));
         assert!(is_placeholder_track_title("  untitled "));
         assert!(is_placeholder_track_title("01. Untitled"));
+        assert!(is_placeholder_track_title("01.Untitled"));
         assert!(is_placeholder_track_title("<Untitled Chapter 1>"));
         assert!(is_placeholder_track_title(""));
+        assert!(is_placeholder_track_title("Track 1"));
+        assert!(is_placeholder_track_title("Track 12"));
+        assert!(is_placeholder_track_title("01"));
+        assert!(is_placeholder_track_title("123"));
         assert!(!is_placeholder_track_title("Gritty & Greasy"));
         assert!(!is_placeholder_track_title("Untitled Pleasures"));
+        assert!(!is_placeholder_track_title("1"));
+    }
+
+    #[test]
+    fn extract_year_word_boundaries() {
+        assert_eq!(extract_year_from_description("'' Nuclear Cesspool Of Parasitic Scum '' 2009"), Some("2009".into()));
+        assert_eq!(extract_year_from_description("Limited to 2000 copies"), None);
+        assert_eq!(extract_year_from_description("Recorded at 2400bps"), None);
+        assert_eq!(extract_year_from_description("2000copies"), None);
+        assert_eq!(extract_year_from_description("Album 2009."), Some("2009".into()));
+        assert_eq!(extract_year_from_description(""), None);
+    }
+
+    #[test]
+    fn fill_untitled_all_provider_placeholders_noop() {
+        let mut dlp = vec![
+            AlbumTrack { title: "Untitled".into(), duration_secs: 59.0, artist: None },
+        ];
+        let provider = vec![
+            AlbumTrack { title: "Untitled".into(), duration_secs: 59.0, artist: None },
+            AlbumTrack { title: "".into(), duration_secs: 60.0, artist: None },
+        ];
+        assert_eq!(fill_untitled_titles(&mut dlp, &provider), 0);
+        assert_eq!(dlp[0].title, "Untitled");
     }
 }

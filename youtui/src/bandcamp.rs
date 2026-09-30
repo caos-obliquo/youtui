@@ -66,13 +66,29 @@ pub fn bandcamp_kind(url: &str) -> Option<BandcampKind> {
     }
 }
 
-/// Parse yt-dlp `--flat-playlist --dump-json` output into the list of track
-/// URLs it names.
+/// One track entry parsed from yt-dlp `--flat-playlist --dump-json` output.
+///
+/// The flat-playlist probe returns all track metadata in a single yt-dlp call.
+/// Parsing it here avoids 349 individual `--dump-json` probes (one per track)
+/// which trigger Bandcamp HTTP 429 rate limiting on large compilation albums.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BandcampTrackEntry {
+    pub url: String,
+    pub title: String,
+    pub duration_secs: f64,
+    pub uploader: String,
+    pub album: Option<String>,
+    pub track: Option<String>,
+}
+
+/// Parse yt-dlp `--flat-playlist --dump-json` output into structured track
+/// entries.
 ///
 /// Every line is one JSON object (flat-playlist mode). Collects each line's
-/// `url` field, skipping playlist entries (`_type == "playlist"`) and empty
-/// lines. Bandcamp album entries are plain track URLs.
-pub fn parse_bandcamp_album_entries(stdout: &str) -> Vec<String> {
+/// `url`, `title`, `duration`, `uploader`, `album`, and `track` fields,
+/// skipping playlist entries (`_type == "playlist"`) and empty lines.
+/// Bandcamp album entries are plain track URLs.
+pub fn parse_bandcamp_album_entries(stdout: &str) -> Vec<BandcampTrackEntry> {
     let mut entries = Vec::new();
     for line in stdout.lines() {
         let line = line.trim();
@@ -87,11 +103,41 @@ pub fn parse_bandcamp_album_entries(stdout: &str) -> Vec<String> {
             tracing::debug!("bandcamp: skipping nested playlist entry");
             continue;
         }
-        if let Some(url) = value.get("url").and_then(|u| u.as_str()) {
-            if !url.is_empty() {
-                entries.push(url.to_string());
-            }
+        let Some(url) = value.get("url").and_then(|u| u.as_str()) else {
+            continue;
+        };
+        if url.is_empty() {
+            continue;
         }
+        let title = value
+            .get("title")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string();
+        let duration_secs = value.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0);
+        let uploader = value
+            .get("uploader")
+            .and_then(|u| u.as_str())
+            .unwrap_or("")
+            .to_string();
+        let album = value
+            .get("album")
+            .and_then(|a| a.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        let track = value
+            .get("track")
+            .and_then(|t| t.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        entries.push(BandcampTrackEntry {
+            url: url.to_string(),
+            title,
+            duration_secs,
+            uploader,
+            album,
+            track,
+        });
     }
     entries
 }
@@ -258,20 +304,19 @@ mod tests {
 
     #[test]
     fn parse_bandcamp_album_entries_collects_track_urls() {
-        let stdout = r#"{"_type":"url","url":"https://domnoise.bandcamp.com/track/one","title":"One"}
-{"_type":"url","url":"https://domnoise.bandcamp.com/track/two","title":"Two"}
+        let stdout = r#"{"_type":"url","url":"https://domnoise.bandcamp.com/track/one","title":"One","duration":120.0,"uploader":"Artist"}
+{"_type":"url","url":"https://domnoise.bandcamp.com/track/two","title":"Two","duration":180.0,"uploader":"Artist"}
 {"_type":"playlist","title":"Nested album","entries":[]}
-{"_type":"url","url":"https://domnoise.bandcamp.com/track/three"}
+{"_type":"url","url":"https://domnoise.bandcamp.com/track/three","duration":200.0,"uploader":"Artist"}
 "#;
         let entries = parse_bandcamp_album_entries(stdout);
-        assert_eq!(
-            entries,
-            vec![
-                "https://domnoise.bandcamp.com/track/one".to_string(),
-                "https://domnoise.bandcamp.com/track/two".to_string(),
-                "https://domnoise.bandcamp.com/track/three".to_string(),
-            ]
-        );
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].url, "https://domnoise.bandcamp.com/track/one");
+        assert_eq!(entries[0].title, "One");
+        assert_eq!(entries[0].duration_secs, 120.0);
+        assert_eq!(entries[0].uploader, "Artist");
+        assert_eq!(entries[1].url, "https://domnoise.bandcamp.com/track/two");
+        assert_eq!(entries[2].url, "https://domnoise.bandcamp.com/track/three");
     }
 
     #[test]

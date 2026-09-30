@@ -28,7 +28,7 @@ use ytmapi_rs::parse::{SearchResultArtist, SearchResultPlaylist, SearchResultSon
 use std::path::PathBuf;
 use ytmapi_rs::auth::{BrowserToken, OAuthToken};
 use crate::app::server::api::stream_api_with_retry_n;
-use crate::bandcamp::{is_bandcamp_url, parse_bandcamp_album_entries};
+use crate::bandcamp::{is_bandcamp_url, parse_bandcamp_album_entries, BandcampTrackEntry};
 
 /// Build the URL/path argument to pass to yt-dlp for a raw id.
 ///
@@ -153,6 +153,7 @@ impl BackendTask<ArcServer> for FetchYtVideoMetadata {
     fn into_future(self, backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
         let yt_cmd = backend.yt_dlp_command.clone();
         let bandcamp_cmd = backend.bandcamp_yt_dlp_command.clone();
+        let semaphore = backend.yt_dlp_semaphore.clone();
         async move {
             let raw_id = self.0;
             let cmd_name = if crate::bandcamp::is_bandcamp_url(&raw_id) {
@@ -167,6 +168,7 @@ impl BackendTask<ArcServer> for FetchYtVideoMetadata {
             }
             cmd.arg(yt_dlp_target_arg(&raw_id));
             tracing::info!("FetchYtVideoMetadata: full probe for video {}", raw_id);
+            let _permit = semaphore.acquire().await;
             let output = match tokio::time::timeout(Duration::from_secs(60), cmd.kill_on_drop(true).output()).await
             {
                 Ok(Ok(out)) => out,
@@ -206,7 +208,7 @@ impl BackendTask<ArcServer> for FetchYtVideoMetadata {
 pub struct FetchBandcampAlbumEntries(pub String, pub bool, pub String);
 
 impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
-    type Output = Result<Vec<String>>;
+    type Output = Result<Vec<BandcampTrackEntry>>;
     type MetadataType = TaskMetadata;
     fn into_future(self, backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
         let cmd_name = backend
@@ -2097,11 +2099,13 @@ impl BackendTask<ArcServer> for ValidateMetadata {
             if is_album_upload
                 && let Some(json) = crate::app::util::fetch_yt_dlp_json(&video_id, &yt_dlp_command, cookie_path.as_deref(), &cookie_browser).await
             {
-                if result.year.is_none()
-                    && let Some(y) = crate::app::util::year_from_dlp_json(&json)
-                {
-                    tracing::info!("yt-dlp fallback: description/release year {} for video_id={} (upload-date year not used)", y, video_id);
-                    result.year = Some(y);
+                if let Some(y) = crate::app::util::year_from_dlp_json(&json) {
+                    if result.year.is_none() {
+                        tracing::info!("yt-dlp fallback: description/release year {} for video_id={} (upload-date year not used)", y, video_id);
+                        result.year = Some(y);
+                    } else if result.year.as_deref() != Some(y.as_str()) {
+                        tracing::warn!("yt-dlp fallback: provider year {} differs from yt-dlp year {} for video_id={}", result.year.as_deref().unwrap_or("None"), y, video_id);
+                    }
                 }
                 let mut dlp_tracks = crate::app::util::album_tracks_from_json(&json, &video_id);
                 if !dlp_tracks.is_empty() {

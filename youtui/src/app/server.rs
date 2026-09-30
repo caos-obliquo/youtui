@@ -35,6 +35,7 @@ pub struct Server {
     pub cookie_path: Option<String>,
     pub yt_dlp_command: String,
     pub bandcamp_yt_dlp_command: Option<String>,
+    pub yt_dlp_semaphore: std::sync::Arc<tokio::sync::Semaphore>,
 }
 
 impl Server {
@@ -84,6 +85,7 @@ impl Server {
             cookie_path,
             yt_dlp_command: config.yt_dlp_command.clone(),
             bandcamp_yt_dlp_command: config.bandcamp_yt_dlp_command.clone(),
+            yt_dlp_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(3)),
         }
     }
 }
