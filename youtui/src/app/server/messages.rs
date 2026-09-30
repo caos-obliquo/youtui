@@ -207,6 +207,25 @@ impl BackendTask<ArcServer> for FetchYtVideoMetadata {
 #[derive(Debug, PartialEq)]
 pub struct FetchBandcampAlbumEntries(pub String, pub bool, pub String);
 
+async fn fetch_tralbum_page(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<Vec<crate::bandcamp::TralbumTrack>> {
+    let html = client
+        .get(url)
+        .header(
+            reqwest::header::USER_AGENT,
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        )
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    crate::bandcamp::parse_tralbum_tracks(&html)
+        .ok_or_else(|| anyhow::anyhow!("no data-tralbum trackinfo in album page"))
+}
+
 impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
     type Output = Result<Vec<BandcampTrackEntry>>;
     type MetadataType = TaskMetadata;
@@ -215,6 +234,7 @@ impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
             .bandcamp_yt_dlp_command
             .clone()
             .unwrap_or_else(|| backend.yt_dlp_command.clone());
+        let http_client = backend.http_client.clone();
         async move {
             let url = self.0;
             let mut cmd = tokio::process::Command::new(&cmd_name);
@@ -241,7 +261,28 @@ impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 anyhow::bail!("yt-dlp failed for {}: {}", url, stderr.trim());
             }
-            let entries = parse_bandcamp_album_entries(&String::from_utf8_lossy(&output.stdout));
+            let mut entries = parse_bandcamp_album_entries(&String::from_utf8_lossy(&output.stdout));
+            if entries.iter().any(|e| e.duration_secs <= 0.0) {
+                match fetch_tralbum_page(&http_client, &url).await {
+                    Ok(tracks) => {
+                        let filled =
+                            crate::bandcamp::merge_tralbum_durations(&mut entries, &tracks);
+                        tracing::info!(
+                            "FetchBandcampAlbumEntries: filled {} of {} durations from data-tralbum for {}",
+                            filled,
+                            entries.len(),
+                            url
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "FetchBandcampAlbumEntries: duration enrichment unavailable for {} ({}); keeping 0:00",
+                            url,
+                            e
+                        );
+                    }
+                }
+            }
             tracing::info!(
                 "FetchBandcampAlbumEntries: {} resolved to {} entries",
                 url,
@@ -258,7 +299,6 @@ pub struct GetSearchSuggestions(pub String);
 pub struct SearchArtists(pub String);
 #[derive(Debug, PartialEq)]
 pub struct SearchSongs(pub String);
-/// Bandcamp track search via bcsearch_public_api; rows carry the bandcamp URL as video_id (the item_service marker).
 #[derive(Debug, PartialEq)]
 pub struct SearchBandcamp(pub String);
 #[derive(Debug, PartialEq)]
@@ -269,8 +309,55 @@ pub struct SearchAlbums(pub String);
 pub struct AlbumSearchItem {
     pub album: SearchResultAlbum,
     pub is_youtube: bool,
+    pub is_bandcamp: bool,
+    pub bandcamp_url: Option<String>,
     pub youtube_video_id: Option<VideoID<'static>>,
     pub youtube_duration: Option<String>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct FetchBandcampDiscography(pub String);
+
+impl BackendTask<ArcServer> for FetchBandcampDiscography {
+    type Output = Result<Vec<BandcampTrackEntry>>;
+    type MetadataType = TaskMetadata;
+    fn into_future(self, backend: &ArcServer) -> impl Future<Output = Self::Output> + Send + 'static {
+        let cmd_name = backend
+            .bandcamp_yt_dlp_command
+            .clone()
+            .unwrap_or_else(|| backend.yt_dlp_command.clone());
+        async move {
+            let url = self.0;
+            let mut cmd = tokio::process::Command::new(&cmd_name);
+            cmd.args(["--flat-playlist", "--dump-json", "--no-warnings"]);
+            cmd.arg("--").arg(&url);
+            tracing::info!("FetchBandcampDiscography: resolve discography for {}", url);
+            let output = match tokio::time::timeout(
+                Duration::from_secs(60),
+                cmd.kill_on_drop(true).output(),
+            )
+            .await
+            {
+                Ok(Ok(out)) => out,
+                Ok(Err(e)) => anyhow::bail!(
+                    "Failed to spawn yt-dlp for {} (is it on PATH?): {e}",
+                    url
+                ),
+                Err(_) => anyhow::bail!("yt-dlp timed out after 60s resolving {}", url),
+            };
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                anyhow::bail!("yt-dlp failed for {}: {}", url, stderr.trim());
+            }
+            let entries = parse_bandcamp_album_entries(&String::from_utf8_lossy(&output.stdout));
+            tracing::info!(
+                "FetchBandcampDiscography: {} resolved to {} entries",
+                url,
+                entries.len()
+            );
+            Ok(entries)
+        }
+    }
 }
 #[derive(Debug, PartialEq)]
 pub struct GetArtistSongs(pub ArtistChannelID<'static>);
@@ -1742,46 +1829,8 @@ impl BackendTask<ArcServer> for SearchSongs {
         }
     }
 }
-/// Map a bcsearch_public_api autocomplete response into SearchResultSong rows.
-/// Only track entries (type "t") are kept; each row's video_id is the full
-/// bandcamp track URL (the item_service marker, detectable via is_bandcamp_url).
-fn parse_bandcamp_search_results(json: &serde_json::Value) -> Vec<SearchResultSong> {
-    json.get("auto")
-        .and_then(|a| a.get("results"))
-        .and_then(|r| r.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| {
-                    let name = v.get("name")?.as_str()?;
-                    let band_name = v.get("band_name").and_then(|b| b.as_str()).unwrap_or("Unknown");
-                    let url_path = v.get("item_url_path")?.as_str()?;
-                    let album_name = v.get("album_name").and_then(|a| a.as_str());
-                    let vid: VideoID<'static> = VideoID::from_raw(url_path.to_string());
-                    let album_id: AlbumID<'static> =
-                        AlbumID::from_raw(url_path.to_string());
-                    let album = album_name.map(|n| ytmapi_rs::parse::ParsedSongAlbum {
-                        name: n.to_string(),
-                        id: album_id,
-                    });
-                    Some(ytmapi_rs::parse::SearchResultSong {
-                        title: name.to_string(),
-                        artist: band_name.to_string(),
-                        album,
-                        duration: String::new(),
-                        plays: String::new(),
-                        explicit: ytmapi_rs::common::Explicit::NotExplicit,
-                        video_id: vid,
-                        thumbnails: vec![],
-                        like_status: ytmapi_rs::common::LikeStatus::Indifferent,
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 impl BackendTask<ArcServer> for SearchBandcamp {
-    type Output = Result<Vec<SearchResultSong>>;
+    type Output = Result<Vec<crate::bandcamp::BandcampSearchResult>>;
     type MetadataType = TaskMetadata;
     fn into_future(
         self,
@@ -1790,45 +1839,69 @@ impl BackendTask<ArcServer> for SearchBandcamp {
         let query = self.0;
         let client = backend.http_client.clone();
         async move {
-            // bcsearch_public_api returns max 50 results; track filter "t" gives
-            // rows with name (title), band_name (artist), album_name, item_url_path.
-            let url = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic";
-            let body = serde_json::json!({
-                "fan_id": null,
-                "full_page": false,
-                "search_filter": "t",
-                "search_text": query,
-            });
-            let mut response = client
-                .post(url)
-                .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0")
-                .header("Referer", "https://bandcamp.com/search")
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| anyhow::anyhow!("Bandcamp search request failed: {}", e))?;
-            // 429 rate limit: one defensive 3s retry (onetagger pattern).
-            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                tracing::warn!("Bandcamp search rate limited, retrying in 3s");
-                tokio::time::sleep(Duration::from_secs(3)).await;
-                response = client
-                    .post(url)
-                    .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0")
-                    .header("Referer", "https://bandcamp.com/search")
-                    .json(&body)
-                    .send()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Bandcamp search retry failed: {}", e))?;
+            async fn fetch_one(
+                client: &reqwest::Client,
+                filter: &str,
+                query: &str,
+            ) -> Result<Vec<crate::bandcamp::BandcampSearchResult>> {
+                let url = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic";
+                let body = serde_json::json!({
+                    "fan_id": null,
+                    "full_page": false,
+                    "search_filter": filter,
+                    "search_text": query,
+                });
+                let mut attempt = 0;
+                loop {
+                    let response = client
+                        .post(url)
+                        .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0")
+                        .header("Referer", "https://bandcamp.com/search")
+                        .json(&body)
+                        .send()
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Bandcamp search request failed: {}", e))?;
+                    if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && attempt < 2 {
+                        tracing::warn!(
+                            "Bandcamp search rate limited (filter={}), retry {} in 3s",
+                            filter,
+                            attempt + 1
+                        );
+                        tokio::time::sleep(Duration::from_secs(3)).await;
+                        attempt += 1;
+                        continue;
+                    }
+                    if !response.status().is_success() {
+                        return Err(anyhow::anyhow!(
+                            "Bandcamp search returned status {}",
+                            response.status()
+                        ));
+                    }
+                    let json: serde_json::Value = response
+                        .json()
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Bandcamp search parse failed: {}", e))?;
+                    return Ok(crate::bandcamp::parse_bandcamp_search_results_all_types(
+                        &json,
+                    ));
+                }
             }
-            if !response.status().is_success() {
-                return Err(anyhow::anyhow!("Bandcamp search returned status {}", response.status()));
+
+            let (tracks, albums, bands) = futures::join!(
+                fetch_one(&client, "t", &query),
+                fetch_one(&client, "a", &query),
+                fetch_one(&client, "b", &query),
+            );
+            let mut results = Vec::new();
+            for (label, outcome) in [("tracks", tracks), ("albums", albums), ("bands", bands)] {
+                match outcome {
+                    Ok(rows) => {
+                        tracing::info!("Bandcamp search '{}' {} -> {} results", query, label, rows.len());
+                        results.extend(rows);
+                    }
+                    Err(e) => tracing::warn!("Bandcamp search '{}' {} failed: {}", query, label, e),
+                }
             }
-            let json: serde_json::Value = response
-                .json()
-                .await
-                .map_err(|e| anyhow::anyhow!("Bandcamp search parse failed: {}", e))?;
-            let results = parse_bandcamp_search_results(&json);
-            tracing::info!("Bandcamp search '{}' returned {} results", query, results.len());
             Ok(results)
         }
     }
@@ -2168,6 +2241,8 @@ impl BackendTask<ArcServer> for SearchAlbums {
                         items.push(AlbumSearchItem {
                             album: a,
                             is_youtube: false,
+                            is_bandcamp: false,
+                            bandcamp_url: None,
                             youtube_video_id: None,
                             youtube_duration: None,
                         });
@@ -2211,6 +2286,8 @@ impl BackendTask<ArcServer> for SearchAlbums {
                                             thumbnails: vec![],
                                         },
                                         is_youtube: true,
+                                        is_bandcamp: false,
+                                        bandcamp_url: None,
                                         youtube_video_id: Some(VideoID::from_raw(video_id_str.to_string())),
                                         youtube_duration: Some(duration_str),
                                     });
@@ -2639,9 +2716,7 @@ mod fetch_bandcamp_album_entries_tests {
 
 #[cfg(test)]
 mod search_bandcamp_tests {
-    use super::parse_bandcamp_search_results;
-    use crate::bandcamp::is_bandcamp_url;
-    use ytmapi_rs::common::YoutubeID;
+    use crate::bandcamp::{parse_bandcamp_search_results_all_types, BandcampType};
 
     fn sample_response() -> serde_json::Value {
         serde_json::json!({
@@ -2661,9 +2736,15 @@ mod search_bandcamp_tests {
                     },
                     {
                         "type": "a",
-                        "name": "not a track",
+                        "name": "Album Name",
                         "band_name": "X",
-                        "item_url_root": "https://x.bandcamp.com"
+                        "item_url_path": "https://x.bandcamp.com/album/album-name"
+                    },
+                    {
+                        "type": "b",
+                        "name": "Artist Name",
+                        "band_name": "Artist Name",
+                        "item_url_path": "https://y.bandcamp.com"
                     }
                 ]
             },
@@ -2673,24 +2754,21 @@ mod search_bandcamp_tests {
     }
 
     #[test]
-    fn track_entries_map_to_search_result_songs() {
-        let songs = parse_bandcamp_search_results(&sample_response());
-        assert_eq!(songs.len(), 1);
-        assert_eq!(songs[0].title, "Do Suor Do Teu Rosto Comerás O Pão (Versão Modificada)");
-        assert_eq!(songs[0].artist, "D.O.M.");
-        let album = songs[0].album.as_ref().expect("album present");
-        assert_eq!(album.name, "Diariamente Obrigação Maltrata");
-    }
-
-    #[test]
-    fn video_id_carries_bandcamp_url_as_item_service_marker() {
-        let songs = parse_bandcamp_search_results(&sample_response());
-        assert!(is_bandcamp_url(songs[0].video_id.get_raw()));
+    fn all_types_parsed() {
+        let results = parse_bandcamp_search_results_all_types(&sample_response());
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].type_, BandcampType::Track);
+        assert_eq!(results[0].name, "Do Suor Do Teu Rosto Comerás O Pão (Versão Modificada)");
+        assert_eq!(results[0].band_name, "D.O.M.");
+        assert_eq!(results[0].album_name.as_deref(), Some("Diariamente Obrigação Maltrata"));
+        assert_eq!(results[1].type_, BandcampType::Album);
+        assert_eq!(results[1].name, "Album Name");
+        assert_eq!(results[2].type_, BandcampType::Band);
+        assert_eq!(results[2].name, "Artist Name");
     }
 
     #[test]
     fn missing_auto_field_yields_empty_list() {
-        let songs = parse_bandcamp_search_results(&serde_json::json!({}));
-        assert!(songs.is_empty());
+        assert!(parse_bandcamp_search_results_all_types(&serde_json::json!({})).is_empty());
     }
 }

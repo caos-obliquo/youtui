@@ -13,7 +13,8 @@ use crate::app::structures::{
     ArtistOrUploadArtistID, BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus,
     Percentage, SongListComponent,
 };
-use ytmapi_rs::common::{ArtistChannelID, YoutubeID};
+use crate::bandcamp::{BandcampSearchResult, BandcampType};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, VideoID, YoutubeID};
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{
     AdvancedTableView, BasicConstraint, FilterString, HasTitle, Loadable, SortDirection,
@@ -46,9 +47,7 @@ pub struct SongSearchBrowser {
     pub local_filter_text: String,
     pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
     pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
-    /// Buffer for Bandcamp search results arriving before the YouTube search
-    /// completes. Merged deterministically after the YouTube list is replaced.
-    pending_bandcamp: Option<Vec<SearchResultSong>>,
+    pending_bandcamp: Option<Vec<BandcampSearchResult>>,
     /// True while a SearchSongs task is in flight. Bandcamp results are only
     /// merged (or appended) once this flips to false.
     search_pending: bool,
@@ -957,7 +956,30 @@ impl SongSearchBrowser {
             warn!("Tried to sort a column that is not sortable - error {e}")
         };
     }
-    fn append_bandcamp_results(&mut self, songs: Vec<SearchResultSong>) {
+    fn append_bandcamp_results(&mut self, results: Vec<BandcampSearchResult>) {
+        let songs: Vec<SearchResultSong> = results
+            .into_iter()
+            .filter(|r| r.type_ == BandcampType::Track)
+            .map(|r| {
+                let vid: VideoID<'static> = VideoID::from_raw(r.url.clone());
+                let album_id: AlbumID<'static> = AlbumID::from_raw(r.url.clone());
+                let album = r.album_name.map(|n| ytmapi_rs::parse::ParsedSongAlbum {
+                    name: n,
+                    id: album_id,
+                });
+                ytmapi_rs::parse::SearchResultSong {
+                    title: r.name,
+                    artist: r.band_name,
+                    album,
+                    duration: String::new(),
+                    plays: String::new(),
+                    explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                    video_id: vid,
+                    thumbnails: vec![],
+                    like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+                }
+            })
+            .collect();
         if songs.is_empty() {
             return;
         }
@@ -1058,13 +1080,13 @@ impl_youtui_task_handler!(
 );
 impl_youtui_task_handler!(
     HandleBandcampSearchOk,
-    Vec<SearchResultSong>,
+    Vec<BandcampSearchResult>,
     SongSearchBrowser,
-    |_, songs| |this: &mut SongSearchBrowser| {
+    |_, results| |this: &mut SongSearchBrowser| {
         if this.search_pending {
-            this.pending_bandcamp = Some(songs);
+            this.pending_bandcamp = Some(results);
         } else {
-            this.append_bandcamp_results(songs);
+            this.append_bandcamp_results(results);
         }
     }
 );

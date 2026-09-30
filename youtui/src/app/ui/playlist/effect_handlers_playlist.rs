@@ -848,6 +848,7 @@ impl_youtui_task_handler!(
             );
             let effect = AsyncTask::new_no_op();
             let first_url = entries.first().map(|e| e.url.clone());
+            target.pending_bandcamp_album = None;
             for entry in entries {
                 target.insert_bandcamp_track_entry(&entry);
             }
@@ -869,6 +870,7 @@ impl_youtui_task_handler!(
         move |target: &mut Playlist| {
             error!("Failed to resolve bandcamp album {}: {}", url, msg);
             target.last_error = Some(format!("Album add failed: {}", msg));
+            target.pending_bandcamp_album = None;
             AsyncTask::new_no_op()
         }
     }

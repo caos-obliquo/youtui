@@ -1750,6 +1750,7 @@ impl YoutuiWindow {
                 }
                 Some(crate::bandcamp::BandcampKind::Album)
                 | Some(crate::bandcamp::BandcampKind::Discography) => {
+                    self.playlist.pending_bandcamp_album = Some(normalized.clone());
                     return AsyncTask::new_future_try(
                         FetchBandcampAlbumEntries(
                             normalized.clone(),

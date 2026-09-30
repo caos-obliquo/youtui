@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::iter::Iterator;
 use std::collections::HashSet;
-use ytmapi_rs::common::{ArtistChannelID, SearchSuggestion};
+use ytmapi_rs::common::{ArtistChannelID, SearchSuggestion, YoutubeID};
 use ytmapi_rs::parse::SearchResultArtist;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -33,6 +33,8 @@ pub struct ArtistSearchPanel {
     pub widget_state: ScrollingListState,
     pub local_filter_text: String,
     pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
+    pub pending_bandcamp_bands: Option<Vec<SearchResultArtist>>,
+    pub search_pending: bool,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -68,6 +70,8 @@ impl ArtistSearchPanel {
             search: SearchBlock::default(),
             widget_state: Default::default(),
             local_filter_text: String::new(),
+            pending_bandcamp_bands: None,
+            search_pending: false,
         }
     }
     pub fn open_search(&mut self) {
@@ -185,7 +189,12 @@ impl ListView for ArtistSearchPanel {
                 } else {
                     "  "
                 };
-                Cow::Owned(format!("{}{}", prefix, search_result.artist))
+                let badge = if crate::bandcamp::is_bandcamp_url(search_result.browse_id.get_raw()) {
+                    "BC "
+                } else {
+                    ""
+                };
+                Cow::Owned(format!("{}{}{}", prefix, badge, search_result.artist))
             })
             .collect::<Vec<Cow<'_, str>>>()
             .into_iter()

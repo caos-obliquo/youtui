@@ -192,8 +192,8 @@ pub fn draw_album_search_browser(
     if browser.albums.is_empty() {
     } else {
         let items: Vec<String> = browser.albums.iter().enumerate().map(|(_i, a)| {
-            let label = format!("{} - {}", a.album.artist, a.album.title);
-            label
+            let badge = if a.is_bandcamp { "BC " } else { "" };
+            format!("{}{} - {}", badge, a.album.artist, a.album.title)
         }).collect();
         browser.album_list_state.select(Some(browser.album_selected), cur_tick);
         let scrolling_list = ScrollingList::new(items, cur_tick)

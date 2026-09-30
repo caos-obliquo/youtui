@@ -10,7 +10,7 @@ use crate::app::server::{
     PausePlay, PlayDecodedSong, QueueDecodedSong, Resume, Seek, SeekTo, Stop, StopAll,
     TaskMetadata, ValidateMetadata, AlbumTrack, FetchYtVideoMetadata, YtVideoMetadata,
 };
-use crate::bandcamp::BandcampTrackEntry;
+use crate::bandcamp::{url_to_host, BandcampTrackEntry};
 use crate::app::structures::{
     fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
     ListSong, ListSongArtist, ListSongDisplayableField, ListSongID, MaybeRc, Percentage, PlayState, SongListComponent,
@@ -129,6 +129,8 @@ pub struct Playlist {
     pub radio_mode: bool,
     /// Transient error message shown in playlist header (clears on next action)
     pub last_error: Option<String>,
+    /// Album URL currently being enumerated, shown as a populating indicator
+    pub pending_bandcamp_album: Option<String>,
     /// Transient status notification (clears on next action)
     pub last_status: Option<String>,
     /// Pending chunks for multi-playlist split (video_ids, title, description, next_index)
@@ -929,8 +931,13 @@ impl HasTitle for Playlist {
         };
         let err_indicator = self.last_error.as_ref().map(|e| format!(" [ERR: {}]", e)).unwrap_or_default();
         let status_indicator = self.last_status.as_ref().map(|s| format!(" [! {}]", s)).unwrap_or_default();
+        let loading_indicator = self
+            .pending_bandcamp_album
+            .as_ref()
+            .map(|u| format!(" [loading {}]", url_to_host(u).unwrap_or(u)))
+            .unwrap_or_default();
         format!(
-            "Queue - {} songs{}{}{}{}{}{}{}",
+            "Queue - {} songs{}{}{}{}{}{}{}{}",
             self.list.get_list_iter().len(),
             quality_indicator,
             shuffle_indicator,
@@ -939,6 +946,7 @@ impl HasTitle for Playlist {
             romaji_indicator,
             err_indicator,
             status_indicator,
+            loading_indicator,
         )
         .into()
     }
@@ -991,6 +999,7 @@ impl Playlist {
             repeat_mode: crate::app::structures::RepeatMode::Off,
             radio_mode: false,
             last_error: None,
+            pending_bandcamp_album: None,
             last_status: None,
             pending_playlist_chunks: None,
             undo_stack: Vec::new(),

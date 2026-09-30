@@ -81,13 +81,99 @@ pub struct BandcampTrackEntry {
     pub track: Option<String>,
 }
 
+/// Type of entity returned by `bcsearch_public_api` autocomplete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BandcampType {
+    /// A single track (`type: "t"` in API response).
+    Track,
+    /// An album (`type: "a"`).
+    Album,
+    /// A band/artist (`type: "b"`).
+    Band,
+}
+
+/// One search result from `bcsearch_public_api`.
+///
+/// The endpoint requires an explicit `search_filter` (`"t"` tracks, `"a"` albums,
+/// `"b"` bands) and returns up to 50 homogeneous results per call, so callers
+/// issue one request per type. Each result carries a `type` field.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BandcampSearchResult {
+    pub type_: BandcampType,
+    /// Track title, album title, or band name.
+    pub name: String,
+    /// Artist/band name (same as `name` for bands, which have no `band_name`).
+    pub band_name: String,
+    /// Full URL to the item page.
+    pub url: String,
+    /// Album name (only for track results).
+    pub album_name: Option<String>,
+}
+
+/// Parse `bcsearch_public_api` autocomplete response into typed results.
+///
+/// Each item in `auto.results[]` carries `type` (`"t"`/`"a"`/`"b"`) and `name`.
+/// Tracks and albums expose `item_url_path` plus `band_name`; bands expose
+/// `item_url_root` and no `band_name`, so the URL falls back to the root and the
+/// band name defaults to `name`. Items lacking both URL fields are skipped.
+pub fn parse_bandcamp_search_results_all_types(json: &serde_json::Value) -> Vec<BandcampSearchResult> {
+    json.get("auto")
+        .and_then(|a| a.get("results"))
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    let type_str = v.get("type").and_then(|t| t.as_str())?;
+                    let type_ = match type_str {
+                        "t" => BandcampType::Track,
+                        "a" => BandcampType::Album,
+                        "b" => BandcampType::Band,
+                        _ => return None,
+                    };
+                    let name = v.get("name")?.as_str()?.to_string();
+                    let url = ["item_url_path", "item_url_root"]
+                        .iter()
+                        .filter_map(|k| v.get(*k).and_then(|u| u.as_str()))
+                        .map(|s| s.to_string())
+                        .find(|s| !s.is_empty())?;
+                    let band_name = v
+                        .get("band_name")
+                        .and_then(|b| b.as_str())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(&name)
+                        .to_string();
+                    let album_name = v.get("album_name").and_then(|a| a.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string());
+                    Some(BandcampSearchResult {
+                        type_,
+                        name,
+                        band_name,
+                        url,
+                        album_name,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Parse yt-dlp `--flat-playlist --dump-json` output into structured track
 /// entries.
 ///
-/// Every line is one JSON object (flat-playlist mode). Collects each line's
-/// `url`, `title`, `duration`, `uploader`, `album`, and `track` fields,
-/// skipping playlist entries (`_type == "playlist"`) and empty lines.
-/// Bandcamp album entries are plain track URLs.
+/// Every line is one JSON object (flat-playlist mode), skipping playlist
+/// entries (`_type == "playlist"`) and empty lines. Bandcamp album entries are
+/// plain track URLs. The per-item `duration` key is absent from flat-playlist
+/// output, so durations come from `parse_tralbum_tracks` instead.
+fn first_non_empty_str(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|k| {
+        value
+            .get(*k)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+    })
+}
+
 pub fn parse_bandcamp_album_entries(stdout: &str) -> Vec<BandcampTrackEntry> {
     let mut entries = Vec::new();
     for line in stdout.lines() {
@@ -115,21 +201,9 @@ pub fn parse_bandcamp_album_entries(stdout: &str) -> Vec<BandcampTrackEntry> {
             .unwrap_or("")
             .to_string();
         let duration_secs = value.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0);
-        let uploader = value
-            .get("uploader")
-            .and_then(|u| u.as_str())
-            .unwrap_or("")
-            .to_string();
-        let album = value
-            .get("album")
-            .and_then(|a| a.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-        let track = value
-            .get("track")
-            .and_then(|t| t.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
+        let uploader = first_non_empty_str(&value, &["playlist_uploader", "uploader"]).unwrap_or_default();
+        let album = first_non_empty_str(&value, &["playlist_title", "album"]);
+        let track = first_non_empty_str(&value, &["playlist_autonumber", "track"]);
         entries.push(BandcampTrackEntry {
             url: url.to_string(),
             title,
@@ -142,7 +216,155 @@ pub fn parse_bandcamp_album_entries(stdout: &str) -> Vec<BandcampTrackEntry> {
     entries
 }
 
-fn url_to_host(url: &str) -> Option<&str> {
+/// One track from the album page's `data-tralbum` payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TralbumTrack {
+    pub title: String,
+    pub artist: String,
+    pub duration_secs: f64,
+    /// Path component of `title_link` (e.g. `/track/neutralize`), used to match
+    /// against the flat-playlist track URL.
+    pub url_path: Option<String>,
+}
+
+fn decode_html_entities(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(idx) = rest.find('&') {
+        out.push_str(&rest[..idx]);
+        rest = &rest[idx..];
+        let entity_end = rest.find(';').map(|e| e + 1).unwrap_or(0);
+        let entity = &rest[..entity_end];
+        let decoded = match entity {
+            "&quot;" => Some('"'),
+            "&amp;" => Some('&'),
+            "&#39;" => Some('\''),
+            "&lt;" => Some('<'),
+            "&gt;" => Some('>'),
+            _ => None,
+        };
+        match decoded {
+            Some(c) => {
+                out.push(c);
+                rest = &rest[entity.len()..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Slice out the `trackinfo` JSON array from a Bandcamp album page.
+///
+/// The array is embedded HTML-entity-encoded inside the `data-tralbum`
+/// attribute, so the raw text is scanned with a bracket depth counter that
+/// toggles on `&quot;` string delimiters, then entity-decoded and parsed.
+/// Returns `None` when the attribute or the `trackinfo` key is absent, which
+/// is how Bandcamp serves its anti-bot challenge page.
+fn extract_trackinfo_array(html: &str) -> Option<&str> {
+    const KEY: &str = "&quot;trackinfo&quot;:";
+    let key_start = html.find(KEY)? + KEY.len();
+    let body = &html[key_start..];
+    if !body.starts_with('[') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut in_string = false;
+    for (idx, c) in body.char_indices() {
+        match c {
+            '&' if !in_string && body[idx..].starts_with("&quot;") => {
+                in_string = true;
+            }
+            ';' if in_string && body[idx - 5..idx].ends_with("quot") => {
+                in_string = false;
+            }
+            '[' if !in_string => depth += 1,
+            ']' if !in_string => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&body[..=idx]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Parse a Bandcamp album page into its per-track metadata.
+///
+/// This is the only source of real track durations: yt-dlp's flat-playlist mode
+/// omits the `duration` key entirely, while the album page's `data-tralbum`
+/// payload carries `duration`, `artist`, and `title_link` for every track.
+pub fn parse_tralbum_tracks(html: &str) -> Option<Vec<TralbumTrack>> {
+    let raw = extract_trackinfo_array(html)?;
+    let decoded = decode_html_entities(raw);
+    let parsed: serde_json::Value = serde_json::from_str(&decoded).ok()?;
+    let arr = parsed.as_array()?;
+    Some(
+        arr.iter()
+            .filter_map(|v| {
+                Some(TralbumTrack {
+                    title: v.get("title")?.as_str()?.to_string(),
+                    artist: v.get("artist").and_then(|a| a.as_str()).unwrap_or("").to_string(),
+                    duration_secs: v.get("duration").and_then(|d| d.as_f64()).unwrap_or(0.0),
+                    url_path: v
+                        .get("title_link")
+                        .and_then(|l| l.as_str())
+                        .map(|l| l.split('?').next().unwrap_or(l).to_string()),
+                })
+            })
+            .collect(),
+    )
+}
+
+/// Fill zero durations on `entries` from the album page's `trackinfo` payload.
+///
+/// Matches on the `/track/...` path so a re-ordered or partially-returned
+/// flat-playlist cannot shift durations onto the wrong tracks; falls back to
+/// positional matching only when no path match exists. Returns how many
+/// entries were filled.
+pub fn merge_tralbum_durations(
+    entries: &mut [BandcampTrackEntry],
+    tracks: &[TralbumTrack],
+) -> usize {
+    fn url_path(url: &str) -> &str {
+        url.split("://")
+            .nth(1)
+            .and_then(|r| r.find('/').map(|i| &r[i..]))
+            .unwrap_or("")
+    }
+    let mut filled = 0;
+    for (idx, entry) in entries.iter_mut().enumerate() {
+        if entry.duration_secs > 0.0 {
+            continue;
+        }
+        let path = url_path(&entry.url);
+        let by_path = if path.is_empty() {
+            None
+        } else {
+            tracks
+                .iter()
+                .find(|t| t.url_path.as_deref() == Some(path) && t.duration_secs > 0.0)
+        };
+        let source = by_path.or_else(|| {
+            tracks
+                .get(idx)
+                .filter(|t| t.duration_secs > 0.0)
+        });
+        if let Some(t) = source {
+            entry.duration_secs = t.duration_secs;
+            filled += 1;
+        }
+    }
+    filled
+}
+
+pub fn url_to_host(url: &str) -> Option<&str> {
     let after_scheme = url.split("://").nth(1)?;
     let host_port = after_scheme.split('/').next()?;
     let host = host_port.split(':').next()?;
@@ -231,6 +453,88 @@ mod tests {
     use super::*;
 
     const DOMNOISE_ALBUM_WITH_FBCLID: &str = "https://domnoise.bandcamp.com/album/diariamente-obriga-o-maltrata?fbclid=PAT01DUAUnUoVleHRuA2FlbQIxMABwZG9mAnNydGMGYXBwX2lkDzU2NzA2NzM0MzM1MjQyNwABp1UNYQUtttq1F5LzBGjjafBuhcKk_wSfXiWHkg3Dum9-1msVmWv5Hj4b1dJK_aem_TPeiHeAL6WyZ9eRBySuBBQ";
+
+    const TRALBUM_PAGE: &str = r#"<div data-tralbum="{&quot;current&quot;:{&quot;title&quot;:&quot;Noise As A Form Of Expression Vol. 4&quot;},&quot;trackinfo&quot;:[{&quot;track_num&quot;:1,&quot;title&quot;:&quot;Boredom Knife - Neutralize&quot;,&quot;artist&quot;:&quot;Boredom Knife&quot;,&quot;duration&quot;:243.435,&quot;title_link&quot;:&quot;/track/neutralize&quot;},{&quot;track_num&quot;:2,&quot;title&quot;:&quot;Flesh-Control - Temper Wrecked&quot;,&quot;artist&quot;:&quot;Flesh-Control&quot;,&quot;duration&quot;:364.308,&quot;title_link&quot;:&quot;/track/temper-wrecked?amp;from=embed&quot;}],&quot;id&quot;:42}"></div>"#;
+
+    #[test]
+    fn tralbum_trackinfo_yields_durations_and_paths() {
+        let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0].title, "Boredom Knife - Neutralize");
+        assert_eq!(tracks[0].artist, "Boredom Knife");
+        assert!((tracks[0].duration_secs - 243.435).abs() < f64::EPSILON);
+        assert_eq!(tracks[0].url_path.as_deref(), Some("/track/neutralize"));
+        assert_eq!(tracks[1].url_path.as_deref(), Some("/track/temper-wrecked"));
+    }
+
+    #[test]
+    fn tralbum_missing_key_returns_none() {
+        assert!(parse_tralbum_tracks("<html>challenge page</html>").is_none());
+    }
+
+    #[test]
+    fn merge_durations_matches_by_path_not_position() {
+        let mut entries = vec![
+            BandcampTrackEntry {
+                url: "https://dramarecorder.bandcamp.com/track/temper-wrecked".to_string(),
+                title: "Flesh-Control - Temper Wrecked".to_string(),
+                duration_secs: 0.0,
+                uploader: String::new(),
+                album: None,
+                track: None,
+            },
+            BandcampTrackEntry {
+                url: "https://dramarecorder.bandcamp.com/track/neutralize".to_string(),
+                title: "Boredom Knife - Neutralize".to_string(),
+                duration_secs: 0.0,
+                uploader: String::new(),
+                album: None,
+                track: None,
+            },
+        ];
+        let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
+        assert_eq!(merge_tralbum_durations(&mut entries, &tracks), 2);
+        assert!((entries[0].duration_secs - 364.308).abs() < f64::EPSILON);
+        assert!((entries[1].duration_secs - 243.435).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn merge_durations_keeps_existing_and_reports_partial() {
+        let mut entries = vec![BandcampTrackEntry {
+            url: "https://dramarecorder.bandcamp.com/track/neutralize".to_string(),
+            title: "Boredom Knife - Neutralize".to_string(),
+            duration_secs: 10.0,
+            uploader: String::new(),
+            album: None,
+            track: None,
+        }];
+        let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
+        assert_eq!(merge_tralbum_durations(&mut entries, &tracks), 0);
+        assert!((entries[0].duration_secs - 10.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn album_entries_take_album_and_uploader_from_playlist_keys() {
+        let line = r#"{"url":"https://dramarecorder.bandcamp.com/track/stau","title":"Blaske Hill - Stau","playlist_title":"Noise As A Form Of Expression Vol. 4","playlist_uploader":"Drama Recorder","playlist_autonumber":"3","playlist_index":2}"#;
+        let entries = parse_bandcamp_album_entries(line);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].title, "Blaske Hill - Stau");
+        assert_eq!(entries[0].uploader, "Drama Recorder");
+        assert_eq!(
+            entries[0].album.as_deref(),
+            Some("Noise As A Form Of Expression Vol. 4")
+        );
+        assert_eq!(entries[0].track.as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn album_entries_still_fall_back_to_per_item_keys() {
+        let line = r#"{"url":"https://x.bandcamp.com/track/y","title":"A - B","album":"Real Album","uploader":"Real Uploader","track":"7"}"#;
+        let entries = parse_bandcamp_album_entries(line);
+        assert_eq!(entries[0].album.as_deref(), Some("Real Album"));
+        assert_eq!(entries[0].uploader, "Real Uploader");
+        assert_eq!(entries[0].track.as_deref(), Some("7"));
+    }
 
     #[test]
     fn is_bandcamp_url_accepts_artist_subdomains() {
@@ -394,5 +698,79 @@ mod tests {
         assert_eq!(m.artist, "Artist");
         assert_eq!(m.title, "Song");
         assert_eq!(m.album.as_deref(), Some("Album Name"));
+    }
+
+    fn bcsearch_response() -> serde_json::Value {
+        serde_json::json!({
+            "auto": {
+                "results": [
+                    {"type": "t", "name": "Song One", "band_name": "Artist A", "item_url_path": "https://artista.bandcamp.com/track/song-one", "album_name": "EP One"},
+                    {"type": "a", "name": "Album One", "band_name": "Artist B", "item_url_path": "https://artistb.bandcamp.com/album/album-one"},
+                    {"type": "b", "name": "Artist C", "band_name": "Artist C", "item_url_path": "https://artistc.bandcamp.com"},
+                    {"type": "x", "name": "Unknown", "band_name": "???", "item_url_path": "https://example.com"},
+                    {"type": "t", "name": "No URL", "band_name": "???", "item_url_path": ""}
+                ]
+            }
+        })
+    }
+
+    #[test]
+    fn parse_all_types_returns_track_album_band() {
+        let results = parse_bandcamp_search_results_all_types(&bcsearch_response());
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0].type_, BandcampType::Track);
+        assert_eq!(results[0].name, "Song One");
+        assert_eq!(results[0].band_name, "Artist A");
+        assert_eq!(results[0].url, "https://artista.bandcamp.com/track/song-one");
+        assert_eq!(results[0].album_name.as_deref(), Some("EP One"));
+        assert_eq!(results[1].type_, BandcampType::Album);
+        assert_eq!(results[1].name, "Album One");
+        assert_eq!(results[1].album_name, None);
+        assert_eq!(results[2].type_, BandcampType::Band);
+        assert_eq!(results[2].name, "Artist C");
+        assert_eq!(results[2].band_name, "Artist C");
+    }
+
+    #[test]
+    fn parse_all_types_skips_unknown_and_empty_url() {
+        let results = parse_bandcamp_search_results_all_types(&bcsearch_response());
+        assert_eq!(results.len(), 3);
+        assert!(results.iter().all(|r| !r.url.is_empty()));
+    }
+
+    #[test]
+    fn parse_all_types_handles_empty_response() {
+        assert!(parse_bandcamp_search_results_all_types(&serde_json::json!({})).is_empty());
+        assert!(parse_bandcamp_search_results_all_types(&serde_json::json!({"auto": {}})).is_empty());
+        assert!(parse_bandcamp_search_results_all_types(&serde_json::json!({"auto": {"results": []}})).is_empty());
+    }
+
+    /// Live `search_filter:"b"` response: bands carry `item_url_root` and no
+    /// `band_name`, unlike tracks/albums which carry `item_url_path`/`band_name`.
+    #[test]
+    fn parse_band_result_uses_url_root_and_defaults_band_name() {
+        let live = serde_json::json!({
+            "auto": {"results": [{
+                "type": "b",
+                "id": 2106188119,
+                "art_id": null,
+                "img_id": 11372027,
+                "name": "VOMITOR",
+                "item_url_root": "https://vomitor-australia.bandcamp.com",
+                "location": "Brisbane, Australia",
+                "is_label": false,
+                "tag_names": ["Metal", "thrash", "death metal"],
+                "img": "https://f4.bcbits.com/img/0011372027_23.jpg",
+                "genre_name": "Metal",
+                "stat_params": "search_item_id=2106188119&search_item_type=b"
+            }]}
+        });
+        let results = parse_bandcamp_search_results_all_types(&live);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].type_, BandcampType::Band);
+        assert_eq!(results[0].name, "VOMITOR");
+        assert_eq!(results[0].url, "https://vomitor-australia.bandcamp.com");
+        assert_eq!(results[0].band_name, "VOMITOR");
+        assert!(is_bandcamp_url(&results[0].url));
     }
 }
