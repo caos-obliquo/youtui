@@ -370,6 +370,68 @@ fn album_split_trusts_metadata_provider_tracks_regardless_of_title() {
 }
 
 #[test]
+fn bandcamp_entry_keeps_track_number_and_real_song_title() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let entry = crate::bandcamp::BandcampTrackEntry {
+        url: "https://dramarecorder.bandcamp.com/track/stau".to_string(),
+        title: "Blaske Hill - Stau".to_string(),
+        duration_secs: 492.5,
+        uploader: "Blaske Hill".to_string(),
+        album: Some("NOISE AS A FORM OF EXPRESSION VOL.4".to_string()),
+        track: None,
+        track_no: Some("3".to_string()),
+        cover_url: None,
+
+        year: None,    };
+    let id = p.insert_bandcamp_track_entry(&entry).expect("row inserted");
+    let idx = p.get_index_from_id(id).expect("index resolves");
+    let s = p.list.get_list_iter().nth(idx).unwrap();
+    assert_eq!(s.track_no, Some(3));
+    assert_eq!(s.title, "Stau");
+    assert_eq!(
+        s.album.as_ref().map(|a| a.as_ref().name.as_str()),
+        Some("NOISE AS A FORM OF EXPRESSION VOL.4")
+    );
+}
+
+#[test]
+fn apply_album_year_stamps_every_matching_row_only() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for (video, album) in [("a1", Some("Compilation")), ("a2", Some("compilation")), ("a3", Some("Other"))] {
+        let mut song = make_album_original(video, None);
+        song.album = album.map(|a| MaybeRc::Owned(ListSongAlbum { name: a.into(), id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")) }));
+        p.list.push_song_list(vec![song]);
+    }
+    let mut with_year = make_album_original("a4", Some("1999"));
+    with_year.album = Some(MaybeRc::Owned(ListSongAlbum { name: "Compilation".into(), id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")) }));
+    p.list.push_song_list(vec![with_year]);
+
+    let stamped = p.apply_album_year("COMPILATION", "2009");
+
+    assert_eq!(stamped, 2, "case-insensitive match, pre-set year not overwritten");
+    let years: Vec<Option<String>> = p
+        .list
+        .get_list_iter()
+        .map(|s| s.year.as_ref().map(|y| y.as_ref().clone()))
+        .collect();
+    assert_eq!(years, vec![Some("2009".into()), Some("2009".into()), None, Some("1999".into())]);
+}
+
+#[test]
+fn apply_album_year_no_match_stamps_nothing() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let mut song = make_album_original("b1", None);
+    song.album = Some(MaybeRc::Owned(ListSongAlbum { name: "Other".into(), id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")) }));
+    p.list.push_song_list(vec![song]);
+
+    assert_eq!(p.apply_album_year("Missing", "2009"), 0);
+    assert!(p.list.get_list_iter().next().unwrap().year.is_none());
+}
+
+#[test]
 fn album_split_single_track_via_direct_insert_succeeds() {
     // Note: handle_album_split (production path) guards against < 2 tracks.
     // insert_album_tracks alone has no such guard — it inserts regardless.

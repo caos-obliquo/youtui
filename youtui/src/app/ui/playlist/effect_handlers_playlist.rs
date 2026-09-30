@@ -28,7 +28,7 @@ macro_rules! playlist_ok_handler {
             |this: &mut Playlist| {
                 info!($log);
                 this.library_playlist_mutated = true;
-                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+                AsyncTask::new_no_op()
             }
         });
     };
@@ -42,7 +42,7 @@ macro_rules! playlist_err_handler {
             move |this: &mut Playlist| {
                 error!("Failed to {}: {}", $op, msg);
                 this.last_error = Some(format!("{}: {}", $label, msg));
-                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+                AsyncTask::new_no_op()
             }
         });
     };
@@ -183,7 +183,7 @@ impl_youtui_task_handler!(
             // Clear the pending rating on error
             this.last_rated_video_id = None;
             this.last_rated_like_status = None;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -250,7 +250,7 @@ impl_youtui_task_handler!(
         move |target: &mut Playlist| {
             error!("Overwrite: failed to fetch playlist tracks: {}", msg);
             target.last_error = Some(format!("Overwrite failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -282,7 +282,7 @@ impl_youtui_task_handler!(
         move |target: &mut Playlist| {
             error!("Overwrite: failed to remove old tracks: {}", msg);
             target.last_error = Some(format!("Overwrite remove failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -785,6 +785,48 @@ impl_youtui_task_handler!(
     }
 );
 
+/// Bandcamp album imports validate once against the album and broadcast the
+/// resulting year to every row of that album, instead of one lookup per track.
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampAlbumValidated(pub String);
+
+impl_youtui_task_handler!(
+    HandleBandcampAlbumValidated,
+    ValidatedMetadata,
+    Playlist,
+    |this: HandleBandcampAlbumValidated, metadata: ValidatedMetadata| {
+        move |target: &mut Playlist| {
+            match metadata.year.as_deref() {
+                Some(year) => {
+                    target.apply_album_year(&this.0, year);
+                }
+                None => {
+                    info!(
+                        "bandcamp album validation: provider returned no year for album={:?}; rows left unset",
+                        this.0
+                    );
+                }
+            }
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampAlbumValidationError;
+
+impl_youtui_task_handler!(
+    HandleBandcampAlbumValidationError,
+    anyhow::Error,
+    Playlist,
+    |_, error: anyhow::Error| {
+        warn!("bandcamp album validation error: {}", error);
+        move |_target: &mut Playlist| {
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
 // F3 guard handlers: yt-dlp probe ran off the event loop. Insert the song
 // now that metadata arrived, or surface feedback on timeout/failure.
 #[derive(Debug, PartialEq)]
@@ -820,7 +862,7 @@ impl_youtui_task_handler!(
             error!("Failed to fetch video metadata via yt-dlp: {}", msg);
             target.remove_pending_yt_video(&raw);
             target.last_error = Some(format!("Add failed: {}", msg));
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -846,16 +888,63 @@ impl_youtui_task_handler!(
                 url,
                 entries.len()
             );
-            let effect = AsyncTask::new_no_op();
             let first_url = entries.first().map(|e| e.url.clone());
             target.pending_bandcamp_album = None;
-            for entry in entries {
-                target.insert_bandcamp_track_entry(&entry);
+            let mut probe: Option<(ListSongID, String, String, String)> = None;
+            for entry in &entries {
+                if let Some(id) = target.insert_bandcamp_track_entry(entry) {
+                    if probe.is_none()
+                        && let Some(album) = entry.album.clone()
+                    {
+                        let resolved = crate::bandcamp::resolve_bandcamp_metadata(
+                            &entry.title,
+                            &entry.uploader,
+                            entry.album.as_deref(),
+                            entry.track.as_deref(),
+                        );
+                        probe = Some((id, resolved.artist, resolved.title, album));
+                    }
+                }
             }
             if let Some(first_url) = first_url {
                 target.select_bandcamp_first_entry(&first_url);
             }
-            effect
+            let base = AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op();
+            match probe {
+                Some((id, artist, title, album)) if !artist.is_empty() && !title.is_empty() => {
+                    info!(
+                        "bandcamp album {}: single album-level validation for artist={:?} title={:?}",
+                        url,
+                        artist,
+                        title
+                    );
+                    let api_key = target.scrobbling_config.api_key.clone();
+                    let discogs = Some(target.scrobbling_config.discogs_token.clone())
+                        .filter(|s| !s.is_empty());
+                    base.push(AsyncTask::new_future_try(
+                        ValidateMetadata(
+                            artist,
+                            title,
+                            id,
+                            api_key,
+                            discogs,
+                            Some(album.clone()),
+                            url.clone(),
+                            false,
+                        ),
+                        HandleBandcampAlbumValidated(album),
+                        HandleBandcampAlbumValidationError,
+                        None,
+                    ))
+                }
+                _ => {
+                    info!(
+                        "bandcamp album {}: no album-level validation probe available",
+                        url
+                    );
+                    base
+                }
+            }
         }
     }
 );
@@ -871,7 +960,7 @@ impl_youtui_task_handler!(
             error!("Failed to resolve bandcamp album {}: {}", url, msg);
             target.last_error = Some(format!("Album add failed: {}", msg));
             target.pending_bandcamp_album = None;
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -1053,7 +1142,7 @@ impl_youtui_task_handler!(
             if applied > 0 {
                 info!("Queue batch enrichment: applied years to {} songs", applied);
             }
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -1067,7 +1156,7 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             warn!("Queue batch year enrichment failed: {}", msg);
             this.last_error = Some(format!("Year enrichment failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -1298,7 +1387,7 @@ impl_youtui_task_handler!(
                     None,
                 )
             } else {
-                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+                AsyncTask::new_no_op()
             }
         }
     }
@@ -1313,7 +1402,7 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             error!("GetRelatedTracks failed: {}", msg);
             this.last_error = Some(format!("Related tracks failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -1498,7 +1587,7 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             error!("ActOnRecommendation failed: {}", msg);
             this.last_error = Some(format!("Recommendation action failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -1533,7 +1622,7 @@ impl_youtui_task_handler!(
                 }
             }
             info!("Enriched {} related tracks with yt-dlp metadata", count);
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -1547,7 +1636,7 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             warn!("Related tracks enrichment failed: {}", msg);
             this.last_error = Some(format!("Related tracks enrichment failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -1560,7 +1649,7 @@ pub struct HandleSubscribeToArtistError;
 impl_youtui_task_handler!(HandleSubscribeToArtistOk, (), Playlist, |_, _: ()| {
     |_this: &mut Playlist| {
         info!("Subscribed to artist");
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        AsyncTask::new_no_op()
     }
 });
 
@@ -1574,7 +1663,7 @@ pub struct HandleUnsubscribeFromArtistsError;
 impl_youtui_task_handler!(HandleUnsubscribeFromArtistsOk, (), Playlist, |_, _: ()| {
     |_this: &mut Playlist| {
         info!("Unsubscribed from artist");
-        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        AsyncTask::new_no_op()
     }
 });
 

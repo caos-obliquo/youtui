@@ -210,7 +210,11 @@ pub struct FetchBandcampAlbumEntries(pub String, pub bool, pub String);
 async fn fetch_tralbum_page(
     client: &reqwest::Client,
     url: &str,
-) -> Result<Vec<crate::bandcamp::TralbumTrack>> {
+) -> Result<(
+    Vec<crate::bandcamp::TralbumTrack>,
+    Option<String>,
+    Option<String>,
+)> {
     let html = client
         .get(url)
         .header(
@@ -222,8 +226,13 @@ async fn fetch_tralbum_page(
         .error_for_status()?
         .text()
         .await?;
-    crate::bandcamp::parse_tralbum_tracks(&html)
-        .ok_or_else(|| anyhow::anyhow!("no data-tralbum trackinfo in album page"))
+    let tracks = crate::bandcamp::parse_tralbum_tracks(&html)
+        .ok_or_else(|| anyhow::anyhow!("no data-tralbum trackinfo in album page"))?;
+    Ok((
+        tracks,
+        crate::bandcamp::parse_tralbum_art_url(&html),
+        crate::bandcamp::parse_tralbum_release_year(&html),
+    ))
 }
 
 impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
@@ -262,21 +271,34 @@ impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
                 anyhow::bail!("yt-dlp failed for {}: {}", url, stderr.trim());
             }
             let mut entries = parse_bandcamp_album_entries(&String::from_utf8_lossy(&output.stdout));
-            if entries.iter().any(|e| e.duration_secs <= 0.0) {
+            let needs_enrichment = entries
+                .iter()
+                .any(|e| e.duration_secs <= 0.0 || e.track.is_none() || e.year.is_none());
+            if needs_enrichment {
                 match fetch_tralbum_page(&http_client, &url).await {
-                    Ok(tracks) => {
+                    Ok((tracks, art_url, year)) => {
                         let filled =
-                            crate::bandcamp::merge_tralbum_durations(&mut entries, &tracks);
+                            crate::bandcamp::merge_tralbum_metadata(&mut entries, &tracks);
+                        for e in entries.iter_mut() {
+                            if let Some(art) = &art_url {
+                                e.cover_url = Some(art.clone());
+                            }
+                            if e.year.is_none() {
+                                e.year = year.clone();
+                            }
+                        }
                         tracing::info!(
-                            "FetchBandcampAlbumEntries: filled {} of {} durations from data-tralbum for {}",
+                            "FetchBandcampAlbumEntries: enriched {} of {} entries from data-tralbum for {}, art={}, year={}",
                             filled,
                             entries.len(),
-                            url
+                            url,
+                            art_url.as_deref().unwrap_or("none"),
+                            year.as_deref().unwrap_or("none")
                         );
                     }
                     Err(e) => {
                         tracing::warn!(
-                            "FetchBandcampAlbumEntries: duration enrichment unavailable for {} ({}); keeping 0:00",
+                            "FetchBandcampAlbumEntries: tralbum enrichment unavailable for {} ({}); keeping flat-playlist metadata",
                             url,
                             e
                         );

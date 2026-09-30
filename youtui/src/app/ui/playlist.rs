@@ -1516,6 +1516,16 @@ impl Playlist {
         );
         let secs = entry.duration_secs as u64;
         let duration = format!("{}:{:02}", secs / 60, secs % 60);
+        let thumbnails = entry
+            .cover_url
+            .as_ref()
+            .map(|u| ytmapi_rs::common::Thumbnail {
+                width: 1200,
+                height: 1200,
+                url: u.clone(),
+            })
+            .into_iter()
+            .collect();
         let song = ytmapi_rs::parse::SearchResultSong {
             title: resolved.title.clone(),
             artist: resolved.artist.clone(),
@@ -1524,7 +1534,7 @@ impl Playlist {
             plays: String::new(),
             explicit: ytmapi_rs::common::Explicit::NotExplicit,
             video_id: VideoID::from_raw(entry.url.clone()),
-            thumbnails: Vec::new(),
+            thumbnails,
             like_status: ytmapi_rs::common::LikeStatus::Indifferent,
         };
         let old_count = self.list.get_list_iter().count();
@@ -1532,6 +1542,10 @@ impl Playlist {
         if self.list.get_list_iter().count() > old_count {
             if let Some(idx) = self.get_index_from_id(id) {
                 if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
+                    s.track_no = entry.track_no.as_deref().and_then(|n| n.parse().ok());
+                    if let Some(year) = &entry.year {
+                        s.year = Some(std::rc::Rc::new(year.clone()));
+                    }
                     s.album = Some(crate::app::structures::MaybeRc::Owned(
                         crate::app::structures::ListSongAlbum {
                             name: resolved
@@ -1546,6 +1560,28 @@ impl Playlist {
         } else {
             None
         }
+    }
+
+    pub fn apply_album_year(&mut self, album: &str, year: &str) -> usize {
+        let target = album.to_lowercase();
+        let mut stamped = 0;
+        for song in self.list.get_list_iter_mut() {
+            let matches = song
+                .album
+                .as_ref()
+                .is_some_and(|a| a.as_ref().name.to_lowercase() == target);
+            if matches && song.year.is_none() {
+                song.year = Some(std::rc::Rc::new(year.to_string()));
+                stamped += 1;
+            }
+        }
+        info!(
+            "bandcamp album year: stamped {} rows with year={} for album={:?}",
+            stamped,
+            year,
+            album
+        );
+        stamped
     }
 
     /// Select the first queued bandcamp entry (album tracklist order) after

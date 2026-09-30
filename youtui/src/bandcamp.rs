@@ -79,6 +79,11 @@ pub struct BandcampTrackEntry {
     pub uploader: String,
     pub album: Option<String>,
     pub track: Option<String>,
+    pub track_no: Option<String>,
+    /// Album art URL shared by every track on the page.
+    pub cover_url: Option<String>,
+    /// Year published by Bandcamp for the album, shared by every track.
+    pub year: Option<String>,
 }
 
 /// Type of entity returned by `bcsearch_public_api` autocomplete.
@@ -211,7 +216,10 @@ pub fn parse_bandcamp_album_entries(stdout: &str) -> Vec<BandcampTrackEntry> {
             uploader,
             album,
             track,
-        });
+            track_no: None,
+            cover_url: None,
+
+            year: None,        });
     }
     entries
 }
@@ -225,6 +233,8 @@ pub struct TralbumTrack {
     /// Path component of `title_link` (e.g. `/track/neutralize`), used to match
     /// against the flat-playlist track URL.
     pub url_path: Option<String>,
+    /// Position within the compilation, absent on singles.
+    pub track_num: Option<u32>,
 }
 
 fn decode_html_entities(input: &str) -> String {
@@ -316,19 +326,52 @@ pub fn parse_tralbum_tracks(html: &str) -> Option<Vec<TralbumTrack>> {
                         .get("title_link")
                         .and_then(|l| l.as_str())
                         .map(|l| l.split('?').next().unwrap_or(l).to_string()),
+                    track_num: v
+                        .get("track_num")
+                        .and_then(|n| n.as_u64())
+                        .and_then(|n| u32::try_from(n).ok()),
                 })
             })
             .collect(),
     )
 }
 
-/// Fill zero durations on `entries` from the album page's `trackinfo` payload.
+pub fn parse_tralbum_art_url(html: &str) -> Option<String> {
+    const MARKER: &str = "<meta property=\"og:image\" content=\"";
+    let start = html.find(MARKER)? + MARKER.len();
+    let rest = &html[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+/// Year Bandcamp itself publishes for the album, from the tralbum
+/// `current.release_date` blob (e.g. `"28 Sep 2026 18:26:00 GMT"` -> `"2026"`).
+///
+/// This is the date the label posted the album, which is the only year Bandcamp
+/// exposes. It is the post/reissue date for reissued compilations, not the
+/// original release year, so it is used deliberately as the fallback when no
+/// metadata provider knows the album.
+pub fn parse_tralbum_release_year(html: &str) -> Option<String> {
+    const KEY: &str = "&quot;release_date&quot;:&quot;";
+    let start = html.find(KEY)? + KEY.len();
+    let rest = &html[start..];
+    let end = rest.find("&quot;")?;
+    let date = decode_html_entities(&rest[..end]);
+    let year: String = date
+        .split(|c: char| !c.is_ascii_digit())
+        .find(|p| p.len() == 4 && (1900..=2099).contains(&p.parse::<u32>().unwrap_or(0)))
+        .map(|p| p.to_string())?;
+    Some(year)
+}
+
+/// Fill missing durations and track numbers on `entries` from the album page's
+/// `trackinfo` payload.
 ///
 /// Matches on the `/track/...` path so a re-ordered or partially-returned
-/// flat-playlist cannot shift durations onto the wrong tracks; falls back to
+/// flat-playlist cannot shift metadata onto the wrong tracks; falls back to
 /// positional matching only when no path match exists. Returns how many
-/// entries were filled.
-pub fn merge_tralbum_durations(
+/// entries gained at least one field.
+pub fn merge_tralbum_metadata(
     entries: &mut [BandcampTrackEntry],
     tracks: &[TralbumTrack],
 ) -> usize {
@@ -338,30 +381,32 @@ pub fn merge_tralbum_durations(
             .and_then(|r| r.find('/').map(|i| &r[i..]))
             .unwrap_or("")
     }
-    let mut filled = 0;
+    let mut touched = 0;
     for (idx, entry) in entries.iter_mut().enumerate() {
-        if entry.duration_secs > 0.0 {
-            continue;
-        }
         let path = url_path(&entry.url);
         let by_path = if path.is_empty() {
             None
         } else {
-            tracks
-                .iter()
-                .find(|t| t.url_path.as_deref() == Some(path) && t.duration_secs > 0.0)
+            tracks.iter().find(|t| t.url_path.as_deref() == Some(path))
         };
-        let source = by_path.or_else(|| {
-            tracks
-                .get(idx)
-                .filter(|t| t.duration_secs > 0.0)
-        });
-        if let Some(t) = source {
+        let source = by_path.or_else(|| tracks.get(idx));
+        let Some(t) = source else { continue };
+        let mut touched_entry = false;
+        if entry.duration_secs <= 0.0 && t.duration_secs > 0.0 {
             entry.duration_secs = t.duration_secs;
-            filled += 1;
+            touched_entry = true;
+        }
+        if entry.track_no.is_none()
+            && let Some(n) = t.track_num
+        {
+            entry.track_no = Some(n.to_string());
+            touched_entry = true;
+        }
+        if touched_entry {
+            touched += 1;
         }
     }
-    filled
+    touched
 }
 
 pub fn url_to_host(url: &str) -> Option<&str> {
@@ -464,7 +509,9 @@ mod tests {
         assert_eq!(tracks[0].artist, "Boredom Knife");
         assert!((tracks[0].duration_secs - 243.435).abs() < f64::EPSILON);
         assert_eq!(tracks[0].url_path.as_deref(), Some("/track/neutralize"));
+        assert_eq!(tracks[0].track_num, Some(1));
         assert_eq!(tracks[1].url_path.as_deref(), Some("/track/temper-wrecked"));
+        assert_eq!(tracks[1].track_num, Some(2));
     }
 
     #[test]
@@ -473,7 +520,27 @@ mod tests {
     }
 
     #[test]
-    fn merge_durations_matches_by_path_not_position() {
+    fn art_url_read_from_og_image_meta() {
+        let page = r#"<head><meta property="og:image" content="https://f4.bcbits.com/img/a0489092809_5.jpg"><meta property="og:title" content="x"></head>"#;
+        assert_eq!(
+            parse_tralbum_art_url(page).as_deref(),
+            Some("https://f4.bcbits.com/img/a0489092809_5.jpg")
+        );
+        assert!(parse_tralbum_art_url("<html>no art</html>").is_none());
+    }
+
+    #[test]
+    fn release_year_read_from_tralbum_current_blob() {
+        let page = r#"<div data-tralbum="{&quot;current&quot;:{&quot;title&quot;:&quot;NOISE AS A FORM OF EXPRESSION VOL.4&quot;,&quot;release_date&quot;:&quot;28 Sep 2026 18:26:00 GMT&quot;,&quot;id&quot;:2426189157},&quot;trackinfo&quot;:[]}"></div>"#;
+        assert_eq!(parse_tralbum_release_year(page).as_deref(), Some("2026"));
+        assert!(parse_tralbum_release_year("<html>no tralbum</html>").is_none());
+        let no_year =
+            r#"<div data-tralbum="{&quot;current&quot;:{&quot;release_date&quot;:&quot;soon&quot;}}"></div>"#;
+        assert!(parse_tralbum_release_year(no_year).is_none());
+    }
+
+    #[test]
+    fn merge_metadata_matches_by_path_not_position() {
         let mut entries = vec![
             BandcampTrackEntry {
                 url: "https://dramarecorder.bandcamp.com/track/temper-wrecked".to_string(),
@@ -482,7 +549,10 @@ mod tests {
                 uploader: String::new(),
                 album: None,
                 track: None,
-            },
+                track_no: None,
+                cover_url: None,
+
+                year: None,            },
             BandcampTrackEntry {
                 url: "https://dramarecorder.bandcamp.com/track/neutralize".to_string(),
                 title: "Boredom Knife - Neutralize".to_string(),
@@ -490,16 +560,40 @@ mod tests {
                 uploader: String::new(),
                 album: None,
                 track: None,
-            },
+                track_no: None,
+                cover_url: None,
+
+                year: None,            },
         ];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
-        assert_eq!(merge_tralbum_durations(&mut entries, &tracks), 2);
+        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 2);
         assert!((entries[0].duration_secs - 364.308).abs() < f64::EPSILON);
         assert!((entries[1].duration_secs - 243.435).abs() < f64::EPSILON);
+        assert_eq!(entries[0].track_no.as_deref(), Some("2"));
+        assert_eq!(entries[1].track_no.as_deref(), Some("1"));
     }
 
     #[test]
-    fn merge_durations_keeps_existing_and_reports_partial() {
+    fn merge_metadata_fills_track_num_when_duration_present() {
+        let mut entries = vec![BandcampTrackEntry {
+            url: "https://dramarecorder.bandcamp.com/track/neutralize".to_string(),
+            title: "Boredom Knife - Neutralize".to_string(),
+            duration_secs: 243.0,
+            uploader: String::new(),
+            album: None,
+            track: None,
+            track_no: None,
+            cover_url: None,
+
+            year: None,        }];
+        let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
+        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 1);
+        assert!((entries[0].duration_secs - 243.0).abs() < f64::EPSILON);
+        assert_eq!(entries[0].track_no.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn merge_metadata_keeps_existing_duration() {
         let mut entries = vec![BandcampTrackEntry {
             url: "https://dramarecorder.bandcamp.com/track/neutralize".to_string(),
             title: "Boredom Knife - Neutralize".to_string(),
@@ -507,10 +601,31 @@ mod tests {
             uploader: String::new(),
             album: None,
             track: None,
-        }];
+            track_no: None,
+            cover_url: None,
+
+            year: None,        }];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
-        assert_eq!(merge_tralbum_durations(&mut entries, &tracks), 0);
+        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 1);
         assert!((entries[0].duration_secs - 10.0).abs() < f64::EPSILON);
+        assert_eq!(entries[0].track_no.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn merge_metadata_noop_when_nothing_missing() {
+        let mut entries = vec![BandcampTrackEntry {
+            url: "https://dramarecorder.bandcamp.com/track/neutralize".to_string(),
+            title: "Boredom Knife - Neutralize".to_string(),
+            duration_secs: 243.0,
+            uploader: String::new(),
+            album: None,
+            track: Some("1".to_string()),
+            track_no: Some("1".to_string()),
+            cover_url: None,
+
+            year: None,        }];
+        let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
+        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 0);
     }
 
     #[test]
