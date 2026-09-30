@@ -108,7 +108,7 @@ async fn seek_reports_pre_seek_position_on_failure() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     // Pause first: the mixer stops pulling, so nothing can paper over the
     // failed seek afterwards. The reply must still be the pre-seek position.
-    player.pause_play(2).await.expect("pause");
+    player.pause_play(2).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     let Some(reply) = player
         .seek(Duration::from_secs(5), SeekDirection::Forward)
@@ -127,7 +127,6 @@ async fn seek_reports_pre_seek_position_on_failure() {
 
 #[tokio::test]
 async fn seek_to_reports_pre_seek_position_on_failure() {
-
     let _guard = device_lock_guard();
     if !device_available() {
         eprintln!("SKIP: no audio output device");
@@ -136,7 +135,7 @@ async fn seek_to_reports_pre_seek_position_on_failure() {
     let player = AsyncRodio::<Unseekable, u32>::new();
     let _stream = player.play_song(Unseekable, 3);
     tokio::time::sleep(Duration::from_millis(300)).await;
-    player.pause_play(3).await.expect("pause");
+    player.pause_play(3).await;
     tokio::time::sleep(Duration::from_millis(200)).await;
     let Some(reply) = player
         .seek_to(Duration::from_secs(60), 3)
