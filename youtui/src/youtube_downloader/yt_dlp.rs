@@ -17,6 +17,7 @@ use tracing::{debug, error, info, warn};
 /// Cheap to clone due to use of Arc to store internals.
 pub struct YtDlpDownloader {
     yt_dlp_command: Arc<OsString>,
+    bandcamp_yt_dlp_command: Option<Arc<OsString>>,
     po_token: Option<String>,
     cookie_path: Option<String>,
     cookie_browser: String,
@@ -58,9 +59,16 @@ impl std::fmt::Display for YtDlpDownloaderError {
 }
 
 impl YtDlpDownloader {
-    pub fn new(yt_dlp_command: String, po_token: Option<String>, cookie_path: Option<String>, cookie_browser: String) -> Self {
+    pub fn new(
+        yt_dlp_command: String,
+        bandcamp_yt_dlp_command: Option<String>,
+        po_token: Option<String>,
+        cookie_path: Option<String>,
+        cookie_browser: String,
+    ) -> Self {
         Self {
             yt_dlp_command: Arc::new(yt_dlp_command.into()),
+            bandcamp_yt_dlp_command: bandcamp_yt_dlp_command.map(|c| Arc::new(c.into())),
             po_token,
             cookie_path,
             cookie_browser,
@@ -91,7 +99,14 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
         Self::Error,
     > {
-        let command = self.yt_dlp_command.clone();
+        let command = if crate::bandcamp::is_bandcamp_url(song_video_id.as_ref()) {
+            self.bandcamp_yt_dlp_command
+                .as_ref()
+                .unwrap_or(&self.yt_dlp_command)
+        } else {
+            &self.yt_dlp_command
+        }
+        .clone();
         async move {
             let video_id = song_video_id.as_ref().to_string();
             let format_string = quality.format_string().to_string();
@@ -234,15 +249,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let total_size_bytes = file_bytes.len();
             
             // Detect and log container format
-            let format_name = if file_bytes.len() >= 12 && file_bytes[4..8] == *b"ftyp" {
-                let brand = &file_bytes[8..12];
-                if brand == b"isom" { "MP4 (isom)" }
-                else if brand == b"M4A " { "M4A" }
-                else { "MP4" }
-            } else if file_bytes.starts_with(b"\x1a\x45\xdf\xa3") { "WebM" }
-            else if file_bytes.starts_with(b"RIFF") { "WAV" }
-            else if file_bytes.starts_with(b"OggS") { "Ogg" }
-            else { "unknown" };
+            let format_name = detect_container(&file_bytes).unwrap_or("unknown");
             
             // Validate the file has a recognizable audio container header
             // Guards against corrupted output (pipe bug), empty files (resume bug),
@@ -280,6 +287,23 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
 
 fn effective_cookie_file(cookie_path: Option<&str>) -> Option<&str> {
     cookie_path.filter(|p| std::path::Path::new(p).exists())
+}
+
+/// Detect the audio container format from magic bytes, or None when unknown.
+/// MP4: ftyp box, WebM: EBML magic, WAV: RIFF, Ogg: OggS, MP3: ID3 tag
+/// or MPEG frame sync (0xFF plus 3-bit version/algo bits set).
+fn detect_container(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() >= 12 && bytes[4..8] == *b"ftyp" {
+        let brand = &bytes[8..12];
+        if brand == b"isom" { Some("MP4 (isom)") }
+        else if brand == b"M4A " { Some("M4A") }
+        else { Some("MP4") }
+    } else if bytes.starts_with(b"\x1a\x45\xdf\xa3") { Some("WebM") }
+    else if bytes.starts_with(b"RIFF") { Some("WAV") }
+    else if bytes.starts_with(b"OggS") { Some("Ogg") }
+    else if bytes.starts_with(b"ID3") { Some("MP3") }
+    else if bytes.len() >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 { Some("MP3") }
+    else { None }
 }
 
 fn build_stream_args<'a>(
@@ -358,14 +382,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_yt_dlp_downloader_with_po_token() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), Some("test_po_token".to_string()), None, "chromium".to_string());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, Some("test_po_token".to_string()), None, "chromium".to_string());
         assert!(downloader.po_token.is_some());
         assert_eq!(downloader.po_token.unwrap(), "test_po_token");
     }
 
     #[tokio::test]
     async fn test_yt_dlp_downloader_without_po_token() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, None, "chromium".to_string());
         assert!(downloader.po_token.is_none());
     }
 
@@ -411,7 +435,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "needs real YouTube access - blocked from CI sandboxes, run locally"]
     async fn test_downloading_a_song_with_ytdlp() {
-        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, "chromium".to_string());
+        let downloader = YtDlpDownloader::new("yt-dlp".to_string(), None, None, None, "chromium".to_string());
         let YoutubeMusicDownload { song: stream, .. } =
             downloader.stream_song("lYBUbBu4W08", crate::app::AudioQuality::Best).await.unwrap();
         stream
@@ -497,6 +521,51 @@ mod tests {
         assert!(!super::is_progressive_fallback("251"));
         assert!(!super::is_progressive_fallback("140"));
         assert!(!super::is_progressive_fallback("unknown"));
+    }
+
+    #[test]
+    fn test_detect_container_accepts_known_headers() {
+        let mut mp4 = vec![0u8; 128];
+        mp4[4..8].copy_from_slice(b"ftyp");
+        mp4[8..12].copy_from_slice(b"isom");
+        assert_eq!(super::detect_container(&mp4), Some("MP4 (isom)"));
+
+        let mut m4a = vec![0u8; 128];
+        m4a[4..8].copy_from_slice(b"ftyp");
+        m4a[8..12].copy_from_slice(b"M4A ");
+        assert_eq!(super::detect_container(&m4a), Some("M4A"));
+
+        let mut webm = vec![0u8; 128];
+        webm[..4].copy_from_slice(b"\x1a\x45\xdf\xa3");
+        assert_eq!(super::detect_container(&webm), Some("WebM"));
+
+        let mut wav = vec![0u8; 128];
+        wav[..4].copy_from_slice(b"RIFF");
+        assert_eq!(super::detect_container(&wav), Some("WAV"));
+
+        let mut ogg = vec![0u8; 128];
+        ogg[..4].copy_from_slice(b"OggS");
+        assert_eq!(super::detect_container(&ogg), Some("Ogg"));
+    }
+
+    #[test]
+    fn test_detect_container_accepts_mp3_headers() {
+        let mut id3 = vec![0u8; 128];
+        id3[..3].copy_from_slice(b"ID3");
+        assert_eq!(super::detect_container(&id3), Some("MP3"));
+
+        let mut frame_sync = vec![0u8; 128];
+        frame_sync[0] = 0xFF;
+        frame_sync[1] = 0xFB;
+        assert_eq!(super::detect_container(&frame_sync), Some("MP3"));
+    }
+
+    #[test]
+    fn test_detect_container_rejects_unknown_and_short() {
+        assert_eq!(super::detect_container(b""), None);
+        assert_eq!(super::detect_container(b"\x00\x01\x02\x03"), None);
+        // One byte with 0xFF but no second byte to pair the sync mask
+        assert_eq!(super::detect_container(&[0xFF]), None);
     }
 
     #[test]

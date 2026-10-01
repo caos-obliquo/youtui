@@ -615,6 +615,18 @@ impl Browser {
     pub fn song_browser(&self) -> &SongSearchBrowser {
         &self.song_search_browser
     }
+    /// Run a merged YouTube + Bandcamp search on the Songs tab, switching to
+    /// it if another tab is active.
+    pub fn run_merged_search(&mut self, query: String) -> AsyncTask<Self, crate::app::server::ArcServer, crate::app::TaskMetadata> {
+        self.variant = BrowserVariant::Song;
+        self.song_search_browser
+            .search
+            .search_contents
+            .set_text(&query);
+        self.song_search_browser
+            .search()
+            .map_frontend(|this: &mut Self| &mut this.song_search_browser)
+    }
     pub fn playlist_browser(&self) -> &PlaylistSearchBrowser {
         &self.playlist_search_browser
     }

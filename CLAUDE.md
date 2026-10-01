@@ -45,11 +45,11 @@ If things break, rollback and re-apply one-by-one.
 - Workspace root: `/home/caos/builds/youtui/`
 - Rust nightly (1.97.0)
 - Binary: `cargo build --release` -> `target/release/youtui`
-- Dependencies: yt-dlp, ffmpeg (all platforms). Linux: alsa-lib (pacman). macOS: CoreAudio (built-in). BSD: OSS (built-in)
+- Dependencies: yt-dlp, ffmpeg (all platforms). Linux: alsa-lib (pacman). macOS: CoreAudio (built-in). BSD: OSS (built-in). Bandcamp support requires the uv-tool yt-dlp with curl_cffi (`~/.local/bin/yt-dlp` from `uv tool install yt-dlp`); the distro `/usr/bin/yt-dlp` fails on the Bandcamp Client Challenge ("Unable to extract tralbum data"). The uv-tool binary fails on YouTube ("Requested format is not available"), so `config.toml` sets `yt_dlp_command` = distro binary and `bandcamp_yt_dlp_command` = uv-tool binary; the per-source pick happens via `is_bandcamp_url` in `YtDlpDownloader::stream_song` and `FetchYtVideoMetadata`
 
 ## Tests
 ```bash
-cargo test --release -p youtui                      # 283 pass, 3 ignore
+cargo test --release -p youtui                      # 372 pass, 3 ignore
 cargo test --release -p metadata-provider           # 110 pass (+62 new)
 cargo test --release -p vi-text-editor              # 67 pass
 cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
@@ -62,7 +62,7 @@ cargo test --release -p json-crawler                # 2 pass
 cargo test --release -p lrclib-rs                   # 4 pass
 cargo test --release -p rym-genre-data              # 10 pass
 ```
-Total: **~638/641 pass, 0 fail, 3 ignored, 0 warnings** (283+3 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 641)
+Total: **~727/730 pass, 0 fail, 3 ignored, 0 warnings** (372+3 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 730)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -211,7 +211,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## 12 Workspace Crates (50k+ LOC)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 264 |
+| `youtui` | Main binary | 372 |
 | `ytmapi-rs` | YT Music API client | 83 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 67 |
 | `metadata-provider` | Metadata trait + 6 provider impls | 110 |
@@ -229,7 +229,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 |---|---|---|---|---|---|---|
 | Artists | F1 | Detailed | Y | Y | ga/gb | OK |
 | Albums | F1 | Detailed | Y | Y | ga/gb | OK (refactored to AdvancedTableView) |
-| Songs | F1 | Detailed | Y | Y | ga/gb | OK |
+| Songs | F1 | Detailed | Y | Y | ga/gb | OK (merged YouTube + Bandcamp search, BC badge in Src column) |
 | Library | F1 | Detailed | Y | Y | ga/gb | OK |
 | PlaylistSearch | F1 | Detailed | Y | Y | ga/gb | **FIXED** (was dead, now live) |
 
@@ -242,6 +242,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 | `youtui/src/app/ui/browser/draw.rs` | ~517 | All browser draw functions |
 | `youtui/src/app/ui/browser/library.rs` | ~2214 | Library (4th tab) with inline tracks view, instant years |
 | `youtui/src/app/ui/browser/albumsearch.rs` | ~731 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
+| `youtui/src/bandcamp.rs` | ~213 | Bandcamp URL normalization/kind detection, album-entry + search-result parsing |
 | `youtui/src/config/keymap.rs` | ~2142 | All keybindings by context |
 | `youtui/src/app/ui.rs` | ~1779 | Main window, event routing |
 | `libs/metadata-provider/` | 48 tests | Metadata trait + 6 provider impls + genre_map |
@@ -307,6 +308,7 @@ See `docs/09-roadmap.md` for detailed session history.
 - **Scrobble cache**: Persistent retry file at `~/.config/youtui/scrobble_cache.json`. Failed scrobbles saved to disk with retry count (max 3). Retried on startup + background 5-min loop. Rate limit stops retries to avoid hammering.
 - **Protocol cache (chunk dimensions)**: `cached_album_chunk` tracks image chunk dimensions in footer. `chunk_changed` comparison prevents 8-bit fallback on terminal resize (PR #8).
 - **o.v zero-pixel guard**: Zero-width/height `in_mem_image` shows 'No image data' instead of attempting to render empty sixel (PR #9).
+- **Bandcamp**: Free streams are mp3-128 only (higher quality needs purchased downloads + cookies). Stream tokens expire in minutes, never cached. Requires uv-tool yt-dlp with curl_cffi for the 2026 Client Challenge. Purchased-only tracks need cookies (`--cookies-from-browser`). Search via `bcsearch_public_api` (Songs-tab F1 + `:` fallback merged results, BC badge in Src column).
 
 ## Scrobbler Integration
 
@@ -437,7 +439,7 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 283 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
+- 372 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
 - Suckless refactoring adds 0 tests (refactors existing code only)
 
 ## Inspirations & Thanks

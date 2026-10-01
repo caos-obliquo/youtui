@@ -10,6 +10,7 @@ use crate::app::server::{
     PausePlay, PlayDecodedSong, QueueDecodedSong, Resume, Seek, SeekTo, Stop, StopAll,
     TaskMetadata, ValidateMetadata, AlbumTrack, FetchYtVideoMetadata, YtVideoMetadata,
 };
+use crate::bandcamp::{url_to_host, BandcampTrackEntry};
 use crate::app::structures::{
     fuzzy_match, AlbumArtState, AlbumOrUploadAlbumID, AudioQuality, BrowserSongsList, DownloadStatus,
     ListSong, ListSongArtist, ListSongDisplayableField, ListSongID, MaybeRc, Percentage, PlayState, SongListComponent,
@@ -128,6 +129,8 @@ pub struct Playlist {
     pub radio_mode: bool,
     /// Transient error message shown in playlist header (clears on next action)
     pub last_error: Option<String>,
+    /// Album URL currently being enumerated, shown as a populating indicator
+    pub pending_bandcamp_album: Option<String>,
     /// Transient status notification (clears on next action)
     pub last_status: Option<String>,
     /// Pending chunks for multi-playlist split (video_ids, title, description, next_index)
@@ -399,7 +402,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 }
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 if let Some(song) = self.get_song_from_idx(actual_index) {
-                    let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                    let raw_url = crate::app::structures::song_share_url(song.video_id.get_raw());
                     crate::app::structures::copy_to_clipboard(&raw_url);
                     info!("Copied URL: {}", raw_url);
                 }
@@ -928,8 +931,13 @@ impl HasTitle for Playlist {
         };
         let err_indicator = self.last_error.as_ref().map(|e| format!(" [ERR: {}]", e)).unwrap_or_default();
         let status_indicator = self.last_status.as_ref().map(|s| format!(" [! {}]", s)).unwrap_or_default();
+        let loading_indicator = self
+            .pending_bandcamp_album
+            .as_ref()
+            .map(|u| format!(" [loading {}]", url_to_host(u).unwrap_or(u)))
+            .unwrap_or_default();
         format!(
-            "Queue - {} songs{}{}{}{}{}{}{}",
+            "Queue - {} songs{}{}{}{}{}{}{}{}",
             self.list.get_list_iter().len(),
             quality_indicator,
             shuffle_indicator,
@@ -938,6 +946,7 @@ impl HasTitle for Playlist {
             romaji_indicator,
             err_indicator,
             status_indicator,
+            loading_indicator,
         )
         .into()
     }
@@ -990,6 +999,7 @@ impl Playlist {
             repeat_mode: crate::app::structures::RepeatMode::Off,
             radio_mode: false,
             last_error: None,
+            pending_bandcamp_album: None,
             last_status: None,
             pending_playlist_chunks: None,
             undo_stack: Vec::new(),
@@ -1274,13 +1284,20 @@ impl Playlist {
     fn strip_artist_prefix(artist: &str, title: &str) -> String {
         let lower = title.to_lowercase();
         let art_lower = artist.to_lowercase();
-        if lower.starts_with(&format!("{} - ", art_lower)) {
+        let stripped = if lower.starts_with(&format!("{} - ", art_lower)) {
             title[artist.len() + 3..].trim().to_string()
         } else if artist.len() >= 2 && lower.starts_with(&art_lower) && !lower[art_lower.len()..].starts_with(&art_lower) {
             title[artist.len()..].trim().to_string()
         } else {
             title.to_string()
-        }
+        };
+        // Trim leading separators left behind by multi-space titles like
+        // "Artist  -  Song" (double space defeats the "{} - " branch above,
+        // and the plain prefix branch keeps the "-  " separator).
+        stripped
+            .trim_start_matches(|c: char| c == '-' || c == '–' || c == '—' || c == '|')
+            .trim()
+            .to_string()
     }
 
     /// Strip YouTube noise patterns (official audio, lyrics, etc.) from title end
@@ -1291,6 +1308,7 @@ impl Playlist {
             "com legendado", "legendado pt", "legendado pt-br",
             "subtitle", "subtitles",
             "full album", "full ep", "full lp", "full demo", "full single",
+            "fullalbum", "fullep", "fulllp", "fulldemo", "fullsingle",
         ];
         let mut s = title.to_string();
         loop {
@@ -1299,10 +1317,10 @@ impl Playlist {
             for tag in &noise_tags {
                 if let Some(pos) = lower.rfind(tag) {
                     let before = &s[..pos].trim();
-                    let cut = if let Some(paren_start) = before.rfind('(') {
-                        let between = &before[paren_start..];
+                    let cut = if let Some(open_start) = before.rfind(|c| c == '(' || c == '[') {
+                        let between = &before[open_start..];
                         if between.to_lowercase().contains(tag) {
-                            &before[..paren_start.max(1).saturating_sub(1)]
+                            &before[..open_start.max(1).saturating_sub(1)]
                         } else {
                             &s[..pos]
                         }
@@ -1317,7 +1335,7 @@ impl Playlist {
                 }
             }
             if !found {
-                s = s.trim_end_matches(|c| c == '(').trim().to_string();
+                s = s.trim_end_matches(|c| c == '(' || c == '[').trim().to_string();
                 break;
             }
         }
@@ -1360,7 +1378,7 @@ impl Playlist {
                             if tag_tokens.is_empty() { return false; }
                             group_tokens.windows(tag_tokens.len())
                                 .any(|w| w == tag_tokens.as_slice())
-                        });
+                        }) || crate::app::structures::has_album_upload_tag(&group_lower);
                         if has_tag {
                             let before: String = chars[..open].iter().collect();
                             let after: String = chars[i..].iter().collect();
@@ -1422,7 +1440,12 @@ impl Playlist {
 
         // Optimistic pending row so the queue shows instant feedback while the
         // yt-dlp probe runs (up to 60s). Replaced on resolve, removed on error.
-        self.insert_pending_yt_video_row(video_id.clone());
+        let source = if crate::bandcamp::is_bandcamp_url(&raw_id) {
+            "Bandcamp"
+        } else {
+            "YouTube"
+        };
+        self.insert_pending_yt_video_row(video_id.clone(), source);
         // F3 guard: yt-dlp network RTT runs in a backend task with a 60s
         // timeout. Return pending state immediately, insert on completion.
         info!("add_yt_video: fetching metadata in background for {}", raw_id);
@@ -1434,12 +1457,16 @@ impl Playlist {
         )
     }
 
-    fn insert_pending_yt_video_row(&mut self, video_id: ytmapi_rs::common::VideoID<'static>) -> ListSongID {
+    fn insert_pending_yt_video_row(
+        &mut self,
+        video_id: ytmapi_rs::common::VideoID<'static>,
+        source: &str,
+    ) -> ListSongID {
         use ytmapi_rs::common::YoutubeID;
         let raw_id = video_id.get_raw().to_string();
         let song = ytmapi_rs::parse::SearchResultSong {
             title: format!("fetching... {}", raw_id),
-            artist: "YouTube".to_string(),
+            artist: source.to_string(),
             album: None,
             duration: String::from("0:00"),
             plays: String::new(),
@@ -1471,19 +1498,146 @@ impl Playlist {
         false
     }
 
+    /// Insert a Bandcamp track directly from flat-playlist JSONL data.
+    ///
+    /// Bypasses the pending-row + FetchYtVideoMetadata probe flow to avoid
+    /// 349 individual yt-dlp processes (one per track) which trigger Bandcamp
+    /// HTTP 429 rate limiting on large compilation albums.
+    pub fn insert_bandcamp_track_entry(&mut self, entry: &BandcampTrackEntry) -> Option<ListSongID> {
+        let resolved = crate::bandcamp::resolve_bandcamp_metadata(
+            &entry.title,
+            &entry.uploader,
+            entry.album.as_deref(),
+            entry.track.as_deref(),
+        );
+        info!(
+            "bandcamp track: artist={}, title={}, album={:?}, duration={}s",
+            resolved.artist, resolved.title, resolved.album, entry.duration_secs
+        );
+        let secs = entry.duration_secs as u64;
+        let duration = format!("{}:{:02}", secs / 60, secs % 60);
+        let thumbnails = entry
+            .cover_url
+            .as_ref()
+            .map(|u| ytmapi_rs::common::Thumbnail {
+                width: 1200,
+                height: 1200,
+                url: u.clone(),
+            })
+            .into_iter()
+            .collect();
+        let song = ytmapi_rs::parse::SearchResultSong {
+            title: resolved.title.clone(),
+            artist: resolved.artist.clone(),
+            album: None,
+            duration,
+            plays: String::new(),
+            explicit: ytmapi_rs::common::Explicit::NotExplicit,
+            video_id: VideoID::from_raw(entry.url.clone()),
+            thumbnails,
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+        };
+        let old_count = self.list.get_list_iter().count();
+        let id = self.list.append_raw_search_result_songs(vec![song]);
+        if self.list.get_list_iter().count() > old_count {
+            if let Some(idx) = self.get_index_from_id(id) {
+                if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
+                    s.track_no = entry.track_no.as_deref().and_then(|n| n.parse().ok());
+                    if let Some(year) = &entry.year {
+                        s.year = Some(std::rc::Rc::new(year.clone()));
+                    }
+                    s.album = Some(crate::app::structures::MaybeRc::Owned(
+                        crate::app::structures::ListSongAlbum {
+                            name: resolved
+                                .album
+                                .unwrap_or_else(|| resolved.title.clone()),
+                            id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
+                        },
+                    ));
+                }
+            }
+            Some(id)
+        } else {
+            None
+        }
+    }
+
+    /// Stamp `year` on every row whose album matches `album` (case-insensitive),
+    /// leaving rows that already carry a year untouched. Returns rows changed.
+    pub fn apply_album_year(&mut self, album: &str, year: &str) -> usize {
+        let target = album.to_lowercase();
+        let mut stamped = 0;
+        for song in self.list.get_list_iter_mut() {
+            let matches = song
+                .album
+                .as_ref()
+                .is_some_and(|a| a.as_ref().name.to_lowercase() == target);
+            if matches && song.year.is_none() {
+                song.year = Some(std::rc::Rc::new(year.to_string()));
+                stamped += 1;
+            }
+        }
+        info!(
+            "bandcamp album year: stamped {} rows with year={} for album={:?}",
+            stamped,
+            year,
+            album
+        );
+        stamped
+    }
+
+    /// Select the first queued bandcamp entry (album tracklist order) after
+    /// entries were appended. Returns the selected index.
+    pub fn select_bandcamp_first_entry(&mut self, first_url: &str) -> Option<usize> {
+        if let Some(idx) = self
+            .list
+            .get_list_iter()
+            .position(|s| s.video_id.get_raw() == first_url)
+        {
+            self.cur_selected = idx;
+            debug!(
+                "bandcamp album: selected first entry at index {} for tracklist order",
+                idx
+            );
+            Some(idx)
+        } else {
+            None
+        }
+    }
+
     pub fn insert_yt_video_metadata(&mut self, video_id: ytmapi_rs::common::VideoID<'static>, meta: YtVideoMetadata) -> ComponentEffect<Self> {
         use ytmapi_rs::common::YoutubeID;
         let raw_id = video_id.get_raw().to_string();
         let title = meta.title;
         let uploader = meta.uploader;
 
-        // Try to extract real artist from title ("Artist - Song"), fallback to uploader
-        let artist = if title.contains(" - ") {
-            title.splitn(2, " - ").next().map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty() && s.len() < 80)
-                .unwrap_or_else(|| uploader.clone())
+        // Bandcamp rail guard: label-hosted pages name the label in
+        // title/uploader; the real artist appears only as the album-name
+        // prefix and `track` carries the clean song name. Resolve all three
+        // in one place; YouTube keeps the legacy title-split logic.
+        let is_bandcamp = crate::bandcamp::is_bandcamp_url(&raw_id);
+        let (artist, clean_src, bandcamp_album) = if is_bandcamp {
+            let resolved = crate::bandcamp::resolve_bandcamp_metadata(
+                &title,
+                &uploader,
+                meta.album.as_deref(),
+                meta.track.as_deref(),
+            );
+            info!(
+                "add_yt_video: bandcamp metadata -> artist={}, title={}, album={:?}",
+                resolved.artist, resolved.title, resolved.album
+            );
+            (resolved.artist, resolved.title, resolved.album)
         } else {
-            uploader.clone()
+            // Try to extract real artist from title ("Artist - Song"), fallback to uploader
+            let artist = if title.contains(" - ") {
+                title.splitn(2, " - ").next().map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty() && s.len() < 80)
+                    .unwrap_or_else(|| uploader.clone())
+            } else {
+                uploader.clone()
+            };
+            (artist, title.clone(), None)
         };
         let mut duration = String::from("0");
         let mut duration_secs: f64 = 0.0;
@@ -1511,7 +1665,7 @@ impl Playlist {
         };
         let year = year.or(title_year);
 
-        let clean_title = Self::clean_title_for_metadata(&artist, &title);
+        let clean_title = Self::clean_title_for_metadata(&artist, &clean_src);
         // Handle " // " convention: "Artist // Album Title" (common YouTube album upload)
         // e.g., "band - Artist // Album Title" -> artist="Artist", title="Album Title"
         // After artist prefix strip, remaining title still has "Artist // Album Title".
@@ -1543,6 +1697,9 @@ impl Playlist {
                     name: meta_artist.clone(),
                     id: None,
                 }]);
+                // Drop the cached artist string: it was computed from the
+                // pending row's source label (YouTube/Bandcamp) on first render.
+                s.artists_string.take();
                 s.duration_string = duration.clone();
                 s.thumbnails = MaybeRc::Owned(thumb_vec.clone());
             }
@@ -1570,12 +1727,14 @@ impl Playlist {
             }
         };
         if let Some(id) = id_opt {
-            // Set initial album name from YouTube video title (before metadata overwrites)
+            // Set initial album name from the yt-dlp album field when present
+            // (Bandcamp track JSON carries the real album), else fall back to
+            // the video title (before metadata overwrites).
             if let Some(idx) = self.get_index_from_id(id) {
                 if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
                     s.album = Some(crate::app::structures::MaybeRc::Owned(
                         crate::app::structures::ListSongAlbum {
-                            name: meta_title.clone(),
+                            name: bandcamp_album.clone().or_else(|| meta.album.clone()).unwrap_or_else(|| meta_title.clone()),
                             id: AlbumOrUploadAlbumID::Album(ytmapi_rs::common::AlbumID::from_raw("")),
                         },
                     ));
@@ -1591,21 +1750,7 @@ impl Playlist {
             // Check if raw yt-dlp title has album indicator tags (were stripped by clean_title_for_metadata)
             // or if video is album-length (>15 min). If so, allow album splitting.
             let lower_raw = title.to_lowercase();
-            let has_raw_tags = lower_raw.contains("full album")
-                || lower_raw.contains("full ep")
-                || lower_raw.contains("full lp")
-                || lower_raw.contains("full demo")
-                || lower_raw.contains("full single")
-                || lower_raw.contains("full-length")
-                || lower_raw.contains("studio album")
-                || lower_raw.contains("live album")
-                || lower_raw.contains("official album")
-                || lower_raw.contains("compilation")
-                || lower_raw.contains("bootleg")
-                || lower_raw.contains("anthology")
-                || lower_raw.contains("collection")
-                || lower_raw.contains("self-titled")
-                || lower_raw.contains("self titled");
+            let has_raw_tags = crate::app::structures::has_album_upload_tag(&lower_raw);
             if has_raw_tags || duration_secs > 900.0 {
                 if let Some(idx) = self.get_index_from_id(id) {
                     if let Some(s) = self.list.get_list_iter_mut().nth(idx) {
@@ -1624,10 +1769,18 @@ impl Playlist {
                 HandleMetadataValidationError,
                 None,
             );
-            if let Some(song_id) = self.get_id_from_index(self.cur_selected) {
-                let dl_effect = self.download_upcoming_from_id(song_id);
-                return dl_effect.push(validation_task);
+            // Only auto-start playback when nothing is currently active. When
+            // a song is already Playing/Paused/Buffering, the resolved track
+            // stays appended to the queue and natural advancement picks it up.
+            // Re-scoping here would cancel the active queue's buffered
+            // downloads (user: add to queue, do not override the queue).
+            if matches!(self.play_status, PlayState::NotPlaying | PlayState::Stopped) {
+                if let Some(song_id) = self.get_id_from_index(self.cur_selected) {
+                    let dl_effect = self.download_upcoming_from_id(song_id);
+                    return dl_effect.push(validation_task);
+                }
             }
+            return validation_task;
         }
         AsyncTask::new_no_op()
     }

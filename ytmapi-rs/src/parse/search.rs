@@ -108,6 +108,18 @@ pub struct SearchResultArtist {
     pub browse_id: ArtistChannelID<'static>,
     pub thumbnails: Vec<Thumbnail>,
 }
+
+impl SearchResultArtist {
+    /// Synthetic artist entry keyed by an arbitrary id, for non-YouTube sources.
+    pub fn from_external_id(artist: String, id: ArtistChannelID<'static>) -> Self {
+        Self {
+            artist,
+            subscribers: None,
+            browse_id: id,
+            thumbnails: Vec::new(),
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 /// A podcast search result.

@@ -13,6 +13,7 @@ use ytmapi_rs::auth::OAuthToken;
 mod api;
 mod app;
 mod appevent;
+mod bandcamp;
 mod cli;
 mod config;
 mod core;
@@ -443,6 +444,12 @@ enum Command {
         #[arg(long)]
         retry: bool,
     },
+    /// Resolve a Bandcamp URL: normalize it, detect kind (track/album/discography),
+    /// and list the playable entries via yt-dlp. Debug tool for the Bandcamp flow.
+    BandcampResolve {
+        /// Bandcamp URL (track, album, or artist discography page)
+        url: String,
+    },
     /// View TUI log files written by init_tracing (same content as the F11 view).
     Log {
         /// Follow the latest log file live (like tail -f). Ctrl-C to exit.
@@ -643,6 +650,7 @@ async fn try_main() -> anyhow::Result<()> {
     if let Some(ref cp) = cookie_path {
         let cp = cp.clone();
         let cookie_browser = config.cookie_browser.clone();
+        let yt_dlp_command = config.yt_dlp_command.clone();
         tokio::spawn(async move {
             // Only auto-refresh when there is no existing cookie file. A fresh
             // yt-dlp merge from a multi-session browser profile can pair SID/
@@ -654,7 +662,7 @@ async fn try_main() -> anyhow::Result<()> {
             }
             let tmp = format!("{cp}.tmp");
             let _ = tokio::fs::remove_file(&tmp).await;
-            match tokio::process::Command::new("yt-dlp")
+            match tokio::process::Command::new(&yt_dlp_command)
                 .args([
                     "--cookies-from-browser",
                     &cookie_browser,

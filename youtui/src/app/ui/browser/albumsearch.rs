@@ -2,7 +2,10 @@ use crate::app::AppCallback;
 use crate::app::component::actionhandler::{
     ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
-use crate::app::server::{SearchAlbums, AlbumSearchItem};
+use crate::app::server::{SearchAlbums, AlbumSearchItem, SearchBandcamp, FetchBandcampAlbumEntries};
+use crate::bandcamp::{BandcampSearchResult, BandcampTrackEntry, BandcampType};
+use ytmapi_rs::common::AlbumID as YtmAlbumID;
+use ytmapi_rs::common::{AlbumType, Explicit};
 use crate::app::component::actionhandler::Suggestable;
 use crate::app::structures::{
     BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus, Percentage, fuzzy_match,
@@ -64,6 +67,8 @@ pub struct AlbumSearchBrowser {
     pub liked_playlists: HashSet<PlaylistID<'static>>,
     pub last_message: Option<String>,
     pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
+    pending_bandcamp_albums: Option<Vec<BandcampSearchResult>>,
+    search_pending: bool,
 }
 
 impl_youtui_component!(AlbumSearchBrowser);
@@ -94,6 +99,8 @@ impl AlbumSearchBrowser {
             liked_playlists: HashSet::new(),
             last_message: None,
             subscribed_artists: HashSet::new(),
+            pending_bandcamp_albums: None,
+            search_pending: false,
         }
     }
 
@@ -134,6 +141,16 @@ impl AlbumSearchBrowser {
             }
             return (AsyncTask::new_no_op(), None);
         }
+        if album_item.is_bandcamp {
+            let bc_url = album_item.bandcamp_url.clone().unwrap_or_default();
+            let task = AsyncTask::new_future_try(
+                FetchBandcampAlbumEntries(bc_url, false, String::new()),
+                HandleFetchBandcampAlbumEntriesOk,
+                HandleFetchBandcampAlbumEntriesError,
+                None,
+            ).map_frontend(|this: &mut Self| &mut *this);
+            return (task, None);
+        }
         let album_id = album_item.album.album_id.clone();
         let task = AsyncTask::new_future_try(
             FetchAlbumTracks { album_id },
@@ -156,6 +173,8 @@ impl AlbumSearchBrowser {
                 thumbnails: vec![],
             },
             is_youtube: false,
+            is_bandcamp: false,
+            bandcamp_url: None,
             youtube_video_id: None,
             youtube_duration: None,
         }];
@@ -230,13 +249,22 @@ impl AlbumSearchBrowser {
         }
         self.last_search_query = Some(query.clone());
         self.input_routing = InputRouting::List;
-        let task = AsyncTask::new_future_try(
-            SearchAlbums(query),
+        self.search_pending = true;
+        self.pending_bandcamp_albums = None;
+        let yt_task = AsyncTask::new_future_try(
+            SearchAlbums(query.clone()),
             HandleSearchAlbumsOk,
             HandleSearchAlbumsError,
             Some(Constraint::new_kill_same_type()),
-        ).map_frontend(|this: &mut Self| &mut *this);
-        (task, None)
+        );
+        let bc_task = AsyncTask::new_future_try(
+            SearchBandcamp(query),
+            HandleBandcampSearchOk,
+            HandleBandcampSearchError,
+            Some(Constraint::new_kill_same_type()),
+        );
+        let combined = yt_task.push(bc_task).map_frontend(|this: &mut Self| &mut *this);
+        (combined, None)
     }
 
     pub fn text_editor_mode(&self) -> Option<String> { None }
@@ -499,7 +527,7 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
             }
             BrowserSongsAction::CopySongUrl => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    let url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                    let url = crate::app::structures::song_share_url(song.video_id.get_raw());
                     crate::app::structures::copy_to_clipboard(&url);
                     info!("Copied URL: {url}");
                 }
@@ -808,6 +836,62 @@ impl_youtui_task_handler!(HandleFetchAlbumTracksError, anyhow::Error, AlbumSearc
 });
 
 #[derive(Debug, PartialEq)]
+pub struct HandleFetchBandcampAlbumEntriesOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleFetchBandcampAlbumEntriesError;
+
+impl_youtui_task_handler!(HandleFetchBandcampAlbumEntriesOk, Vec<BandcampTrackEntry>, AlbumSearchBrowser, |_, entries: Vec<BandcampTrackEntry>| {
+    move |target: &mut AlbumSearchBrowser| {
+        target.track_list.clear();
+        target.track_selected = 0;
+        target.show_tracks = true;
+        if let Some(first) = entries.first() {
+            let resolved = crate::bandcamp::resolve_bandcamp_metadata(
+                &first.title,
+                &first.uploader,
+                first.album.as_deref(),
+                first.track.as_deref(),
+            );
+            target.album_artist = resolved.artist.clone();
+            target.album_year.clear();
+        }
+        for entry in &entries {
+            let resolved = crate::bandcamp::resolve_bandcamp_metadata(
+                &entry.title,
+                &entry.uploader,
+                entry.album.as_deref(),
+                entry.track.as_deref(),
+            );
+            let secs = entry.duration_secs as u64;
+            let song = ytmapi_rs::parse::SearchResultSong {
+                title: resolved.title.clone(),
+                artist: resolved.artist.clone(),
+                album: Some(ParsedSongAlbum {
+                    name: resolved.album.clone().unwrap_or_else(|| resolved.title.clone()),
+                    id: YtmAlbumID::from_raw(entry.url.clone()),
+                }),
+                duration: format!("{}:{:02}", secs / 60, secs % 60),
+                plays: String::new(),
+                explicit: Explicit::NotExplicit,
+                video_id: ytmapi_rs::common::VideoID::from_raw(entry.url.clone()),
+                thumbnails: vec![],
+                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+            };
+            target.track_list.append_raw_search_result_songs(vec![song]);
+        }
+        tracing::info!("bandcamp album opened with {} tracks", entries.len());
+        AsyncTask::new_no_op()
+    }
+});
+
+impl_youtui_task_handler!(HandleFetchBandcampAlbumEntriesError, anyhow::Error, AlbumSearchBrowser, |_, err: anyhow::Error| {
+    move |target: &mut AlbumSearchBrowser| {
+        target.last_message = Some(format!("Bandcamp album fetch failed: {err}"));
+        AsyncTask::new_no_op()
+    }
+});
+
+#[derive(Debug, PartialEq)]
 pub struct HandleSearchAlbumsOk;
 #[derive(Debug, PartialEq)]
 pub struct HandleSearchAlbumsError;
@@ -817,6 +901,30 @@ impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<AlbumSearchItem>, AlbumSearc
         target.albums = a.clone();
         target.album_selected = 0;
         target.show_tracks = false;
+        target.search_pending = false;
+        if let Some(bc_results) = target.pending_bandcamp_albums.take() {
+            let bc_albums: Vec<AlbumSearchItem> = bc_results
+                .into_iter()
+                .filter(|r| r.type_ == BandcampType::Album)
+                .map(|r| AlbumSearchItem {
+                    album: ytmapi_rs::parse::SearchResultAlbum {
+                        title: r.name.clone(),
+                        artist: r.band_name.clone(),
+                        year: String::new(),
+                        explicit: Explicit::NotExplicit,
+                        album_id: YtmAlbumID::from_raw(r.url.clone()),
+                        album_type: AlbumType::Album,
+                        thumbnails: vec![],
+                    },
+                    is_youtube: false,
+                    is_bandcamp: true,
+                    bandcamp_url: Some(r.url),
+                    youtube_video_id: None,
+                    youtube_duration: None,
+                })
+                .collect();
+            target.albums.extend(bc_albums);
+        }
         if let Some(query) = target.last_search_query.take() {
             target.search_cache.put(query, a);
         }
@@ -825,7 +933,53 @@ impl_youtui_task_handler!(HandleSearchAlbumsOk, Vec<AlbumSearchItem>, AlbumSearc
 });
 
 impl_youtui_task_handler!(HandleSearchAlbumsError, anyhow::Error, AlbumSearchBrowser, |_, _err: anyhow::Error| {
-    |_target: &mut AlbumSearchBrowser| AsyncTask::new_no_op()
+    |target: &mut AlbumSearchBrowser| {
+        target.search_pending = false;
+        AsyncTask::new_no_op()
+    }
+});
+
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampSearchOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampSearchError;
+
+impl_youtui_task_handler!(HandleBandcampSearchOk, Vec<BandcampSearchResult>, AlbumSearchBrowser, |_, a: Vec<BandcampSearchResult>| {
+    move |target: &mut AlbumSearchBrowser| {
+        if target.search_pending {
+            target.pending_bandcamp_albums = Some(a);
+        } else {
+            let bc_albums: Vec<AlbumSearchItem> = a
+                .into_iter()
+                .filter(|r| r.type_ == BandcampType::Album)
+                .map(|r| AlbumSearchItem {
+                    album: ytmapi_rs::parse::SearchResultAlbum {
+                        title: r.name.clone(),
+                        artist: r.band_name.clone(),
+                        year: String::new(),
+                        explicit: Explicit::NotExplicit,
+                        album_id: YtmAlbumID::from_raw(r.url.clone()),
+                        album_type: AlbumType::Album,
+                        thumbnails: vec![],
+                    },
+                    is_youtube: false,
+                    is_bandcamp: true,
+                    bandcamp_url: Some(r.url),
+                    youtube_video_id: None,
+                    youtube_duration: None,
+                })
+                .collect();
+            target.albums.extend(bc_albums);
+        }
+        AsyncTask::new_no_op()
+    }
+});
+
+impl_youtui_task_handler!(HandleBandcampSearchError, anyhow::Error, AlbumSearchBrowser, |_, _err: anyhow::Error| {
+    |target: &mut AlbumSearchBrowser| {
+        target.search_pending = false;
+        AsyncTask::new_no_op()
+    }
 });
 
 #[cfg(test)]

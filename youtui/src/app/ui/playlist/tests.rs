@@ -370,6 +370,68 @@ fn album_split_trusts_metadata_provider_tracks_regardless_of_title() {
 }
 
 #[test]
+fn bandcamp_entry_keeps_track_number_and_real_song_title() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let entry = crate::bandcamp::BandcampTrackEntry {
+        url: "https://dramarecorder.bandcamp.com/track/stau".to_string(),
+        title: "Blaske Hill - Stau".to_string(),
+        duration_secs: 492.5,
+        uploader: "Blaske Hill".to_string(),
+        album: Some("NOISE AS A FORM OF EXPRESSION VOL.4".to_string()),
+        track: None,
+        track_no: Some("3".to_string()),
+        cover_url: None,
+
+        year: None,    };
+    let id = p.insert_bandcamp_track_entry(&entry).expect("row inserted");
+    let idx = p.get_index_from_id(id).expect("index resolves");
+    let s = p.list.get_list_iter().nth(idx).unwrap();
+    assert_eq!(s.track_no, Some(3));
+    assert_eq!(s.title, "Stau");
+    assert_eq!(
+        s.album.as_ref().map(|a| a.as_ref().name.as_str()),
+        Some("NOISE AS A FORM OF EXPRESSION VOL.4")
+    );
+}
+
+#[test]
+fn apply_album_year_stamps_every_matching_row_only() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for (video, album) in [("a1", Some("Compilation")), ("a2", Some("compilation")), ("a3", Some("Other"))] {
+        let mut song = make_album_original(video, None);
+        song.album = album.map(|a| MaybeRc::Owned(ListSongAlbum { name: a.into(), id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")) }));
+        p.list.push_song_list(vec![song]);
+    }
+    let mut with_year = make_album_original("a4", Some("1999"));
+    with_year.album = Some(MaybeRc::Owned(ListSongAlbum { name: "Compilation".into(), id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")) }));
+    p.list.push_song_list(vec![with_year]);
+
+    let stamped = p.apply_album_year("COMPILATION", "2009");
+
+    assert_eq!(stamped, 2, "case-insensitive match, pre-set year not overwritten");
+    let years: Vec<Option<String>> = p
+        .list
+        .get_list_iter()
+        .map(|s| s.year.as_ref().map(|y| y.as_ref().clone()))
+        .collect();
+    assert_eq!(years, vec![Some("2009".into()), Some("2009".into()), None, Some("1999".into())]);
+}
+
+#[test]
+fn apply_album_year_no_match_stamps_nothing() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let mut song = make_album_original("b1", None);
+    song.album = Some(MaybeRc::Owned(ListSongAlbum { name: "Other".into(), id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")) }));
+    p.list.push_song_list(vec![song]);
+
+    assert_eq!(p.apply_album_year("Missing", "2009"), 0);
+    assert!(p.list.get_list_iter().next().unwrap().year.is_none());
+}
+
+#[test]
 fn album_split_single_track_via_direct_insert_succeeds() {
     // Note: handle_album_split (production path) guards against < 2 tracks.
     // insert_album_tracks alone has no such guard — it inserts regardless.
@@ -966,12 +1028,25 @@ fn pending_row_replaced_on_metadata_resolve() {
         duration_secs: Some(184.0),
         year: Some("2021".to_string()),
         thumbnail_url: Some("https://x/high.jpg".to_string()),
+        album: Some("Real Album".to_string()),
+        track: None,
     };
     let _ = p.insert_yt_video_metadata(vid, meta);
     assert_eq!(p.list.get_list_iter().count(), 1);
     let song = p.list.get_list_iter().next().expect("resolved row");
     assert!(!song.title.starts_with("fetching..."), "got: {}", song.title);
     assert!(song.title.contains("Real Title"), "got: {}", song.title);
+    let artist = song.artists.first().map(|a| a.name.clone()).unwrap_or_default();
+    assert_eq!(artist, "Artist", "artist should come from title split, got: {}", artist);
+    assert_eq!(
+        song.album.as_ref().map(|a| a.name.clone()),
+        Some("Real Album".to_string()),
+        "album should come from yt-dlp album field"
+    );
+    assert!(
+        song.artists_string.get().is_none(),
+        "cached artist string must be cleared after metadata resolve"
+    );
 }
 
 #[test]
@@ -985,6 +1060,91 @@ fn pending_row_removed_on_probe_error() {
     let _ = p.add_yt_video(vid, "https://youtu.be/dQw4w9WgXcQ");
     assert!(p.remove_pending_yt_video("dQw4w9WgXcQ"));
     assert_eq!(p.list.get_list_iter().count(), 0);
+}
+
+#[test]
+fn first_album_entry_downloads_first_when_idle() {
+    // Given: two pending bandcamp rows (album entries) with selection on the
+    // first entry (HandleBandcampAlbumEntriesOk sets cur_selected to track 1)
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let v1 = VideoID::from_raw("https://x.bandcamp.com/track/one".to_string());
+    let v2 = VideoID::from_raw("https://x.bandcamp.com/track/two".to_string());
+    let _ = p.add_yt_video(v1.clone(), "https://x.bandcamp.com/track/one");
+    let _ = p.add_yt_video(v2.clone(), "https://x.bandcamp.com/track/two");
+    let first = p.list.get_list_iter().next().unwrap().id;
+    let second = p.list.get_list_iter().nth(1).unwrap().id;
+    // When: the album handler selects the first entry (album tracklist order)
+    assert_eq!(
+        p.select_bandcamp_first_entry("https://x.bandcamp.com/track/one"),
+        Some(0)
+    );
+
+    // And: the first entry's metadata resolves while idle
+    let meta = crate::app::server::YtVideoMetadata {
+        title: "Artist - One".to_string(),
+        uploader: "Uploader".to_string(),
+        duration_secs: Some(100.0),
+        year: None,
+        thumbnail_url: None,
+        album: Some("Real Album".to_string()),
+        track: None,
+    };
+    let _ = p.insert_yt_video_metadata(v1, meta);
+
+    // Then: track 1 is queued for download, track 2 remains queued after it
+    let songs: Vec<_> = p.list.get_list_iter().collect();
+    assert_eq!(
+        songs[0].download_status,
+        DownloadStatus::Queued,
+        "track 1 must be the one starting playback"
+    );
+    assert_eq!(p.download_queue.len(), 1);
+    assert_eq!(p.download_queue.front(), Some(&second));
+    assert_ne!(first, second);
+}
+
+#[test]
+fn metadata_resolve_while_playing_does_not_rescope() {
+    // Given: a song already playing with a downloaded buffer, and a new URL
+    // added on top (pending row appended)
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let data = Arc::new(InMemSong(vec![1]));
+    let mut playing = make_track_entry("vplaying", 1, "Playing Song", 200.0, 0.0);
+    playing.download_status = DownloadStatus::Downloaded(data);
+    let playing_id = p.list.push_song_list(vec![playing]);
+    p.play_status = PlayState::Playing(playing_id);
+    let vid = VideoID::from_raw("https://x.bandcamp.com/track/new".to_string());
+    let _ = p.add_yt_video(vid.clone(), "https://x.bandcamp.com/track/new");
+
+    // When: the new track's metadata resolves while playback is active
+    let meta = crate::app::server::YtVideoMetadata {
+        title: "Artist - New".to_string(),
+        uploader: "Uploader".to_string(),
+        duration_secs: Some(180.0),
+        year: None,
+        thumbnail_url: None,
+        album: Some("Real Album".to_string()),
+        track: None,
+    };
+    let _ = p.insert_yt_video_metadata(vid, meta);
+
+    // Then: the download queue is untouched (no re-scope), the new track is
+    // not auto-queued, and the playing song is still the one downloaded
+    assert!(
+        p.download_queue.is_empty(),
+        "active queue must not be re-scoped: {:?}",
+        p.download_queue
+    );
+    let songs: Vec<_> = p.list.get_list_iter().collect();
+    assert_eq!(
+        songs[1].download_status,
+        DownloadStatus::None,
+        "new track must not be auto-downloaded while playing"
+    );
+    assert!(matches!(songs[0].download_status, DownloadStatus::Downloaded(_)));
+    assert_eq!(p.play_status, PlayState::Playing(playing_id));
 }
 
 // --- Split-track progress/seek regression (Japan bar pinned full) ---
@@ -1105,4 +1265,143 @@ fn fallback_does_not_overwrite_track_duration() {
         p.get_song_from_id(id).unwrap().actual_duration,
         Some(Duration::from_secs(167))
     );
+}
+
+// --- Bandcamp metadata rail guard regression tests ---
+use crate::app::ui::playlist::effect_handlers_playlist::apply_metadata_fields;
+use crate::app::structures::{AlbumOrUploadAlbumID, ListSongAlbum};
+use crate::app::server::ValidatedMetadata;
+
+#[test]
+fn bandcamp_album_artist_survive_wrong_provider_match() {
+    // Given: a bandcamp track with authoritative yt-dlp album and artist
+    let mut song = make_track_entry("https://x.bandcamp.com/track/side-b-35-songs", 2, "side B (35 songs)", 486.0, 0.0);
+    song.album = Some(MaybeRc::Owned(ListSongAlbum {
+        name: "Colhendo Desespero EP (SPHC)".into(),
+        id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+    }));
+    song.artists = MaybeRc::Owned(vec![ListSongArtist { name: "Putrefação Humana".into(), id: None }]);
+    // When: provider wrongly resolves to a different artist's album
+    let data = ValidatedMetadata {
+        artist: Some("Cuervo Messiah".into()),
+        album: Some("Side B".into()),
+        ..Default::default()
+    };
+    apply_metadata_fields(&mut song, &data);
+    // Then: bandcamp album and artist are preserved
+    assert_eq!(
+        song.album.as_ref().map(|a| a.as_ref().name.as_str()),
+        Some("Colhendo Desespero EP (SPHC)")
+    );
+    assert_eq!(
+        song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+        vec!["Putrefação Humana"]
+    );
+}
+
+#[test]
+fn empty_album_bandcamp_track_still_filled_by_provider() {
+    // Given: a bandcamp track whose yt-dlp fetch returned no album name
+    let mut song = make_track_entry("https://x.bandcamp.com/track/no-album", 1, "Some Song", 200.0, 0.0);
+    song.album = None;
+    // When: provider has a good match
+    let data = ValidatedMetadata {
+        artist: Some("Real Artist".into()),
+        album: Some("Real Album".into()),
+        ..Default::default()
+    };
+    apply_metadata_fields(&mut song, &data);
+    // Then: provider fills the gap (rail guard only protects non-empty album)
+    assert_eq!(
+        song.album.as_ref().map(|a| a.as_ref().name.as_str()),
+        Some("Real Album")
+    );
+    assert_eq!(
+        song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+        vec!["Real Artist"]
+    );
+}
+
+#[test]
+fn youtube_track_keeps_legacy_provider_override() {
+    // Given: a regular YouTube track with an empty placeholder album id
+    let mut song = make_track_entry("dQw4w9WgXcQ", 1, "Rick Astley - Never Gonna Give You Up", 212.0, 0.0);
+    song.album = Some(MaybeRc::Owned(ListSongAlbum {
+        name: "Never Gonna Give You Up".into(),
+        id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+    }));
+    // When: provider returns real metadata
+    let data = ValidatedMetadata {
+        artist: Some("Rick Astley".into()),
+        album: Some("Whenever You Need Somebody".into()),
+        ..Default::default()
+    };
+    apply_metadata_fields(&mut song, &data);
+    // Then: provider override still applies (bandcamp guard is URL-scoped)
+    assert_eq!(
+        song.album.as_ref().map(|a| a.as_ref().name.as_str()),
+        Some("Whenever You Need Somebody")
+    );
+    assert_eq!(
+        song.artists.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(),
+        vec!["Rick Astley"]
+    );
+}
+
+#[test]
+fn strip_artist_prefix_trims_double_space_separator() {
+    // Given: a title where the artist is separated by double spaces
+    // (defeats the "{artist} - " single-space branch)
+    // When: the artist prefix is stripped
+    let out = Playlist::strip_artist_prefix(
+        "Vomitoma",
+        "Vomitoma  -  Nuclear Cesspool Of Parasitic Scum [FULLALBUM]",
+    );
+    // Then: no leading "-  " separator survives
+    assert_eq!(out, "Nuclear Cesspool Of Parasitic Scum [FULLALBUM]");
+}
+
+#[test]
+fn strip_artist_prefix_trims_em_dash_separator() {
+    // Given: an em-dash separator after the artist prefix
+    // When: the artist prefix is stripped
+    let out = Playlist::strip_artist_prefix("Band", "Band \u{2014} Song Title");
+    // Then: the em-dash is trimmed too
+    assert_eq!(out, "Song Title");
+}
+
+#[test]
+fn clean_title_strips_concatenated_fullalbum_tag() {
+    // Given: a title with the concatenated [FULLALBUM] tag
+    // When: clean_title_for_metadata runs
+    let out = Playlist::clean_title_for_metadata(
+        "Vomitoma",
+        "Vomitoma  -  Nuclear Cesspool Of Parasitic Scum [FULLALBUM]",
+    );
+    // Then: artist prefix, separators and the bracket tag are all gone
+    assert_eq!(out, "Nuclear Cesspool Of Parasitic Scum");
+}
+
+#[test]
+fn insert_yt_video_metadata_sets_album_upload_on_fullalbum_tag() {
+    // Given: a resolved yt-dlp probe for a [FULLALBUM] title with short duration
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    let url = "https://www.youtube.com/watch?v=CDsJBLrT_UM";
+    let vid = VideoID::from_raw("CDsJBLrT_UM");
+    let _ = p.add_yt_video(vid.clone(), url);
+    let meta = crate::app::server::YtVideoMetadata {
+        title: "Vomitoma  -  Nuclear Cesspool Of Parasitic Scum [FULLALBUM]".into(),
+        uploader: "MAIGORENOISE".into(),
+        duration_secs: Some(600.0),
+        year: Some("2014".into()),
+        thumbnail_url: None,
+        album: None,
+        track: None,
+    };
+    // When: metadata resolves (short duration < 900s so the tag must do the work)
+    p.insert_yt_video_metadata(vid, meta);
+    // Then: the song is flagged as album upload via the compact tag match
+    let song = p.list.get_list_iter().next().unwrap();
+    assert!(song.is_album_upload);
 }

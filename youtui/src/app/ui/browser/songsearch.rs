@@ -8,12 +8,13 @@ use crate::app::component::actionhandler::{
     Action, ActionHandler, ComponentEffect, KeyRouter, Scrollable, Suggestable, TextHandler,
     YoutuiEffect,
 };
-use crate::app::server::{HandleApiError, SearchSongs};
+use crate::app::server::{HandleApiError, SearchBandcamp, SearchSongs};
 use crate::app::structures::{
     ArtistOrUploadArtistID, BrowserSongsList, ListSong, ListSongDisplayableField, ListStatus,
     Percentage, SongListComponent,
 };
-use ytmapi_rs::common::{ArtistChannelID, YoutubeID};
+use crate::bandcamp::{BandcampSearchResult, BandcampType};
+use ytmapi_rs::common::{AlbumID, ArtistChannelID, VideoID, YoutubeID};
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{
     AdvancedTableView, BasicConstraint, FilterString, HasTitle, Loadable, SortDirection,
@@ -46,6 +47,10 @@ pub struct SongSearchBrowser {
     pub local_filter_text: String,
     pub cur_playing_video_id: Option<ytmapi_rs::common::VideoID<'static>>,
     pub subscribed_artists: HashSet<ArtistChannelID<'static>>,
+    pending_bandcamp: Option<Vec<BandcampSearchResult>>,
+    /// True while a SearchSongs task is in flight. Bandcamp results are only
+    /// merged (or appended) once this flips to false.
+    search_pending: bool,
 }
 impl_youtui_component!(SongSearchBrowser);
 
@@ -400,6 +405,7 @@ impl TableView for SongSearchBrowser {
             BasicConstraint::Length(10),
             BasicConstraint::Length(4),
             BasicConstraint::Length(4),
+            BasicConstraint::Length(4),
         ]
     }
     fn get_highlighted_row(&self) -> Option<usize> {
@@ -420,11 +426,12 @@ impl TableView for SongSearchBrowser {
                     .expect("view_indices entries valid");
                 let mut fields: Vec<Cow<'_, str>> = song.get_fields(subcolumns).to_vec();
                 fields.push(Self::subs_icon_for_song(song, &self.subscribed_artists));
+                fields.push(Self::source_badge_for_song(song));
                 fields.into_iter()
             })
     }
     fn get_headings(&self) -> impl Iterator<Item = &'static str> {
-        ["Song", "Artist", "Album", "Duration", "Plays", "Liked", "Subs"].into_iter()
+        ["Song", "Artist", "Album", "Duration", "Plays", "Liked", "Subs", "Src"].into_iter()
     }
     fn get_mut_state(&mut self) -> &mut ScrollingTableState {
         &mut self.widget_state
@@ -495,6 +502,7 @@ impl AdvancedTableView for SongSearchBrowser {
             .map(|ls| {
                 let mut fields: Vec<Cow<'_, str>> = ls.get_fields(Self::subcolumns_of_vec()).to_vec();
                 fields.push(Self::subs_icon_for_song(ls, &self.subscribed_artists));
+                fields.push(Self::source_badge_for_song(ls));
                 fields.into_iter()
             })
     }
@@ -560,6 +568,8 @@ impl SongSearchBrowser {
             local_filter_text: String::new(),
             cur_playing_video_id: None,
             subscribed_artists: HashSet::new(),
+            pending_bandcamp: None,
+            search_pending: false,
         }
     }
     pub fn subcolumns_of_vec() -> [ListSongDisplayableField; 6] {
@@ -586,6 +596,13 @@ impl SongSearchBrowser {
         });
         if is_subscribed {
             Cow::Borrowed("\u{f02e}")
+        } else {
+            Cow::Borrowed("")
+        }
+    }
+    fn source_badge_for_song(song: &ListSong) -> Cow<'static, str> {
+        if crate::bandcamp::is_bandcamp_url(song.video_id.get_raw()) {
+            Cow::Borrowed("BC")
         } else {
             Cow::Borrowed("")
         }
@@ -781,12 +798,23 @@ impl SongSearchBrowser {
         self.search.clear_text();
         let search_query = search_text;
 
-        AsyncTask::new_future_try(
-            SearchSongs(search_query),
+        self.search_pending = true;
+        self.pending_bandcamp = None;
+        let yt_task = AsyncTask::new_future_try(
+            SearchSongs(search_query.clone()),
             HandleSearchSongsOk,
             HandleSearchSongsErr,
             Some(Constraint::new_kill_same_type()),
-        )
+        );
+        yt_task.push(AsyncTask::new_future_try(
+            SearchBandcamp(search_query),
+            HandleBandcampSearchOk,
+            HandleBandcampSearchErr,
+            // Kill same type: a rapid second search must cancel the previous
+            // Bandcamp probe, or its stale results merge into the new list
+            // via pending_bandcamp (wrong-query contamination).
+            Some(Constraint::new_kill_same_type()),
+        ))
     }
     pub fn play_song(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_song_idx = self.get_selected_item();
@@ -895,7 +923,7 @@ impl SongSearchBrowser {
     pub fn copy_song_url(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.get_selected_item();
         if let Some(song) = self.get_song_from_idx(cur_idx) {
-            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+            let raw_url = crate::app::structures::song_share_url(song.video_id.get_raw());
             crate::app::structures::copy_to_clipboard(&raw_url);
             tracing::info!("Copied URL: {}", raw_url);
         }
@@ -923,6 +951,39 @@ impl SongSearchBrowser {
     pub fn replace_song_list(&mut self, song_list: Vec<SearchResultSong>) {
         self.song_list.clear();
         self.song_list.append_raw_search_result_songs(song_list);
+        self.view_indices = (0..self.song_list.len()).collect();
+        if let Err(e) = self.apply_all_sort_commands() {
+            warn!("Tried to sort a column that is not sortable - error {e}")
+        };
+    }
+    fn append_bandcamp_results(&mut self, results: Vec<BandcampSearchResult>) {
+        let songs: Vec<SearchResultSong> = results
+            .into_iter()
+            .filter(|r| r.type_ == BandcampType::Track)
+            .map(|r| {
+                let vid: VideoID<'static> = VideoID::from_raw(r.url.clone());
+                let album_id: AlbumID<'static> = AlbumID::from_raw(r.url.clone());
+                let album = r.album_name.map(|n| ytmapi_rs::parse::ParsedSongAlbum {
+                    name: n,
+                    id: album_id,
+                });
+                ytmapi_rs::parse::SearchResultSong {
+                    title: r.name,
+                    artist: r.band_name,
+                    album,
+                    duration: String::new(),
+                    plays: String::new(),
+                    explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                    video_id: vid,
+                    thumbnails: vec![],
+                    like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+                }
+            })
+            .collect();
+        if songs.is_empty() {
+            return;
+        }
+        self.song_list.append_raw_search_result_songs(songs);
         self.view_indices = (0..self.song_list.len()).collect();
         if let Err(e) = self.apply_all_sort_commands() {
             warn!("Tried to sort a column that is not sortable - error {e}")
@@ -979,34 +1040,71 @@ impl SongSearchBrowser {
 struct HandleSearchSongsOk;
 #[derive(Debug, PartialEq)]
 struct HandleSearchSongsErr;
+#[derive(Debug, PartialEq)]
+struct HandleBandcampSearchOk;
+#[derive(Debug, PartialEq)]
+struct HandleBandcampSearchErr;
 
 impl_youtui_task_handler!(
     HandleSearchSongsOk,
     Vec<SearchResultSong>,
     SongSearchBrowser,
-    |_, songs| |this: &mut SongSearchBrowser| { this.replace_song_list(songs) }
+    |_, songs| |this: &mut SongSearchBrowser| {
+        this.replace_song_list(songs);
+        this.search_pending = false;
+        if let Some(bc) = this.pending_bandcamp.take() {
+            this.append_bandcamp_results(bc);
+        }
+    }
 );
 impl_youtui_task_handler!(
     HandleSearchSongsErr,
     anyhow::Error,
     SongSearchBrowser,
-    |_, error| |_: &mut SongSearchBrowser| AsyncTask::new_future(
-        HandleApiError {
-            error,
-            // To avoid needing to clone search query to use in the error message, this
-            // error message is minimal.
-            message: "Error recieved getting songs".to_string(),
-        },
-        NoOpHandler,
-        None,
-    )
+    |_, error| |this: &mut SongSearchBrowser| {
+        this.search_pending = false;
+        if let Some(bc) = this.pending_bandcamp.take() {
+            this.append_bandcamp_results(bc);
+        }
+        AsyncTask::new_future(
+            HandleApiError {
+                error,
+                // To avoid needing to clone search query to use in the error message, this
+                // error message is minimal.
+                message: "Error recieved getting songs".to_string(),
+            },
+            NoOpHandler,
+            None,
+        )
+    }
+);
+impl_youtui_task_handler!(
+    HandleBandcampSearchOk,
+    Vec<BandcampSearchResult>,
+    SongSearchBrowser,
+    |_, results| |this: &mut SongSearchBrowser| {
+        if this.search_pending {
+            this.pending_bandcamp = Some(results);
+        } else {
+            this.append_bandcamp_results(results);
+        }
+    }
+);
+impl_youtui_task_handler!(
+    HandleBandcampSearchErr,
+    anyhow::Error,
+    SongSearchBrowser,
+    |_, error| move |_this: &mut SongSearchBrowser| {
+        warn!("Bandcamp search failed: {error}");
+    }
 );
 
 #[cfg(test)]
 mod tests {
     use crate::app::server::SearchSongs;
     use crate::app::ui::browser::songsearch::{
-        HandleSearchSongsErr, HandleSearchSongsOk, SongSearchBrowser,
+        HandleBandcampSearchErr, HandleBandcampSearchOk, HandleSearchSongsErr, HandleSearchSongsOk,
+        SongSearchBrowser,
     };
     use async_callback_manager::{AsyncTask, Constraint};
 
@@ -1030,12 +1128,18 @@ mod tests {
         let mut browser = get_dummy_song_search_browser();
         browser.search.search_contents.set_text("Search!");
         let effect = browser.search();
-        let expected_effect = AsyncTask::new_future_try(
+        let yt_task = AsyncTask::new_future_try(
             SearchSongs("Search!".to_string()),
             HandleSearchSongsOk,
             HandleSearchSongsErr,
             Some(Constraint::new_kill_same_type()),
         );
+        let expected_effect = yt_task.push(AsyncTask::new_future_try(
+            crate::app::server::SearchBandcamp("Search!".to_string()),
+            HandleBandcampSearchOk,
+            HandleBandcampSearchErr,
+            Some(Constraint::new_kill_same_type()),
+        ));
         assert_eq!(effect, expected_effect);
     }
 }

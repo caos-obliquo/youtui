@@ -11,6 +11,47 @@ yt-dlp --dump-json --no-warnings {url} ← metadata fetch (add_yt_video, async F
 yt-dlp -f bestaudio/best --cookies {cookie.txt} -o {tempfile} -- {video_id} ← audio download (`--` end-of-options guard so dash-leading ids never parse as flags)
 ```
 
+Bandcamp URLs flow through the same pipeline: `yt_dlp_target_arg()` passes a
+bandcamp URL verbatim to yt-dlp (anything else is wrapped as `https://youtu.be/`).
+Track URLs queue like YouTube videos (`add_yt_video`, `VideoID` holds the full
+normalized URL); album/discography URLs resolve to their track list via the
+`FetchBandcampAlbumEntries` backend task (`--flat-playlist --dump-json`, 60s
+timeout) and each entry queues individually. `bandcamp-resolve <url>` is the CLI
+debug tool exercising the same resolution off the TUI.
+
+**Bandcamp requirement:** Bandcamp needs the uv-tool yt-dlp install with
+`curl_cffi` (`~/.local/bin/yt-dlp`, from `uv tool install yt-dlp`). The distro
+`/usr/bin/yt-dlp` fails on the 2026 Bandcamp Client Challenge ("Unable to extract
+tralbum data"). The reverse is also true: the uv-tool binary fails on YouTube
+("Requested format is not available" with cookies, "Please sign in" without),
+so the two sources need different binaries. Set `yt_dlp_command` (distro, for
+YouTube) and `bandcamp_yt_dlp_command` (uv-tool, for Bandcamp) in
+`~/.config/youtui/config.toml`; the per-source pick happens in
+`YtDlpDownloader::stream_song` and `FetchYtVideoMetadata` via
+`is_bandcamp_url`. Free streams are mp3-128 only; stream tokens expire in
+minutes and are never cached.
+
+## Bandcamp Search Merge (Phase 2)
+
+Songs-tab F1 search and the `:` command fallback run a merged search:
+`SearchSongs` (YouTube) and `SearchBandcamp` (Bandcamp) dispatch concurrently
+(`AsyncTask::push` -> Multi); bandcamp rows append after the YouTube results
+(deterministic via the `search_pending`/`pending_bandcamp` gate on
+`SongSearchBrowser`). Bandcamp rows carry a `BC` badge in the `Src` column
+(`source_badge_for_song`, `is_bandcamp_url` on `video_id`). The bandcamp
+`video_id` IS the track URL, so playing a merged row flows through the exact
+`add_yt_video` path from Phase 1.
+
+`SearchBandcamp` POSTs to
+`https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic`
+(body `{"fan_id":null,"full_page":false,"search_filter":"t","search_text":q}`,
+Firefox UA + `https://bandcamp.com/search` Referer; no Client Challenge on this
+endpoint). One defensive 3s sleep retry on 429 (onetagger pattern). Pure fn
+`parse_bandcamp_search_results(json)` maps `auto.results[]` track rows to
+`SearchResultSong` (title, `band_name` artist, `album_name` album, URL as
+video_id), filtering out non-track rows. SPIKE evidence:
+`.omo/evidence/bandcamp-search-spike.md`.
+
 **Key flags:**
 - `--force-overwrites` - prevents yt-dlp resume from treating 0-byte temp files as complete
 - `--extractor-args youtube:player_client=web_creator` - only with cookie_path
@@ -19,12 +60,13 @@ yt-dlp -f bestaudio/best --cookies {cookie.txt} -o {tempfile} -- {video_id} ← 
 
 **Timeout:** 5-minute proc wait prevents hung processes.
 
-**Container validation:** Post-download checks for valid audio header:
+**Container validation:** Post-download `detect_container()` checks for valid audio header:
 - MP4: `ftyp` magic bytes
 - M4A: M4A brand in ftyp
 - WebM: `\x1a\x45\xdf\xa3` (EBML)
 - WAV: `RIFF`
 - Ogg: `OggS`
+- MP3: `ID3` tag or MPEG frame sync (`0xFF` + 3-bit version/algo bits) - needed for Bandcamp streams
 
 ### Native (rusty_ytdl, broken)
 

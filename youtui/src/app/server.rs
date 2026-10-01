@@ -32,7 +32,10 @@ pub struct Server {
     pub http_client: ::reqwest::Client,
     pub metadata_registry: Arc<MetadataRegistry>,
     pub cookie_browser: String,
+    pub cookie_path: Option<String>,
     pub yt_dlp_command: String,
+    pub bandcamp_yt_dlp_command: Option<String>,
+    pub yt_dlp_semaphore: std::sync::Arc<tokio::sync::Semaphore>,
 }
 
 impl Server {
@@ -49,7 +52,7 @@ impl Server {
         let api = api::Api::new(api_key);
         let player = player::Player::new();
         let song_downloader =
-            song_downloader::SongDownloader::new(po_token, client.clone(), cookie_path, config);
+            song_downloader::SongDownloader::new(po_token, client.clone(), cookie_path.clone(), config);
         let song_thumbnail_downloader =
             song_thumbnail_downloader::SongThumbnailDownloader::new(client);
         let api_error_handler = api_error_handler::ApiErrorHandler::new();
@@ -79,7 +82,10 @@ impl Server {
             http_client,
             metadata_registry,
             cookie_browser: config.cookie_browser.clone(),
+            cookie_path,
             yt_dlp_command: config.yt_dlp_command.clone(),
+            bandcamp_yt_dlp_command: config.bandcamp_yt_dlp_command.clone(),
+            yt_dlp_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(3)),
         }
     }
 }

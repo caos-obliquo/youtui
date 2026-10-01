@@ -56,6 +56,11 @@ pub struct Config {
     pub auth_type: AuthType,
     pub downloader_type: DownloaderType,
     pub yt_dlp_command: String,
+    /// Optional dedicated yt-dlp binary for Bandcamp URLs. The uv-tool build
+    /// (curl_cffi impersonation) is required for the 2026 Bandcamp Client
+    /// Challenge, but its YouTube extraction is broken, so sites can need
+    /// different binaries. None falls back to yt_dlp_command.
+    pub bandcamp_yt_dlp_command: Option<String>,
     pub cookie_browser: String,
     pub keybinds: YoutuiKeymap,
     pub scrobbling: ScrobblingConfig,
@@ -97,6 +102,10 @@ fn default_yt_dlp_command() -> String {
     String::from("yt-dlp")
 }
 
+fn default_bandcamp_yt_dlp_command() -> Option<String> {
+    None
+}
+
 /// Compute a Last.fm API signature.
 ///
 /// Algorithm (per Last.fm auth spec): concatenate every `key`+`value` pair in
@@ -125,6 +134,7 @@ impl Default for Config {
             auth_type: Default::default(),
             downloader_type: Default::default(),
             yt_dlp_command: default_yt_dlp_command(),
+            bandcamp_yt_dlp_command: default_bandcamp_yt_dlp_command(),
             cookie_browser: default_cookie_browser(),
             keybinds: Default::default(),
             scrobbling: Default::default(),
@@ -141,6 +151,8 @@ pub struct ConfigIR {
     pub downloader_type: DownloaderType,
     #[serde(default = "default_yt_dlp_command")]
     pub yt_dlp_command: String,
+    #[serde(default = "default_bandcamp_yt_dlp_command")]
+    pub bandcamp_yt_dlp_command: Option<String>,
     #[serde(default = "default_cookie_browser")]
     pub cookie_browser: String,
     pub keybinds: YoutuiKeymapIR,
@@ -157,6 +169,7 @@ impl TryFrom<ConfigIR> for Config {
             keybinds,
             mode_names,
             yt_dlp_command,
+            bandcamp_yt_dlp_command,
             cookie_browser,
             scrobbling,
         } = value;
@@ -167,6 +180,7 @@ impl TryFrom<ConfigIR> for Config {
             cookie_browser,
             scrobbling,
             yt_dlp_command,
+            bandcamp_yt_dlp_command,
         })
     }
 }
@@ -360,7 +374,9 @@ async fn test_default_config_equals_deserialized_config() {
             auth_type,
             keybinds,
             downloader_type,
-            yt_dlp_command, ..
+            yt_dlp_command,
+            bandcamp_yt_dlp_command,
+            ..
         } = Config::try_from(ir).unwrap();
         let YoutuiKeymap {
             global,
@@ -385,7 +401,9 @@ async fn test_default_config_equals_deserialized_config() {
             auth_type: def_auth_type,
             keybinds: def_keybinds,
             downloader_type: def_downloader_type,
-            yt_dlp_command: def_yt_dlp_command, ..
+            yt_dlp_command: def_yt_dlp_command,
+            bandcamp_yt_dlp_command: def_bandcamp_yt_dlp_command,
+            ..
         } = Config::default();
         let YoutuiKeymap {
             global: def_global,
@@ -410,6 +428,7 @@ async fn test_default_config_equals_deserialized_config() {
         assert_eq!(auth_type, def_auth_type);
         assert_eq!(downloader_type, def_downloader_type);
         assert_eq!(yt_dlp_command, def_yt_dlp_command);
+        assert_eq!(bandcamp_yt_dlp_command, def_bandcamp_yt_dlp_command);
         assert_eq!(global, def_global);
         assert_eq!(playlist, def_playlist);
         assert_eq!(browser, def_browser);

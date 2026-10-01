@@ -5,6 +5,7 @@ use crate::app::server::{
     ArcServer, TaskMetadata, AddSongsToPlaylist, EnrichRelatedTracks, RemovePlaylistItems, ValidateMetadata,
     EnrichedPlaylistTracks, YtVideoMetadata,
 };
+use crate::bandcamp::BandcampTrackEntry;
 use crate::app::structures::{AlbumOrUploadAlbumID, ListSong, ListSongID, ListSongArtist, MaybeRc, ListSongAlbum};
 use crate::app::structures::{AlbumArtState, DownloadStatus};
 use crate::app::ui::playlist::Playlist;
@@ -487,8 +488,16 @@ pub enum MetadataEffect {
 
 /// Apply metadata fields (album, year, artist, track_no, genres, styles) to a song.
 /// Returns the original album name before overwriting.
-fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -> Option<String> {
+pub(crate) fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -> Option<String> {
     let original_album = song.album.as_ref().map(|a| a.as_ref().name.clone());
+    // Bandcamp rail guard: yt-dlp album name comes straight from the bandcamp
+    // page and is authoritative even though the album id is always empty
+    // (bandcamp has no YTM-style album id). Providers often return wrong
+    // matches for underground releases (e.g. Last.fm resolved the SPHC track
+    // to a different artist's "Side B" album), so treat a non-empty bandcamp
+    // album like a YTM album: never let a provider override it.
+    let bandcamp_has_album = crate::bandcamp::is_bandcamp_url(song.video_id.get_raw())
+        && song.album.as_ref().map_or(false, |a| !a.as_ref().name.is_empty());
     if let Some(ref album) = data.album {
         // Only override album when YTM has none (preserve YTM's album to prevent
         // wrong metadata from overwriting correct data, e.g. Phyllomedusa albums)
@@ -496,7 +505,12 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
             a.as_ref().name.is_empty()
                 || matches!(&a.as_ref().id, AlbumOrUploadAlbumID::Album(id) if id.get_raw().is_empty())
         });
-        if ytm_empty {
+        if bandcamp_has_album {
+            debug!(
+                album = %album,
+                "ValidateMetadata: keeping yt-dlp bandcamp album, skipping provider override"
+            );
+        } else if ytm_empty {
             // Preserve original YTM album ID when overwriting album name
             // (e.g. when metadata provider fills in empty YTM album)
             let orig_id = song.album.as_ref()
@@ -527,13 +541,20 @@ fn apply_metadata_fields<'a>(song: &mut ListSong, data: &'a ValidatedMetadata) -
         }
     }
     if let Some(ref artist) = data.artist {
-        let normalized = crate::app::structures::normalize_artist_name(artist);
-        song.artists = MaybeRc::Owned(vec![
-            ListSongArtist {
-                name: normalized,
-                id: None,
-            },
-        ]);
+        if bandcamp_has_album {
+            debug!(
+                artist = %artist,
+                "ValidateMetadata: keeping yt-dlp bandcamp artist, skipping provider override"
+            );
+        } else {
+            let normalized = crate::app::structures::normalize_artist_name(artist);
+            song.artists = MaybeRc::Owned(vec![
+                ListSongArtist {
+                    name: normalized,
+                    id: None,
+                },
+            ]);
+        }
     }
     if let Some(tn) = data.track_no {
         song.track_no = Some(tn);
@@ -722,6 +743,8 @@ impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for MetadataEffect {
                     // Allow 20% tolerance: sum within 1.2x of song duration
                     diff <= song_dur_secs / 5 || diff <= 30
                 };
+                info!("Album split decision for song {:?}: is_album_upload={}, pre_track_no={:?}, pre_has_album={}, album_tracks={}, song_dur_secs={}, dur_match={}",
+                    song_id, is_album_upload, pre_track_no, pre_has_album, data.album_tracks.len(), song_dur_secs, dur_match);
                 let needs_split = (is_album_upload
                     || pre_track_no.is_none()
                     || !pre_has_album) && dur_match;
@@ -762,6 +785,48 @@ impl_youtui_task_handler!(
     }
 );
 
+/// Bandcamp album imports validate once against the album and broadcast the
+/// resulting year to every row of that album, instead of one lookup per track.
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampAlbumValidated(pub String);
+
+impl_youtui_task_handler!(
+    HandleBandcampAlbumValidated,
+    ValidatedMetadata,
+    Playlist,
+    |this: HandleBandcampAlbumValidated, metadata: ValidatedMetadata| {
+        move |target: &mut Playlist| {
+            match metadata.year.as_deref() {
+                Some(year) => {
+                    target.apply_album_year(&this.0, year);
+                }
+                None => {
+                    info!(
+                        "bandcamp album validation: provider returned no year for album={:?}; rows left unset",
+                        this.0
+                    );
+                }
+            }
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampAlbumValidationError;
+
+impl_youtui_task_handler!(
+    HandleBandcampAlbumValidationError,
+    anyhow::Error,
+    Playlist,
+    |_, error: anyhow::Error| {
+        warn!("bandcamp album validation error: {}", error);
+        move |_target: &mut Playlist| {
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+        }
+    }
+);
+
 // F3 guard handlers: yt-dlp probe ran off the event loop. Insert the song
 // now that metadata arrived, or surface feedback on timeout/failure.
 #[derive(Debug, PartialEq)]
@@ -797,6 +862,104 @@ impl_youtui_task_handler!(
             error!("Failed to fetch video metadata via yt-dlp: {}", msg);
             target.remove_pending_yt_video(&raw);
             target.last_error = Some(format!("Add failed: {}", msg));
+            AsyncTask::new_no_op()
+        }
+    }
+);
+
+// Bandcamp album/discography: entries arrive from the off-UI-thread
+// FetchBandcampAlbumEntries probe as structured BandcampTrackEntry data
+// (parsed from flat-playlist JSONL). Insert directly into the queue,
+// bypassing the per-track FetchYtVideoMetadata probe that causes 429s.
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampAlbumEntriesOk(pub String);
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampAlbumEntriesError(pub String);
+
+impl_youtui_task_handler!(
+    HandleBandcampAlbumEntriesOk,
+    Vec<BandcampTrackEntry>,
+    Playlist,
+    |this: HandleBandcampAlbumEntriesOk, entries: Vec<BandcampTrackEntry>| {
+        let url = this.0;
+        move |target: &mut Playlist| {
+            info!(
+                "bandcamp album {} resolved to {} entries",
+                url,
+                entries.len()
+            );
+            let first_url = entries.first().map(|e| e.url.clone());
+            target.pending_bandcamp_album = None;
+            let mut probe: Option<(ListSongID, String, String, String)> = None;
+            for entry in &entries {
+                if let Some(id) = target.insert_bandcamp_track_entry(entry) {
+                    if probe.is_none()
+                        && let Some(album) = entry.album.clone()
+                    {
+                        let resolved = crate::bandcamp::resolve_bandcamp_metadata(
+                            &entry.title,
+                            &entry.uploader,
+                            entry.album.as_deref(),
+                            entry.track.as_deref(),
+                        );
+                        probe = Some((id, resolved.artist, resolved.title, album));
+                    }
+                }
+            }
+            if let Some(first_url) = first_url {
+                target.select_bandcamp_first_entry(&first_url);
+            }
+            let base = AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op();
+            match probe {
+                Some((id, artist, title, album)) if !artist.is_empty() && !title.is_empty() => {
+                    info!(
+                        "bandcamp album {}: single album-level validation for artist={:?} title={:?}",
+                        url,
+                        artist,
+                        title
+                    );
+                    let api_key = target.scrobbling_config.api_key.clone();
+                    let discogs = Some(target.scrobbling_config.discogs_token.clone())
+                        .filter(|s| !s.is_empty());
+                    base.push(AsyncTask::new_future_try(
+                        ValidateMetadata(
+                            artist,
+                            title,
+                            id,
+                            api_key,
+                            discogs,
+                            Some(album.clone()),
+                            url.clone(),
+                            false,
+                        ),
+                        HandleBandcampAlbumValidated(album),
+                        HandleBandcampAlbumValidationError,
+                        None,
+                    ))
+                }
+                _ => {
+                    info!(
+                        "bandcamp album {}: no album-level validation probe available",
+                        url
+                    );
+                    base
+                }
+            }
+        }
+    }
+);
+
+impl_youtui_task_handler!(
+    HandleBandcampAlbumEntriesError,
+    anyhow::Error,
+    Playlist,
+    |this: HandleBandcampAlbumEntriesError, err: anyhow::Error| {
+        let url = this.0;
+        let msg = err.to_string();
+        move |target: &mut Playlist| {
+            error!("Failed to resolve bandcamp album {}: {}", url, msg);
+            target.last_error = Some(format!("Album add failed: {}", msg));
+            target.pending_bandcamp_album = None;
             AsyncTask::new_no_op()
         }
     }

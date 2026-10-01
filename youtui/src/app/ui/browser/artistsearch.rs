@@ -4,7 +4,8 @@ use crate::app::component::actionhandler::{
     ActionHandler, ComponentEffect, KeyRouter, Scrollable, TextHandler, YoutuiEffect,
 };
 use crate::app::server::api::GetArtistSongsProgressUpdate;
-use crate::app::server::{GetArtistSongs, HandleApiError, SearchArtists};
+use crate::app::server::{GetArtistSongs, HandleApiError, SearchArtists, SearchBandcamp, FetchBandcampDiscography};
+use crate::bandcamp::{BandcampSearchResult, BandcampTrackEntry, BandcampType};
 use crate::app::structures::ListStatus;
 use crate::app::ui::action::{AppAction, TextEntryAction};
 use crate::app::view::{ListView, TableView};
@@ -299,29 +300,42 @@ impl ArtistSearchBrowser {
             return AsyncTask::new_no_op();
         };
         self.artist_search_panel.clear_text();
+        self.artist_search_panel.search_pending = true;
+        self.artist_search_panel.pending_bandcamp_bands = None;
 
-        AsyncTask::new_future_try(
-            SearchArtists(search_query),
+        let yt_task = AsyncTask::new_future_try(
+            SearchArtists(search_query.clone()),
             HandleSearchArtistsOk,
             HandleSearchArtistsError,
             Some(Constraint::new_kill_same_type()),
-        )
+        );
+        let bc_task = AsyncTask::new_future_try(
+            SearchBandcamp(search_query),
+            HandleBandcampSearchOk,
+            HandleBandcampSearchError,
+            Some(Constraint::new_kill_same_type()),
+        );
+        yt_task.push(bc_task)
     }
     pub fn get_songs(&mut self) -> ComponentEffect<Self> {
         let selected = self.artist_search_panel.get_selected_item();
         self.change_routing(InputRouting::Song);
         self.album_songs_panel.clear_songs();
 
-        let Some(cur_artist_id) = self
-            .artist_search_panel
-            .list
-            .get(selected)
-            .cloned()
-            .map(|a| a.browse_id)
-        else {
+        let Some(artist) = self.artist_search_panel.list.get(selected).cloned() else {
             tracing::warn!("Tried to get item from list with index out of range");
             return AsyncTask::new_no_op();
         };
+        if crate::bandcamp::is_bandcamp_url(artist.browse_id.get_raw()) {
+            let bc_url = artist.browse_id.get_raw().to_string();
+            return AsyncTask::new_future_try(
+                FetchBandcampDiscography(bc_url),
+                HandleFetchBandcampDiscographyOk,
+                HandleFetchBandcampDiscographyError,
+                Some(Constraint::new_kill_same_type()),
+            );
+        }
+        let cur_artist_id = artist.browse_id;
         let cur_artist_id_clone = cur_artist_id.clone();
 
         AsyncTask::new_stream(
@@ -414,7 +428,7 @@ impl ArtistSearchBrowser {
     pub fn copy_song_url(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.album_songs_panel.get_selected_item();
         if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
-            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+            let raw_url = crate::app::structures::song_share_url(song.video_id.get_raw());
             crate::app::structures::copy_to_clipboard(&raw_url);
             tracing::info!("Copied URL: {}", raw_url);
         }
@@ -637,14 +651,26 @@ impl_youtui_task_handler!(
     HandleSearchArtistsOk,
     Vec<SearchResultArtist>,
     ArtistSearchBrowser,
-    |_, input| { |this: &mut ArtistSearchBrowser| this.replace_artist_list(input) }
+    |_, input: Vec<SearchResultArtist>| {
+        |this: &mut ArtistSearchBrowser| {
+            this.artist_search_panel.search_pending = false;
+            if let Some(bc_bands) = this.artist_search_panel.pending_bandcamp_bands.take() {
+                let mut combined = input;
+                combined.extend(bc_bands);
+                this.replace_artist_list(combined);
+            } else {
+                this.replace_artist_list(input);
+            }
+        }
+    }
 );
 impl_youtui_task_handler!(
     HandleSearchArtistsError,
     anyhow::Error,
     ArtistSearchBrowser,
     |_, error| {
-        |_: &mut ArtistSearchBrowser| {
+        |this: &mut ArtistSearchBrowser| {
+            this.artist_search_panel.search_pending = false;
             AsyncTask::new_future(
                 HandleApiError {
                     error,
@@ -658,6 +684,81 @@ impl_youtui_task_handler!(
         }
     }
 );
+
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampSearchOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleBandcampSearchError;
+
+impl_youtui_task_handler!(HandleBandcampSearchOk, Vec<BandcampSearchResult>, ArtistSearchBrowser, |_, a: Vec<BandcampSearchResult>| {
+    move |target: &mut ArtistSearchBrowser| {
+        let bc_bands: Vec<SearchResultArtist> = a
+            .into_iter()
+            .filter(|r| r.type_ == BandcampType::Band)
+            .map(|r| {
+                SearchResultArtist::from_external_id(r.name, ArtistChannelID::from_raw(r.url))
+            })
+            .collect();
+        if target.artist_search_panel.search_pending {
+            target.artist_search_panel.pending_bandcamp_bands = Some(bc_bands);
+        } else {
+            target.artist_search_panel.list.extend(bc_bands);
+        }
+        AsyncTask::new_no_op()
+    }
+});
+
+impl_youtui_task_handler!(HandleBandcampSearchError, anyhow::Error, ArtistSearchBrowser, |_, _err: anyhow::Error| {
+    |target: &mut ArtistSearchBrowser| {
+        target.artist_search_panel.search_pending = false;
+        AsyncTask::new_no_op()
+    }
+});
+
+#[derive(Debug, PartialEq)]
+pub struct HandleFetchBandcampDiscographyOk;
+#[derive(Debug, PartialEq)]
+pub struct HandleFetchBandcampDiscographyError;
+
+impl_youtui_task_handler!(HandleFetchBandcampDiscographyOk, Vec<BandcampTrackEntry>, ArtistSearchBrowser, |_, entries: Vec<BandcampTrackEntry>| {
+    move |target: &mut ArtistSearchBrowser| {
+        target.album_songs_panel.clear_songs();
+        for entry in &entries {
+            let resolved = crate::bandcamp::resolve_bandcamp_metadata(
+                &entry.title,
+                &entry.uploader,
+                entry.album.as_deref(),
+                entry.track.as_deref(),
+            );
+            let secs = entry.duration_secs as u64;
+            let song = ytmapi_rs::parse::SearchResultSong {
+                title: resolved.title.clone(),
+                artist: resolved.artist.clone(),
+                album: Some(ParsedSongAlbum {
+                    name: resolved.album.clone().unwrap_or_else(|| resolved.title.clone()),
+                    id: AlbumID::from_raw(entry.url.clone()),
+                }),
+                duration: format!("{}:{:02}", secs / 60, secs % 60),
+                plays: String::new(),
+                explicit: ytmapi_rs::common::Explicit::NotExplicit,
+                video_id: ytmapi_rs::common::VideoID::from_raw(entry.url.clone()),
+                thumbnails: vec![],
+                like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+            };
+            target.album_songs_panel.list.append_raw_search_result_songs(vec![song]);
+        }
+        tracing::info!("bandcamp discography opened with {} entries", entries.len());
+        AsyncTask::new_no_op()
+    }
+});
+
+impl_youtui_task_handler!(HandleFetchBandcampDiscographyError, anyhow::Error, ArtistSearchBrowser, |_, err: anyhow::Error| {
+    move |_target: &mut ArtistSearchBrowser| {
+        tracing::warn!("bandcamp discography fetch failed: {err}");
+        AsyncTask::new_no_op()
+    }
+});
+
 impl_youtui_task_handler!(
     HandleGetArtistSongsProgressUpdate,
     GetArtistSongsProgressUpdate,
@@ -690,9 +791,10 @@ impl_youtui_task_handler!(
 );
 #[cfg(test)]
 mod tests {
-    use crate::app::server::SearchArtists;
+    use crate::app::server::{SearchArtists, SearchBandcamp};
     use crate::app::ui::browser::artistsearch::{
-        ArtistSearchBrowser, HandleSearchArtistsError, HandleSearchArtistsOk,
+        ArtistSearchBrowser, HandleBandcampSearchError, HandleBandcampSearchOk,
+        HandleSearchArtistsError, HandleSearchArtistsOk,
     };
     use async_callback_manager::{AsyncTask, Constraint};
 
@@ -724,12 +826,19 @@ mod tests {
             .search_contents
             .set_text("Search!");
         let effect = browser.search();
-        let expected_effect = AsyncTask::new_future_try(
+        let yt_task = AsyncTask::new_future_try(
             SearchArtists("Search!".to_string()),
             HandleSearchArtistsOk,
             HandleSearchArtistsError,
             Some(Constraint::new_kill_same_type()),
         );
+        let bc_task = AsyncTask::new_future_try(
+            SearchBandcamp("Search!".to_string()),
+            HandleBandcampSearchOk,
+            HandleBandcampSearchError,
+            Some(Constraint::new_kill_same_type()),
+        );
+        let expected_effect = yt_task.push(bc_task);
         assert_eq!(effect, expected_effect);
     }
 }
