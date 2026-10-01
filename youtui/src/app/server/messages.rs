@@ -271,22 +271,23 @@ impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
                 anyhow::bail!("yt-dlp failed for {}: {}", url, stderr.trim());
             }
             let mut entries = parse_bandcamp_album_entries(&String::from_utf8_lossy(&output.stdout));
-            let needs_enrichment = entries
-                .iter()
-                .any(|e| e.duration_secs <= 0.0 || e.track.is_none() || e.year.is_none());
-            if needs_enrichment {
-                match fetch_tralbum_page(&http_client, &url).await {
-                    Ok((tracks, art_url, year)) => {
-                        let filled =
-                            crate::bandcamp::merge_tralbum_metadata(&mut entries, &tracks);
-                        for e in entries.iter_mut() {
-                            if let Some(art) = &art_url {
-                                e.cover_url = Some(art.clone());
-                            }
-                            if e.year.is_none() {
-                                e.year = year.clone();
-                            }
+            // Unconditional: Bandcamp's flat playlist never carries a year, a
+            // track number or a duration for compilations, so the album page is
+            // the only source for all three. It is one extra request per album.
+            match fetch_tralbum_page(&http_client, &url).await {
+                Ok((tracks, art_url, year)) => {
+                    let filled =
+                        crate::bandcamp::merge_tralbum_metadata(&mut entries, &tracks);
+                    for e in entries.iter_mut() {
+                        if let Some(art) = &art_url
+                            && e.cover_url.is_none()
+                        {
+                            e.cover_url = Some(art.clone());
                         }
+                        if e.year.is_none() {
+                            e.year = year.clone();
+                        }
+                    }
                         tracing::info!(
                             "FetchBandcampAlbumEntries: enriched {} of {} entries from data-tralbum for {}, art={}, year={}",
                             filled,
@@ -295,14 +296,13 @@ impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
                             art_url.as_deref().unwrap_or("none"),
                             year.as_deref().unwrap_or("none")
                         );
-                    }
-                    Err(e) => {
+                }
+                Err(e) => {
                         tracing::warn!(
                             "FetchBandcampAlbumEntries: tralbum enrichment unavailable for {} ({}); keeping flat-playlist metadata",
                             url,
                             e
                         );
-                    }
                 }
             }
             tracing::info!(

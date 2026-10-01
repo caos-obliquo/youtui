@@ -218,8 +218,8 @@ pub fn parse_bandcamp_album_entries(stdout: &str) -> Vec<BandcampTrackEntry> {
             track,
             track_no: None,
             cover_url: None,
-
-            year: None,        });
+            year: None,
+        });
     }
     entries
 }
@@ -344,17 +344,21 @@ pub fn parse_tralbum_art_url(html: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
-/// Year Bandcamp itself publishes for the album, from the tralbum
+/// Year Bandcamp itself publishes for the album, read from the tralbum
 /// `current.release_date` blob (e.g. `"28 Sep 2026 18:26:00 GMT"` -> `"2026"`).
 ///
-/// This is the date the label posted the album, which is the only year Bandcamp
-/// exposes. It is the post/reissue date for reissued compilations, not the
-/// original release year, so it is used deliberately as the fallback when no
-/// metadata provider knows the album.
+/// Bandcamp's own published date is the authoritative album date and is what the
+/// user chose to display. It is also the only date available: the flat playlist
+/// carries no year, and providers frequently have no release group for
+/// Bandcamp-only label compilations.
 pub fn parse_tralbum_release_year(html: &str) -> Option<String> {
+    const CURRENT: &str = "&quot;current&quot;";
+    const TRACKINFO: &str = "&quot;trackinfo&quot;";
     const KEY: &str = "&quot;release_date&quot;:&quot;";
-    let start = html.find(KEY)? + KEY.len();
-    let rest = &html[start..];
+    let blob_start = html.find(CURRENT)?;
+    let blob_end = html[blob_start..].find(TRACKINFO)? + blob_start;
+    let start = html[blob_start..blob_end].find(KEY)? + blob_start + KEY.len();
+    let rest = &html[start..blob_end];
     let end = rest.find("&quot;")?;
     let date = decode_html_entities(&rest[..end]);
     let year: String = date
@@ -551,8 +555,8 @@ mod tests {
                 track: None,
                 track_no: None,
                 cover_url: None,
-
-                year: None,            },
+                year: None,
+            },
             BandcampTrackEntry {
                 url: "https://dramarecorder.bandcamp.com/track/neutralize".to_string(),
                 title: "Boredom Knife - Neutralize".to_string(),
@@ -562,8 +566,8 @@ mod tests {
                 track: None,
                 track_no: None,
                 cover_url: None,
-
-                year: None,            },
+                year: None,
+            },
         ];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
         assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 2);
@@ -584,8 +588,8 @@ mod tests {
             track: None,
             track_no: None,
             cover_url: None,
-
-            year: None,        }];
+            year: None,
+        }];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
         assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 1);
         assert!((entries[0].duration_secs - 243.0).abs() < f64::EPSILON);
@@ -603,8 +607,8 @@ mod tests {
             track: None,
             track_no: None,
             cover_url: None,
-
-            year: None,        }];
+            year: None,
+        }];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
         assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 1);
         assert!((entries[0].duration_secs - 10.0).abs() < f64::EPSILON);
@@ -622,8 +626,8 @@ mod tests {
             track: Some("1".to_string()),
             track_no: Some("1".to_string()),
             cover_url: None,
-
-            year: None,        }];
+            year: None,
+        }];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
         assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 0);
     }

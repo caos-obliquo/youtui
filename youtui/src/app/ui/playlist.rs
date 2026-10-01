@@ -1562,6 +1562,8 @@ impl Playlist {
         }
     }
 
+    /// Stamp `year` on every row whose album matches `album` (case-insensitive),
+    /// leaving rows that already carry a year untouched. Returns rows changed.
     pub fn apply_album_year(&mut self, album: &str, year: &str) -> usize {
         let target = album.to_lowercase();
         let mut stamped = 0;

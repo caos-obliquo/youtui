@@ -28,7 +28,7 @@ macro_rules! playlist_ok_handler {
             |this: &mut Playlist| {
                 info!($log);
                 this.library_playlist_mutated = true;
-                AsyncTask::new_no_op()
+                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
             }
         });
     };
@@ -42,7 +42,7 @@ macro_rules! playlist_err_handler {
             move |this: &mut Playlist| {
                 error!("Failed to {}: {}", $op, msg);
                 this.last_error = Some(format!("{}: {}", $label, msg));
-                AsyncTask::new_no_op()
+                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
             }
         });
     };
@@ -183,7 +183,7 @@ impl_youtui_task_handler!(
             // Clear the pending rating on error
             this.last_rated_video_id = None;
             this.last_rated_like_status = None;
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -250,7 +250,7 @@ impl_youtui_task_handler!(
         move |target: &mut Playlist| {
             error!("Overwrite: failed to fetch playlist tracks: {}", msg);
             target.last_error = Some(format!("Overwrite failed: {}", msg));
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -282,7 +282,7 @@ impl_youtui_task_handler!(
         move |target: &mut Playlist| {
             error!("Overwrite: failed to remove old tracks: {}", msg);
             target.last_error = Some(format!("Overwrite remove failed: {}", msg));
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -862,7 +862,7 @@ impl_youtui_task_handler!(
             error!("Failed to fetch video metadata via yt-dlp: {}", msg);
             target.remove_pending_yt_video(&raw);
             target.last_error = Some(format!("Add failed: {}", msg));
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -960,7 +960,7 @@ impl_youtui_task_handler!(
             error!("Failed to resolve bandcamp album {}: {}", url, msg);
             target.last_error = Some(format!("Album add failed: {}", msg));
             target.pending_bandcamp_album = None;
-            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
+            AsyncTask::new_no_op()
         }
     }
 );
@@ -1142,7 +1142,7 @@ impl_youtui_task_handler!(
             if applied > 0 {
                 info!("Queue batch enrichment: applied years to {} songs", applied);
             }
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -1156,7 +1156,7 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             warn!("Queue batch year enrichment failed: {}", msg);
             this.last_error = Some(format!("Year enrichment failed: {}", msg));
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -1387,7 +1387,7 @@ impl_youtui_task_handler!(
                     None,
                 )
             } else {
-                AsyncTask::new_no_op()
+                AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
             }
         }
     }
@@ -1402,7 +1402,7 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             error!("GetRelatedTracks failed: {}", msg);
             this.last_error = Some(format!("Related tracks failed: {}", msg));
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -1587,7 +1587,7 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             error!("ActOnRecommendation failed: {}", msg);
             this.last_error = Some(format!("Recommendation action failed: {}", msg));
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -1622,7 +1622,7 @@ impl_youtui_task_handler!(
                 }
             }
             info!("Enriched {} related tracks with yt-dlp metadata", count);
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -1636,7 +1636,7 @@ impl_youtui_task_handler!(
         move |this: &mut Playlist| {
             warn!("Related tracks enrichment failed: {}", msg);
             this.last_error = Some(format!("Related tracks enrichment failed: {}", msg));
-            AsyncTask::new_no_op()
+            AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
         }
     }
 );
@@ -1649,7 +1649,7 @@ pub struct HandleSubscribeToArtistError;
 impl_youtui_task_handler!(HandleSubscribeToArtistOk, (), Playlist, |_, _: ()| {
     |_this: &mut Playlist| {
         info!("Subscribed to artist");
-        AsyncTask::new_no_op()
+        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
     }
 });
 
@@ -1663,7 +1663,7 @@ pub struct HandleUnsubscribeFromArtistsError;
 impl_youtui_task_handler!(HandleUnsubscribeFromArtistsOk, (), Playlist, |_, _: ()| {
     |_this: &mut Playlist| {
         info!("Unsubscribed from artist");
-        AsyncTask::new_no_op()
+        AsyncTask::<Playlist, ArcServer, TaskMetadata>::new_no_op()
     }
 });
 
