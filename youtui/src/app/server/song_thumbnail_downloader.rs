@@ -32,6 +32,10 @@ pub enum SongThumbnailID<'a> {
     Album(AlbumID<'a>),
     UploadAlbum(UploadAlbumID<'a>),
     Video(VideoID<'a>),
+    /// Keyed on the artwork URL. Compilation imports give every track the same
+    /// cover, so keying on the per-track video id would download one image once
+    /// per track and store one copy of it per track.
+    Url(String),
 }
 impl<'a> From<&'a ListSong> for SongThumbnailID<'a> {
     fn from(song: &'a ListSong) -> SongThumbnailID<'a> {
@@ -39,7 +43,8 @@ impl<'a> From<&'a ListSong> for SongThumbnailID<'a> {
             // URL-added songs (YouTube URL or Bandcamp) carry an empty album id
             // (playlist.rs insert_yt_video_metadata). Keying art on that empty
             // id would collapse every URL-added song onto one cache entry, so
-            // fall back to the unique video id (the URL itself).
+            // fall back to the artwork URL, and only then to the unique video
+            // id (the URL itself).
             Some(ListSongAlbum {
                 id: AlbumOrUploadAlbumID::Album(a),
                 ..
@@ -48,9 +53,20 @@ impl<'a> From<&'a ListSong> for SongThumbnailID<'a> {
                 id: AlbumOrUploadAlbumID::UploadAlbum(a),
                 ..
             }) if !a.get_raw().is_empty() => SongThumbnailID::UploadAlbum(a.into()),
-            _ => SongThumbnailID::Video((&song.video_id).into()),
+            _ => match largest_thumbnail_url(song) {
+                Some(url) => SongThumbnailID::Url(url),
+                None => SongThumbnailID::Video((&song.video_id).into()),
+            },
         }
     }
+}
+
+fn largest_thumbnail_url(song: &ListSong) -> Option<String> {
+    song.thumbnails
+        .as_ref()
+        .iter()
+        .max_by_key(|t| t.height * t.width)
+        .map(|t| t.url.clone())
 }
 
 /// Filesystem-safe cache key for a thumbnail id. The key becomes part of the
@@ -66,6 +82,7 @@ impl std::fmt::Display for SongThumbnailID<'_> {
             SongThumbnailID::Album(id) => write!(f, "A_{}", id.get_raw()),
             SongThumbnailID::UploadAlbum(id) => write!(f, "U_{}", id.get_raw()),
             SongThumbnailID::Video(id) => write!(f, "V_{}", id.get_raw()),
+            SongThumbnailID::Url(url) => write!(f, "C_{}", url),
         }
     }
 }
@@ -86,6 +103,7 @@ impl<'a> SongThumbnailID<'a> {
                 let id_string = id.get_raw().to_owned();
                 SongThumbnailID::Video(VideoID::from_raw(id_string))
             }
+            SongThumbnailID::Url(url) => SongThumbnailID::Url(url),
         }
     }
 }
@@ -364,7 +382,7 @@ async fn get_cached_album_art(thumbnail_id: SongThumbnailID<'_>) -> Option<SongT
 mod tests {
     use super::*;
     use crate::app::structures::{ListSongArtist, MaybeRc};
-    use ytmapi_rs::common::{AlbumID, VideoID};
+    use ytmapi_rs::common::{AlbumID, Thumbnail, VideoID};
 
     #[test]
     fn cache_key_sanitizes_bandcamp_url_video_ids() {
@@ -451,6 +469,115 @@ mod tests {
         match id {
             SongThumbnailID::Album(a) => assert_eq!(a.get_raw(), "MPREb_abc123"),
             other => panic!("expected Album variant for real album id, got {other:?}"),
+        }
+    }
+
+    fn bc_song(track_url: &str, covers: &[(&str, u64)]) -> ListSong {
+        ListSong {
+            video_id: VideoID::from_raw(track_url.to_string()),
+            track_no: None,
+            plays: String::new(),
+            title: "Track".into(),
+            explicit: None,
+            download_status: crate::app::structures::DownloadStatus::None,
+            id: crate::app::structures::ListSongID(0),
+            duration_string: "3:00".into(),
+            actual_duration: None,
+            start_offset: None,
+            year: None,
+            album_art: crate::app::structures::AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
+            artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
+            thumbnails: MaybeRc::Owned(
+                covers
+                    .iter()
+                    .map(|(url, size)| Thumbnail {
+                        width: *size,
+                        height: *size,
+                        url: (*url).to_string(),
+                    })
+                    .collect(),
+            ),
+            album: Some(MaybeRc::Owned(ListSongAlbum {
+                name: "Compilation".into(),
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+            })),
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+            is_album_upload: false,
+            release_mbid: None,
+            artists_string: std::sync::OnceLock::new(),
+        }
+    }
+
+    #[test]
+    fn compilation_tracks_sharing_a_cover_collapse_to_one_cache_entry() {
+        let one = bc_song(
+            "https://dramarecorder.bandcamp.com/track/neutralize",
+            &[("https://f4.bcbits.com/img/a0489092809_5.jpg", 1200)],
+        );
+        let two = bc_song(
+            "https://dramarecorder.bandcamp.com/track/temper-wrecked",
+            &[("https://f4.bcbits.com/img/a0489092809_5.jpg", 1200)],
+        );
+        let a = SongThumbnailID::from(&one).into_owned();
+        let b = SongThumbnailID::from(&two).into_owned();
+        assert_eq!(a, b, "same cover must not download once per track");
+        assert!(matches!(a, SongThumbnailID::Url(_)), "expected Url variant, got {a:?}");
+    }
+
+    #[test]
+    fn differing_covers_do_not_collapse() {
+        let one = bc_song("https://x.bandcamp.com/track/a", &[("https://f4.bcbits.com/img/a1_5.jpg", 1200)]);
+        let two = bc_song("https://x.bandcamp.com/track/b", &[("https://f4.bcbits.com/img/a2_5.jpg", 1200)]);
+        assert_ne!(
+            SongThumbnailID::from(&one).into_owned(),
+            SongThumbnailID::from(&two).into_owned()
+        );
+    }
+
+    #[test]
+    fn largest_thumbnail_is_the_one_keyed_on() {
+        let song = bc_song(
+            "https://x.bandcamp.com/track/a",
+            &[
+                ("https://f4.bcbits.com/img/small_5.jpg", 60),
+                ("https://f4.bcbits.com/img/big_10.jpg", 1200),
+            ],
+        );
+        match SongThumbnailID::from(&song) {
+            SongThumbnailID::Url(url) => assert_eq!(url, "https://f4.bcbits.com/img/big_10.jpg"),
+            other => panic!("expected Url variant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn real_album_id_outranks_the_cover_url() {
+        let mut song = bc_song("dQw4w9WgXcQ", &[("https://f4.bcbits.com/img/a1_5.jpg", 1200)]);
+        song.album = Some(MaybeRc::Owned(ListSongAlbum {
+            name: "Some Album".into(),
+            id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("MPREb_abc123")),
+        }));
+        match SongThumbnailID::from(&song) {
+            SongThumbnailID::Album(a) => assert_eq!(a.get_raw(), "MPREb_abc123"),
+            other => panic!("expected Album to win over cover url, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn url_variant_cache_key_has_no_path_separators() {
+        let song = bc_song("https://x.bandcamp.com/track/a", &[("https://f4.bcbits.com/img/a1_5.jpg", 1200)]);
+        let key = thumbnail_cache_key(&SongThumbnailID::from(&song));
+        assert!(!key.contains('/') && !key.contains(':'), "cache key must be filesystem safe: {key}");
+        assert_eq!(key, "C_https___f4.bcbits.com_img_a1_5.jpg");
+    }
+
+    #[test]
+    fn no_cover_and_empty_album_id_still_falls_back_to_video_id() {
+        let song = bc_song("https://x.bandcamp.com/track/a", &[]);
+        match SongThumbnailID::from(&song) {
+            SongThumbnailID::Video(v) => assert_eq!(v.get_raw(), "https://x.bandcamp.com/track/a"),
+            other => panic!("expected Video fallback, got {other:?}"),
         }
     }
 }
