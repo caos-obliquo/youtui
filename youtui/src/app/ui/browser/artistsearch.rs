@@ -428,7 +428,7 @@ impl ArtistSearchBrowser {
     pub fn copy_song_url(&mut self) -> impl Into<YoutuiEffect<Self>> + use<> {
         let cur_idx = self.album_songs_panel.get_selected_item();
         if let Some(song) = self.album_songs_panel.get_song_from_idx(cur_idx) {
-            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+            let raw_url = crate::app::structures::song_share_url(song.video_id.get_raw());
             crate::app::structures::copy_to_clipboard(&raw_url);
             tracing::info!("Copied URL: {}", raw_url);
         }

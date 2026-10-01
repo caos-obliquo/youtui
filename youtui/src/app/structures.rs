@@ -1062,6 +1062,19 @@ fn wait_for_child_with_timeout(
     }
 }
 
+/// URL a song should be copied as.
+///
+/// Bandcamp-sourced songs keep the full track URL in their `video_id`, so
+/// prefixing it with the YouTube watch URL yields a dead link like
+/// `https://music.youtube.com/watch?v=https://dramarecorder.bandcamp.com/track/...`.
+/// Those rows are copied verbatim instead.
+pub fn song_share_url(video_id_raw: &str) -> String {
+    if crate::bandcamp::is_bandcamp_url(video_id_raw) {
+        return video_id_raw.to_string();
+    }
+    format!("https://music.youtube.com/watch?v={video_id_raw}")
+}
+
 /// Copy text to system clipboard.
 /// Fallback chain: wl-copy (Wayland) -> xclip -> xsel -> pbcopy (macOS).
 /// Silently no-op if none found.
@@ -1340,5 +1353,43 @@ mod has_album_upload_tag_tests {
     #[test]
     fn album_word_alone_does_not_match() {
         assert!(!has_album_upload_tag("Nuclear Cesspool Album"));
+    }
+}
+
+#[cfg(test)]
+mod song_share_url_tests {
+    use super::song_share_url;
+
+    #[test]
+    fn bandcamp_track_url_is_copied_verbatim() {
+        let url = "https://dramarecorder.bandcamp.com/track/a-thousand-scars-on-their-hearts";
+        assert_eq!(song_share_url(url), url);
+    }
+
+    #[test]
+    fn bandcamp_subdomain_and_album_urls_are_copied_verbatim() {
+        for url in [
+            "https://vomitor-australia.bandcamp.com",
+            "https://dramarecorder.bandcamp.com/album/noise-as-a-form-of-expression-vol-4",
+        ] {
+            assert_eq!(song_share_url(url), url);
+        }
+    }
+
+    #[test]
+    fn youtube_id_gets_the_watch_prefix() {
+        assert_eq!(
+            song_share_url("CDsJBLrT_UM"),
+            "https://music.youtube.com/watch?v=CDsJBLrT_UM"
+        );
+    }
+
+    #[test]
+    fn lookalike_host_is_not_treated_as_bandcamp() {
+        // A non-bandcamp host that merely mentions the word must keep the prefix.
+        assert_eq!(
+            song_share_url("https://notbandcamp.com/track/x"),
+            "https://music.youtube.com/watch?v=https://notbandcamp.com/track/x"
+        );
     }
 }

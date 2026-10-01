@@ -402,7 +402,7 @@ impl ActionHandler<PlaylistAction> for Playlist {
                 }
                 let actual_index = self.visual_to_actual_index(self.cur_selected);
                 if let Some(song) = self.get_song_from_idx(actual_index) {
-                    let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                    let raw_url = crate::app::structures::song_share_url(song.video_id.get_raw());
                     crate::app::structures::copy_to_clipboard(&raw_url);
                     info!("Copied URL: {}", raw_url);
                 }

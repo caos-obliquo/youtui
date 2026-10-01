@@ -527,7 +527,7 @@ impl ActionHandler<BrowserSongsAction> for AlbumSearchBrowser {
             }
             BrowserSongsAction::CopySongUrl => {
                 if let Some(song) = self.track_list.get_list_iter().nth(cur) {
-                    let url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                    let url = crate::app::structures::song_share_url(song.video_id.get_raw());
                     crate::app::structures::copy_to_clipboard(&url);
                     info!("Copied URL: {url}");
                 }

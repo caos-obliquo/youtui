@@ -1698,7 +1698,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::CopySongUrl => {
                     let songs: Vec<_> = self.song_list.get_list_iter().cloned().collect();
                     if let Some(song) = songs.get(self.cur_selected) {
-                        let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                        let raw_url = crate::app::structures::song_share_url(song.video_id.get_raw());
                         crate::app::structures::copy_to_clipboard(&raw_url);
                         info!("Copied URL: {raw_url}");
                     }
@@ -1858,7 +1858,7 @@ impl ActionHandler<BrowserSongsAction> for LibraryBrowser {
                 BrowserSongsAction::CopySongUrl => {
                     if self.show_playlist_tracks {
                         if let Some(song) = self.playlist_tracks.get(self.playlist_tracks_selected) {
-                            let raw_url = format!("https://music.youtube.com/watch?v={}", song.video_id.get_raw());
+                            let raw_url = crate::app::structures::song_share_url(song.video_id.get_raw());
                             crate::app::structures::copy_to_clipboard(&raw_url);
                             info!("Copied URL: {raw_url}");
                         }
