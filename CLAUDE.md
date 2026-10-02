@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui                      # 372 pass, 3 ignore
+cargo test --release -p youtui                      # 374 pass, 3 ignore
 cargo test --release -p metadata-provider           # 110 pass (+62 new)
 cargo test --release -p vi-text-editor              # 67 pass
 cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
@@ -62,7 +62,7 @@ cargo test --release -p json-crawler                # 2 pass
 cargo test --release -p lrclib-rs                   # 4 pass
 cargo test --release -p rym-genre-data              # 10 pass
 ```
-Total: **~727/730 pass, 0 fail, 3 ignored, 0 warnings** (372+3 + 110 + 67 + 83 + 27 + 20 + 18 + 14 + 2 + 4 + 10 = 730)
+Total: **~729/732 pass, 0 fail, 3 ignored, 0 warnings** (374+3 + 117 + 67 + 83 + 27 + 22 + 18 + 3 + 0 + 4 + 10 + 4 = 732)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -208,21 +208,21 @@ Frontend (UI) -> TaskManager -> Backend (Server)
 ```
 See `docs/` for full reference (4.1k lines, 31 files).
 
-## 12 Workspace Crates (50k+ LOC)
+## 13 Crate Directories (7 workspace members)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 372 |
+| `youtui` | Main binary | 374 |
 | `ytmapi-rs` | YT Music API client | 83 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 67 |
-| `metadata-provider` | Metadata trait + 6 provider impls | 110 |
+| `metadata-provider` | Metadata trait + 8 provider impls | 117 |
 | `genius-rs` | Genius lyrics/annotations | 18 |
-| `async-callback-manager` | Async task dispatch | 14 |
-| `json-crawler` | JSON path parser | 2 |
+| `async-callback-manager` | Async task dispatch | 3 |
+| `json-crawler` | JSON path parser | 0 lib |
 | `lrclib-rs` | LRCLIB lyrics provider | 4 |
 | `rym-genre-data` | RYM genre/descriptor hierarchy | 10 |
 | `genre-db-sqlite` | SQLite genre hierarchy + seed | 27 |
-| `metadata-cache-sqlite` | SQLite metadata cache + MBID | 20 |
-| `audio-player` | Async rodio-based audio player | 0 |
+| `metadata-cache-sqlite` | SQLite metadata cache + MBID | 22 |
+| `audio-player` | Async rodio-based audio player | 4 integration |
 
 ## 5 Browser Tabs Fully Wired
 | Tab | Search | Table | Sort/Filter | o Menu | Nav | Status |
@@ -439,7 +439,7 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 372 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
+- 374 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
 - Suckless refactoring adds 0 tests (refactors existing code only)
 
 ## Inspirations & Thanks

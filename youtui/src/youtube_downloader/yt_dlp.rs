@@ -291,7 +291,13 @@ fn effective_cookie_file(cookie_path: Option<&str>) -> Option<&str> {
 
 /// Detect the audio container format from magic bytes, or None when unknown.
 /// MP4: ftyp box, WebM: EBML magic, WAV: RIFF, Ogg: OggS, MP3: ID3 tag
-/// or MPEG frame sync (0xFF plus 3-bit version/algo bits set).
+/// or MPEG frame sync (0xFF plus 3-bit version/algo bits set), FLAC: fLaC
+/// marker.
+///
+/// FLAC matters because yt-dlp is invoked without `--audio-format`, so the
+/// source container is written through untouched. Bandcamp serves lossless
+/// tracks as raw FLAC, which symphonia decodes but this list used to reject,
+/// so valid downloads were discarded as "invalid header" and retried to death.
 fn detect_container(bytes: &[u8]) -> Option<&'static str> {
     if bytes.len() >= 12 && bytes[4..8] == *b"ftyp" {
         let brand = &bytes[8..12];
@@ -301,6 +307,7 @@ fn detect_container(bytes: &[u8]) -> Option<&'static str> {
     } else if bytes.starts_with(b"\x1a\x45\xdf\xa3") { Some("WebM") }
     else if bytes.starts_with(b"RIFF") { Some("WAV") }
     else if bytes.starts_with(b"OggS") { Some("Ogg") }
+    else if bytes.starts_with(b"fLaC") { Some("FLAC") }
     else if bytes.starts_with(b"ID3") { Some("MP3") }
     else if bytes.len() >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 { Some("MP3") }
     else { None }
@@ -566,6 +573,27 @@ mod tests {
         assert_eq!(super::detect_container(b"\x00\x01\x02\x03"), None);
         // One byte with 0xFF but no second byte to pair the sync mask
         assert_eq!(super::detect_container(&[0xFF]), None);
+    }
+
+    #[test]
+    fn test_detect_container_accepts_flac() {
+        // Verbatim header from a real Bandcamp lossless download that the
+        // validator rejected as "invalid header" and retried until it gave up.
+        let flac = [
+            0x66, 0x4c, 0x61, 0x43, 0x00, 0x00, 0x00, 0x22, 0x10, 0x00, 0x10, 0x00, 0x00,
+            0x04, 0x6e, 0x00,
+        ];
+        assert_eq!(super::detect_container(&flac), Some("FLAC"));
+    }
+
+    #[test]
+    fn test_detect_container_flac_marker_does_not_shadow_mp3() {
+        // 'f' is 0x66, so the MP3 frame-sync arm cannot reach a FLAC header,
+        // and a real ID3/MP3 file must still be reported as MP3.
+        assert_eq!(super::detect_container(b"ID3\x04\x00\x00\x00"), Some("MP3"));
+        let mut mp3 = vec![0xFF, 0xFB, 0x90, 0x00];
+        mp3.extend_from_slice(&[0x00; 8]);
+        assert_eq!(super::detect_container(&mp3), Some("MP3"));
     }
 
     #[test]
