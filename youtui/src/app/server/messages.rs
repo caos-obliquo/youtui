@@ -1326,12 +1326,81 @@ impl BackendTask<ArcServer> for ActOnRecommendation {
                 kind,
                 query
             );
-            let results = SearchSongs(query).into_future(&backend).await?;
-            let song = results.into_iter().next().ok_or_else(|| {
-                anyhow::anyhow!("No YTM search results for recommendation: {}", title)
-            })?;
-            Ok(vec![song])
+            let results = SearchSongs(query.clone()).into_future(&backend).await?;
+            if let Some(song) = results.into_iter().next() {
+                return Ok(vec![song]);
+            }
+
+            // Last.fm recommends many tracks that were never uploaded to YouTube,
+            // so a miss is normal. Bandcamp's autocomplete is fuzzy, hence the
+            // mandatory artist+title check: without it we queue unrelated tracks.
+            tracing::info!(
+                "ActOnRecommendation: no YouTube result for '{}', trying Bandcamp",
+                query
+            );
+            let bc_query = if artist.is_empty() {
+                title.clone()
+            } else {
+                format!("{} - {}", artist, title)
+            };
+            let bc_results = match fetch_bandcamp_search(&backend.http_client, "t", &bc_query).await {
+                Ok(rows) => rows,
+                Err(e) => {
+                    tracing::warn!(
+                        "ActOnRecommendation: Bandcamp fallback failed for '{}': {}",
+                        bc_query,
+                        e
+                    );
+                    Vec::new()
+                }
+            };
+            let want_title = if matches!(kind, crate::lastfm_recommend::RecKind::Artists) {
+                ""
+            } else {
+                title.as_str()
+            };
+            let candidates: Vec<_> = bc_results
+                .into_iter()
+                .filter(|r| r.type_ == crate::bandcamp::BandcampType::Track)
+                .filter(|r| crate::bandcamp::bandcamp_result_matches(&artist, want_title, r))
+                .collect();
+            if candidates.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "No YouTube or Bandcamp results for recommendation: {} - {}",
+                    artist,
+                    title
+                ));
+            }
+            let chosen = &candidates[0];
+            tracing::info!(
+                "ActOnRecommendation: Bandcamp fallback matched '{}' by '{}' ({} candidates)",
+                chosen.name,
+                chosen.band_name,
+                candidates.len()
+            );
+            Ok(vec![bandcamp_search_result_to_song(chosen)])
         }
+    }
+}
+
+/// Build a queueable song from a Bandcamp track search hit. `video_id` carries
+/// the full Bandcamp URL, which is the same convention the browser search uses,
+/// so the download and playback paths resolve it without any extra branching.
+fn bandcamp_search_result_to_song(r: &crate::bandcamp::BandcampSearchResult) -> SearchResultSong {
+    let album_id: ytmapi_rs::common::AlbumID<'static> = ytmapi_rs::common::AlbumID::from_raw(r.url.clone());
+    SearchResultSong {
+        title: r.name.clone(),
+        artist: r.band_name.clone(),
+        album: r.album_name.as_ref().map(|n| ytmapi_rs::parse::ParsedSongAlbum {
+            name: n.clone(),
+            id: album_id,
+        }),
+        duration: String::new(),
+        plays: String::new(),
+        explicit: ytmapi_rs::common::Explicit::NotExplicit,
+        video_id: ytmapi_rs::common::VideoID::from_raw(r.url.clone()),
+        thumbnails: Vec::new(),
+        like_status: ytmapi_rs::common::LikeStatus::Indifferent,
     }
 }
 
@@ -1851,6 +1920,54 @@ impl BackendTask<ArcServer> for SearchSongs {
         }
     }
 }
+pub(crate) async fn fetch_bandcamp_search(
+    client: &reqwest::Client,
+    filter: &str,
+    query: &str,
+) -> Result<Vec<crate::bandcamp::BandcampSearchResult>> {
+    let url = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic";
+    let body = serde_json::json!({
+        "fan_id": null,
+        "full_page": false,
+        "search_filter": filter,
+        "search_text": query,
+    });
+    let mut attempt = 0;
+    loop {
+        let response = client
+            .post(url)
+            .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0")
+            .header("Referer", "https://bandcamp.com/search")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("Bandcamp search request failed: {}", e))?;
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && attempt < 2 {
+            tracing::warn!(
+                "Bandcamp search rate limited (filter={}), retry {} in 3s",
+                filter,
+                attempt + 1
+            );
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            attempt += 1;
+            continue;
+        }
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Bandcamp search returned status {}",
+                response.status()
+            ));
+        }
+        let json: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|e| anyhow::anyhow!("Bandcamp search parse failed: {}", e))?;
+        return Ok(crate::bandcamp::parse_bandcamp_search_results_all_types(
+            &json,
+        ));
+    }
+}
+
 impl BackendTask<ArcServer> for SearchBandcamp {
     type Output = Result<Vec<crate::bandcamp::BandcampSearchResult>>;
     type MetadataType = TaskMetadata;
@@ -1861,58 +1978,10 @@ impl BackendTask<ArcServer> for SearchBandcamp {
         let query = self.0;
         let client = backend.http_client.clone();
         async move {
-            async fn fetch_one(
-                client: &reqwest::Client,
-                filter: &str,
-                query: &str,
-            ) -> Result<Vec<crate::bandcamp::BandcampSearchResult>> {
-                let url = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic";
-                let body = serde_json::json!({
-                    "fan_id": null,
-                    "full_page": false,
-                    "search_filter": filter,
-                    "search_text": query,
-                });
-                let mut attempt = 0;
-                loop {
-                    let response = client
-                        .post(url)
-                        .header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0")
-                        .header("Referer", "https://bandcamp.com/search")
-                        .json(&body)
-                        .send()
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Bandcamp search request failed: {}", e))?;
-                    if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS && attempt < 2 {
-                        tracing::warn!(
-                            "Bandcamp search rate limited (filter={}), retry {} in 3s",
-                            filter,
-                            attempt + 1
-                        );
-                        tokio::time::sleep(Duration::from_secs(3)).await;
-                        attempt += 1;
-                        continue;
-                    }
-                    if !response.status().is_success() {
-                        return Err(anyhow::anyhow!(
-                            "Bandcamp search returned status {}",
-                            response.status()
-                        ));
-                    }
-                    let json: serde_json::Value = response
-                        .json()
-                        .await
-                        .map_err(|e| anyhow::anyhow!("Bandcamp search parse failed: {}", e))?;
-                    return Ok(crate::bandcamp::parse_bandcamp_search_results_all_types(
-                        &json,
-                    ));
-                }
-            }
-
             let (tracks, albums, bands) = futures::join!(
-                fetch_one(&client, "t", &query),
-                fetch_one(&client, "a", &query),
-                fetch_one(&client, "b", &query),
+                fetch_bandcamp_search(&client, "t", &query),
+                fetch_bandcamp_search(&client, "a", &query),
+                fetch_bandcamp_search(&client, "b", &query),
             );
             let mut results = Vec::new();
             for (label, outcome) in [("tracks", tracks), ("albums", albums), ("bands", bands)] {
@@ -2739,6 +2808,7 @@ mod fetch_bandcamp_album_entries_tests {
 #[cfg(test)]
 mod search_bandcamp_tests {
     use crate::bandcamp::{parse_bandcamp_search_results_all_types, BandcampType};
+    use ytmapi_rs::common::YoutubeID;
 
     fn sample_response() -> serde_json::Value {
         serde_json::json!({
@@ -2792,5 +2862,64 @@ mod search_bandcamp_tests {
     #[test]
     fn missing_auto_field_yields_empty_list() {
         assert!(parse_bandcamp_search_results_all_types(&serde_json::json!({})).is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "live network: hits the real Bandcamp search endpoint"]
+    async fn live_bandcamp_fallback_resolves_a_track_and_yields_a_queueable_song() {
+        let client = reqwest::Client::new();
+        let rows = super::fetch_bandcamp_search(&client, "t", "FAEX - strench of the chaos 3")
+            .await
+            .expect("bandcamp search should succeed");
+        assert!(!rows.is_empty(), "live endpoint returned nothing");
+
+        let matched: Vec<_> = rows
+            .iter()
+            .filter(|r| r.type_ == BandcampType::Track)
+            .filter(|r| crate::bandcamp::bandcamp_result_matches(
+                "FAEX",
+                "strench of the chaos 3",
+                r,
+            ))
+            .collect();
+        assert_eq!(
+            matched.len(),
+            1,
+            "expected exactly one match, got {:?}",
+            matched.iter().map(|r| (&r.name, &r.band_name)).collect::<Vec<_>>()
+        );
+
+        let song = super::bandcamp_search_result_to_song(matched[0]);
+        assert_eq!(song.artist, "FAEX");
+        assert_eq!(song.title, "strench of the chaos 3");
+        assert!(
+            crate::bandcamp::is_bandcamp_url(song.video_id.get_raw()),
+            "video_id must carry the full Bandcamp URL, got {:?}",
+            song.video_id.get_raw()
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "live network: proves the match check rejects fuzzy noise"]
+    async fn live_bandcamp_fuzzy_noise_is_rejected_by_the_match_check() {
+        let client = reqwest::Client::new();
+        let rows = super::fetch_bandcamp_search(&client, "t", "Boredom Knife - Neutralize")
+            .await
+            .expect("bandcamp search should succeed");
+        assert!(!rows.is_empty());
+        let matched = rows.iter().any(|r| {
+            r.type_ == BandcampType::Track
+                && crate::bandcamp::bandcamp_result_matches("Boredom Knife", "Neutralize", r)
+        });
+        assert!(matched, "artist/title check must still accept the real track");
+        let wrong = rows.iter().any(|r| {
+            r.type_ == BandcampType::Track
+                && crate::bandcamp::bandcamp_result_matches(
+                    "Completely Different Band",
+                    "Completely Different Song",
+                    r,
+                )
+        });
+        assert!(!wrong, "unrelated request must not match any candidate");
     }
 }

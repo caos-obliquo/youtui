@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui                      # 374 pass, 3 ignore
+cargo test --release -p youtui                      # 381 pass, 5 ignore
 cargo test --release -p metadata-provider           # 110 pass (+62 new)
 cargo test --release -p vi-text-editor              # 67 pass
 cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
@@ -62,7 +62,7 @@ cargo test --release -p json-crawler                # 2 pass
 cargo test --release -p lrclib-rs                   # 4 pass
 cargo test --release -p rym-genre-data              # 10 pass
 ```
-Total: **~729/732 pass, 0 fail, 3 ignored, 0 warnings** (374+3 + 117 + 67 + 83 + 27 + 22 + 18 + 3 + 0 + 4 + 10 + 4 = 732)
+Total: **~738/741 pass, 0 fail, 5 ignored, 0 warnings** (381+5 + 117 + 67 + 83 + 27 + 22 + 18 + 3 + 0 + 4 + 10 + 4 = 741)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -211,7 +211,7 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## 13 Crate Directories (7 workspace members)
 | Crate | Status | Tests |
 |---|---|---|
-| `youtui` | Main binary | 374 |
+| `youtui` | Main binary | 381 |
 | `ytmapi-rs` | YT Music API client | 83 lib + 29/51 auth |
 | `vi-text-editor` | Vim text editor widget | 67 |
 | `metadata-provider` | Metadata trait + 8 provider impls | 117 |
@@ -439,7 +439,7 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 374 pass, 3 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
+- 381 pass, 5 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
 - Suckless refactoring adds 0 tests (refactors existing code only)
 
 ## Inspirations & Thanks

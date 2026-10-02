@@ -161,6 +161,58 @@ pub fn parse_bandcamp_search_results_all_types(json: &serde_json::Value) -> Vec<
         .unwrap_or_default()
 }
 
+/// Lowercase, alphanumeric-only. Bandcamp and Last.fm disagree constantly on
+/// case, punctuation and spacing, so all matching goes through this first.
+fn normalize_for_match(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Does a Bandcamp search result plausibly answer a request for
+/// `request_artist` / `request_title`?
+///
+/// Bandcamp autocomplete is fuzzy and returns whatever loosely resembles the
+/// query, so a raw first-hit would happily queue an unrelated track when a
+/// user presses Enter on a recommendation. Both the artist and the title must
+/// line up before a result is accepted:
+///
+/// - artist: `band_name` must equal the requested artist, or contain it, or be
+///   contained by it. The containment cases matter because Bandcamp credits
+///   vary ("V/A", "Artist feat. Someone", "Artist [Various]").
+/// - title: `name` must equal the requested title or contain it. An **empty**
+///   `request_title` skips the check, which is what artist-kind lookups want.
+///
+/// An empty `request_artist` skips the artist check for the same reason.
+pub fn bandcamp_result_matches(
+    request_artist: &str,
+    request_title: &str,
+    result: &BandcampSearchResult,
+) -> bool {
+    let want_artist = normalize_for_match(request_artist);
+    if !want_artist.is_empty() {
+        let got_artist = normalize_for_match(&result.band_name);
+        let artist_ok = !got_artist.is_empty()
+            && (got_artist == want_artist
+                || got_artist.contains(&want_artist)
+                || want_artist.contains(&got_artist));
+        if !artist_ok {
+            return false;
+        }
+    }
+
+    let want_title = normalize_for_match(request_title);
+    if !want_title.is_empty() {
+        let got_title = normalize_for_match(&result.name);
+        if got_title.is_empty() || !(got_title == want_title || got_title.contains(&want_title)) {
+            return false;
+        }
+    }
+
+    true
+}
+
 /// Parse yt-dlp `--flat-playlist --dump-json` output into structured track
 /// entries.
 ///
@@ -891,5 +943,74 @@ mod tests {
         assert_eq!(results[0].url, "https://vomitor-australia.bandcamp.com");
         assert_eq!(results[0].band_name, "VOMITOR");
         assert!(is_bandcamp_url(&results[0].url));
+    }
+
+    fn bc_result(name: &str, band: &str) -> BandcampSearchResult {
+        BandcampSearchResult {
+            type_: BandcampType::Track,
+            name: name.to_string(),
+            band_name: band.to_string(),
+            url: format!("https://{}.bandcamp.com/track/x", band.to_lowercase()),
+            album_name: None,
+        }
+    }
+
+    #[test]
+    fn match_accepts_exact_artist_and_title() {
+        let r = bc_result("Fake Plastic Trees", "Radiohead");
+        assert!(bandcamp_result_matches("Radiohead", "Fake Plastic Trees", &r));
+    }
+
+    #[test]
+    fn match_ignores_case_and_punctuation() {
+        let r = bc_result("Fake Plastic Trees (Remastered)", "Radiohead");
+        assert!(bandcamp_result_matches("radiohead", "fake plastic trees", &r));
+    }
+
+    #[test]
+    fn match_accepts_artist_credit_variants() {
+        assert!(bandcamp_result_matches(
+            "Various Artists",
+            "X",
+            &bc_result("X", "V/A")
+        ));
+        assert!(bandcamp_result_matches(
+            "Artist feat. Someone",
+            "X",
+            &bc_result("X", "Artist")
+        ));
+    }
+
+    #[test]
+    fn match_rejects_wrong_artist() {
+        let r = bc_result("Fake Plastic Trees", "Radiohead");
+        assert!(!bandcamp_result_matches("Nirvana", "Fake Plastic Trees", &r));
+    }
+
+    #[test]
+    fn match_rejects_wrong_title() {
+        let r = bc_result("Creep", "Radiohead");
+        assert!(!bandcamp_result_matches("Radiohead", "Fake Plastic Trees", &r));
+    }
+
+    #[test]
+    fn match_rejects_empty_candidate_fields() {
+        assert!(!bandcamp_result_matches(
+            "Radiohead",
+            "Fake Plastic Trees",
+            &bc_result("", "Radiohead")
+        ));
+        assert!(!bandcamp_result_matches(
+            "Radiohead",
+            "Fake Plastic Trees",
+            &bc_result("Fake Plastic Trees", "")
+        ));
+    }
+
+    #[test]
+    fn empty_request_field_skips_that_check() {
+        let r = bc_result("Cut You Into Pieces", "Bands of Mice");
+        assert!(bandcamp_result_matches("Bands of Mice", "", &r));
+        assert!(bandcamp_result_matches("", "Cut You Into Pieces", &r));
     }
 }
