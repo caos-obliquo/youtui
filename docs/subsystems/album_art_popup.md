@@ -11,20 +11,9 @@
 - Min-size guard: skip drawing if rect < 4x4
 - Image scaled with `Resize::Fit(None)` - fits within pixel area while preserving aspect ratio
 
-## Sixel Centering Fix (af0acb8) - Root Cause + Resolution
+## Sixel Centering Fix - Root Cause + Resolution
 
-### The Problem
-Album art appeared "too up and too left" in the popup. Far from centered.
-
-### Investigation Path
-
-1. **Suspected Layout issue**: First thought 3/94/3% Layout was asymmetrical in small terminals. Replaced with `Rect::inner(&Margin{vertical: h/6, horizontal: w/8})` - cleaner but didn't fix.
-2. **Suspected Block interference**: Tried wrapping image in a bordered Block. Image appeared at top-left of Block instead of inside. Block approach was wrong.
-3. **Root cause found**: `Resize::Fit(None)` computes fitted pixel dimensions from the image's aspect ratio vs target pixel area. Fitted image may be SMALLER than the target rect in one dimension (e.g., tall portrait image in wide rect → fitted height = target height, fitted width < target width). Without centering offset, image rendered at rect's top-left corner.
-
-### The Fix
-
-After `new_protocol()` succeeds, read the fitted dimensions via `Protocol::area()`:
+Root cause: `Resize::Fit(None)` can return an image smaller than the target rect in one dimension, and rendering at the rect origin left it off-center. Fix: read the fitted size via `Protocol::area()` after `new_protocol()` and render the image at a rect centered inside the target.
 
 ```rust
 if let Ok(protocol) = terminal_image_capabilities.new_protocol(

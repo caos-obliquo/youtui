@@ -53,7 +53,7 @@ src/
     ├── mod.rs          - QueryBuilder trait + QueuedQuery
     ├── album.rs        - Album browse query
     ├── artist.rs       - Artist channel + songs query
-    ├── continuations.js- Paginated query (scroll)
+    ├── continuations.rs - Paginated query (scroll)
     ├── history.rs      - History query
     ├── library.rs      - Library queries (all songs, artists, etc.)
     ├── playlist.rs     - Playlist queries
@@ -108,16 +108,15 @@ ArtistChannelID<'static>  - Artist channel ID
 AlbumID<'static>          - Album browse ID
 BrowseID<'static>         - Generic browse ID (variant enum)
 
-ParsedSong { video_id, title, artists, album, duration, thumbnails, ... }
-ParsedAlbum { title, artist, year, tracks, ... }
-SearchResult { songs, albums, artists, playlists, videos }
-LibraryPlaylist { title, playlist_id, count, ... }
-LibraryArtist { artist, channel_id, ... }
+ParsedSongAlbum { name, id } - album entry on a song (parse.rs, used in parse/search.rs, parse/artist.rs, parse/playlist.rs, parse/history.rs)
+ParsedSongArtist { name, id } - artist entry on a song (parse.rs, parse/artist.rs)
+LibraryPlaylist { playlist_id, title, tracks, author, ... } - library playlist entry (parse/library.rs)
+LibraryArtist { channel_id, artist, byline } - library artist entry (parse/library.rs)
 ```
 
 ## Tests
 
 ```bash
 cargo test --release -p ytmapi-rs
-# 82 lib tests + 29 pass, 51 fail integration (requires browser auth)
+# 83 lib tests + 29 pass, 51 fail integration (requires browser auth)
 ```

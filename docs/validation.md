@@ -4,20 +4,20 @@ Youtui resolves metadata through a multi-provider pipeline. Results are scored, 
 
 ## Metadata Providers
 
-The `MetadataRegistry` queries 8 providers in priority order. Lower priority = checked first.
+The `MetadataRegistry` queries 8 providers. Lower priority number = checked first, but all providers are queried and the best score wins (see Scoring Formula).
 
 | Priority | Provider | Requires | Status |
 |---|---|---|---|
-| 2 | TrackSearchProvider (Last.fm) | `api_key` | Active |
-| 3 | AlbumSearchProvider (Last.fm) | `api_key` | Active |
-| 4 | DiscogsProvider | `discogs_token` | Active |
 | 5 | MetalApiProvider | `MA_COOKIE` env var | **DEAD** - API returns 500 |
 | 6 | ListenBrainzProvider | `listenbrainz_token` | Active |
 | 7 | MusicBrainzProvider | nothing (OAuth2 optional) | Active |
+| 8 | DiscogsProvider | `discogs_token` | Active |
 | 8 | LibreFMProvider | `librefm_key` | Reserved (future use) |
-| 9 | GeniusProvider | `genius_token` | Active |
+| 10 | AlbumSearchProvider (Last.fm) | `api_key` | Active |
+| 20 | TrackSearchProvider (Last.fm) | `api_key` | Active |
+| 40 | GeniusProvider | `genius_token` | Active |
 
-First provider to return a result wins per field. Tracklist and genre data are merged across all providers.
+All providers are tried and scored; the highest score wins. Year, album, artist, and genre/style data are merged across all results (see Genre Merge Pipeline). There is no early stop after a winner is found.
 
 ## Scoring Formula
 
@@ -25,17 +25,17 @@ Each provider result gets a confidence score:
 
 | Signal | Points | Condition |
 |---|---|---|
-| artist_match | +50 | Artist name matches query |
+| artist_match | +50 | Artist name exact match (+10 for substring either way) |
 | tracklist | +100 | With artist match |
 | tracklist | +80 | Without artist match |
 | album | +10 | Album name present |
 | year | +5 | Release year present |
-| album_title_match | +15 | Album title matches query |
+| album_title_match | +15 | Album title equals query (+7 contains, +10 `&`/`and` normalized equal) |
 | track_count | +1 per track | Max +10 |
-| genre | +2 per genre | Max +10 |
-| wrong_artist | -500 | Artist clearly mismatched |
+| genre | +4 per genre | Max +20 |
+| wrong_artist | -500 | Artist mismatched AND album does not match title |
 
-Results below a threshold are discarded. Highest score wins.
+Results with score <= 0 are discarded. Highest score wins.
 
 ## Genre Merge Pipeline
 
@@ -43,21 +43,20 @@ Genres from all providers are merged in three stages:
 
 ### 1. Weighted Merge
 
-Each provider contributes genres with a weight:
+Each provider contributes genres and styles with a weight derived from its registry priority (`priority_weight` / `weighted_merge_genres` in `metadata-provider/src/merge.rs`):
 
-| Source | Weight | Notes |
-|---|---|---|
-| MusicBrainz | 3 | Authoritative genre tags |
-| ListenBrainz genre | 2 | Community-voted |
-| ListenBrainz style | 1 | Or 2 if count >= 10 |
-| All other providers | 1 | Last.fm, Discogs, etc. |
+| Source | Genre weight | Style weight | Notes |
+|---|---|---|---|
+| MusicBrainz (priority 7) | 3 | 0 | Authoritative genre tags |
+| ListenBrainz (priority 6) | 2 | 1 | Community-voted |
+| All other providers | 1 | 0 | Last.fm, Discogs, etc. |
 
-Dedup by lowercase. First insertion wins for display order.
+Weights accumulate per tag. Dedup by lowercase. Sorted by weight descending, then alphabetically ascending.
 
 ### 2. Cap
 
-- Max 20 genres
-- Max 20 styles
+- Max 30 genres
+- Max 30 styles
 
 ### 3. RYM Parent Expansion
 
@@ -67,7 +66,7 @@ After weighted merge, RYM parent expansion runs:
 - Parent genres are added if missing
 - Example: `death metal` → also adds `metal`, `extreme metal`
 
-This runs AFTER the cap, so parents may push the list back over 20. The cap is not re-applied.
+This runs on the capped lists, then the cap is re-applied (`take(30)` after `expand_parent_genres` in `merge.rs`), so the final lists stay within 30.
 
 **Performance note**: `genre_map` contains 3000+ canonical genres. Parent expansion is a linear scan per genre. See limitation F6.
 
@@ -80,11 +79,9 @@ Two-tier caching:
 | LRU | 200 entries | In-memory hot cache |
 | SQLite | Unlimited | Write-through on resolve() hit |
 
-Location: `~/.local/share/youtui/metadata_cache.sqlite`
+Location: `~/.local/share/youtui/metadata_cache.db` (via `get_data_dir()`, overridable with `YOUTUI_DATA_DIR`)
 
-On first open, the old `metadata_cache.json` is migrated to `.bak` and imported into SQLite.
-
-Clear by deleting the `.sqlite` file.
+Clear by deleting the `.db` file.
 
 ## Known Limitations
 

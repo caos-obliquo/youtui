@@ -17,7 +17,7 @@
 │  ├── config/ - config.toml parsing + keymap IR          │  │
 │  ├── widgets/ - scrolling_list, scrolling_table, tab    │  │
 │  ├── youtube_downloader/ - yt-dlp + native downloaders  │  │
-│  └── audio-player/                              │  │
+│  └── (audio-player lives in libs/audio-player, not inside youtui/) │  │
 └────────┬────────────────────────────────────────────────┘  │
          │ depends on:                                       │
     ┌────┴────┬──────────┬──────────────┬───────────────┐    │
@@ -30,22 +30,23 @@
 └────────────────────────────────────────────────────────────┘
 ```
 
-## 12 Workspace Crates
+## 7 Workspace Members, 13 Crate Directories
 
 | Crate | Tests | Description |
 |---|---|---|
 | `async-callback-manager` | 14 | Async task dispatch for callback architecture |
-| `audio-player` | 0 | Async rodio-based audio playback (ALSA/CoreAudio/OSS). Extracted from `async_rodio_sink.rs` |
+| `audio-player` | 4 | Async rodio-based audio playback (ALSA/CoreAudio/OSS). Extracted from `async_rodio_sink.rs`, lives in `libs/audio-player` |
 | `genius-rs` | 18 | Genius lyrics and annotations API client |
-| `genre-db-sqlite` | 27 | SQLite-backed genre hierarchy. Seeded from MusicBee (3,729 genres), Discogs, RYM (6,163 genres). `GenreDb::global()` singleton with `normalise()`, `expand_parent()`, `is_known_genre()`, `find_genre()`, `get_ancestors()`. Replaces in-memory `genre_map.rs` |
+| `genre-db-sqlite` | 27 | SQLite-backed genre hierarchy seeded from MusicBee, Discogs, RYM. `GenreDb::global()` singleton with `normalize_genre()`, `expand_parent_genres()`, `is_known_genre()`, `find_genre()`, `get_ancestors()` |
 | `json-crawler` | 2 | JSON path expression parser |
 | `lrclib-rs` | 4 | LRCLIB lyrics provider |
-| `metadata-cache-sqlite` | 20 | Persistent SQLite cache for metadata results (year/genres/styles/MBID). LRU in-memory (200 entries) + SQLite fallback via `lookup_cache()`. Background flush 60s + on-quit |
-| `metadata-provider` | 110 | Metadata trait + 6 provider impls (MusicBrainz, Discogs, Last.fm Album/Track, Metal-API, Genius) |
+| `metadata-cache-sqlite` | 22 | Persistent SQLite cache for metadata results (year/genres/styles/MBID). LRU in-memory (200 entries) + SQLite fallback via `lookup_cache()`. Background flush 60s + on-quit |
+| `metadata-provider` | 117 | Metadata trait + 8 provider impls (MetalApi, ListenBrainz, MusicBrainz, Discogs, Libre.fm, Last.fm Album/Track, Genius) |
 | `rym-genre-data` | 10 | RYM genre/descriptor hierarchy from pre-scraped GitHub data (2629 genres with descriptions, via joeseesun/music-genre-finder) |
 | `vi-text-editor` | 67 | Vim text editor widget for popups |
-| `ytmapi-rs` | 82 (lib) | YT Music API client |
-| `youtui` | 180 | Main TUI application binary |
+| `ytmapi-rs` | 83 (lib) | YT Music API client |
+| `ytmapi-cli` | 7 | YTM API debug CLI (live workspace member at `libs/ytmapi-cli`) |
+| `youtui` | 396 | Main TUI application binary |
 
 ## 3-Layer Callback Architecture
 
@@ -58,15 +59,6 @@
 │  components  │     (state mutation) │    Manager   │                   │  /ffmpeg │
 └──────────────┘                      └─────────────┘                    └──────────┘
 ```
-
-### Flow
-
-1. **Event** arrives (keyboard, media key, IPC)
-2. **Frontend** handles it → may spawn a `BackendTask` via `AsyncTask::new_future_try(task, ok_handler, err_handler, metadata)`
-3. **TaskManager** sends the `BackendTask` to the **Backend**
-4. **Backend** executes the task (API call, download, decode, etc.)
-5. **Result** returns to TaskManager → calls `FrontendEffect` handler on frontend state
-6. **Frontend** re-renders via `terminal.draw(|f| ...)`
 
 ### Key Types
 
@@ -96,10 +88,15 @@ pub enum WindowContext {
     Browser,        // Search tabs (artist/song/playlist/library)
     Playlist,       // Queue view
     Logs,           // Logger/tracing view
-    Lyrics,         // Lyrics popup overlay
-    SongInfo,       // Song info popup overlay
     PlaylistSavePopup,   // Save-to-playlist popup
     PlaylistUpdatePopup, // Add-to-playlist popup
+    Lyrics,         // Lyrics popup overlay
+    SongInfo,       // Song info popup overlay
+    PlaylistEditor, // Vim-driven playlist editor popup
+    PlaylistRenamePopup, // Rename popup
+    PlaylistEditPopup,   // Edit-details popup
+    PlaylistDetailsPopup, // Details popup
+    Notes,          // Notes popup overlay
 }
 ```
 

@@ -2,7 +2,7 @@
 
 ## Data Model
 
-File: `youtui/src/app/ui/playlist.rs` - `Playlist` struct (main, ~3104 lines)
+File: `youtui/src/app/ui/playlist.rs` - `Playlist` struct (main)
 
 ```rust
 pub struct Playlist {
@@ -20,16 +20,15 @@ pub struct Playlist {
 
 | Operation | Method | Key |
 |-----------|--------|-----|
-| Play song | `play_song(id)` | Enter |
-| Next track | `next_song()` | `l` |
-| Previous track | `previous_song()` | `h` |
-| Add to end | `add_song_to_playlist(song)` | - |
-| Remove from queue | `remove_from_playlist(id)` | `d` |
-| Move up | `shift_up(id)` | `K` |
-| Move down | `shift_down(id)` | `J` |
-| Clear queue | (context menu) | `o.c` |
-| Toggle shuffle | `toggle_shuffle()` | - |
-| Cycle repeat | `cycle_repeat()` | - |
+| Play song | `play_song_id(id)` | Enter |
+| Next track | `next_song()` | `>` (global) |
+| Previous track | `previous_song()` | `<` (global) |
+| Add to end | `push_song_list(songs)` | - |
+| Remove from queue | `delete_selected()` | `d` then `d` (Delete mode; `dg`/`dG` to top/bottom) |
+| Move track up/down (browser) | `MoveTrackUp`/`MoveTrackDown` | `K` / `J` in library view |
+| Delete all | `delete_all()` | `o.D` |
+| Toggle shuffle | `toggle_shuffle()` | `o.s` |
+| Cycle repeat | repeat action | `o.z` |
 
 ## Shuffle
 
@@ -62,27 +61,31 @@ Cycled by repeat action: `Off → All → One → Off`.
 
 ## Persistence
 
-File: `app/queue_persistence.rs`
+File: `youtui/src/app/queue_persistence.rs`
 
-Queue state saved to disk on exit, loaded on startup:
+Queue state saved to disk on exit, loaded on startup via `auto_save` / `auto_load` (`__autosave` queue name):
 
 ```rust
-pub fn save(queue: &[ListSong], current_index: Option<usize>) -> Result<()>;
-pub fn load() -> Result<(Vec<ListSong>, Option<usize>)>;
+pub fn save_queue(playlist: &Playlist, name: &str) -> Result<()>;
+pub fn load_queue(playlist: &mut Playlist, name: &str) -> Result<()>;
+pub fn auto_save(playlist: &Playlist) -> Result<()>;
+pub fn auto_load(playlist: &mut Playlist) -> Result<()>;
 ```
 
-**File:** `~/.cache/youtui/queue.json`
+**File:** `get_data_dir()/youtui/queues/{name}.json` (e.g. `~/.local/share/youtui/youtui/queues/__autosave.json` on Linux; `get_data_dir()` in `youtui/src/main.rs` uses `ProjectDirs::from("com", "nick42", "youtui")`, overridable via `YOUTUI_DATA_DIR`).
 
-**Format:**
+**Format (`CompactSavedQueue`):**
 ```json
 {
-  "queue": [
+  "songs": [
     {
       "video_id": "abc123",
       "title": "Song Title",
       "artists": ["Artist Name"],
       "album": "Album Name",
-      "duration_string": "3:45"
+      "duration_string": "3:45",
+      "thumbnail_url": "...",
+      "like_status": "INDIFFERENT"
     }
   ],
   "current_index": 0
@@ -94,26 +97,21 @@ Compact serialization: album art, thumbnails, and download status are NOT persis
 ## Gapless Auto-Advance
 
 ```
-Track ends (within 1s of actual_duration):
-  → QueueDecodedSong(next_track) scheduled
-  → Next track pre-decoded via DecodeSong
-  → Seamless playback transition
+Track within GAPLESS_PLAYBACK_THRESHOLD (1s) of actual_duration end:
+  → DecodeSong(next_track, offset, actual_duration) scheduled
+  → mapped to QueueDecodedSong(next_song.id)
+  → handle_queued decodes; seamless transition on track end
 ```
 
-Handled in progress update loop (`handle_set_song_play_progress`, ~10Hz check).
-
-## Buffer
-
-- **Ahead**: 2 songs pre-buffered (decode started before current ends)
-- **Behind**: 1 song saved (for immediate previous-track seek)
+Handled in the progress update path (`youtui/src/app/ui/playlist.rs`, gapless block). Only one next track is pre-decoded, only when it is already `DownloadStatus::Downloaded`, never in Repeat One mode, and `QueueState::Queued` guards against double-scheduling. There is no 2-ahead/1-behind buffer.
 
 ### Year Enrichment
 
 Queue songs get year (and genre/style) metadata from a batch enrichment pipeline that triggers when songs are added via `push_song_list`.
 
-**Trigger:** `push_song_list` (playlist.rs:2021) builds `enrich_data` from all songs whose year is `None`. Dispatches `EnrichQueueYears` backend task.
+**Trigger:** `push_song_list` (`playlist.rs`) builds `enrich_data` from all queue songs whose year is `None` and dispatches the `EnrichQueueYears` backend task.
 
-**Resolution:** `EnrichQueueYears` handler calls `resolve_fast()` — a fast-path resolver that queries only ListenBrainz (priority 6) and Last.fm (Album 10, Track 20), avoiding slow/rate-limited providers like MusicBrainz (1 req/s). Each result is cached to LRU + SQLite (even `None` results to prevent re-fetch).
+**Resolution:** `EnrichQueueYears` handler calls `resolve_fast()` - a fast-path resolver that queries only ListenBrainz (priority 6) and Last.fm (Album 10, Track 20), avoiding slow/rate-limited providers like MusicBrainz (1 req/s). Each result is cached to LRU + SQLite (even `None` results to prevent re-fetch).
 
 **Completion:** `HandleQueueEnrichYearsOk` applies enrichment results to queue songs via index map. Each result sets `song.year = Some(Rc::new(year))` when year found.
 

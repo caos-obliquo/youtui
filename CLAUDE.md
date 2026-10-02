@@ -23,7 +23,7 @@ If things break, rollback and re-apply one-by-one.
 - **Subagent stack**: `rustacean` for Rust code review, `akita` for architecture/tooling decisions.
 - **WHITESPACE** (critical): Keep cursor/indentation whitespace in preferences block exactly as-is. Rendered verbatim.
 - **Consistency across windows**: Every browser tab (Artists, Songs, Albums, Library, Playlist) must share same UI patterns: search (F1), advanced table columns with sort/filter, o-mode context menu, j/k/gg/G navigation. No tab second-class.
-- **No em-dashes**: Never use `--` (em-dash) in code. Use `-` (hyphen) for all display strings, log messages, comments, docs. Bad practice, avoid entirely.
+- **No em-dashes**: Never use U+2014 (em-dash) in code. Use `-` (hyphen) for all display strings, log messages, comments, docs. Bad practice, avoid entirely.
 - **Priority: Playlist features most important.** All browser entities fully wired backend->UI->API.
 - **Mail**: `caos_obliquo@outlook.com`
 - **Debug logging**: Every feature must be fully wired with logging (info/error/debug) at key decision points. No silent paths. Log input params, success/failure outcomes, and any state transitions useful for debugging. Wire to build, run, verify with logs before commit.
@@ -43,26 +43,28 @@ If things break, rollback and re-apply one-by-one.
 
 ## Build
 - Workspace root: `/home/caos/builds/youtui/`
-- Rust nightly (1.97.0)
+- Rust 1.98.0 (rust-version 1.91 per youtui/Cargo.toml)
 - Binary: `cargo build --release` -> `target/release/youtui`
 - Dependencies: yt-dlp, ffmpeg (all platforms). Linux: alsa-lib (pacman). macOS: CoreAudio (built-in). BSD: OSS (built-in). Bandcamp support requires the uv-tool yt-dlp with curl_cffi (`~/.local/bin/yt-dlp` from `uv tool install yt-dlp`); the distro `/usr/bin/yt-dlp` fails on the Bandcamp Client Challenge ("Unable to extract tralbum data"). The uv-tool binary fails on YouTube ("Requested format is not available"), so `config.toml` sets `yt_dlp_command` = distro binary and `bandcamp_yt_dlp_command` = uv-tool binary; the per-source pick happens via `is_bandcamp_url` in `YtDlpDownloader::stream_song` and `FetchYtVideoMetadata`
 
 ## Tests
 ```bash
 cargo test --release -p youtui                      # 396 pass, 5 ignore
-cargo test --release -p metadata-provider           # 110 pass (+62 new)
+cargo test --release -p metadata-provider           # 117 pass (94 lib + 23 integration)
 cargo test --release -p vi-text-editor              # 67 pass
 cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
 cargo test --release -p ytmapi-rs                   # 29/51 auth (needs cookie)
-cargo test --release -p genre-db-sqlite             # 27 pass (new crate)
-cargo test --release -p metadata-cache-sqlite       # 20 pass
+cargo test --release -p genre-db-sqlite             # 27 pass
+cargo test --release -p metadata-cache-sqlite       # 22 pass
 cargo test --release -p genius-rs                   # 18 pass
-cargo test --release -p async-callback-manager      # 14 pass
+cargo test --release -p async-callback-manager      # 14 pass (3 lib + 11 integration)
 cargo test --release -p json-crawler                # 2 pass
 cargo test --release -p lrclib-rs                   # 4 pass
 cargo test --release -p rym-genre-data              # 10 pass
+cargo test --release -p audio-player                # 4 pass
+cargo test --release -p ytmapi-cli                  # 7 pass
 ```
-Total: **~753/756 pass, 0 fail, 5 ignored, 0 warnings** (396+5 + 117 + 67 + 83 + 27 + 22 + 18 + 3 + 0 + 4 + 10 + 4 = 756)
+Total: **764 pass, 0 fail, 5 ignored, 0 warnings** (396 + 117 + 67 + 83 + 27 + 22 + 18 + 14 + 2 + 4 + 10 + 4 = 764; ytmapi-cli 7 pass separate)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -91,7 +93,7 @@ Fixed 5 regressions from ytmapi-rs working tree slimming (+804/-2107 lines, 60 f
 - **reqwest 0.13.3 → 0.11**: 0.13.3 has TLS issues
 - **VL prefix stripping restored**: 5 mutation files (`playlist.rs`, `additems.rs`, `create.rs`, `edit.rs`, `rate.rs`)
 - **RemovePlaylistItems endpoint restored**: `playlist/edit` (was incorrectly `browse/edit_playlist`)
-ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli removed from workspace.
+ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli is a live workspace member (libs/ytmapi-cli, 7 tests pass).
 
 ## PR #28 - Last.fm canonical album name + v1.0.2 (2026-06-27, merged)
 4 bugs fixed across 4 files. See (b4) for details.
@@ -216,13 +218,14 @@ See `docs/` for full reference (4.1k lines, 31 files).
 | `vi-text-editor` | Vim text editor widget | 67 |
 | `metadata-provider` | Metadata trait + 8 provider impls | 117 |
 | `genius-rs` | Genius lyrics/annotations | 18 |
-| `async-callback-manager` | Async task dispatch | 3 |
-| `json-crawler` | JSON path parser | 0 lib |
+| `async-callback-manager` | Async task dispatch | 14 |
+| `json-crawler` | JSON path parser | 2 |
 | `lrclib-rs` | LRCLIB lyrics provider | 4 |
 | `rym-genre-data` | RYM genre/descriptor hierarchy | 10 |
 | `genre-db-sqlite` | SQLite genre hierarchy + seed | 27 |
 | `metadata-cache-sqlite` | SQLite metadata cache + MBID | 22 |
 | `audio-player` | Async rodio-based audio player | 4 integration |
+| `ytmapi-cli` | YTM API debug CLI | 7 |
 
 ## 5 Browser Tabs Fully Wired
 | Tab | Search | Table | Sort/Filter | o Menu | Nav | Status |
@@ -236,23 +239,23 @@ See `docs/` for full reference (4.1k lines, 31 files).
 ## Key Files
 | File | Lines | Purpose |
 |---|---|---|
-| `youtui/src/app/server/messages.rs` | ~1895 | All backend tasks |
-| `youtui/src/app/ui/playlist.rs` | ~3104 | Queue, playback, album splitting, visual mode |
-| `youtui/src/app/ui/browser.rs` | ~1012 | Browser routing, 5-tab dispatch |
-| `youtui/src/app/ui/browser/draw.rs` | ~517 | All browser draw functions |
-| `youtui/src/app/ui/browser/library.rs` | ~2214 | Library (4th tab) with inline tracks view, instant years |
-| `youtui/src/app/ui/browser/albumsearch.rs` | ~731 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
-| `youtui/src/bandcamp.rs` | ~213 | Bandcamp URL normalization/kind detection, album-entry + search-result parsing |
-| `youtui/src/config/keymap.rs` | ~2142 | All keybindings by context |
-| `youtui/src/app/ui.rs` | ~1779 | Main window, event routing |
-| `libs/metadata-provider/` | 48 tests | Metadata trait + 6 provider impls + genre_map |
-| `youtui/src/app/ui/playlist/notes_popup.rs` | ~254 | Vim-driven notes text editor |
+| `youtui/src/app/server/messages.rs` | ~3083 | All backend tasks |
+| `youtui/src/app/ui/playlist.rs` | ~3971 | Queue, playback, album splitting, visual mode |
+| `youtui/src/app/ui/browser.rs` | ~1101 | Browser routing, 5-tab dispatch |
+| `youtui/src/app/ui/browser/draw.rs` | ~519 | All browser draw functions |
+| `youtui/src/app/ui/browser/library.rs` | ~2578 | Library (4th tab) with inline tracks view, instant years |
+| `youtui/src/app/ui/browser/albumsearch.rs` | ~1032 | Albums tab (refactored, like/subscribe/audio_playlist_id) |
+| `youtui/src/bandcamp.rs` | ~1126 | Bandcamp URL normalization/kind detection, album-entry + search-result parsing |
+| `youtui/src/config/keymap.rs` | ~2423 | All keybindings by context |
+| `youtui/src/app/ui.rs` | ~2216 | Main window, event routing |
+| `libs/metadata-provider/` | 117 tests | Metadata trait + 8 provider impls + genre_map |
+| `youtui/src/app/ui/playlist/notes_popup.rs` | ~286 | Vim-driven notes text editor |
 | `youtui/src/app/ui/playlist/playlist_editor_popup.rs` | ~748 | Playlist editor (nvim-driven, overwrite save) |
 | `youtui/src/app/ui/playlist/album_art_popup.rs` | ~54 | Album art sixel popup w/ pagination |
 | `youtui/src/app/ui/playlist/config_editor_popup.rs` | ~153 | Config file editor |
-| `youtui/src/app/ui/playlist/lyrics_popup.rs` | ~1210 | Lyrics + annotations display |
-| `youtui/src/app/ui/footer.rs` | ~275 | Footer: progress, metadata, heart icon, album art |
-| `youtui/src/app/ui/playlist/effect_handlers_playlist.rs` | ~1174 | ValidateMetadata, overwrite save chain handlers |
+| `youtui/src/app/ui/playlist/lyrics_popup.rs` | ~1371 | Lyrics + annotations display |
+| `youtui/src/app/ui/footer.rs` | ~525 | Footer: progress, metadata, heart icon, album art |
+| `youtui/src/app/ui/playlist/effect_handlers_playlist.rs` | ~1680 | ValidateMetadata, overwrite save chain handlers |
 
 ## Playlist Features Status
 All CRUD wired: Create, Delete, Rename, Edit details, Edit privacy, Add/Remove items, Reorder (swap), Rate, Get details, Get tracks, Library playlists, Batch-merge.
@@ -439,7 +442,7 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 396 pass, 5 ignored, 0 warnings across workspace (youtui suite; was 181/181 at suckless time, suite has grown since)
+- 396 pass, 5 ignored in youtui suite, 0 warnings across workspace (was 181/181 at suckless time, suite has grown since)
 - Suckless refactoring adds 0 tests (refactors existing code only)
 
 ## Inspirations & Thanks
