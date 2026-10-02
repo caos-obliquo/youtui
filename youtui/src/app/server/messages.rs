@@ -1326,28 +1326,39 @@ impl BackendTask<ArcServer> for ActOnRecommendation {
                 kind,
                 query
             );
-            let results = SearchSongs(query.clone()).into_future(&backend).await?;
-            if let Some(song) = results.into_iter().next() {
-                return Ok(vec![song]);
-            }
-
-            // Last.fm recommends many tracks that were never uploaded to YouTube,
-            // so a miss is normal. Bandcamp's autocomplete is fuzzy, hence the
-            // mandatory artist+title check: without it we queue unrelated tracks.
+            let want_title = if matches!(kind, crate::lastfm_recommend::RecKind::Artists) {
+                ""
+            } else {
+                title.as_str()
+            };
             if artist.trim().is_empty() && title.trim().is_empty() {
                 return Err(anyhow::anyhow!(
                     "Recommendation has neither artist nor title, cannot resolve it"
                 ));
             }
-            tracing::info!(
-                "ActOnRecommendation: no YouTube result for '{}', trying Bandcamp",
-                query
-            );
+
+            let results = SearchSongs(query.clone()).into_future(&backend).await?;
+            let mut yt_song = results.into_iter().next();
+            // YouTube answers almost any query with *something*, so an unverified
+            // first hit silently swallowed every Bandcamp-only recommendation
+            // and queued an unrelated video instead. Only a hit that actually
+            // matches earns the slot outright.
+            let yt_is_verified = yt_song.as_ref().is_some_and(|s| {
+                crate::bandcamp::title_artist_matches(&artist, want_title, &s.artist, &s.title)
+            });
+            if yt_is_verified && let Some(song) = yt_song.take() {
+                return Ok(vec![song]);
+            }
+
             let bc_query = if artist.is_empty() {
                 title.clone()
             } else {
                 format!("{} - {}", artist, title)
             };
+            tracing::info!(
+                "ActOnRecommendation: no verified YouTube result for '{}', trying Bandcamp",
+                query
+            );
             let bc_results = match fetch_bandcamp_search(&backend.http_client, "t", &bc_query).await {
                 Ok(rows) => rows,
                 Err(e) => {
@@ -1359,11 +1370,6 @@ impl BackendTask<ArcServer> for ActOnRecommendation {
                     Vec::new()
                 }
             };
-            let want_title = if matches!(kind, crate::lastfm_recommend::RecKind::Artists) {
-                ""
-            } else {
-                title.as_str()
-            };
             let candidates: Vec<_> = bc_results
                 .into_iter()
                 .filter(|r| r.type_ == crate::bandcamp::BandcampType::Track)
@@ -1372,21 +1378,33 @@ impl BackendTask<ArcServer> for ActOnRecommendation {
                 })
                 .filter(|r| crate::bandcamp::bandcamp_result_matches(&artist, want_title, r))
                 .collect();
-            if candidates.is_empty() {
-                return Err(anyhow::anyhow!(
-                    "No YouTube or Bandcamp results for recommendation: {} - {}",
-                    artist,
-                    title
-                ));
+            if let Some(chosen) = candidates.first() {
+                tracing::info!(
+                    "ActOnRecommendation: Bandcamp fallback matched '{}' by '{}' ({} candidates)",
+                    chosen.name,
+                    chosen.band_name,
+                    candidates.len()
+                );
+                return Ok(vec![bandcamp_search_result_to_song(chosen)]);
             }
-            let chosen = &candidates[0];
-            tracing::info!(
-                "ActOnRecommendation: Bandcamp fallback matched '{}' by '{}' ({} candidates)",
-                chosen.name,
-                chosen.band_name,
-                candidates.len()
-            );
-            Ok(vec![bandcamp_search_result_to_song(chosen)])
+            // Bandcamp had no verified match either. An unverified YouTube hit is
+            // still a playable row, so prefer it over failing: this path can only
+            // pick which of two plausible tracks wins, never turn playback into an
+            // error.
+            if let Some(song) = yt_song {
+                tracing::warn!(
+                    "ActOnRecommendation: neither YouTube nor Bandcamp verified '{} - {}', playing the unverified YouTube hit '{}'",
+                    artist,
+                    title,
+                    song.title
+                );
+                return Ok(vec![song]);
+            }
+            Err(anyhow::anyhow!(
+                "No YouTube or Bandcamp results for recommendation: {} - {}",
+                artist,
+                title
+            ))
         }
     }
 }

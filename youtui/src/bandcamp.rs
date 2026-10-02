@@ -190,9 +190,30 @@ pub fn bandcamp_result_matches(
     request_title: &str,
     result: &BandcampSearchResult,
 ) -> bool {
+    title_artist_matches(
+        request_artist,
+        request_title,
+        &result.band_name,
+        &result.name,
+    )
+}
+
+/// True when a candidate's artist and title plausibly answer the request.
+///
+/// Shared by the Bandcamp fallback and the YouTube-side verification in
+/// `ActOnRecommendation`: both need the same fuzzy containment rules, and
+/// two copies of them would drift. Artist containment runs in BOTH
+/// directions so credit variants (`V/A`, `Artist feat. X`) match. An empty
+/// request field skips its check; an empty candidate field fails it.
+pub fn title_artist_matches(
+    request_artist: &str,
+    request_title: &str,
+    got_artist: &str,
+    got_title: &str,
+) -> bool {
     let want_artist = normalize_for_match(request_artist);
     if !want_artist.is_empty() {
-        let got_artist = normalize_for_match(&result.band_name);
+        let got_artist = normalize_for_match(got_artist);
         let artist_ok = !got_artist.is_empty()
             && (got_artist == want_artist
                 || got_artist.contains(&want_artist)
@@ -204,7 +225,7 @@ pub fn bandcamp_result_matches(
 
     let want_title = normalize_for_match(request_title);
     if !want_title.is_empty() {
-        let got_title = normalize_for_match(&result.name);
+        let got_title = normalize_for_match(got_title);
         if got_title.is_empty() || !(got_title == want_title || got_title.contains(&want_title)) {
             return false;
         }
@@ -1012,6 +1033,80 @@ mod tests {
         let r = bc_result("Cut You Into Pieces", "Bands of Mice");
         assert!(bandcamp_result_matches("Bands of Mice", "", &r));
         assert!(bandcamp_result_matches("", "Cut You Into Pieces", &r));
+    }
+
+    #[test]
+    fn title_artist_matches_accepts_exact_pair() {
+        assert!(title_artist_matches(
+            "Boredom Knife",
+            "Neutralize",
+            "Boredom Knife",
+            "Neutralize"
+        ));
+    }
+
+    #[test]
+    fn title_artist_matches_ignores_case_and_punctuation() {
+        assert!(title_artist_matches(
+            "BOREDOM knife",
+            "neutral-ize",
+            "Boredom Knife",
+            "Neutralize"
+        ));
+    }
+
+    #[test]
+    fn title_artist_matches_accepts_credit_variants() {
+        assert!(title_artist_matches("V/A", "Neutralize", "V/A", "Neutralize"));
+        assert!(title_artist_matches(
+            "Artist feat. Someone",
+            "Song",
+            "Artist",
+            "Song"
+        ));
+    }
+
+    // The live e2e that motivated this check: YouTube fuzzy search answered
+    // "FAEX - strench of the chaos 3" with a completely unrelated video, and
+    // taking that unverified hit is what silently swallowed every
+    // Bandcamp-only recommendation.
+    #[test]
+    fn title_artist_matches_rejects_the_unrelated_youtube_hit() {
+        assert!(!title_artist_matches(
+            "FAEX",
+            "strench of the chaos 3",
+            "xxxcharacter",
+            "CHAOS IN THE WORLD"
+        ));
+    }
+
+    #[test]
+    fn title_artist_matches_rejects_wrong_artist_and_wrong_title() {
+        assert!(!title_artist_matches(
+            "Boredom Knife",
+            "Neutralize",
+            "Paranoised",
+            "Neutralize"
+        ));
+        assert!(!title_artist_matches(
+            "Boredom Knife",
+            "Neutralize",
+            "Boredom Knife",
+            "Riding a wild dragon"
+        ));
+    }
+
+    #[test]
+    fn title_artist_matches_rejects_empty_candidate_fields() {
+        assert!(!title_artist_matches("Boredom Knife", "Neutralize", "", "Neutralize"));
+        assert!(!title_artist_matches("Boredom Knife", "Neutralize", "Boredom Knife", ""));
+    }
+
+    #[test]
+    fn title_artist_matches_skips_only_empty_request_fields() {
+        assert!(title_artist_matches("", "Neutralize", "Anyone", "Neutralize"));
+        assert!(title_artist_matches("Boredom Knife", "", "Boredom Knife", "Anything"));
+        assert!(!title_artist_matches("", "Neutralize", "Anyone", "Something Else"));
     }
 
     #[test]
