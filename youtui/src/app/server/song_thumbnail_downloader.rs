@@ -190,7 +190,17 @@ impl SongThumbnailDownloader {
         } else {
             reqwest::Url::parse(&thumbnail_url)?
         };
-        let image_bytes = self.client.get(url).send().await?.bytes().await?;
+        let image_bytes = self
+            .client
+            .get(url.clone())
+            .send()
+            .await
+            .with_context(|| format!("album art request failed for {url}"))?
+            .error_for_status()
+            .with_context(|| format!("album art request returned a bad status for {url}"))?
+            .bytes()
+            .await
+            .with_context(|| format!("album art response body unreadable for {url}"))?;
         // `Bytes` is cheap to clone.
         let image_reader = image::ImageReader::new(std::io::Cursor::new(image_bytes.clone()))
             .with_guessed_format()?;
@@ -313,10 +323,10 @@ async fn get_cached_album_art(thumbnail_id: SongThumbnailID<'_>) -> Option<SongT
                     .as_str()
             })
         {
-            warn!(
-                "Detected a file in youtui album art directory with invalid filename {:?}",
-                path.file_name()
-            );
+            // Not this song's art, and not a problem: the directory holds every
+            // cached album, so a non-matching name is the normal case. This
+            // used to warn, which fired once per cached file on every lookup
+            // and produced 23691 identical warnings in a single session.
             return None;
         }
         // Youtui will always write a file extension.
