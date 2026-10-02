@@ -1370,8 +1370,22 @@ impl BackendTask<ArcServer> for ActOnRecommendation {
                 ));
             }
 
-            let results = SearchSongs(query.clone()).into_future(&backend).await?;
-            let mut yt_song = results.into_iter().next();
+            // A YouTube ERROR (API down, rate limited, bad auth) must not abort
+            // here: the whole point of this fallback is to rescue tracks YouTube
+            // cannot serve, and a YouTube outage is exactly when Bandcamp is
+            // most likely to be the one that still works. Treat an error the same
+            // as an empty result and let the Bandcamp branch decide.
+            let mut yt_song = match SearchSongs(query.clone()).into_future(&backend).await {
+                Ok(results) => results.into_iter().next(),
+                Err(e) => {
+                    tracing::warn!(
+                        "ActOnRecommendation: YouTube search failed for '{}', trying Bandcamp: {}",
+                        query,
+                        e
+                    );
+                    None
+                }
+            };
             // YouTube answers almost any query with *something*, so an unverified
             // first hit silently swallowed every Bandcamp-only recommendation
             // and queued an unrelated video instead. Only a hit that actually
