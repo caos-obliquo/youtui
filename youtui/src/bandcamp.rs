@@ -1013,4 +1013,20 @@ mod tests {
         assert!(bandcamp_result_matches("Bands of Mice", "", &r));
         assert!(bandcamp_result_matches("", "Cut You Into Pieces", &r));
     }
+
+    #[test]
+    fn a_track_hit_whose_url_is_not_a_track_is_not_queueable() {
+        let mut r = bc_result("Neutralize", "Boredom Knife");
+        r.url = "https://dramarecorder.bandcamp.com/album/noise-as-a-form-of-expression-vol-4"
+            .to_string();
+        assert_eq!(r.type_, BandcampType::Track);
+        assert_ne!(bandcamp_kind(&r.url), Some(BandcampKind::Track));
+    }
+
+    #[test]
+    fn a_track_hit_with_a_non_bandcamp_url_is_not_queueable() {
+        let mut r = bc_result("Neutralize", "Boredom Knife");
+        r.url = "https://example.com/track/neutralize".to_string();
+        assert_ne!(bandcamp_kind(&r.url), Some(BandcampKind::Track));
+    }
 }

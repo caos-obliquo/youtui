@@ -1334,6 +1334,11 @@ impl BackendTask<ArcServer> for ActOnRecommendation {
             // Last.fm recommends many tracks that were never uploaded to YouTube,
             // so a miss is normal. Bandcamp's autocomplete is fuzzy, hence the
             // mandatory artist+title check: without it we queue unrelated tracks.
+            if artist.trim().is_empty() && title.trim().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Recommendation has neither artist nor title, cannot resolve it"
+                ));
+            }
             tracing::info!(
                 "ActOnRecommendation: no YouTube result for '{}', trying Bandcamp",
                 query
@@ -1362,6 +1367,9 @@ impl BackendTask<ArcServer> for ActOnRecommendation {
             let candidates: Vec<_> = bc_results
                 .into_iter()
                 .filter(|r| r.type_ == crate::bandcamp::BandcampType::Track)
+                .filter(|r| {
+                    crate::bandcamp::bandcamp_kind(&r.url) == Some(crate::bandcamp::BandcampKind::Track)
+                })
                 .filter(|r| crate::bandcamp::bandcamp_result_matches(&artist, want_title, r))
                 .collect();
             if candidates.is_empty() {
@@ -2862,6 +2870,38 @@ mod search_bandcamp_tests {
     #[test]
     fn missing_auto_field_yields_empty_list() {
         assert!(parse_bandcamp_search_results_all_types(&serde_json::json!({})).is_empty());
+    }
+
+    #[test]
+    fn bandcamp_hit_becomes_a_song_keyed_on_the_full_track_url() {
+        let hit = crate::bandcamp::BandcampSearchResult {
+            type_: BandcampType::Track,
+            name: "Neutralize".to_string(),
+            band_name: "Boredom Knife".to_string(),
+            url: "https://dramarecorder.bandcamp.com/track/neutralize".to_string(),
+            album_name: Some("NOISE AS A FORM OF EXPRESSION VOL.4".to_string()),
+        };
+        let song = super::bandcamp_search_result_to_song(&hit);
+        assert_eq!(song.title, "Neutralize");
+        assert_eq!(song.artist, "Boredom Knife");
+        assert_eq!(song.album.as_ref().map(|a| a.name.as_str()), Some("NOISE AS A FORM OF EXPRESSION VOL.4"));
+        assert_eq!(
+            song.video_id.get_raw(),
+            "https://dramarecorder.bandcamp.com/track/neutralize"
+        );
+        assert!(crate::bandcamp::is_bandcamp_url(song.video_id.get_raw()));
+    }
+
+    #[test]
+    fn bandcamp_hit_without_an_album_yields_no_album() {
+        let hit = crate::bandcamp::BandcampSearchResult {
+            type_: BandcampType::Track,
+            name: "X".to_string(),
+            band_name: "Y".to_string(),
+            url: "https://y.bandcamp.com/track/x".to_string(),
+            album_name: None,
+        };
+        assert!(super::bandcamp_search_result_to_song(&hit).album.is_none());
     }
 
     #[tokio::test]
