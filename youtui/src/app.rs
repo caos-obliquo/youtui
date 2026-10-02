@@ -600,13 +600,7 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, task);
             }
             AppCallback::ReloadRecommendations => {
-                self.window_state.recommendations_cache = None;
-                if let Some(store) = &self.window_state.recommendations_store {
-                    if let Err(e) = store.clear("default") {
-                        tracing::warn!("Failed to clear recommendation store: {}", e);
-                    }
-                }
-                let task = self.window_state.open_recommendations();
+                let task = self.window_state.reload_recommendations();
                 self.task_manager.spawn_task(&self.server, task);
             }
             AppCallback::OpenPlaylistSavePopup(video_ids) => {

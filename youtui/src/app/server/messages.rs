@@ -1238,6 +1238,48 @@ pub struct FetchAllRecommendations(
     pub crate::config::ScrobblingConfig,
 );
 
+/// Merge the per-kind recommendation fetches into one list.
+///
+/// Returns `Err` when *every* kind failed. An empty list is indistinguishable
+/// from "no recommendations exist", so returning `Ok(vec![])` here would let a
+/// transient Last.fm outage write an empty list into the 24h store and never
+/// retry for a day, with no way for the user to tell that apart from a real
+/// empty result. A partial success merges normally, including when the kinds
+/// that succeeded returned nothing.
+fn merge_kind_results(
+    results: Vec<Result<Vec<crate::lastfm_recommend::RecItem>>>,
+) -> Result<Vec<crate::lastfm_recommend::RecItem>> {
+    let total = results.len();
+    let mut all = Vec::new();
+    let mut ok_count = 0usize;
+    let mut first_err = None;
+    for r in results {
+        match r {
+            Ok(items) => {
+                ok_count += 1;
+                all.extend(items);
+            }
+            Err(e) => {
+                tracing::warn!("FetchAllRecommendations: one kind failed: {e}");
+                if first_err.is_none() {
+                    first_err = Some(e);
+                }
+            }
+        }
+    }
+    if ok_count == 0 {
+        return Err(first_err
+            .unwrap_or_else(|| anyhow::anyhow!("every recommendation kind failed with no error")));
+    }
+    if ok_count < total {
+        tracing::warn!(
+            "FetchAllRecommendations: merged {ok_count} of {total} kinds, {} items",
+            all.len()
+        );
+    }
+    Ok(all)
+}
+
 impl BackendTask<ArcServer> for FetchAllRecommendations {
     type Output = Result<Vec<crate::lastfm_recommend::RecItem>>;
     type MetadataType = TaskMetadata;
@@ -1270,16 +1312,7 @@ impl BackendTask<ArcServer> for FetchAllRecommendations {
                 .buffer_unordered(3)
                 .collect()
                 .await;
-            let mut all = Vec::new();
-            for r in results {
-                match r {
-                    Ok(items) => all.extend(items),
-                    Err(e) => {
-                        tracing::warn!("FetchAllRecommendations: one kind failed: {e}");
-                    }
-                }
-            }
-            Ok(all)
+            merge_kind_results(results)
         }
     }
 }
@@ -2979,5 +3012,58 @@ mod search_bandcamp_tests {
                 )
         });
         assert!(!wrong, "unrelated request must not match any candidate");
+    }
+}
+
+#[cfg(test)]
+mod merge_rec_kind_results_tests {
+    use super::merge_kind_results;
+    use crate::lastfm_recommend::{RecItem, RecKind};
+
+    fn rec(title: &str) -> RecItem {
+        RecItem {
+            kind: RecKind::Tracks,
+            title: title.to_string(),
+            artist: "A".to_string(),
+            mbid: String::new(),
+            url: String::new(),
+            playcount: None,
+            reason: None,
+            match_score: None,
+        }
+    }
+
+    #[test]
+    fn all_kinds_failing_is_an_error_not_an_empty_list() {
+        let out = merge_kind_results(vec![
+            Err(anyhow::anyhow!("lastfm down")),
+            Err(anyhow::anyhow!("rate limited")),
+            Err(anyhow::anyhow!("bad key")),
+        ]);
+        assert!(out.is_err(), "all-fail must not look like an empty result");
+    }
+
+    #[test]
+    fn partial_success_merges_the_kinds_that_worked() {
+        let out = merge_kind_results(vec![
+            Ok(vec![rec("a")]),
+            Err(anyhow::anyhow!("lastfm down")),
+            Ok(vec![rec("b"), rec("c")]),
+        ])
+        .expect("one kind succeeded");
+        let titles: Vec<&str> = out.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn successful_but_empty_is_still_ok() {
+        let out = merge_kind_results(vec![Ok(vec![]), Ok(vec![]), Ok(vec![])])
+            .expect("Last.fm genuinely having nothing is not a failure");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn empty_input_is_an_error() {
+        assert!(merge_kind_results(vec![]).is_err());
     }
 }

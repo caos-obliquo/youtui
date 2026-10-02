@@ -916,6 +916,16 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new(
+                crossterm::event::KeyCode::F(4),
+                crossterm::event::KeyModifiers::SHIFT,
+            ),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::ReloadRecommendations,
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::F(11)),
             KeyActionTree::new_key_with_visibility(
                 AppAction::ViewLogs,
