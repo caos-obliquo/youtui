@@ -203,7 +203,11 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let _ = stdout.read_to_string(&mut print_out).await;
             let (dl_abr, dl_ext, dl_format) = parse_print_meta(&print_out);
             if is_progressive_fallback(&dl_format) {
-                error!(%video_id, format = %dl_format, abr = %dl_abr, ext = %dl_ext, "progressive fallback format picked, audio is ~96k - check cookie/auth");
+                return Err(YtDlpDownloaderError::IoError {
+                    message: format!(
+                        "yt-dlp fell back to progressive format {dl_format} ({dl_ext}, {dl_abr}) for {video_id}: that is a video rip at ~96k audio, not an audio-only stream. The cookie session cannot see this video's audio-only formats - refresh cookies or play without --cookies."
+                    ),
+                });
             }
 
             // Find the downloaded file (extension decided by yt-dlp via %(ext)s).
