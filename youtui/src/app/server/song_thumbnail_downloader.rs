@@ -455,6 +455,44 @@ mod tests {
     }
 
     #[test]
+    fn bandcamp_song_with_thumbnails_keys_art_on_the_url() {
+        let cover = "https://f4.bcbits.com/img/a0123456789abcdef0123456789abcdef.jpg";
+        let song = ListSong {
+            video_id: VideoID::from_raw("https://domnoise.bandcamp.com/track/one"),
+            track_no: None,
+            plays: String::new(),
+            title: "One".into(),
+            explicit: None,
+            download_status: crate::app::structures::DownloadStatus::None,
+            id: crate::app::structures::ListSongID(0),
+            duration_string: "3:00".into(),
+            actual_duration: None,
+            start_offset: None,
+            year: None,
+            album_art: crate::app::structures::AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
+            artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
+            thumbnails: MaybeRc::Owned(vec![
+                Thumbnail { height: 60, width: 60, url: format!("{cover}-small") },
+                Thumbnail { height: 1200, width: 1200, url: cover.into() },
+            ]),
+            album: Some(MaybeRc::Owned(ListSongAlbum {
+                name: "Some Album".into(),
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+            })),
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+            is_album_upload: false,
+            release_mbid: None,
+            artists_string: std::sync::OnceLock::new(),
+        };
+        match SongThumbnailID::from(&song) {
+            SongThumbnailID::Url(u) => assert_eq!(u, cover),
+            other => panic!("expected Url variant when thumbnails are present, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn real_album_id_stays_album_variant() {
         let song = ListSong {
             video_id: VideoID::from_raw("dQw4w9WgXcQ"),
