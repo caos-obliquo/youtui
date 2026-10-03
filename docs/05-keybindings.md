@@ -67,13 +67,15 @@ Movement uses the List map (`j`/`k`/`gg`/`G`, arrows, Ctrl combos). There are no
 | `m` | Playlist(ToggleRomaji) | Toggle romaji |
 | `A` | Playlist(SetBestQuality) | Cycle audio quality |
 | `R` | Playlist(GetRelatedTracks) | Get related tracks |
-| `E` | Playlist(SaveToExistingPlaylist) | Add queue to existing playlist |
+| `C` | Playlist(SaveToExistingPlaylist) | Add queue to existing playlist |
 | `n` | Playlist(SaveToNewPlaylist) | Save queue to new playlist |
 | `q` | Playlist(SaveQueue) | Save queue to disk |
 | `L` | Playlist(LoadQueue) | Load queue from disk |
 | `Q` | Playlist(DeleteQueue) | Delete saved queue |
+| `c` | Playlist(ClearDownload) | Clear download status |
+| `C` | Playlist(TogglePlaylistCategoryFilter) | Toggle queue category filter |
 
-Note: `o.c` runs ClearDownload. The `c` key is bound twice in this mode and the later entry wins, so TogglePlaylistCategoryFilter is shadowed here.
+`o.c` and `o.C` were previously both bound to ClearDownload, which left TogglePlaylistCategoryFilter unreachable.
 
 ## Browser
 
@@ -123,7 +125,7 @@ There is no `Browser(LocalFilter)` binding and no `Tab` category binding. The gl
 | `c` | Filter(Close) | Close filter |
 | `k` | Sort(Close) | Close sort popup |
 
-Notes: bare `Q` (QueueSong) and `y` (CopySongUrl) also work directly in the library view outside `o`-mode. `o.E` runs EditPlaylistDetails: the `E` key is bound twice in this mode and the later entry wins, so SaveToExistingPlaylist is shadowed here. The plain Songs tab `o`-menu is a subset (no `D`/`R`/`E`/`e`/`x`/`f`/`M`/`O`/`c`/`k`/`q`); artist-songs and playlist-songs panels add `a` PlayAlbum and `A` AddAlbumToPlaylist.
+Notes: bare `Q` (QueueSong) and `y` (CopySongUrl) also work directly in the library view outside `o`-mode. `o.E` runs EditPlaylistDetails and `o.C` runs SaveToExistingPlaylist (previously both were on `o.E` and saving was unreachable). The plain Songs tab `o`-menu is a subset (no `D`/`R`/`E`/`e`/`x`/`f`/`M`/`O`/`c`/`k`/`q`); artist-songs and playlist-songs panels add `a` PlayAlbum and `A` AddAlbumToPlaylist.
 
 ## Browser Library View (Direct Keys)
 
