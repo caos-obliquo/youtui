@@ -615,6 +615,7 @@ impl ActionHandler<AppAction> for YoutuiWindow {
                 self.dismiss_search();
             }
             AppAction::Recommend => return self.open_recommendations().into(),
+            AppAction::ReloadRecommendations => return self.reload_recommendations().into(),
             AppAction::TogglePlaylist => self.handle_toggle_playlist(),
             AppAction::EditConfig => self.open_config_editor(),
             AppAction::OpenUrl => { self.command_mode = true; self.command_editor.clear(); },
@@ -1833,6 +1834,16 @@ impl YoutuiWindow {
         }
     }
 
+    pub fn reload_recommendations(&mut self) -> ComponentEffect<Self> {
+        self.recommendations_cache = None;
+        if let Some(store) = &self.recommendations_store {
+            if let Err(e) = store.clear("default") {
+                tracing::warn!("Failed to clear recommendation store: {}", e);
+            }
+        }
+        self.open_recommendations()
+    }
+
     pub fn open_recommendations(&mut self) -> ComponentEffect<Self> {
         use crate::app::server::FetchAllRecommendations;
         use crate::app::ui::playlist::effect_handlers_playlist::{
@@ -1844,12 +1855,21 @@ impl YoutuiWindow {
         // 1. persistent store (survives restarts)
         if let Some(store) = &self.recommendations_store {
             if let Some(items) = store.load("default") {
-                self.recommendations_popup = Some(RecommendationsPopup::new(RecKind::Artists, false));
-                if let Some(p) = self.recommendations_popup.as_mut() {
-                    p.set_items(items);
+                // An empty persisted list means the last fetch failed, not that
+                // Last.fm has nothing. Serving it would look like a working
+                // answer and skip the retry for the store's whole TTL.
+                if items.is_empty() {
+                    if let Err(e) = store.clear("default") {
+                        tracing::warn!("Failed to clear empty recommendations store: {}", e);
+                    }
+                } else {
+                    self.recommendations_popup = Some(RecommendationsPopup::new(RecKind::Artists, false));
+                    if let Some(p) = self.recommendations_popup.as_mut() {
+                        p.set_items(items);
+                    }
+                    return AsyncTask::<Self, crate::app::server::ArcServer, crate::app::server::TaskMetadata>::new_no_op()
+                        .map_frontend(|this: &mut Self| this);
                 }
-                return AsyncTask::<Self, crate::app::server::ArcServer, crate::app::server::TaskMetadata>::new_no_op()
-                    .map_frontend(|this: &mut Self| this);
             }
         }
 

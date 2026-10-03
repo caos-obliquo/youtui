@@ -36,7 +36,7 @@ No AUR. Local compilation only. After `cargo install`, the `youtui` command is o
 ### Running the dev build (recommended for this repo)
 
 If you build and run from the workspace instead of installing, the binary lives at
-`youtui/target/release/youtui` and `youtui` on your PATH may resolve to an older or
+`target/release/youtui` and `youtui` on your PATH may resolve to an older or
 stale installed copy. Make sure the command you launch actually points at the freshly
 built `target/release` binary. Two ways to do that:
 
@@ -136,6 +136,7 @@ Quick reference:
 | `/` | Local fuzzy filter across visible items |
 | `F1` | YTM search |
 | `F2` / `F3` | Toggle browser / queue |
+| `F4` | Recommendations (Last.fm recs popup) |
 | `F11` | Logs |
 | `?` | Help |
 | `q` | Quit |
@@ -150,6 +151,7 @@ Full keybinds by context: `docs/05-keybindings.md`
 
 - **Vim navigation** - j/k/h/l/g/G throughout, minimal F-keys
 - **yt-dlp audio** - streams with `android_vr` extractor-args, no PO token needed
+- **Bandcamp second source** - search in Songs/Albums/Artists tabs (`BC` badge), album/discography import, separate yt-dlp binary via `bandcamp_yt_dlp_command` (see docs/06-subsystems/bandcamp.md)
 - **Album splitting** - full-album detection, track metadata enrichment, gapless playback
 - **Native scrobbling** - Last.fm with persistent offline cache, retry on startup + 5-min background loop
 - **Metadata pipeline** - 8 providers with scoring (see docs/06-subsystems/validation.md)
@@ -169,10 +171,10 @@ Full keybinds by context: `docs/05-keybindings.md`
 
 ## Known Issues
 
-- **ytmapi-rs (YouTube Music API)**: Google changes internal API format frequently. yt-dlp is the primary/reliable backend for audio streaming. ytmapi-rs lib tests pass (82/82) but 51 integration tests need a browser cookie and may fail without notice.
+- **ytmapi-rs (YouTube Music API)**: Google changes internal API format frequently. yt-dlp is the primary/reliable backend for audio streaming. ytmapi-rs lib tests pass (83/83) but 51 integration tests need a browser cookie and may fail without notice.
 - **Playlist creation**: write operations require an active authenticated session (need fresh cookie).
 - **Year metadata**: Some tracks show `None` when no provider returns data and album/song title has no `(YYYY)`.
-- **Libre.fm scrobble**: fails silently - no retry on HTTP failure.
+- **Libre.fm scrobble**: failures are saved to `~/.config/youtui/scrobble_cache.json` and retried on startup plus a 5-min background loop (max 3 retries).
 - **Metal Archives**: blocked by Cloudflare (cf_clearance cookie expires ~30 min).
 
 ## Build
@@ -181,8 +183,8 @@ Full keybinds by context: `docs/05-keybindings.md`
 cargo build --release
 ./target/release/youtui
 
-cargo test --release -p youtui                      # 264 pass (3 ignored)
-cargo test --workspace --release                    # 647 pass (3 ignored)
+cargo test --release -p youtui                      # 397 pass (5 ignored)
+cargo test --workspace --release                    # 765 pass (5 ignored, excl. ytmapi-rs auth + ytmapi-cli 7 separate)
 cargo clippy --workspace -- -A warnings                # lint (0 warnings)
 ```
 

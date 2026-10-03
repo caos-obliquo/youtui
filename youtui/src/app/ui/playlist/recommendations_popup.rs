@@ -21,6 +21,7 @@ pub struct RecommendationsPopup {
     pub selected: usize,
     pub scroll_offset: usize,
     pub loading: bool,
+    pub error: Option<String>,
     pub filter: String,
     pub filter_active: bool,
     pub table_state: ScrollingTableState,
@@ -41,6 +42,7 @@ impl RecommendationsPopup {
             selected: 0,
             scroll_offset: 0,
             loading,
+            error: None,
             filter: String::new(),
             filter_active: false,
             table_state: ScrollingTableState::default(),
@@ -385,10 +387,16 @@ impl RecommendationsPopup {
         } else {
                 let visible = self.visible_items();
                 if visible.is_empty() {
-                    frame.render_widget(
-                        Paragraph::new("No recommendations returned.").style(Style::default().fg(Color::Gray)),
-                        inner,
-                    );
+                    let text = match self.error.as_deref() {
+                        Some(e) => format!("Failed to load recommendations: {}", e),
+                        None => "No recommendations returned.".to_string(),
+                    };
+                    let style = if self.error.is_some() {
+                        Style::default().fg(Color::Red)
+                    } else {
+                        Style::default().fg(Color::Gray)
+                    };
+                    frame.render_widget(Paragraph::new(text).style(style), inner);
                     return;
                 }
                 let count = visible.len();

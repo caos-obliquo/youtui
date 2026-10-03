@@ -26,18 +26,26 @@ Vim-driven TUI for YouTube Music. Rust. Keyboard-only.
 | [06-subsystems/auth](06-subsystems/auth.md) | OAuth, cookie, browser auth flows |
 | [06-subsystems/queue](06-subsystems/queue.md) | Persistence, shuffle, repeat modes |
 | [06-subsystems/playlist-editor](06-subsystems/playlist-editor.md) | Vim-driven playlist editing popup |
+| [06-subsystems/bandcamp](06-subsystems/bandcamp.md) | Second music source: search, album import, queue/download/play branching |
+| [02-crates/README](02-crates/README.md) | Crate doc index, undocumented crates, ytmapi-cli canonical pointer |
+| [02-crates/ytmapi-cli](02-crates/ytmapi-cli.md) | YTM API debug CLI (short crate summary) |
 | [07-testing](07-testing.md) | Test structure, running, coverage |
 | [08-known-issues](08-known-issues.md) | Bugs, workarounds, version issues |
 | [09-roadmap](09-roadmap.md) | Future features, crate extraction |
 | [ytmapi-rs-status](ytmapi-rs-status.md) | Feature matrix vs Python ytmusicapi |
+| [validation](validation.md) | Metadata validation reference |
+| [ytmapi-cli](ytmapi-cli.md) | ytmapi-cli full reference (all 50+ endpoints) |
+| [refactor-suckless](refactor-suckless.md) | Suckless refactoring plan and status |
 | [subsystems/album_art_popup](subsystems/album_art_popup.md) | Sixel album art popup architecture |
 | [subsystems/notes](subsystems/notes.md) | Notes popup system |
 | [subsystems/recommendations](subsystems/recommendations.md) | Recommendations CLI + F4 popup, niche engine, LB recs, SQLite cache |
 | [man/genius-rs.1](man/genius-rs.1) | Man page - genius-rs CLI (lyrics + annotations) |
+| [man/youtui.1](man/youtui.1) | Man page - youtui TUI |
+| [man/ytmapi-cli.1](man/ytmapi-cli.1) | Man page - ytmapi-cli debug CLI |
 
 ## Man Pages
 
-Man page for genius-rs CLI in `docs/man/`. Install system-wide:
+Man pages in `docs/man/` for `youtui`, `genius-rs`, and `ytmapi-cli`. Install system-wide:
 
 ```bash
 sudo install -m 644 docs/man/genius-rs.1 /usr/local/share/man/man1/
@@ -92,7 +100,7 @@ cargo build --release
 target/release/youtui
 
 # Tests
-cargo test --release -p youtui               # 264 pass, 3 ignore
+cargo test --release -p youtui               # 397 pass, 5 ignore
 cargo test --release -p vi-text-editor       # 67 tests
 cargo test --release -p metadata-provider    # 110 tests
 cargo test --release -p ytmapi-rs --lib      # 82 tests (no auth)
@@ -116,24 +124,25 @@ All paths use XDG convention (`~/.config/youtui/`, `~/.local/share/youtui/`) - c
 
 ## Workspace Crates
 
-12 workspace crates (50k+ LOC):
+7 workspace members, 13 crate directories on disk (50k+ LOC):
 
 | Crate | Tests | Description |
 |-------|-------|-------------|
-| `youtui` | 264 pass, 3 ignore | Main binary |
-| `ytmapi-rs` | 82 lib + 29/51 auth | YT Music API client |
+| `youtui` | 397 pass, 5 ignore | Main binary |
+| `ytmapi-rs` | 83 lib + 29/51 auth | YT Music API client |
 | `metadata-provider` | 110 | Metadata trait + 6 provider impls |
 | `vi-text-editor` | 67 | Vim text editor widget |
 | `genre-db-sqlite` | 27 | SQLite genre hierarchy + seed |
 | `metadata-cache-sqlite` | 20 | SQLite metadata cache (MBID, streaming flush) |
 | `genius-rs` | 18 | Genius lyrics/annotations |
 | `async-callback-manager` | 14 | Async task dispatch |
+| `ytmapi-cli` | 7 | YTM API debug CLI |
 | `json-crawler` | 2 | JSON path parser |
 | `lrclib-rs` | 4 | LRCLIB lyrics provider |
 | `rym-genre-data` | 10 | RYM genre/descriptor hierarchy |
 | `audio-player` | 0 | Async rodio-based audio player |
 
-**Total: ~538/538 pass, 0 fail, 4 ignored, 0 warnings across workspace.**
+**Total: 764 pass, 0 fail, 5 ignored, 0 warnings across workspace** (397 + 117 + 67 + 83 + 27 + 22 + 18 + 14 + 2 + 4 + 10 + 4 = 765; ytmapi-cli 7 pass separate).
 
 ## Key Files
 

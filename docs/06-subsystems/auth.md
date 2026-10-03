@@ -51,26 +51,26 @@ Sends requests without authentication. Most queries return empty results or 403 
 
 ## API Key
 
-File: `ytmapi-rs/src/builder.rs`, `app/config.rs`
+File: `youtui/src/config.rs`, `ytmapi-rs/src/auth/` (`browser.rs`, `oauth.rs`, `noauth.rs`)
 
-Two key types:
+Three key types:
 
 ```rust
 pub enum ApiKey {
-    None,           // No auth
-    OAuth,          // OAuth device flow
-    ApiKey(String), // Cookie-based (browser auth)
+    OAuthToken(OAuthToken), // OAuth device flow
+    BrowserToken(String),   // Cookie-based (browser auth, parsed lazily)
+    None,                   // No auth
 }
 ```
 
 ## Token Refresh
 
-File: `app/api.rs`
+File: `ytmapi-rs/src/lib.rs`
 
-OAuth tokens are refreshed automatically when they expire:
+OAuth tokens are refreshed via `YtMusic<OAuthToken>::refresh_token()`, which refreshes the internal token and returns a clone for local storage:
 
 ```rust
-pub async fn refresh_token(&mut self) -> Result<Option<OAuthToken>>
+pub async fn refresh_token(&mut self) -> Result<OAuthToken>
 ```
 
 ## Cookie File Location

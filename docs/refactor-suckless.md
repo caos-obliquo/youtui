@@ -2,8 +2,8 @@
 
 Branch: `refactor/suckless`
 Goal: Clean, minimal, robust codebase aligned with suckless philosophy
-Baseline: 35k LOC, 71 files (youtui crate), 10 workspace members (ytmapi-cli removed in PR #27)
-Results: **-630 lines**, 0 warnings, 164/164 tests pass (merged to main)
+Baseline: 35k LOC, 71 files (youtui crate), 7 workspace members (13 crate directories on disk, including live `libs/ytmapi-cli`)
+Results: **-630 lines**, 0 warnings, 164/164 tests pass at the time (dated historical snapshot from the suckless branch - see current counts in CLAUDE.md, merged to main)
 
 ## Done
 
@@ -62,6 +62,6 @@ Replace `.expect()` and `.unwrap()` that can panic at runtime:
 - apply_action drops 74 lines of inline logic
 
 ## Verification
-- `cargo build --release` - 0 warnings across workspace (all 10 crates, ytmapi-cli removed)
-- `cargo test --release -p youtui --bin youtui` - 164 pass, 4 ignored
+- `cargo build --release` - 0 warnings across workspace (all crates, `libs/ytmapi-cli` present)
+- `cargo test --release -p youtui --bin youtui` - 164 pass, 4 ignored (dated historical snapshot from the suckless branch, not current)
 - Suckless refactoring adds 0 tests (refactors existing code only)

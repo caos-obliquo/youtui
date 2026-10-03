@@ -1,5 +1,23 @@
 # Roadmap
 
+## Completed (Bandcamp second source)
+
+Bandcamp works as a second music source beside YouTube Music. Search in the Songs, Albums, and Artists tabs merges YouTube-first then Bandcamp rows with a `BC` badge.
+
+| # | Feature | Files |
+|---|---------|-------|
+| B1 | URL classification + normalization (`is_bandcamp_url`, `bandcamp_kind`, fbclid/query strip) | `youtui/src/bandcamp.rs` (new) |
+| B2 | `bcsearch_public_api` search: 3 parallel filter calls (t/a/b) routed per tab, `item_url_root` + `band_name` fallbacks | `bandcamp.rs`, `messages.rs` (`SearchBandcamp`, `fetch_bandcamp_search`) |
+| B3 | Album/discography import: flat-playlist enumeration + one `data-tralbum` page fetch (durations, track_num, og:image art, year from `current`) | `messages.rs` (`FetchBandcampAlbumEntries`), `playlist.rs` (`insert_bandcamp_track_entry`) |
+| B4 | `video_id`-holds-URL convention with `is_bandcamp_url` branching (download binary, metadata resolve, share-URL copy, thumbnail key) | `songsearch.rs`, `playlist.rs`, `structures.rs`, `yt_dlp.rs`, `song_thumbnail_downloader.rs` |
+| B5 | Label-vs-artist metadata resolution (`resolve_bandcamp_metadata`) + provider-override guard | `bandcamp.rs`, `effect_handlers_playlist.rs` |
+| B6 | F4 recommendations: YouTube-verified first, Bandcamp fallback, unverified-YouTube safety net | `messages.rs` (`ActOnRecommendation`), `bandcamp.rs` (`title_artist_matches`) |
+| B7 | Rate limiting: 3-permit probe semaphore, 429 retry on search, 3s-48s backoff in `fetch_yt_dlp_json` | `server.rs`, `messages.rs`, `util.rs` |
+| B8 | FLAC container acceptance (no `--audio-format`, raw passthrough) + `bandcamp_yt_dlp_command` config | `youtube_downloader/yt_dlp.rs`, `config.rs` |
+| B9 | `youtui bandcamp-resolve <url>` CLI debug tool | `main.rs`, `cli.rs` |
+
+Full subsystem doc: `docs/06-subsystems/bandcamp.md`.
+
 ## Completed (2026-06-22 -- Day 1 + Day 2, 76 commits)
 
 | # | Feature | Files |
@@ -138,7 +156,7 @@
 | **metal-api.dev (Metal Archives REST API)** | Returns 500 errors. Provider code written but unusable. Only MA_COOKIE works. |
 | **OAuth token refresh** | Manual only. No refresh flow in youtui itself. |
 
-## Current Test Suite
+## Test Suite Snapshot (dated 2026-06-26, historical - see CLAUDE.md for current counts)
 
 | Crate | Passed | Ignored |
 |-------|--------|---------|
@@ -154,7 +172,7 @@
 | audio-player | 0 | 0 |
 | **Total** | **409** | **4** |
 
-0 failures, 0 build warnings across 10 workspace crates.
+0 failures, 0 build warnings across the workspace at the time (7 members, 13 crate directories on disk).
 
 ## Completed 2026-06-26 - Scrobbler + Suckless + PR #3 Perf
 
@@ -282,10 +300,12 @@
 | 133 | **reqwest 0.13.3 → 0.11**: TLS broken in 0.13.3, reverted | `Cargo.toml` |
 | 134 | **VL prefix stripping restored**: 5 mutation files had stripping removed - all mutation ops on VL playlists would fail 400/404 | 5 query files |
 | 135 | **RemovePlaylistItems endpoint fixed**: `browse/edit_playlist` → `playlist/edit` | `query/playlist.rs` |
-| 136 | **ytmapi-rs slimming**: +804/-2107 lines across 60 files. ytmapi-cli removed from workspace. Simplified queries reduced. Auth consolidated. Test fixtures regenerated. | ytmapi-rs/ |
+| 136 | **ytmapi-rs slimming**: +804/-2107 lines across 60 files. `libs/ytmapi-cli` remains a live workspace member. Simplified queries reduced. Auth consolidated. Test fixtures regenerated. | ytmapi-rs/ |
 | 137 | **ytmapi-rs lib tests**: 85→82 (3 locale `with_language`/`with_location` tests removed) | test files |
 
-### PR #20 - ytmapi-rs artist categories
+### PR #20 - ytmapi-rs artist categories (REVERTED by later slimming)
+
+Note: PR #27 slimming reverted this - `parse/artist.rs` is back to `category: Option<String>` with a TODO and has no playlists field on `GetArtistTopReleases`.
 | # | Feature | Files |
 |---|---------|-------|
 | 126 | ArtistTopReleaseCategory made pub enum (was private) | `parse/artist.rs` |
@@ -302,14 +322,14 @@
 | 4 | Batch reorder (not just swap) in ytmapi-rs | large | `ytmapi-rs/` |
 | 5 | View-only struct refactor for browser tabs | low | DONE (PR #19) |
 | 6 | ytmapi-rs artist categories (5 TODOs) | med | DONE (PR #20) |
-| 7 | **Genre subgenre listing (best-effort)**: Show ALL RYM subgenres for each genre in SongInfoPopup, with descriptions where available. Known limitation: RYM tree has no per-song relevance, so subgenres shown may not apply to the specific song. ✅ **DONE** — subgenres shown inline per genre in expanded view (predominant/complementar sections). | low | `song_info_popup.rs`, `genre-db-sqlite` |
+| 7 | **Genre subgenre listing (best-effort)**: Show ALL RYM subgenres for each genre in SongInfoPopup, with descriptions where available. Known limitation: RYM tree has no per-song relevance, so subgenres shown may not apply to the specific song. ✅ **DONE** - subgenres shown inline per genre in expanded view (predominant/complementar sections). | low | `song_info_popup.rs`, `genre-db-sqlite` |
 
 
 ## Crate Extraction Status
 
 | # | Crate | Status | Tests |
 |---|-------|--------|-------|
-| 1 | ytmapi-rs | Extracted | 82 lib |
+| 1 | ytmapi-rs | Extracted | 83 lib |
 | 2 | json-crawler | Extracted | 2 |
 | 3 | async-callback-manager | Extracted | 14 |
 | 4 | vi-text-editor | Extracted | 67 |
@@ -342,7 +362,7 @@
 | 83 | CLAUDE.md trimmed: remove duplicated keybinding refs, phase tracking, inspirations (428→256 lines) | `CLAUDE.md` |
 | 84 | GitHub Actions CI: PR checks (test/build/lint/audit) + automated release + version bumping | `.github/workflows/ci.yml`, `.github/workflows/release.yml` |
 | 85 | Version reset to 1.0.0 (CI-managed from now on) | `youtui/Cargo.toml` |
-| 86 | OpenBSD CI: removed alsa-utils (not in repos, uses sndio) | `.github/workflows/ci.yml` |
+| 86 | CI follow-up (stale - no BSD jobs exist): `.github/workflows/ci.yml` has only an ubuntu + macos test matrix, no OpenBSD/FreeBSD jobs | `.github/workflows/ci.yml` |
 | 87 | Release workflow: GH_PAT swap (PAT can push to protected branches) | `.github/workflows/release.yml` |
 | 88 | README fix (F-keys claim, fork tagline), LICENSE cleanup (single MIT, caos-obliquo copyright), .gitignore (session-*.md) | `README.md`, `LICENSE`, `.gitignore` |
 | 89 | ScrobbleCache CLI subcommand: `youtui scrobble-cache [--show/--clear/--retry]` | `youtui/src/main.rs`, `youtui/src/cli.rs`, `youtui/src/app/scrobbler.rs` |
@@ -388,7 +408,7 @@ Current state: youtui 194 pass, 0 fail, 4 ignored; no new warnings. Full subsyst
 
 **Architecture**: FetchAlbumArt returns canonical album name from Last.fm album.getInfo. canonical_album_name field on Playlist used as primary album for ALL scrobble paths.
 
-**Tests**: 8 new tests for prefix stripping. 172/172 youtui, 417 total workspace — 0 failures.
+**Tests**: 8 new tests for prefix stripping. 172/172 youtui, 417 total workspace - 0 failures.
 
 ### v1.0.1 - ytmapi-rs regression fixes (PR #27)
 5 regressions fixed: auth cookies, EP/singles detection, reqwest version, VL prefix stripping, RemovePlaylistItems endpoint.

@@ -124,7 +124,7 @@ impl_youtui_task_handler!(
     anyhow::Error,
     Playlist,
     |this: HandleGetSongThumbnailError, input| {
-        error!("Error {input} getting album art");
+        error!("Error {input:#} getting album art");
         // TODO: if GetSongThumbnail error sends back it's ID, one less clone
         // is required.
         PlaylistEffect::SetSongThumbnailError(this.0)

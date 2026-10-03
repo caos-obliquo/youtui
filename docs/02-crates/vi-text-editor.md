@@ -140,7 +140,7 @@ Single-line mode (`ViTextEditor::new()`, default):
 
 ## UTF-8 Safety
 
-Cursor is a byte index. Before every `handle_key` call, `clamp_cursor()` ensures cursor is on a valid UTF-8 char boundary. Operates on ASCII words (space-delimited) rather than unicode grapheme clusters - intentional suckless design.
+Cursor is a byte index. Before every `handle_key` call, `clamp_cursor()` (private fn at `libs/vi-text-editor/src/lib.rs:253`) ensures cursor is on a valid UTF-8 char boundary. Key public signatures in `libs/vi-text-editor/src/lib.rs`: `ViTextEditor::new()` (65), `new_multiline()` (69), `handle_key(key, shift, ctrl) -> bool` (261), `cursor_line()` (123), `cursor_col()` (127), `set_text()` (150), `get_text()` (157), `mode_char()` (235). Operates on ASCII words (space-delimited) rather than unicode grapheme clusters - intentional suckless design.
 
 ## Tests
 

@@ -370,6 +370,33 @@ fn album_split_trusts_metadata_provider_tracks_regardless_of_title() {
 }
 
 #[test]
+fn queue_advance_without_audio_progress_is_broken_by_circuit_breaker() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for v in ["a1", "a2", "a3"] {
+        p.list.push_song_list(vec![make_album_original(v, None)]);
+    }
+    let first = p.list.get_list_iter().next().unwrap().id;
+    p.play_status = PlayState::Playing(first);
+
+    // A decoder yielding instant-finish buffers advances the queue with zero
+    // progress updates. Ten of those in a row used to walk the whole playlist
+    // forever; the breaker must stop and explain instead.
+    for _ in 0..10 {
+        let cur = match p.play_status {
+            PlayState::Playing(id) | PlayState::Buffering(id) | PlayState::Error(id) => id,
+            _ => break,
+        };
+        let _ = p.autoplay_next_or_stop(cur);
+    }
+
+    assert!(
+        p.last_error.is_some(),
+        "circuit breaker must surface an error instead of spinning"
+    );
+}
+
+#[test]
 fn bandcamp_entry_keeps_track_number_and_real_song_title() {
     let (mut p, _) = Playlist::new();
     p.list.state = ListStatus::Loaded;

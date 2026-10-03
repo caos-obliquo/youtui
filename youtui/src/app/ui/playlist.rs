@@ -118,6 +118,11 @@ pub struct Playlist {
     /// Count of progress updates seen for the current play. Gates early-end
     /// detection so a stalled forwarder can't nuke a healthy download.
     progress_updates_seen: u64,
+    /// Circuit breaker: consecutive queue advances that happened without a
+    /// single audio progress update. A decoder that yields an instant-finish
+    /// buffer makes the queue advance instantly too, which walks the whole
+    /// playlist and wraps forever without the user hearing anything.
+    advances_without_progress: u32,
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
@@ -990,6 +995,7 @@ impl Playlist {
             scrobble_state: None,
             scrobble_pending: false,
             progress_updates_seen: 0,
+            advances_without_progress: 0,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
             romaji_originals: HashMap::new(),
             album_tracks: None,
@@ -2450,6 +2456,28 @@ impl Playlist {
                     return AsyncTask::new_no_op();
                 }
 
+                // Circuit breaker. A decoder that hands the sink an
+                // instant-finish buffer ends the song immediately, so the queue
+                // advances at memory speed instead of song speed: the whole
+                // playlist gets walked and wrapped thousands of times and the
+                // app stops responding to input. Observed live as 710k decode
+                // submissions across 444 songs with zero playback in 20 hours.
+                // Ten consecutive advances with no audio progress cannot be
+                // normal, so stop and say why instead of spinning.
+                if self.progress_updates_seen == 0 {
+                    self.advances_without_progress = self.advances_without_progress.saturating_add(1);
+                    if self.advances_without_progress >= 10 {
+                        self.advances_without_progress = 0;
+                        error!(
+                            "stopping playback: 10 consecutive queue advances with no audio progress"
+                        );
+                        self.last_error = Some(
+                            "Playback stopped: audio is not progressing (decoder problem)".to_string(),
+                        );
+                        return self.stop_song_id(*id);
+                    }
+                }
+
                 if self.repeat_mode == crate::app::structures::RepeatMode::One {
                     info!("Repeat One: replaying current track");
                     // Ensure fresh scrobble state for repeat
@@ -3528,6 +3556,7 @@ impl Playlist {
             return AsyncTask::new_no_op();
         }
         self.progress_updates_seen = self.progress_updates_seen.saturating_add(1);
+        self.advances_without_progress = 0;
 
         let (start_offset, is_album_track) = self.get_song_from_id(id).map(|s| {
             (s.start_offset, s.track_no.is_some())

@@ -125,9 +125,7 @@ Shown at top: `Tracks: N/5000 [■■■■] [□□□□] [□□□□] [□�
 
 ### Existing playlist save (`E` key)
 
-Opens `PlaylistUpdatePopup` with track IDs. User selects target playlist.
-- `[Append]` mode: just adds tracks (no removal)
-- `[Replace]` mode: uses same overwrite chain as editor (fetch → remove → add)
+Opens `PlaylistUpdatePopup` (`app/ui/playlist/playlist_update_popup.rs`), a playlist picker, not an editor. `PlaylistUpdatePopupAction` has only MoveUp/MoveDown/Select/Cancel - there are no Append/Replace modes. Titles shown: `Add to Playlist (N songs)` for video adds, `Merge Playlist Into` for merges, `Load YouTube Music Playlist` when empty. Select fires `AddVideosToPlaylistFromPopup { playlist_id, video_ids, overwrite }`, which currently appends via `AddSongsToPlaylist` (overwrite replace is a TODO in `app.rs`, append-only for now).
 
 ## Architecture
 

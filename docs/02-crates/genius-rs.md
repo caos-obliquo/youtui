@@ -6,7 +6,7 @@ Genius.com API client with HTML page scraping for lyrics and annotations.
 
 - Search Genius for songs (Bearer token API + public fallback)
 - Scrape song page HTML for lyrics (avoids 403 on lyrics API)
-- Extract all annotations from page's `__INITIAL_STATE__` JSON (no pagination limit, no token needed)
+- Extract all annotations from page JSON: tries `__INITIAL_STATE__` first, falls back to `__PRELOADED_STATE__` (scrape.rs `extract_annotations`)
 - API-based annotation fetching via `/referents` endpoint (requires `GENIUS_TOKEN`)
 
 ## Architecture
@@ -14,8 +14,8 @@ Genius.com API client with HTML page scraping for lyrics and annotations.
 | Module | Function | Method |
 |--------|----------|--------|
 | `search.rs` | `search()` → `Vec<SongHit>` | `GET api.genius.com/search` (Bearer) or `GET genius.com/api/search/song` (public) |
-| `scrape.rs` | `fetch_lyrics()` → `String` | `GET genius.com{path}` → parse `<div data-lyrics-container>` |
-| `scrape.rs` | `fetch_annotations()` → `Vec<Annotation>` | Parse `window.__INITIAL_STATE__` JSON from page |
+| `scrape.rs` | `fetch_lyrics(&client, path) -> Result<(String, String), String>` | `GET genius.com{path}` → parse `<div data-lyrics-container>`; returns (lyrics, final_url) |
+| `scrape.rs` | `fetch_annotations()` → `Vec<Annotation>` | Parse `window.__INITIAL_STATE__` JSON first, fall back to `window.__PRELOADED_STATE__` |
 | `annotations.rs` | `fetch_from_api()` → `Vec<Annotation>` | `GET api.genius.com/referents?song_id={id}` with Bearer token |
 | `lib.rs` | `GeniusClient` | High-level API combining search + scrape + API |
 
@@ -29,8 +29,8 @@ let client = GeniusClient::with_default_client(Some(token));
 // Search → get song ID + URL path (slug URL first, then API search)
 let hit = client.find_song("FIDLAR", "Wasted").await?;
 
-// Fetch lyrics (scraped from HTML)
-let lyrics = client.fetch_lyrics("/Fidlar-wasted-lyrics").await?;
+// Fetch lyrics (scraped from HTML, returns lyrics + final URL after redirects)
+let (lyrics, _url) = client.fetch_lyrics("/Fidlar-wasted-lyrics").await?;
 
 // Fetch annotations (page scrape - only works if __INITIAL_STATE__ present)
 let annotations = client.fetch_annotations("/Fidlar-wasted-lyrics").await?;
@@ -126,10 +126,10 @@ Three-tier fallback for annotations (in order):
    - **Requires `GENIUS_TOKEN` env var** - set in your shell profile
    - Most reliable method
 
-2. **Page scrape** (`scrape.rs:extract_annotations()`):
-   - Parses `window.__INITIAL_STATE__` JSON embedded in the page
-   - Returns all annotations from the JSON
-   - **Only works on modern Genius pages** - many pages don't embed this JSON
+ 2. **Page scrape** (`scrape.rs:extract_annotations()`):
+    - Tries `window.__INITIAL_STATE__` JSON first, falls back to `window.__PRELOADED_STATE__`
+    - Returns all annotations from the JSON
+    - **Only works on modern Genius pages** - many pages don't embed this JSON
 
 3. **Empty result** - if both fail, returns empty vec with warning
 
@@ -159,9 +159,7 @@ I'm wasted
 So wasted
 ```
 
-Blank line BETWEEN sections (not after header). This is controlled in `scrape.rs` `clean_lyrics()`:
-- When a line starts with `[` and ends with `]`, a blank line is inserted BEFORE it (unless it's the first line)
-- This creates visual separation between song sections
+Blank line BETWEEN sections (not after header). Implemented in `scrape.rs` `clean_lyrics()`: a blank line is inserted BEFORE any line starting with `[` and ending with `]`. See `clean_lyrics()` in `libs/genius-rs/src/scrape.rs` for the full routine.
 
 ## Known Issues
 

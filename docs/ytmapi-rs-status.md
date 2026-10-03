@@ -1,6 +1,6 @@
 # ytmapi-rs Implementation Status
 
-> Last updated: 2026-06-27
+> Last updated: 2026-10-02
 > Compared against: upstream ytmusicapi (Python) feature matrix
 
 ## Legend
@@ -138,14 +138,14 @@
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Clippy warnings | ✅ | **0 across all 10 crates** (ytmapi-cli removed from workspace) |
+| Clippy warnings | ✅ | **0 across the workspace** (`libs/ytmapi-cli` present as a live member) |
 | `#[allow(dead_code)]` | [~] | 3 proposital, 0 stale (cleaned in f723535, 206 lines deleted) |
 | `unwrap()` in production | ✅ | **0** - all in doc tests/tests |
-| Stale TODOs removed | ✅ | **62 removed**, 37 legitimate remain |
-| Tests | ✅ | ytmapi-rs: 82/82 lib, 28/52 auth (3 locale tests removed in slimming) |
-| ytmapi-cli docs | ✅ | `docs/ytmapi-cli.md` (ytmapi-cli removed from workspace but doc preserved) |
+| Stale TODOs removed | ✅ | Slimming pass done; recount 2026-10-02: 109 TODOs in `ytmapi-rs/src` |
+| Tests | ✅ | ytmapi-rs: 83 lib, 29/51 auth |
+| ytmapi-cli docs | ✅ | `docs/ytmapi-cli.md` and `docs/02-crates/ytmapi-cli.md` (both live - `libs/ytmapi-cli` is a workspace member) |
 
-## Remaining ytmapi-rs TODOs (37+ items - LOW priority)
+## Remaining ytmapi-rs TODOs (109 in `ytmapi-rs/src` as of 2026-10-02 - LOW priority)
 
 All remaining TODOs are legitimate feature gaps but LOW value for youtui.
 Note: the working tree slimming (590d336) added/reverted some TODO annotations (e.g., ArtistTopReleaseCategory enum → `Option<String>`).
@@ -164,12 +164,12 @@ Note: the working tree slimming (590d336) added/reverted some TODO annotations (
 
 ## Summary
 
-**85% parity** (40/47 endpoints). 
+Parity with upstream ytmusicapi (Python) is tracked per-endpoint in the tables above; no single percentage is claimed because there is no verifiable counting method for partials and SKIPs.
 
 **High-value gaps (all DONE):**
 1. ~~Library sort order~~ → wired in youtui UI (b26bb4c)
 2. ~~Code trim~~ → dead_code cleanup done (f723535)
-3. ~~Doc polish~~ → CLAUDE.md, TODO.md, roadmap udpated
+3. ~~Doc polish~~ → CLAUDE.md, TODO.md, roadmap updated
 
 **Low-value gaps (skip):**
 - GetSavedEpisodes (podcasts not wired)

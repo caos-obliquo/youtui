@@ -27,7 +27,7 @@ listenbrainz_token = ""   # optional; empty = no ListenBrainz submission
 2. Song plays for `min(240s, duration/2)` -> scrobble submitted (youtui policy, not Last.fm spec: no 30s floor, even 1s tracks scrobble; zero-duration guard requires 1s elapsed)
    POST /2.0/?method=track.scrobble&...
    album param sent only if album name is available
-   Duration source: `best_known_duration()` = max(actual_duration, parsed duration_string) - VBR decode estimate (rodio byte-len/bitrate ~2x short) never shrinks known duration (fixes 0:57 becoming 16s)
+   Duration source: `Playlist::best_known_duration()` (`youtui/src/app/ui/playlist.rs`) = max(actual_duration, parsed duration_string) - VBR decode estimate (rodio byte-len/bitrate ~2x short) never shrinks known duration (fixes 0:57 becoming 16s)
 
 3. Progress checked at ~10Hz:
    handle_set_song_play_progress -> should_scrobble() -> true -> submit (tick log is debug! to avoid F11 spam)
@@ -35,18 +35,19 @@ listenbrainz_token = ""   # optional; empty = no ListenBrainz submission
 
 ## Scrobble State
 
-File: `app/ui/playlist.rs:1511-1522`
+File: `youtui/src/app/scrobbler.rs` - `ScrobbleState`
 
 Each song creates a `ScrobbleState`:
 
 ```rust
-struct ScrobbleState {
-    artist: String,
-    track: String,
-    album: Option<String>,
-    duration: Duration,
-    started_at: Instant,
-    scrobbled: bool,
+pub struct ScrobbleState {
+    pub artist: String,
+    pub track: String,
+    pub album: Option<String>,
+    pub album_artist: Option<String>,
+    pub duration: Duration,
+    pub start_time: SystemTime,
+    pub scrobbled: bool,
 }
 ```
 
@@ -107,10 +108,6 @@ Every scrobble also gets a best-effort parallel POST to ListenBrainz at `api.lis
 ## ListenBrainz Recommendations
 
 LB collaborative-filtering recs come from `1/cf/recommendation/user/{u}/recording?artist_type=top|similar|raw`. HTTP 204 (recs not ready; LB nightly batch) is NOT an error: `fetch_listenbrainz_recommendations` falls back to `synthesize_listenbrainz_recommendations`, which walks the LB listens corpus -> top artists -> `artist.getSimilar` -> 20 artist recs. Exposed via the `youtui listenbrainz-recommendations` CLI.
-
-## ListenBrainz Backfill
-
-Scripted import of Last.fm scrobbles to ListenBrainz (`lb_backfill.py`): `user.getRecentTracks` paginated (200/batch, ~1199 pages) -> `submit-listens` `listen_type:"import"` (500/chunk) -> `latest-import` watermark. Resume-aware via state file, 0.35s rate-limit sleep. Imported 239,624 scrobbles with 0 failures; oldest listen Oct 2014; LB profile 245,483 songs.
 
 ## Recommendations Cache
 

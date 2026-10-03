@@ -22,12 +22,13 @@ impl<C, S, M> AsyncTask<C, S, M> {
 }
 
 /// Manager that runs in background, receives task completions
-pub struct AsyncCallbackManager { ... }
+/// Generic over frontend type, backend type, metadata type
+pub struct AsyncCallbackManager<Frntend, Bkend, Md> { ... }
 
-impl AsyncCallbackManager {
+impl<Frntend, Bkend, Md: PartialEq> AsyncCallbackManager<Frntend, Bkend, Md> {
     pub fn new() -> Self;
-    pub fn spawn_task<S, C, M>(&mut self, backend: &S, task: AsyncTask<C, S, M>);
-    pub fn get_next_response(&mut self) -> Option<TaskOutcome>;
+    pub fn spawn_task(&mut self, backend: &Bkend, task: AsyncTask<Frntend, Bkend, Md>);
+    pub async fn get_next_response(&mut self) -> Option<TaskOutcome<Frntend, Bkend, Md>>;
 }
 
 /// Result delivered to frontend
@@ -45,7 +46,7 @@ src/
 ├── manager.rs               - AsyncCallbackManager main implementation
 ├── manager/task_list.rs     - Internal task storage + dispatch
 ├── panicking_receiver_stream.rs - Stream wrapper for non-panicking receive
-├── task.rs                  - Task enum (Future / BackendTask variants)
+├── task.rs                  - AsyncTask struct, AsyncTaskKind enum (Future / Stream / Multi / NoOp)
 ├── task/dyn_task.rs         - Dynamic dispatch for BackendTask
 ├── task/dyn_task/handlers.rs- Handler functions
 ├── task/map.rs              - Frontend type mapping (map_frontend)
@@ -55,15 +56,25 @@ src/
 ## Constraint System
 
 ```rust
-pub enum Constraint {
-    Unlimited,         // No limit
-    Max(u32),          // Max N concurrent tasks of this type
-    Sequential,        // One at a time (FIFO queue)
-    Ordered,           // Sequential + preserve order
+// constraint.rs - note: `ConstraitType` spelling (missing "n") is in the source
+pub struct Constraint<Cstrnt> {
+    pub(crate) constraint_type: ConstraitType<Cstrnt>,
+}
+
+impl<Cstrnt> Constraint<Cstrnt> {
+    pub fn new_block_same_type() -> Self;
+    pub fn new_kill_same_type() -> Self;
+    pub fn new_block_matching_metadata(metadata: Cstrnt) -> Self;
+}
+
+pub enum ConstraitType<Cstrnt> {
+    BlockSameType,
+    KillSameType,
+    BlockMatchingMetatdata(Cstrnt), // note: `Metatdata` spelling is in the source
 }
 ```
 
-Used to prevent too many concurrent downloads, rate-limited API calls (MusicBrainz: 1 req/s), etc.
+Used to prevent too many concurrent downloads, rate-limited API calls, etc.
 
 ## Architecture
 
