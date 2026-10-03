@@ -131,11 +131,17 @@ pub struct SongThumbnailDownloader {
     client: reqwest::Client,
     // For information about why this error is stringly typed, see DynamicApiError
     status: Arc<AsyncCell<Result<(), String>>>,
+    fetch_limiter: Arc<tokio::sync::Semaphore>,
 }
 
 impl SongThumbnailDownloader {
     pub fn new(client: reqwest::Client) -> Self {
         let status = AsyncCell::new().into_shared();
+        // Every song that becomes current fires an art fetch with no other
+        // bound, so skipping through a queue fires them all at once and the
+        // connection pool collapses (reqwest fails with "error sending request
+        // for url", no status ever returned). Same shape as the yt-dlp limiter.
+        let fetch_limiter = Arc::new(tokio::sync::Semaphore::new(8));
         let status_clone = status.clone();
         tokio::spawn(async move {
             info!("Setting up and cleaning album art directory");
@@ -160,7 +166,7 @@ impl SongThumbnailDownloader {
                 }
             }
         });
-        Self { client, status }
+        Self { client, status, fetch_limiter }
     }
     pub async fn download_song_thumbnail(
         &self,
@@ -183,6 +189,7 @@ impl SongThumbnailDownloader {
             }
             return Ok(cached_song_thumbnail);
         }
+        let _permit = self.fetch_limiter.acquire().await;
 
         // Upgrade YTM thumbnail URL to request larger resolution.
         let url = if let Some(eq_pos) = thumbnail_url.rfind('=') {
