@@ -52,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bandcamp requests are rate limited and retried.** Search queries all three result types and still renders partial results when one type fails. Downloads are capped at a few concurrent with retries on failure. The album page is always fetched because it is the only source for year, track numbers, and durations on compilations
 - **Album art is cached by artwork URL for URL-added songs.** YouTube-URL and Bandcamp songs carry an empty album id, so the cache used to key on the per-track id and re-download one shared cover per track. The cover is now downloaded once per artwork URL
 ### Fixed
+- **Playback no longer stops when a track cannot be downloaded (playlist.rs).**
+  Why: the automatic skip introduced for failed downloads could not find the
+  next track when an album had been split in the meantime, because the album
+  replaces the original entry with one entry per track while the failure is
+  still being handled, and the queue lookup only trusted the stored playback
+  position. That position named an entry which no longer existed, so the queue
+  looked finished and playback stopped instead of moving on. Effect: the next
+  track is found from the failed track itself when the stored position cannot
+  be resolved, and music keeps playing.
 - **A track that cannot be downloaded is now skipped instead of stalling playback
   (playlist.rs).** Why: when the download of the track that was playing failed,
   the queue was marked failed and the next download was prefetched, but playback

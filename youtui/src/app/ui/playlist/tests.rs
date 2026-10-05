@@ -408,6 +408,45 @@ fn mark_downloading(p: &mut Playlist, id: ListSongID) {
         .download_status = DownloadStatus::Downloading(Percentage(50));
 }
 
+/// An album split replaces the original entry with per-track entries while a
+/// download failure is still in flight, so play_status ends up naming an id
+/// that is no longer in the list. The queue lookup must still find the
+/// following track instead of reporting the queue as finished.
+#[test]
+fn next_song_is_found_when_play_status_names_a_removed_entry() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for v in ["a1", "a2", "a3"] {
+        p.list.push_song_list(vec![make_album_original(v, None)]);
+    }
+    let ids: Vec<ListSongID> = p.list.get_list_iter().map(|s| s.id).collect();
+
+    // The original entry is replaced while the failure is in flight.
+    p.play_status = PlayState::Buffering(ids[0]);
+    let _ = p.list.remove_at(0);
+    let survivors: Vec<ListSongID> = p.list.get_list_iter().map(|s| s.id).collect();
+    assert!(!survivors.contains(&ids[0]), "precondition: id 0 is gone");
+
+    assert_eq!(
+        p.get_next_song_id(ids[0]),
+        Some(survivors[0]),
+        "must advance to the first surviving track, not report end of queue"
+    );
+}
+
+/// The normal case must keep working: nothing to look up, nothing found.
+#[test]
+fn next_song_is_none_at_the_end_of_the_queue() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for v in ["a1"] {
+        p.list.push_song_list(vec![make_album_original(v, None)]);
+    }
+    let ids: Vec<ListSongID> = p.list.get_list_iter().map(|s| s.id).collect();
+    p.play_status = PlayState::Playing(ids[0]);
+    assert_eq!(p.get_next_song_id(ids[0]), None);
+}
+
 fn failed_play_target_advances_and_counts_towards_the_cap() {
     let (mut p, _) = Playlist::new();
     p.list.state = ListStatus::Loaded;

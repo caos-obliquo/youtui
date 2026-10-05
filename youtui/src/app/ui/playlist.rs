@@ -3326,18 +3326,35 @@ impl Playlist {
         Some(shuffled_pos)
     }
 
-    fn get_next_song_id(&self, _current_id: ListSongID) -> Option<ListSongID> {
+    pub(super) fn get_next_song_id(&self, _current_id: ListSongID) -> Option<ListSongID> {
+        // play_status can point at an entry that no longer exists: an album
+        // split replaces the original with per-track entries mid-flight, so a
+        // failed-download skip resolved nothing and stopped playback instead of
+        // advancing. Fall back to the id we were asked about, then to the
+        // lowest id still above it.
         let current_visual = self
             .get_cur_playing_index()
-            .and_then(|idx| self.actual_to_visual_index(idx))?;
+            .and_then(|idx| self.actual_to_visual_index(idx))
+            .or_else(|| {
+                self.get_index_from_id(_current_id)
+                    .and_then(|idx| self.actual_to_visual_index(idx))
+            });
 
-        if current_visual >= self.get_max_visual_index() {
-            return None;
+        if let Some(current_visual) = current_visual {
+            if current_visual < self.get_max_visual_index() {
+                let next_visual = current_visual.saturating_add(1);
+                let next_actual = self.visual_to_actual_index(next_visual);
+                if let Some(id) = self.get_id_from_index(next_actual) {
+                    return Some(id);
+                }
+            }
         }
 
-        let next_visual = current_visual.saturating_add(1);
-        let next_actual = self.visual_to_actual_index(next_visual);
-        self.get_id_from_index(next_actual)
+        self.list
+            .get_list_iter()
+            .map(|s| s.id)
+            .filter(|id| id.0 > _current_id.0)
+            .min_by_key(|id| id.0)
     }
 
     fn get_prev_song_id(&self, _current_id: ListSongID) -> Option<ListSongID> {

@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui                      # 404 pass, 5 ignore
+cargo test --release -p youtui                      # 406 pass, 5 ignore
 cargo test --release -p metadata-provider           # 117 pass (94 lib + 23 integration)
 cargo test --release -p vi-text-editor              # 67 pass
 cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
@@ -64,7 +64,7 @@ cargo test --release -p rym-genre-data              # 10 pass
 cargo test --release -p audio-player                # 4 pass
 cargo test --release -p ytmapi-cli                  # 7 pass
 ```
-Total: **772 pass, 0 fail, 5 ignored, 0 warnings** (404 + 117 + 67 + 83 + 27 + 22 + 18 + 14 + 2 + 4 + 10 + 4 = 772; ytmapi-cli 7 pass separate)
+Total: **774 pass, 0 fail, 5 ignored, 0 warnings** (406 + 117 + 67 + 83 + 27 + 22 + 18 + 14 + 2 + 4 + 10 + 4 = 774; ytmapi-cli 7 pass separate)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
@@ -160,7 +160,7 @@ ytmapi-rs lib: 82/82 pass (was 85 - 3 locale tests removed). ytmapi-cli is a liv
 - Two-layer cache: LRU (200 entries) + SQLite disk fallback
 - `musicbrainz_release_group_id` column in SQLite (DDL + PRAGMA user_version migration v1→v2)
 - Batch `put_batch()` with explicit transaction for background flush perf
-- CAA cache: check SQLite before HTTP, save on success/404
+- CAA cache: check SQLite before HTTP, save on success/406
 - Background flush every 60s + on quit
 
 ### Instant Year Enrichment
@@ -442,7 +442,7 @@ Goal: Clean, minimal, robust codebase. 5-batch plan in `docs/refactor-suckless.m
 | Batch 5: error swallows | Sixel writes are intentional no-ops (terminal disappear) |
 
 ### Verification
-- 404 pass, 5 ignored in youtui suite, 0 warnings across workspace (was 181/181 at suckless time, suite has grown since)
+- 406 pass, 5 ignored in youtui suite, 0 warnings across workspace (was 181/181 at suckless time, suite has grown since)
 - Suckless refactoring adds 0 tests (refactors existing code only)
 
 ## Inspirations & Thanks
