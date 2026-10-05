@@ -99,16 +99,52 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
         Self::Error,
     > {
-        let command = if crate::bandcamp::is_bandcamp_url(song_video_id.as_ref()) {
+        let command: Arc<OsString> = if crate::bandcamp::is_bandcamp_url(song_video_id.as_ref()) {
             self.bandcamp_yt_dlp_command
                 .as_ref()
                 .unwrap_or(&self.yt_dlp_command)
+                .clone()
         } else {
-            &self.yt_dlp_command
+            self.yt_dlp_command.clone()
+        };
+        let cookie_file = effective_cookie_file(self.cookie_path.as_deref()).map(str::to_string);
+        let video_id = song_video_id.as_ref().to_string();
+        let result = self
+            .stream_song_inner(command.clone(), video_id.clone(), quality, cookie_file.clone())
+            .await;
+        // Cookie fallback: YouTube's web_creator client (used when cookies are
+        // present) can serve zero audio-only formats, forcing yt-dlp into a
+        // progressive video rip. Retry once without cookies, which uses the
+        // default client and exposes the audio-only formats.
+        if cookie_file.is_some() {
+            if let Err(ref e) = result {
+                if is_progressive_fallback_error(e) {
+                    warn!(
+                        %video_id,
+                        "yt-dlp fell back to progressive format with cookies, retrying without cookies"
+                    );
+                    return self
+                        .stream_song_inner(command, video_id, quality, None)
+                        .await;
+                }
+            }
         }
-        .clone();
+        result
+    }
+}
+
+impl YtDlpDownloader {
+    async fn stream_song_inner(
+        &self,
+        command: Arc<OsString>,
+        video_id: String,
+        quality: AudioQuality,
+        cookie_file: Option<String>,
+    ) -> Result<
+        YoutubeMusicDownload<impl Stream<Item = Result<Bytes, YtDlpDownloaderError>> + Send>,
+        YtDlpDownloaderError,
+    > {
         async move {
-            let video_id = song_video_id.as_ref().to_string();
             let format_string = quality.format_string().to_string();
             info!(%video_id, quality = ?quality, format = %format_string, "Starting yt-dlp download");
 
@@ -122,11 +158,6 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let template = tmpdir.path().join("audio.%(ext)s");
             let output_template = template.to_str().unwrap().to_owned();
             
-            // The cookie file holds a single consistent session. Gate on file
-            // existence at download time: cookie_path is always Some (see
-            // main.rs), so Option::is_some alone cannot tell a real session
-            // from a missing file.
-            let cookie_file = effective_cookie_file(self.cookie_path.as_deref());
             if video_id.is_empty() {
                 error!("yt-dlp download rejected: empty video id");
                 return Err(YtDlpDownloaderError::IoError {
@@ -142,8 +173,8 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let stream_args = build_stream_args(
                 format_string.as_str(),
                 output_template.as_str(),
-                song_video_id.as_ref(),
-                cookie_file,
+                video_id.as_str(),
+                cookie_file.as_deref(),
                 browser_fallback,
             );
             
@@ -380,6 +411,15 @@ fn is_progressive_fallback(format_id: &str) -> bool {
     format_id == "18" || format_id == "22"
 }
 
+fn is_progressive_fallback_error(err: &YtDlpDownloaderError) -> bool {
+    match err {
+        YtDlpDownloaderError::IoError { message } => {
+            message.contains("yt-dlp fell back to progressive format")
+        }
+        _ => false,
+    }
+}
+
 /// True when retrying cannot help (gone, private, region locked): retrying
 /// those only burns time and turns one dead track into a long stall.
 pub fn is_permanent_download_error(reason: &str) -> bool {
@@ -573,7 +613,64 @@ mod tests {
         assert!(super::is_progressive_fallback("22"));
         assert!(!super::is_progressive_fallback("251"));
         assert!(!super::is_progressive_fallback("140"));
+    }
+
+    #[test]
+    fn test_is_progressive_fallback_error() {
+        use crate::youtube_downloader::yt_dlp::YtDlpDownloaderError;
+        let err = YtDlpDownloaderError::IoError {
+            message: "yt-dlp fell back to progressive format 18 (mp4, NA) for abc: that is a video rip".to_string(),
+        };
+        assert!(super::is_progressive_fallback_error(&err));
+        let other = YtDlpDownloaderError::IoError {
+            message: "yt-dlp exited with exit status: 1".to_string(),
+        };
+        assert!(!super::is_progressive_fallback_error(&other));
+        assert!(!super::is_progressive_fallback_error(&YtDlpDownloaderError::NoOutput));
         assert!(!super::is_progressive_fallback("unknown"));
+    }
+
+    #[tokio::test]
+    async fn test_cookie_fallback_retries_without_cookies() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("mock-yt-dlp");
+        let cookie = dir.path().join("cookie.txt");
+        std::fs::write(&cookie, "# cookie data").unwrap();
+        let script_body = r#"#!/bin/bash
+has_cookies=0
+output=""
+for ((i=1; i<=$#; i++)); do
+  if [[ "${!i}" == "--cookies" ]]; then has_cookies=1; fi
+  if [[ "${!i}" == "-o" ]]; then j=$((i+1)); output="${!j}"; fi
+done
+if [[ $has_cookies -eq 1 ]]; then
+  echo "YTDLP_META abr=96k ext=mp4 format=18"
+  exit 0
+fi
+out="${output/\%(ext)s/mp3}"
+python3 -c "import sys; sys.stdout.buffer.write(b'\xff\xfb' * 100)" > "$out"
+echo "YTDLP_META abr=49k ext=m4a format=139"
+exit 0
+"#;
+        std::fs::write(&script, script_body).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&script).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script, perms).unwrap();
+        }
+        let downloader = YtDlpDownloader::new(
+            script.to_string_lossy().to_string(),
+            None,
+            None,
+            Some(cookie.to_string_lossy().to_string()),
+            "chromium".to_string(),
+        );
+        let result = downloader
+            .stream_song("testvideo", crate::app::AudioQuality::Best)
+            .await;
+        assert!(result.is_ok(), "expected fallback to succeed: {:?}", result.err());
     }
 
     #[test]

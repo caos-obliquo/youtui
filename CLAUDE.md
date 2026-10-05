@@ -49,7 +49,7 @@ If things break, rollback and re-apply one-by-one.
 
 ## Tests
 ```bash
-cargo test --release -p youtui                      # 406 pass, 5 ignore
+cargo test --release -p youtui                      # 408 pass, 5 ignore
 cargo test --release -p metadata-provider           # 117 pass (94 lib + 23 integration)
 cargo test --release -p vi-text-editor              # 67 pass
 cargo test --release -p ytmapi-rs --lib             # 83 pass (no auth)
@@ -64,7 +64,7 @@ cargo test --release -p rym-genre-data              # 10 pass
 cargo test --release -p audio-player                # 4 pass
 cargo test --release -p ytmapi-cli                  # 7 pass
 ```
-Total: **774 pass, 0 fail, 5 ignored, 0 warnings** (406 + 117 + 67 + 83 + 27 + 22 + 18 + 14 + 2 + 4 + 10 + 4 = 774; ytmapi-cli 7 pass separate)
+Total: **776 pass, 0 fail, 5 ignored, 0 warnings** (408 + 117 + 67 + 83 + 27 + 22 + 18 + 14 + 2 + 4 + 10 + 4 = 776; ytmapi-cli 7 pass separate)
 
 ## Warnings
 `cargo build --release` - **0 warnings across workspace** (all 10 crates clean).
