@@ -52,6 +52,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bandcamp requests are rate limited and retried.** Search queries all three result types and still renders partial results when one type fails. Downloads are capped at a few concurrent with retries on failure. The album page is always fetched because it is the only source for year, track numbers, and durations on compilations
 - **Album art is cached by artwork URL for URL-added songs.** YouTube-URL and Bandcamp songs carry an empty album id, so the cache used to key on the per-track id and re-download one shared cover per track. The cover is now downloaded once per artwork URL
 ### Fixed
+- **A failed download now says why it failed, instead of "Max retries exceeded"
+  (song_downloader.rs).** Why: the retry loop kept only whether the last attempt
+  succeeded and threw the actual error away, so a track whose video no longer
+  exists showed "Max retries exceeded" - a message about our retry policy that
+  named nothing about the cause. Effect: the reason yt-dlp gave ("Video
+  unavailable") is now kept through the retries and shown in the queue status,
+  so an unavailable track can be recognised and removed rather than retried
+  forever.
 - **Album art no longer fails in bulk when many songs are played at once.**
   Why: every song that became the current one started its own cover download with
   nothing limiting how many ran at once, so skipping through a queue could start
