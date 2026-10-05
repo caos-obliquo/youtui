@@ -301,7 +301,7 @@ async fn run_future_with_retries_and_retry_callback<Fut1, Fut2, T, E>(
 where
     Fut1: Future<Output = Result<T, E>> + Send,
     Fut2: Future<Output = ()> + Send,
-    E: Send,
+    E: Send + std::fmt::Display,
     T: Send,
 {
     let mut retries = 0;
@@ -309,6 +309,10 @@ where
         match future_generator().await {
             Ok(output) => return Ok(output),
             Err(e) => {
+                // A dead video stays dead: retrying only delays the skip.
+                if crate::youtube_downloader::yt_dlp::is_permanent_download_error(&e.to_string()) {
+                    return Err(e);
+                }
                 retries += 1;
                 if retries > max_retries {
                     return Err(e);
@@ -666,4 +670,28 @@ async fn test_semaphore_limiting() {
     
     assert!(semaphore.try_acquire().is_ok(), "Should be able to acquire permit after releasing one");
 }
+
+    #[tokio::test]
+    async fn permanent_failure_is_not_retried() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    Err::<String, String>(
+                        "yt-dlp exited with exit status: 1: ERROR: [youtube] abc: Video unavailable"
+                            .to_string(),
+                    )
+                }
+            },
+            |_| async {},
+            5,
+        )
+        .await;
+        assert_eq!(result, Err("yt-dlp exited with exit status: 1: ERROR: [youtube] abc: Video unavailable".to_string()));
+        // One attempt only: a deleted video is still deleted on attempt 6.
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
 }

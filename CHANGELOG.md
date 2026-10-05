@@ -52,6 +52,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bandcamp requests are rate limited and retried.** Search queries all three result types and still renders partial results when one type fails. Downloads are capped at a few concurrent with retries on failure. The album page is always fetched because it is the only source for year, track numbers, and durations on compilations
 - **Album art is cached by artwork URL for URL-added songs.** YouTube-URL and Bandcamp songs carry an empty album id, so the cache used to key on the per-track id and re-download one shared cover per track. The cover is now downloaded once per artwork URL
 ### Fixed
+- **A track that cannot be downloaded is now skipped instead of stalling playback
+  (playlist.rs).** Why: when the download of the track that was playing failed,
+  the queue was marked failed and the next download was prefetched, but playback
+  was never moved to the next track and nothing ever started it, so the music
+  stopped and stayed stopped. Effect: a failed track that was the one playing is
+  now skipped automatically and playback continues with the next track.
+- **Repeated download failures no longer slow the queue to a crawl (yt_dlp.rs,
+  song_downloader.rs).** Why: a video that has been deleted or made private was
+  retried the full number of times before giving up, even though it could never
+  succeed, and yt-dlp's reason was read only into the log rather than into the
+  error. Effect: the reason now travels with the error, so an unavailable track
+  shows why instead of just failing, and it is skipped without retrying.
+- **A systemic download failure now stops with an explanation instead of skipping
+  forever (playlist.rs).** Why: skipping every failed track is right for a few
+  dead videos but wrong when the cause is systemic, such as expired cookies or no
+  network, because it would work through the entire queue. Effect: after ten
+  tracks fail in a row, playback stops and says so. Skipping a track in the
+  background no longer interrupts the track being played.
 - **A failed download now says why it failed, instead of "Max retries exceeded"
   (song_downloader.rs).** Why: the retry loop kept only whether the last attempt
   succeeded and threw the actual error away, so a track whose video no longer

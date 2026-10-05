@@ -183,8 +183,8 @@ Full keybinds by context: `docs/05-keybindings.md`
 cargo build --release
 ./target/release/youtui
 
-cargo test --release -p youtui                      # 397 pass (5 ignored)
-cargo test --workspace --release                    # 765 pass (5 ignored, excl. ytmapi-rs auth + ytmapi-cli 7 separate)
+cargo test --release -p youtui                      # 404 pass (5 ignored)
+cargo test --workspace --release                    # 772 pass (5 ignored, excl. ytmapi-rs auth + ytmapi-cli 7 separate)
 cargo clippy --workspace -- -A warnings                # lint (0 warnings)
 ```
 

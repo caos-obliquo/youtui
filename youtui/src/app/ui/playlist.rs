@@ -54,6 +54,11 @@ use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
+
+/// How many tracks in a row may fail to download before playback stops.
+/// A handful of dead videos should be skipped silently, but a systemic
+/// cause (expired cookies, no network) must not walk a 992 track queue.
+const MAX_CONSECUTIVE_DOWNLOAD_FAILURES: u32 = 10;
 use tracing::{debug, error, info, warn};
 use ytmapi_rs::common::YoutubeID;
 
@@ -123,6 +128,9 @@ pub struct Playlist {
     /// buffer makes the queue advance instantly too, which walks the whole
     /// playlist and wraps forever without the user hearing anything.
     advances_without_progress: u32,
+    /// Consecutive tracks skipped due to download failure. Caps the skip so a
+    /// systemic cause (dead cookies, no network) cannot walk the whole queue.
+    consecutive_download_failures: u32,
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
@@ -996,6 +1004,7 @@ impl Playlist {
             scrobble_pending: false,
             progress_updates_seen: 0,
             advances_without_progress: 0,
+            consecutive_download_failures: 0,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
             romaji_originals: HashMap::new(),
             album_tracks: None,
@@ -2257,6 +2266,7 @@ impl Playlist {
             PlayState::Error(_) => false,
         };
         if should_play {
+            self.consecutive_download_failures = 0;
             info!("play_attempt: song_id={:?}, state={:?}, ms_since_download={}",
                 id, self.play_status, start.elapsed().as_millis());
             let effect = self.play_song_id(id);
@@ -3478,7 +3488,35 @@ impl Playlist {
                     .lock()
                     .unwrap()
                     .retain(|(song_id, _)| *song_id != id);
-                
+
+                // Skip only if the failed track is the play target: a prefetch
+                // failing must not move the listener off what they hear.
+                let is_play_target = matches!(
+                    self.play_status,
+                    PlayState::Buffering(t)
+                        | PlayState::Playing(t)
+                        | PlayState::Paused(t)
+                        | PlayState::Error(t)
+                        if t == id
+                );
+                if is_play_target {
+                    self.consecutive_download_failures =
+                        self.consecutive_download_failures.saturating_add(1);
+                    if self.consecutive_download_failures >= MAX_CONSECUTIVE_DOWNLOAD_FAILURES {
+                        let skipped = self.consecutive_download_failures;
+                        self.consecutive_download_failures = 0;
+                        self.last_error = Some(format!(
+                            "Stopped after {skipped} tracks in a row failed to download ({msg}). Fix that, then press play."
+                        ));
+                        warn!("stopping_playback: {skipped} consecutive download failures");
+                        effect = effect.push(self.stop_song_id(id));
+                    } else {
+                        let seen = self.consecutive_download_failures;
+                        warn!("skipping_unplayable_track: id={:?} consecutive={} reason={}", id, seen, msg);
+                        effect = effect.push(self.autoplay_next_or_stop(id));
+                    }
+                }
+
                 // Start next download in queue if available (even on error)
                 if let Some(next_id) = self.download_queue.pop_front() {
                     debug!("Starting next download in queue after error: {:?}", next_id);

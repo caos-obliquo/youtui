@@ -165,12 +165,22 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             let stderr = proc.stderr.take().unwrap();
             let mut stdout = proc.stdout.take().unwrap();
             let video_id_clone = video_id.clone();
-            tokio::spawn(async move {
+            // Feed the reason into the error, not just the log: otherwise the
+            // user only ever sees "exited with exit status: 1".
+            let stderr_lines: Arc<std::sync::Mutex<Vec<String>>> =
+                Arc::new(std::sync::Mutex::new(Vec::new()));
+            let stderr_lines_task = stderr_lines.clone();
+            let stderr_drain = tokio::spawn(async move {
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     if line.contains("ERROR") || line.contains("WARNING") {
                         warn!(video_id = %video_id_clone, %line, "yt-dlp stderr");
+                        if let Ok(mut collected) = stderr_lines_task.lock() {
+                            if collected.len() < 10 {
+                                collected.push(line);
+                            }
+                        }
                     }
                 }
             });
@@ -193,8 +203,17 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             
             if !status.success() {
                 error!(%video_id, exit_code = %status, "yt-dlp failed");
+                let _ = stderr_drain.await;
+                let reason = stderr_lines
+                    .lock()
+                    .map(|lines| lines.join("; "))
+                    .unwrap_or_default();
                 return Err(YtDlpDownloaderError::IoError {
-                    message: format!("yt-dlp exited with {status}"),
+                    message: if reason.is_empty() {
+                        format!("yt-dlp exited with {status}")
+                    } else {
+                        format!("yt-dlp exited with {status}: {reason}")
+                    },
                 });
             }
 
@@ -361,6 +380,29 @@ fn is_progressive_fallback(format_id: &str) -> bool {
     format_id == "18" || format_id == "22"
 }
 
+/// True when retrying cannot help (gone, private, region locked): retrying
+/// those only burns time and turns one dead track into a long stall.
+pub fn is_permanent_download_error(reason: &str) -> bool {
+    let r = reason.to_ascii_lowercase();
+    const MARKERS: &[&str] = &[
+        "video unavailable",
+        "private video",
+        "this video is private",
+        "has been removed",
+        "video has been removed",
+        "account associated with this video has been terminated",
+        "members-only",
+        "this video is only available to music premium",
+        "not available in your country",
+        "not made this video available in your country",
+        "http error 404",
+        "http error 410",
+        "unable to extract player response",
+        "this live event will begin in",
+    ];
+    MARKERS.iter().any(|m| r.contains(m))
+}
+
 fn parse_print_meta(output: &str) -> (String, String, String) {
     let mut abr = "unknown".to_string();
     let mut ext = "unknown".to_string();
@@ -386,7 +428,7 @@ fn parse_print_meta(output: &str) -> (String, String, String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::youtube_downloader::yt_dlp::YtDlpDownloader;
+    use crate::youtube_downloader::yt_dlp::{is_permanent_download_error, YtDlpDownloader};
     use crate::youtube_downloader::{YoutubeMusicDownload, YoutubeMusicDownloader};
     use bytes::Bytes;
     use futures::StreamExt;
@@ -615,5 +657,47 @@ mod tests {
         assert_eq!(abr, "unknown");
         assert_eq!(ext, "unknown");
         assert_eq!(format, "unknown");
+    }
+
+    #[test]
+    fn permanent_failures_are_recognised_case_insensitively() {
+        for reason in [
+            "ERROR: [youtube] Oi8uk_lOwxk: Video unavailable",
+            "ERROR: [youtube] abc: Private video. Sign in if you've been granted access",
+            "ERROR: [youtube] xyz: This video has been removed by the uploader",
+            "ERROR: [youtube] q: This video is only available to Music Premium members",
+            "ERROR: [youtube] z: The uploader has not made this video available in your country",
+            "HTTP Error 404: Not Found",
+        ] {
+            assert!(
+                is_permanent_download_error(reason),
+                "should be permanent: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn transient_failures_are_not_treated_as_permanent() {
+        for reason in [
+            "HTTP Error 429: Too Many Requests",
+            "ERROR: unable to download video data: HTTP Error 503",
+            "ERROR: [generic] The uploader has been terminated",
+            "unable to resolve host www.youtube.com",
+            "yt-dlp exited with exit status: 1",
+            "",
+        ] {
+            assert!(
+                !is_permanent_download_error(reason),
+                "should be retryable: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn progressive_fallback_message_is_not_mistaken_for_a_dead_video() {
+        // The hard-fail added for 96k video rips must stay retryable-ish: it is
+        // a cookie/format problem, not a deleted video.
+        let msg = "yt-dlp fell back to progressive format 18 (mp4, NA) for abc123: that is a video rip at ~96k audio, not an audio-only stream.";
+        assert!(!is_permanent_download_error(msg));
     }
 }

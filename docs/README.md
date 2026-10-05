@@ -100,7 +100,7 @@ cargo build --release
 target/release/youtui
 
 # Tests
-cargo test --release -p youtui               # 397 pass, 5 ignore
+cargo test --release -p youtui               # 404 pass, 5 ignore
 cargo test --release -p vi-text-editor       # 67 tests
 cargo test --release -p metadata-provider    # 110 tests
 cargo test --release -p ytmapi-rs --lib      # 82 tests (no auth)
@@ -128,7 +128,7 @@ All paths use XDG convention (`~/.config/youtui/`, `~/.local/share/youtui/`) - c
 
 | Crate | Tests | Description |
 |-------|-------|-------------|
-| `youtui` | 397 pass, 5 ignore | Main binary |
+| `youtui` | 404 pass, 5 ignore | Main binary |
 | `ytmapi-rs` | 83 lib + 29/51 auth | YT Music API client |
 | `metadata-provider` | 110 | Metadata trait + 6 provider impls |
 | `vi-text-editor` | 67 | Vim text editor widget |
@@ -142,7 +142,7 @@ All paths use XDG convention (`~/.config/youtui/`, `~/.local/share/youtui/`) - c
 | `rym-genre-data` | 10 | RYM genre/descriptor hierarchy |
 | `audio-player` | 0 | Async rodio-based audio player |
 
-**Total: 764 pass, 0 fail, 5 ignored, 0 warnings across workspace** (397 + 117 + 67 + 83 + 27 + 22 + 18 + 14 + 2 + 4 + 10 + 4 = 765; ytmapi-cli 7 pass separate).
+**Total: 772 pass, 0 fail, 5 ignored, 0 warnings across workspace** (404 + 117 + 67 + 83 + 27 + 22 + 18 + 14 + 2 + 4 + 10 + 4 = 772; ytmapi-cli 7 pass separate).
 
 ## Key Files
 
