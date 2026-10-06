@@ -58,13 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rip that the hard-fail rejects. Without cookies the default client exposes
   the audio-only formats. Effect: downloads try without cookies first (faster,
   works for most tracks), and only fall back to cookies if that fails.
-- **Cookie fallback: retry without cookies when yt-dlp falls back to progressive (yt_dlp.rs).**
-  Why: YouTube's `web_creator` client (used whenever cookies are present) can
-  serve zero audio-only formats, forcing yt-dlp into a 96k progressive video
-  rip that the hard-fail rejects. Without cookies the default client exposes
-  the audio-only formats. Effect: when a download fails with a progressive
-  fallback and cookies were in play, the download is automatically retried
-  once without cookies.
 - **Playback no longer stops when a track cannot be downloaded (playlist.rs).**
   Why: the automatic skip introduced for failed downloads could not find the
   next track when an album had been split in the meantime, because the album
