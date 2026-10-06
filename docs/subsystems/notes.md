@@ -66,26 +66,10 @@ https://genius.com/Queen-bohemian-rhapsody-lyrics
 
 ## Architecture Decisions
 
-### Why plain text instead of JSON?
-
-- **Editability**: User can `vi ~/.config/youtui/notes.txt` outside youtui
-- **Reliability**: No JSON parse errors, no schema drift, no file corruption from half-writes
-- **Suckless**: Text is the universal interface. JSON adds a dependency without benefit
-- **Version control**: Plain text diffs cleanly in git
-
-### Why no hardware cursor (unlike ConfigEditorPopup)?
-
-The Notes popup uses the `▎` character from `ViTextEditor::render_simple()` as cursor indicator - same behavior as F1 search box. ConfigEditorPopup additionally calls `Frame::set_cursor_position()` to position the hardware cursor, but this caused visual mismatch when both the `▎` character and the hardware cursor appeared at slightly different positions. Matching the search box behavior (cursor character only) proved more consistent and less error-prone across terminals.
-
-### Why Esc behavior differs from vim?
-
-Standard vim: Esc in insert mode exits to Normal mode, cursor stays in place.
-
-Previous VTE behavior (now fixed): `cursor -= 1` moved cursor back one character on Esc. This was a bug inherited from vi-text-editor's original implementation. Removed to match standard vim behavior.
-
-### Why no cursor style switching (blinking bar for insert, block for normal)?
-
-`SetCursorStyle` from crossterm worked when called directly via `execute!` to stdout, but ratatui's `terminal.draw()` flush would override the style. Setting it inside the draw closure wasn't possible because `Frame` doesn't expose cursor style control. The `▎` character provides visual mode indication via its position and the mode char in the title bar (`[I]`/`[N]`).
+- Plain text (not JSON): editable outside youtui, no parse errors, diffs cleanly in git.
+- Cursor character only (no hardware cursor): avoids visual mismatch between the two cursors across terminals; matches the F1 search box.
+- Esc matches vim: exits Insert to Normal without moving the cursor.
+- No cursor style switching: ratatui draw overrides crossterm style; mode shows in the title bar instead.
 
 ## File Lifecycle
 

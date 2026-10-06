@@ -54,6 +54,11 @@ use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
+
+/// How many tracks in a row may fail to download before playback stops.
+/// A handful of dead videos should be skipped silently, but a systemic
+/// cause (expired cookies, no network) must not walk a 992 track queue.
+const MAX_CONSECUTIVE_DOWNLOAD_FAILURES: u32 = 10;
 use tracing::{debug, error, info, warn};
 use ytmapi_rs::common::YoutubeID;
 
@@ -118,6 +123,14 @@ pub struct Playlist {
     /// Count of progress updates seen for the current play. Gates early-end
     /// detection so a stalled forwarder can't nuke a healthy download.
     progress_updates_seen: u64,
+    /// Circuit breaker: consecutive queue advances that happened without a
+    /// single audio progress update. A decoder that yields an instant-finish
+    /// buffer makes the queue advance instantly too, which walks the whole
+    /// playlist and wraps forever without the user hearing anything.
+    advances_without_progress: u32,
+    /// Consecutive tracks skipped due to download failure. Caps the skip so a
+    /// systemic cause (dead cookies, no network) cannot walk the whole queue.
+    consecutive_download_failures: u32,
     search_cur: usize,
     romaji_originals: HashMap<ListSongID, String>,
     pub album_tracks: Option<Vec<AlbumTrack>>,
@@ -990,6 +1003,8 @@ impl Playlist {
             scrobble_state: None,
             scrobble_pending: false,
             progress_updates_seen: 0,
+            advances_without_progress: 0,
+            consecutive_download_failures: 0,
             scrobbling_config: crate::config::ScrobblingConfig::default(),
             romaji_originals: HashMap::new(),
             album_tracks: None,
@@ -2251,6 +2266,7 @@ impl Playlist {
             PlayState::Error(_) => false,
         };
         if should_play {
+            self.consecutive_download_failures = 0;
             info!("play_attempt: song_id={:?}, state={:?}, ms_since_download={}",
                 id, self.play_status, start.elapsed().as_millis());
             let effect = self.play_song_id(id);
@@ -2448,6 +2464,28 @@ impl Playlist {
             | PlayState::Error(id) => {
                 if id > &prev_id {
                     return AsyncTask::new_no_op();
+                }
+
+                // Circuit breaker. A decoder that hands the sink an
+                // instant-finish buffer ends the song immediately, so the queue
+                // advances at memory speed instead of song speed: the whole
+                // playlist gets walked and wrapped thousands of times and the
+                // app stops responding to input. Observed live as 710k decode
+                // submissions across 444 songs with zero playback in 20 hours.
+                // Ten consecutive advances with no audio progress cannot be
+                // normal, so stop and say why instead of spinning.
+                if self.progress_updates_seen == 0 {
+                    self.advances_without_progress = self.advances_without_progress.saturating_add(1);
+                    if self.advances_without_progress >= 10 {
+                        self.advances_without_progress = 0;
+                        error!(
+                            "stopping playback: 10 consecutive queue advances with no audio progress"
+                        );
+                        self.last_error = Some(
+                            "Playback stopped: audio is not progressing (decoder problem)".to_string(),
+                        );
+                        return self.stop_song_id(*id);
+                    }
                 }
 
                 if self.repeat_mode == crate::app::structures::RepeatMode::One {
@@ -3288,18 +3326,35 @@ impl Playlist {
         Some(shuffled_pos)
     }
 
-    fn get_next_song_id(&self, _current_id: ListSongID) -> Option<ListSongID> {
+    pub(super) fn get_next_song_id(&self, _current_id: ListSongID) -> Option<ListSongID> {
+        // play_status can point at an entry that no longer exists: an album
+        // split replaces the original with per-track entries mid-flight, so a
+        // failed-download skip resolved nothing and stopped playback instead of
+        // advancing. Fall back to the id we were asked about, then to the
+        // lowest id still above it.
         let current_visual = self
             .get_cur_playing_index()
-            .and_then(|idx| self.actual_to_visual_index(idx))?;
+            .and_then(|idx| self.actual_to_visual_index(idx))
+            .or_else(|| {
+                self.get_index_from_id(_current_id)
+                    .and_then(|idx| self.actual_to_visual_index(idx))
+            });
 
-        if current_visual >= self.get_max_visual_index() {
-            return None;
+        if let Some(current_visual) = current_visual {
+            if current_visual < self.get_max_visual_index() {
+                let next_visual = current_visual.saturating_add(1);
+                let next_actual = self.visual_to_actual_index(next_visual);
+                if let Some(id) = self.get_id_from_index(next_actual) {
+                    return Some(id);
+                }
+            }
         }
 
-        let next_visual = current_visual.saturating_add(1);
-        let next_actual = self.visual_to_actual_index(next_visual);
-        self.get_id_from_index(next_actual)
+        self.list
+            .get_list_iter()
+            .map(|s| s.id)
+            .filter(|id| id.0 > _current_id.0)
+            .min_by_key(|id| id.0)
     }
 
     fn get_prev_song_id(&self, _current_id: ListSongID) -> Option<ListSongID> {
@@ -3450,7 +3505,35 @@ impl Playlist {
                     .lock()
                     .unwrap()
                     .retain(|(song_id, _)| *song_id != id);
-                
+
+                // Skip only if the failed track is the play target: a prefetch
+                // failing must not move the listener off what they hear.
+                let is_play_target = matches!(
+                    self.play_status,
+                    PlayState::Buffering(t)
+                        | PlayState::Playing(t)
+                        | PlayState::Paused(t)
+                        | PlayState::Error(t)
+                        if t == id
+                );
+                if is_play_target {
+                    self.consecutive_download_failures =
+                        self.consecutive_download_failures.saturating_add(1);
+                    if self.consecutive_download_failures >= MAX_CONSECUTIVE_DOWNLOAD_FAILURES {
+                        let skipped = self.consecutive_download_failures;
+                        self.consecutive_download_failures = 0;
+                        self.last_error = Some(format!(
+                            "Stopped after {skipped} tracks in a row failed to download ({msg}). Fix that, then press play."
+                        ));
+                        warn!("stopping_playback: {skipped} consecutive download failures");
+                        effect = effect.push(self.stop_song_id(id));
+                    } else {
+                        let seen = self.consecutive_download_failures;
+                        warn!("skipping_unplayable_track: id={:?} consecutive={} reason={}", id, seen, msg);
+                        effect = effect.push(self.autoplay_next_or_stop(id));
+                    }
+                }
+
                 // Start next download in queue if available (even on error)
                 if let Some(next_id) = self.download_queue.pop_front() {
                     debug!("Starting next download in queue after error: {:?}", next_id);
@@ -3528,6 +3611,7 @@ impl Playlist {
             return AsyncTask::new_no_op();
         }
         self.progress_updates_seen = self.progress_updates_seen.saturating_add(1);
+        self.advances_without_progress = 0;
 
         let (start_offset, is_album_track) = self.get_song_from_id(id).map(|s| {
             (s.start_offset, s.track_no.is_some())

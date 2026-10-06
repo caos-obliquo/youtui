@@ -6,65 +6,52 @@
 
 ```
 src/
-├── lib.rs     - Crawlable trait, JsonCrawler struct, From impls
-├── error.rs   - CrawlError with path tracking
-└── iter.rs    - Streaming array iteration
+├── lib.rs     - JsonCrawler trait, JsonCrawlerOwned, JsonCrawlerBorrowed, JsonPath
+├── error.rs   - CrawlerError with path tracking, CrawlerResult alias
+└── iter.rs    - JsonCrawlerIterator, array into-iter / iter-mut types
 ```
 
 ## Purpose
 
-YTM API returns massive nested JSON responses (thousands of lines). `json-crawler` provides chainable query methods that track the path for error messages:
+YTM API returns massive nested JSON responses (thousands of lines). `json-crawler` provides chainable navigation methods on an owned or borrowed `serde_json::Value` that track the path for error messages:
 
 ```rust
-use json_crawler::Crawlable;
+use json_crawler::JsonCrawlerOwned;
 
-let json: serde_json::Value = api_response;
-let title = json
-    .crawl("contents")?
-    .crawl("singleColumnBrowseResultsRenderer")?
-    .crawl("tabs")?
-    .index(0)?
-    .crawl("tabRenderer")?
-    .crawl("content")?
-    .crawl("sectionListRenderer")?
-    .crawl("contents")?
-    .index(0)?
-    .crawl("musicPlaylistShelfRenderer")?
-    .crawl("title")?
-    .crawl("runs")?
-    .index(0)?
-    .crawl("text")?
-    .as_str()?;
+let mut crawler = JsonCrawlerOwned::new("source".to_string(), api_response);
+let title: String = crawler.take_value_pointer("contents/singleColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0/musicPlaylistShelfRenderer/title/runs/0/text")?;
 ```
 
-On error: `CrawlError { path: "contents.singleColumnBrowseResultsRenderer.tabs[0].tabRenderer.content...", message: "expected array", value: ... }`
+On error: `CrawlerError { path: "contents/...tabs[0]...", ... }` with the JSON-pointer-style path, expected parse target, and source snippet.
 
 ## Key API
 
 ```rust
-pub trait Crawlable {
-    fn crawl(self, key: &str) -> Result<Self>;
-    fn index(self, idx: usize) -> Result<Self>;
+pub trait JsonCrawler: Sized {
+    fn navigate_pointer(self, new_path: impl AsRef<str>) -> CrawlerResult<Self>;
+    fn navigate_index(self, index: usize) -> CrawlerResult<Self>;
+    fn borrow_pointer(&mut self, path: impl AsRef<str>) -> CrawlerResult<Self::BorrowTo<'_>>;
+    fn borrow_index(&mut self, index: usize) -> CrawlerResult<Self::BorrowTo<'_>>;
+    fn take_value<T: DeserializeOwned>(&mut self) -> CrawlerResult<T>;
+    fn take_value_pointer<T: DeserializeOwned>(&mut self, path: impl AsRef<str>) -> CrawlerResult<T>;
+    fn borrow_value<T>(&self) -> CrawlerResult<T>;
+    fn borrow_value_pointer<T>(&self, path: impl AsRef<str>) -> CrawlerResult<T>;
+    fn take_value_pointers<T, S: AsRef<str>>(&mut self, paths: &[S]) -> CrawlerResult<T>;
+    fn take_and_parse_str<F: FromStr>(&mut self) -> CrawlerResult<F>;
 }
 
-impl Crawlable for serde_json::Value { ... }
+pub struct JsonCrawlerOwned { ... }       // owns the serde_json::Value
+pub struct JsonCrawlerBorrowed<'a> { ... } // borrows from the Value
 
-pub struct JsonCrawler<'a> { ... }
+pub enum JsonPath { ... } // pointer-style path builder
 
-pub struct CrawlError {
-    pub path: String,   // e.g., "contents.tabs[0].tabRenderer"
-    pub message: String,
-    pub value: Box<serde_json::Value>,
-}
+pub struct CrawlerError { ... } // path + parse target + source context
+pub type CrawlerResult<T> = Result<T, CrawlerError>;
 ```
 
 ## Streaming Iteration
 
-```rust
-pub fn json_array_iter<'a>(value: &'a serde_json::Value) -> impl Iterator<Item = &'a serde_json::Value>;
-```
-
-Returns items one at a time without materializing the entire array - useful for paginated responses.
+`iter.rs` provides `JsonCrawlerIterator` plus `JsonCrawlerArrayIntoIter` / `JsonCrawlerArrayIterMut` for stepping through JSON arrays one item at a time - useful for paginated responses. Consume via `try_into_iter()` / `try_iter_mut()` on the `JsonCrawler` trait.
 
 ## Tests
 

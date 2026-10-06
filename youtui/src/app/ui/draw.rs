@@ -193,6 +193,11 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         popup.draw(f, f.area());
     }
     if let Some(popup) = &mut w.recommendations_popup {
+        // Playlist::last_error renders in the queue footer, which this popup
+        // covers, and is cleared on any playlist action. Mirror it into the
+        // popup so a failed Last.fm fetch is actually readable while the
+        // popup is still open.
+        popup.error = w.playlist.last_error.clone();
         popup.draw(f, content_chunk);
     }
     if let Some(popup) = &mut w.playlist_rename_popup {

@@ -571,13 +571,14 @@ impl Youtui {
                 use crate::app::ui::playlist::effect_handlers_playlist::{
                     HandleActOnRecommendationOk, HandleActOnRecommendationErr,
                 };
+                use async_callback_manager::Constraint;
                 let cfg = self.window_state.playlist.scrobbling_config.clone();
                 let task: crate::app::component::actionhandler::ComponentEffect<crate::app::ui::YoutuiWindow> =
                     AsyncTask::new_future_try(
                         ActOnRecommendation(index, kind, title, artist, cfg),
                         HandleActOnRecommendationOk,
                         HandleActOnRecommendationErr,
-                        None,
+                        Some(Constraint::new_kill_same_type()),
                     )
                     .map_frontend(|this: &mut crate::app::ui::YoutuiWindow| &mut this.playlist);
                 self.task_manager.spawn_task(&self.server, task);
@@ -599,13 +600,7 @@ impl Youtui {
                 self.task_manager.spawn_task(&self.server, task);
             }
             AppCallback::ReloadRecommendations => {
-                self.window_state.recommendations_cache = None;
-                if let Some(store) = &self.window_state.recommendations_store {
-                    if let Err(e) = store.clear("default") {
-                        tracing::warn!("Failed to clear recommendation store: {}", e);
-                    }
-                }
-                let task = self.window_state.open_recommendations();
+                let task = self.window_state.reload_recommendations();
                 self.task_manager.spawn_task(&self.server, task);
             }
             AppCallback::OpenPlaylistSavePopup(video_ids) => {

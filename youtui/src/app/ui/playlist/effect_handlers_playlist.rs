@@ -1437,9 +1437,10 @@ impl_youtui_task_handler!(
     anyhow::Error,
     YoutuiWindow,
     |_, err: anyhow::Error| {
-        let msg = err.to_string();
+        let msg = format!("Recommendations unavailable: {}", err);
         move |this: &mut YoutuiWindow| {
             error!("Recommendations fetch failed: {}", msg);
+            this.playlist.last_error = Some(msg.clone());
             if let Some(p) = this.recommendations_popup.as_mut() {
                 p.loading = false;
             }

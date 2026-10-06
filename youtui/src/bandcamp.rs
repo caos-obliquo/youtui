@@ -161,6 +161,79 @@ pub fn parse_bandcamp_search_results_all_types(json: &serde_json::Value) -> Vec<
         .unwrap_or_default()
 }
 
+/// Lowercase, alphanumeric-only. Bandcamp and Last.fm disagree constantly on
+/// case, punctuation and spacing, so all matching goes through this first.
+fn normalize_for_match(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+/// Does a Bandcamp search result plausibly answer a request for
+/// `request_artist` / `request_title`?
+///
+/// Bandcamp autocomplete is fuzzy and returns whatever loosely resembles the
+/// query, so a raw first-hit would happily queue an unrelated track when a
+/// user presses Enter on a recommendation. Both the artist and the title must
+/// line up before a result is accepted:
+///
+/// - artist: `band_name` must equal the requested artist, or contain it, or be
+///   contained by it. The containment cases matter because Bandcamp credits
+///   vary ("V/A", "Artist feat. Someone", "Artist [Various]").
+/// - title: `name` must equal the requested title or contain it. An **empty**
+///   `request_title` skips the check, which is what artist-kind lookups want.
+///
+/// An empty `request_artist` skips the artist check for the same reason.
+pub fn bandcamp_result_matches(
+    request_artist: &str,
+    request_title: &str,
+    result: &BandcampSearchResult,
+) -> bool {
+    title_artist_matches(
+        request_artist,
+        request_title,
+        &result.band_name,
+        &result.name,
+    )
+}
+
+/// True when a candidate's artist and title plausibly answer the request.
+///
+/// Shared by the Bandcamp fallback and the YouTube-side verification in
+/// `ActOnRecommendation`: both need the same fuzzy containment rules, and
+/// two copies of them would drift. Artist containment runs in BOTH
+/// directions so credit variants (`V/A`, `Artist feat. X`) match. An empty
+/// request field skips its check; an empty candidate field fails it.
+pub fn title_artist_matches(
+    request_artist: &str,
+    request_title: &str,
+    got_artist: &str,
+    got_title: &str,
+) -> bool {
+    let want_artist = normalize_for_match(request_artist);
+    if !want_artist.is_empty() {
+        let got_artist = normalize_for_match(got_artist);
+        let artist_ok = !got_artist.is_empty()
+            && (got_artist == want_artist
+                || got_artist.contains(&want_artist)
+                || want_artist.contains(&got_artist));
+        if !artist_ok {
+            return false;
+        }
+    }
+
+    let want_title = normalize_for_match(request_title);
+    if !want_title.is_empty() {
+        let got_title = normalize_for_match(got_title);
+        if got_title.is_empty() || !(got_title == want_title || got_title.contains(&want_title)) {
+            return false;
+        }
+    }
+
+    true
+}
+
 /// Parse yt-dlp `--flat-playlist --dump-json` output into structured track
 /// entries.
 ///
@@ -891,5 +964,164 @@ mod tests {
         assert_eq!(results[0].url, "https://vomitor-australia.bandcamp.com");
         assert_eq!(results[0].band_name, "VOMITOR");
         assert!(is_bandcamp_url(&results[0].url));
+    }
+
+    fn bc_result(name: &str, band: &str) -> BandcampSearchResult {
+        BandcampSearchResult {
+            type_: BandcampType::Track,
+            name: name.to_string(),
+            band_name: band.to_string(),
+            url: format!("https://{}.bandcamp.com/track/x", band.to_lowercase()),
+            album_name: None,
+        }
+    }
+
+    #[test]
+    fn match_accepts_exact_artist_and_title() {
+        let r = bc_result("Fake Plastic Trees", "Radiohead");
+        assert!(bandcamp_result_matches("Radiohead", "Fake Plastic Trees", &r));
+    }
+
+    #[test]
+    fn match_ignores_case_and_punctuation() {
+        let r = bc_result("Fake Plastic Trees (Remastered)", "Radiohead");
+        assert!(bandcamp_result_matches("radiohead", "fake plastic trees", &r));
+    }
+
+    #[test]
+    fn match_accepts_artist_credit_variants() {
+        assert!(bandcamp_result_matches(
+            "Various Artists",
+            "X",
+            &bc_result("X", "V/A")
+        ));
+        assert!(bandcamp_result_matches(
+            "Artist feat. Someone",
+            "X",
+            &bc_result("X", "Artist")
+        ));
+    }
+
+    #[test]
+    fn match_rejects_wrong_artist() {
+        let r = bc_result("Fake Plastic Trees", "Radiohead");
+        assert!(!bandcamp_result_matches("Nirvana", "Fake Plastic Trees", &r));
+    }
+
+    #[test]
+    fn match_rejects_wrong_title() {
+        let r = bc_result("Creep", "Radiohead");
+        assert!(!bandcamp_result_matches("Radiohead", "Fake Plastic Trees", &r));
+    }
+
+    #[test]
+    fn match_rejects_empty_candidate_fields() {
+        assert!(!bandcamp_result_matches(
+            "Radiohead",
+            "Fake Plastic Trees",
+            &bc_result("", "Radiohead")
+        ));
+        assert!(!bandcamp_result_matches(
+            "Radiohead",
+            "Fake Plastic Trees",
+            &bc_result("Fake Plastic Trees", "")
+        ));
+    }
+
+    #[test]
+    fn empty_request_field_skips_that_check() {
+        let r = bc_result("Cut You Into Pieces", "Bands of Mice");
+        assert!(bandcamp_result_matches("Bands of Mice", "", &r));
+        assert!(bandcamp_result_matches("", "Cut You Into Pieces", &r));
+    }
+
+    #[test]
+    fn title_artist_matches_accepts_exact_pair() {
+        assert!(title_artist_matches(
+            "Boredom Knife",
+            "Neutralize",
+            "Boredom Knife",
+            "Neutralize"
+        ));
+    }
+
+    #[test]
+    fn title_artist_matches_ignores_case_and_punctuation() {
+        assert!(title_artist_matches(
+            "BOREDOM knife",
+            "neutral-ize",
+            "Boredom Knife",
+            "Neutralize"
+        ));
+    }
+
+    #[test]
+    fn title_artist_matches_accepts_credit_variants() {
+        assert!(title_artist_matches("V/A", "Neutralize", "V/A", "Neutralize"));
+        assert!(title_artist_matches(
+            "Artist feat. Someone",
+            "Song",
+            "Artist",
+            "Song"
+        ));
+    }
+
+    // The live e2e that motivated this check: YouTube fuzzy search answered
+    // "FAEX - strench of the chaos 3" with a completely unrelated video, and
+    // taking that unverified hit is what silently swallowed every
+    // Bandcamp-only recommendation.
+    #[test]
+    fn title_artist_matches_rejects_the_unrelated_youtube_hit() {
+        assert!(!title_artist_matches(
+            "FAEX",
+            "strench of the chaos 3",
+            "xxxcharacter",
+            "CHAOS IN THE WORLD"
+        ));
+    }
+
+    #[test]
+    fn title_artist_matches_rejects_wrong_artist_and_wrong_title() {
+        assert!(!title_artist_matches(
+            "Boredom Knife",
+            "Neutralize",
+            "Paranoised",
+            "Neutralize"
+        ));
+        assert!(!title_artist_matches(
+            "Boredom Knife",
+            "Neutralize",
+            "Boredom Knife",
+            "Riding a wild dragon"
+        ));
+    }
+
+    #[test]
+    fn title_artist_matches_rejects_empty_candidate_fields() {
+        assert!(!title_artist_matches("Boredom Knife", "Neutralize", "", "Neutralize"));
+        assert!(!title_artist_matches("Boredom Knife", "Neutralize", "Boredom Knife", ""));
+    }
+
+    #[test]
+    fn title_artist_matches_skips_only_empty_request_fields() {
+        assert!(title_artist_matches("", "Neutralize", "Anyone", "Neutralize"));
+        assert!(title_artist_matches("Boredom Knife", "", "Boredom Knife", "Anything"));
+        assert!(!title_artist_matches("", "Neutralize", "Anyone", "Something Else"));
+    }
+
+    #[test]
+    fn a_track_hit_whose_url_is_not_a_track_is_not_queueable() {
+        let mut r = bc_result("Neutralize", "Boredom Knife");
+        r.url = "https://dramarecorder.bandcamp.com/album/noise-as-a-form-of-expression-vol-4"
+            .to_string();
+        assert_eq!(r.type_, BandcampType::Track);
+        assert_ne!(bandcamp_kind(&r.url), Some(BandcampKind::Track));
+    }
+
+    #[test]
+    fn a_track_hit_with_a_non_bandcamp_url_is_not_queueable() {
+        let mut r = bc_result("Neutralize", "Boredom Knife");
+        r.url = "https://example.com/track/neutralize".to_string();
+        assert_ne!(bandcamp_kind(&r.url), Some(BandcampKind::Track));
     }
 }

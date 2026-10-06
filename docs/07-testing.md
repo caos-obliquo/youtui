@@ -4,18 +4,21 @@
 
 | Suite | Command | Count | Notes |
 |-------|---------|-------|-------|
-| `youtui` | Binary | `cargo test --release -p youtui --bin youtui` | 181 | 163 unit + 18 integ |
-| Main app | `cargo test --release -p youtui --bin youtui` | 181 pass + 4 ignore | Unit + integration |
+| `youtui` | Binary | `cargo test --release -p youtui --bin youtui` | 396 | Unit + integration, 5 ignore |
+| Main app | `cargo test --release -p youtui --bin youtui` | 396 pass + 5 ignore | Unit + integration |
 | ViTextEditor | `cargo test --release -p vi-text-editor` | 67 | Unit + proptests |
-| ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 82 | All pass offline (3 locale tests removed in slimming) |
-| ytmapi-rs (full) | `cargo test --release -p ytmapi-rs` | 28 pass / 52 fail | Needs browser auth |
+| ytmapi-rs (no auth) | `cargo test --release -p ytmapi-rs --lib` | 83 | All pass offline |
+| ytmapi-rs (full) | `cargo test --release -p ytmapi-rs` | 29 pass / 51 auth | Needs browser auth |
 | genius-rs | `cargo test --release -p genius-rs` | 18 | Unit tests for scraping + search + annotations |
-| metadata-provider | `cargo test --release -p metadata-provider` | 48 | Unit: providers, genre_map, scoring, cache |
+| metadata-provider | `cargo test --release -p metadata-provider` | 117 | Unit: providers, genre_map, scoring, cache (94 lib + 23 integration) |
 | async-callback-manager | `cargo test --release -p async-callback-manager` | 14 | 3 unit + 11 integration |
 | json-crawler | `cargo test --release -p json-crawler` | 2 | Unit + 2 doctests |
 | lrclib-rs | `cargo test --release -p lrclib-rs` | 4 | LRCLIB API lyrics provider |
 | rym-genre-data | `cargo test --release -p rym-genre-data` | 10 | RYM hierarchy parser |
-| audio-player | `cargo test --release -p audio-player` | 0 | Sound playback wrapper |
+| genre-db-sqlite | `cargo test --release -p genre-db-sqlite` | 27 | SQLite genre hierarchy + seed |
+| metadata-cache-sqlite | `cargo test --release -p metadata-cache-sqlite` | 22 | SQLite metadata cache + MBID |
+| ytmapi-cli | `cargo test --release -p ytmapi-cli` | 7 | YTM API debug CLI (live workspace member) |
+| audio-player | `cargo test --release -p audio-player` | 4 | Sound playback wrapper |
 
 ## Running Tests
 
@@ -114,11 +117,11 @@ youtui/src/
 
 ## Testing Latest Updates (2026-06-23)
 
-### VL Prefix Regression Test (historical - ytmapi-cli removed from workspace)
+### VL Prefix Regression Test (`libs/ytmapi-cli` is a live workspace member)
 
 Mutation endpoints must strip `VL` from playlist IDs. Browse endpoints must keep `VL`.
 
-Manual test via youtui binary (ytmapi-cli removed in PR #27):
+Manual test via youtui binary or `libs/ytmapi-cli` debug CLI:
 ```bash
 # Delete (strips VL) - use playlist editor or o.D context menu
 # Edit/rename (strips VL) - use o.R context menu

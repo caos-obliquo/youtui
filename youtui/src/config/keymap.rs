@@ -916,6 +916,16 @@ fn default_global_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
             ),
         ),
         (
+            Keybind::new(
+                crossterm::event::KeyCode::F(4),
+                crossterm::event::KeyModifiers::SHIFT,
+            ),
+            KeyActionTree::new_key_with_visibility(
+                AppAction::ReloadRecommendations,
+                KeyActionVisibility::Global,
+            ),
+        ),
+        (
             Keybind::new_unmodified(crossterm::event::KeyCode::F(11)),
             KeyActionTree::new_key_with_visibility(
                 AppAction::ViewLogs,
@@ -1047,7 +1057,7 @@ fn default_playlist_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppAction>> {
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::SetBestQuality)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('c')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('C')),
                         KeyActionTree::new_key(AppAction::Playlist(PlaylistAction::TogglePlaylistCategoryFilter)),
                     ),
                     (
@@ -1305,7 +1315,7 @@ fn default_browser_library_keybinds() -> BTreeMap<Keybind, KeyActionTree<AppActi
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::AddSongsToPlaylist)),
                     ),
                     (
-                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('E')),
+                        Keybind::new_unmodified(crossterm::event::KeyCode::Char('C')),
                         KeyActionTree::new_key(AppAction::BrowserSongs(BrowserSongsAction::SaveToExistingPlaylist)),
                     ),
                     (

@@ -3,11 +3,11 @@ name: Feature request
 about: Suggest an idea for this project
 title: "[Enhancement]"
 labels: enhancement
-assignees: nick42d
+assignees: caos-obliquo
 
 ---
 
-**Is your feature request related to the youtui app, or one of the helper crates (e.g ytmapi_rs)?**
+**Is your feature request related to the youtui app, or one of the helper crates (e.g ytmapi-rs)?**
 Please list either youtui or the crate the feature request relates to.
 
 **Is your feature request related to a problem? Please describe.**

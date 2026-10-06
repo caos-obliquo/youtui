@@ -1,10 +1,10 @@
 use crate::app::queue_persistence::{CompactSongRef, CompactSavedQueue};
-use crate::app::server::song_downloader::InMemSong;
+use crate::app::server::song_downloader::{DownloadProgressUpdateType, InMemSong};
 use crate::app::server::song_thumbnail_downloader::SongThumbnailID;
 use crate::app::server::{AlbumTrack, DecodeSong, GetSongThumbnail, PlayDecodedSong, TaskMetadata};
 use crate::app::structures::{
     AlbumArtState, DownloadStatus, ListSong, ListSongArtist, ListSongDisplayableField,
-    ListSongID, ListStatus, MaybeRc, PlayState,
+    ListSongID, ListStatus, MaybeRc, Percentage, PlayState,
 };
 use ytmapi_rs::common::LikeStatus;
 use crate::app::ui::playlist::{
@@ -367,6 +367,174 @@ fn album_split_trusts_metadata_provider_tracks_regardless_of_title() {
     assert_eq!(entries[1].track_no, Some(1));
     assert_eq!(entries[2].track_no, Some(2));
     assert_eq!(entries[3].track_no, Some(3));
+}
+
+#[test]
+fn queue_advance_without_audio_progress_is_broken_by_circuit_breaker() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for v in ["a1", "a2", "a3"] {
+        p.list.push_song_list(vec![make_album_original(v, None)]);
+    }
+    let first = p.list.get_list_iter().next().unwrap().id;
+    p.play_status = PlayState::Playing(first);
+
+    // A decoder yielding instant-finish buffers advances the queue with zero
+    // progress updates. Ten of those in a row used to walk the whole playlist
+    // forever; the breaker must stop and explain instead.
+    for _ in 0..10 {
+        let cur = match p.play_status {
+            PlayState::Playing(id) | PlayState::Buffering(id) | PlayState::Error(id) => id,
+            _ => break,
+        };
+        let _ = p.autoplay_next_or_stop(cur);
+    }
+
+    assert!(
+        p.last_error.is_some(),
+        "circuit breaker must surface an error instead of spinning"
+    );
+}
+
+/// Put a song in `Downloading` so `handle_song_download_progress_update`
+/// processes its failure. `DownloadStatus::None` counts as a final state and
+/// the handler ignores it, which would make an error test pass vacuously.
+fn mark_downloading(p: &mut Playlist, id: ListSongID) {
+    let idx = p.get_index_from_id(id).expect("song in list");
+    p.list
+        .get_list_iter_mut()
+        .nth(idx)
+        .expect("index valid")
+        .download_status = DownloadStatus::Downloading(Percentage(50));
+}
+
+/// An album split replaces the original entry with per-track entries while a
+/// download failure is still in flight, so play_status ends up naming an id
+/// that is no longer in the list. The queue lookup must still find the
+/// following track instead of reporting the queue as finished.
+#[test]
+fn next_song_is_found_when_play_status_names_a_removed_entry() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for v in ["a1", "a2", "a3"] {
+        p.list.push_song_list(vec![make_album_original(v, None)]);
+    }
+    let ids: Vec<ListSongID> = p.list.get_list_iter().map(|s| s.id).collect();
+
+    // The original entry is replaced while the failure is in flight.
+    p.play_status = PlayState::Buffering(ids[0]);
+    let _ = p.list.remove_at(0);
+    let survivors: Vec<ListSongID> = p.list.get_list_iter().map(|s| s.id).collect();
+    assert!(!survivors.contains(&ids[0]), "precondition: id 0 is gone");
+
+    assert_eq!(
+        p.get_next_song_id(ids[0]),
+        Some(survivors[0]),
+        "must advance to the first surviving track, not report end of queue"
+    );
+}
+
+/// The normal case must keep working: nothing to look up, nothing found.
+#[test]
+fn next_song_is_none_at_the_end_of_the_queue() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for v in ["a1"] {
+        p.list.push_song_list(vec![make_album_original(v, None)]);
+    }
+    let ids: Vec<ListSongID> = p.list.get_list_iter().map(|s| s.id).collect();
+    p.play_status = PlayState::Playing(ids[0]);
+    assert_eq!(p.get_next_song_id(ids[0]), None);
+}
+
+fn failed_play_target_advances_and_counts_towards_the_cap() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for v in ["a1", "a2", "a3"] {
+        p.list.push_song_list(vec![make_album_original(v, None)]);
+    }
+    let first = p.list.get_list_iter().next().unwrap().id;
+
+    // The track we are trying to play cannot be downloaded: playback must move
+    // on instead of leaving the user listening to silence.
+    mark_downloading(&mut p, first);
+    p.play_status = PlayState::Buffering(first);
+    let _ = p.handle_song_download_progress_update(
+        DownloadProgressUpdateType::Error("yt-dlp exited with exit status: 1: ERROR: [youtube] a1: Video unavailable".into()),
+        first,
+    );
+
+    assert_ne!(
+        p.play_status,
+        PlayState::Buffering(first),
+        "a failed play target must not stay stuck as the current track"
+    );
+    assert_eq!(p.consecutive_download_failures, 1);
+    let msg = p.last_error.clone().unwrap_or_default();
+    assert!(
+        msg.contains("Video unavailable"),
+        "status must name the real cause, got: {msg}"
+    );
+}
+
+#[test]
+fn failed_prefetch_does_not_move_the_listener() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for v in ["a1", "a2", "a3"] {
+        p.list.push_song_list(vec![make_album_original(v, None)]);
+    }
+    let ids: Vec<ListSongID> = p.list.get_list_iter().map(|s| s.id).collect();
+    p.play_status = PlayState::Playing(ids[0]);
+
+    // A background prefetch failing is harmless and must never interrupt what
+    // the user is currently hearing.
+    mark_downloading(&mut p, ids[2]);
+    let _ = p.handle_song_download_progress_update(
+        DownloadProgressUpdateType::Error("connection reset".into()),
+        ids[2],
+    );
+
+    assert_eq!(
+        p.play_status,
+        PlayState::Playing(ids[0]),
+        "a prefetch failure must not skip the playing track"
+    );
+    assert_eq!(p.consecutive_download_failures, 0);
+}
+
+#[test]
+fn ten_consecutive_download_failures_stop_with_an_explanation() {
+    let (mut p, _) = Playlist::new();
+    p.list.state = ListStatus::Loaded;
+    for i in 0..14 {
+        p.list.push_song_list(vec![make_album_original(
+            Box::leak(format!("v{i}").into_boxed_str()),
+            None,
+        )]);
+    }
+    let ids: Vec<ListSongID> = p.list.get_list_iter().map(|s| s.id).collect();
+
+    // Systemic failure (expired cookies, no network): skipping forever would
+    // march through the whole queue, so the cap stops and explains.
+    for id in ids.iter().take(10) {
+        mark_downloading(&mut p, *id);
+        p.play_status = PlayState::Buffering(*id);
+        let _ = p.handle_song_download_progress_update(
+            DownloadProgressUpdateType::Error("HTTP Error 429: Too Many Requests".into()),
+            *id,
+        );
+    }
+
+    let msg = p.last_error.clone().unwrap_or_default();
+    assert!(
+        msg.contains("10 tracks in a row failed"),
+        "cap must explain why playback stopped, got: {msg}"
+    );
+    assert_eq!(
+        p.consecutive_download_failures, 0,
+        "counter resets after tripping so the next run starts clean"
+    );
 }
 
 #[test]

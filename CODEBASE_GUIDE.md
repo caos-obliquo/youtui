@@ -6,12 +6,23 @@ A guide to understanding the youtui codebase for future development sessions.
 
 ```
 youtui/
-├── youtui/           # Main TUI application
-├── ytmapi-rs/       # YouTube Music API wrapper
-├── async-callback-manager/  # Task management framework
-├── json-crawler/     # JSON traversal utilities
-└── justfile         # Task runner (just test, just clippy, etc.)
+├── youtui/                 # Main TUI application (workspace member)
+├── ytmapi-rs/              # YouTube Music API wrapper (workspace member)
+├── json-crawler/           # JSON traversal utilities (workspace member)
+├── async-callback-manager/ # Task management framework (workspace member)
+├── libs/ytmapi-cli/        # YTM API debug CLI (workspace member)
+├── libs/metadata-cache-sqlite/ # SQLite metadata cache (workspace member)
+├── libs/genre-db-sqlite/   # SQLite genre hierarchy (workspace member)
+├── libs/metadata-provider/ # Metadata providers (crate dir, not a workspace member)
+├── libs/audio-player/      # Rodio audio player (crate dir)
+├── libs/genius-rs/         # Genius API client (crate dir)
+├── libs/lrclib-rs/         # LRCLIB client (crate dir)
+├── libs/rym-genre-data/    # RYM genre data (crate dir)
+├── libs/vi-text-editor/    # Vim text editor (crate dir)
+└── justfile               # Task runner (just test, just clippy, etc.)
 ```
+
+7 workspace members, 13 crate directories total.
 
 ## Key Concepts
 
@@ -136,5 +147,8 @@ Key external dependencies:
 - `rat_text`: Text input widget
 - `ratatui`: Terminal UI framework
 - `ytmapi_rs`: YouTube Music API
-- `rusty_ytdl`: Video downloading
 - `rodio`: Audio playback
+
+Audio download path is external binaries: `yt-dlp` (streams) plus `ffmpeg`
+(track splitting). `youtui-vendored-rusty_ytdl` remains in youtui/Cargo.toml
+as the legacy native-download fallback (`youtube_downloader/native.rs`).

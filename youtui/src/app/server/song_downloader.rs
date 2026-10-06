@@ -250,7 +250,7 @@ where
         .await;
 
         match song {
-            Some(song) => {
+            Ok(song) => {
                 if song.0.is_empty() {
                     warn!("Download produced 0 bytes, marking as failed");
                     send_or_error(
@@ -273,12 +273,15 @@ where
                     .await;
                 }
             }
-            None => {
-                error!("Max retries exceeded");
+            // Show yt-dlp's reason, not the retry count: it said exactly why
+            // ("Video unavailable"), and discarding it left the user staring at
+            // a message naming our retry policy instead of the cause.
+            Err(e) => {
+                error!("Max retries exceeded. Last error: {e}");
                 send_or_error(
                     &tx,
                     DownloadProgressUpdate {
-                        kind: DownloadProgressUpdateType::Error("Max retries exceeded".to_string()),
+                        kind: DownloadProgressUpdateType::Error(format!("Download failed: {e}")),
                         id: song_playlist_id,
                     },
                 )
@@ -294,25 +297,30 @@ async fn run_future_with_retries_and_retry_callback<Fut1, Fut2, T, E>(
     future_generator: impl Fn() -> Fut1 + Send,
     run_on_retry: impl Fn(usize) -> Fut2 + Send,
     max_retries: usize,
-) -> Option<T>
+) -> Result<T, E>
 where
     Fut1: Future<Output = Result<T, E>> + Send,
     Fut2: Future<Output = ()> + Send,
-    E: Send,
+    E: Send + std::fmt::Display,
     T: Send,
 {
     let mut retries = 0;
-    while retries <= max_retries {
-        let output = future_generator().await;
-        if let Ok(output) = output {
-            return Some(output);
-        }
-        retries += 1;
-        if retries <= max_retries {
-            run_on_retry(retries).await;
+    loop {
+        match future_generator().await {
+            Ok(output) => return Ok(output),
+            Err(e) => {
+                // A dead video stays dead: retrying only delays the skip.
+                if crate::youtube_downloader::yt_dlp::is_permanent_download_error(&e.to_string()) {
+                    return Err(e);
+                }
+                retries += 1;
+                if retries > max_retries {
+                    return Err(e);
+                }
+                run_on_retry(retries).await;
+            }
         }
     }
-    None
 }
 
 async fn download_song_with_progress_update_callback<T, Fut>(
@@ -461,7 +469,7 @@ mod tests {
             3,
         )
         .await;
-        assert_eq!(result, Some("ok"));
+        assert_eq!(result, Ok("ok"));
         assert_eq!(callback_count.load(Ordering::SeqCst), 0);
     }
 
@@ -492,7 +500,7 @@ mod tests {
             3,
         )
         .await;
-        assert_eq!(result, Some("recovered".to_string()));
+        assert_eq!(result, Ok("recovered".to_string()));
         assert_eq!(attempts.load(Ordering::SeqCst), 3);
         assert_eq!(callback_count.load(Ordering::SeqCst), 2);
     }
@@ -521,7 +529,7 @@ mod tests {
             max_retries,
         )
         .await;
-        assert_eq!(result, None);
+        assert_eq!(result, Err("always fails".to_string()));
         // One initial attempt + max_retries retries.
         assert_eq!(attempts.load(Ordering::SeqCst), max_retries + 1);
         assert_eq!(callback_count.load(Ordering::SeqCst), max_retries);
@@ -542,7 +550,7 @@ mod tests {
             3,
         )
         .await;
-        assert_eq!(result, None);
+        assert_eq!(result, Err("fail".to_string()));
         assert_eq!(*seen.lock().unwrap(), vec![1, 2, 3]);
     }
 
@@ -561,7 +569,7 @@ mod tests {
             0,
         )
         .await;
-        assert_eq!(result, None);
+        assert_eq!(result, Err("fail".to_string()));
         assert_eq!(callback_count.load(Ordering::SeqCst), 0);
     }
 
@@ -662,4 +670,28 @@ async fn test_semaphore_limiting() {
     
     assert!(semaphore.try_acquire().is_ok(), "Should be able to acquire permit after releasing one");
 }
+
+    #[tokio::test]
+    async fn permanent_failure_is_not_retried() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+        let result = run_future_with_retries_and_retry_callback(
+            move || {
+                let attempts = attempts_clone.clone();
+                async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    Err::<String, String>(
+                        "yt-dlp exited with exit status: 1: ERROR: [youtube] abc: Video unavailable"
+                            .to_string(),
+                    )
+                }
+            },
+            |_| async {},
+            5,
+        )
+        .await;
+        assert_eq!(result, Err("yt-dlp exited with exit status: 1: ERROR: [youtube] abc: Video unavailable".to_string()));
+        // One attempt only: a deleted video is still deleted on attempt 6.
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
 }

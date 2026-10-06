@@ -137,7 +137,7 @@ Residual trailing whitespace/punctuation `- ,;:/` cleaned after each stage.
 File: `libs/metadata-provider/src/lib.rs` - `resolve(artist, title, album)`
 
 `ValidateMetadata` now passes the original album name (from the song's
-`ListSong.album` field) to `MetadataRegistry::resolve()`. All 6 providers
+`ListSong.album` field) to `MetadataRegistry::resolve()`. All 8 providers
 receive `album: Option<&str>` for better search accuracy:
 
 - **Discogs, MusicBrainz, Last.fm Album**: use album name as search param
@@ -150,26 +150,32 @@ provider search.
 
 File: `libs/metadata-provider/src/lib.rs` - `resolve()`
 
-All providers tried in priority order. Each result scored:
+All providers tried in priority order. Each result scored (`score_result` in `libs/metadata-provider/src/lib.rs`):
 
-- **+50** = tracklist present (strong signal)
-- **+20** = album name matches cleaned title (with `&`⇔`and` normalization)
-- **+10** = artist exact match
-- **+10** = year matches or present
+- **+50** = artist exact match (substring either way: +10)
+- **+100** = tracklist present with artist match (strong split signal)
+- **+80** = tracklist present without artist match
+- **+10** = album name present
+- **+5** = year present
+- **+15** = album name equals cleaned title (contains: +7; `&`/`and` normalized equal: +10)
+- **+1** per track, max +10
+- **+4** per genre, max +20
+- **-500** = artist mismatch (only when the album does not match the title either)
 
-Best score wins. Minimum threshold for caching: >= 20.
+Candidates need score > 0. Best score wins. (`score >= 20` only gates the legacy JSON cache write when no SQLite cache is configured.)
 
-Provider order and priorities:
+Provider order and priorities (from each provider's `priority()`):
 
 | Provider | Priority | Notes |
 |----------|----------|-------|
-| MA_COOKIE (try_direct_ma) | 5 | Direct Metal Archives HTTP (cookie-based) |
+| MetalApi | 5 | Direct Metal Archives HTTP (cookie-based) |
+| ListenBrainz | 6 | One call returns year+genres+styles, no rate limit |
+| MusicBrainz | 7 | MB API (widest coverage) |
 | Discogs | 8 | Master API + structured search |
+| Libre.fm | 8 | Reserved (future use) |
 | Last.fm AlbumSearch | 10 | album.getInfo API |
-| YTM Album Enrichment | 15 | Post-registry fallback via backend YTM client |
 | Last.fm TrackSearch | 20 | track.getInfo API |
 | Genius | 40 | Genius API (tracklist detection) |
-| MusicBrainz | 50 | MB API (last resort, widest coverage) |
 
 ## Original Album Preservation
 

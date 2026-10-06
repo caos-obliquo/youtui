@@ -12,7 +12,7 @@ Priority 5: Error("No lyrics found from any provider")
 
 ## Implementation
 
-File: `youtui/src/app/server/messages.rs:886-977` - `GetLyrics` backend task.
+File: `youtui/src/app/server/messages.rs:58` - `GetLyrics` backend task (struct at line 58, `BackendTask` impl at line 1810).
 
 Called from: `effect_handlers_playlist.rs` when `ViewLyrics` callback fires.
 
@@ -21,7 +21,7 @@ struct GetLyrics(String, String, String);
 // artist, title, genius_token
 ```
 
-## Genius JSON API (Priority 0)
+## Genius JSON API (Priority 1)
 
 **Replaced HTML scraping in 2026-06-21.** No more fragile `split("data-lyrics-container")`.
 
@@ -104,11 +104,11 @@ File: `app/ui/playlist/lyrics_popup.rs` - `LyricsPopup` struct.
 │   ~                              │     ~                        │
 │                                  │                              │
 ├──────────────────────────────────┴──────────────────────────────┤
-│ Esc/q: Close | a: Toggle annot  | Tab/l/h: Switch panel focus  │
+│ Esc/q: Close | a: Toggle annot  | Tab/BackTab/Alt-l/Alt-h: Focus │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-When `a` is pressed and annotations exist, the view splits 55/45 between lyrics and annotations. `Tab`/`l`/`h` switches focus between panels.
+When `a` is pressed and annotations exist, the view splits 55/45 between lyrics and annotations. `Tab`/`BackTab`/`Alt-l`/`Alt-h` switches focus between panels. Bare `l`/`h` move the cursor within the line.
 
 ### Annotations Panel (Separate Component)
 
@@ -123,15 +123,15 @@ Annotations panel has its own cursor state and vim navigation independent of lyr
 | `0` | Line start within annotation |
 | `$` | Line end within annotation |
 | `w`/`W`/`b`/`B`/`e`/`E` | Word motions within annotation |
-| `v` | Enter visual mode in annotation |
+| `V` | Enter visual mode in annotation |
 | `y` | Yank annotation text to clipboard |
-| `Enter` | Open annotation URL (if linked) |
+| `Enter` | Copy annotation (fragment + explanation) to clipboard |
 
 Annotations display their index and reference count: `[N annotations for this line]`.
 
 ### Component Isolation (Critical)
 
-Lyrics and annotations are **separate interactive components** that communicate via shared state. `Tab`/`l`/`h` switches scroll/navigation focus between panels. Seek commands `( ) < > [ ]` are global playback controls that work regardless of focus - they always fire.
+Lyrics and annotations are **separate interactive components** that communicate via shared state. `Tab`/`BackTab`/`Alt-l`/`Alt-h` switches scroll/navigation focus between panels. Queue and playback keys (`(` `)` `<` `>` `[` `]`) work regardless of focus - they always fire.
 
 ### Relative Line Numbers
 
@@ -160,8 +160,8 @@ Both panels display relative line numbers:
 | `Ctrl+d` | Page down (n × 10 lines) |
 | `Ctrl+u` | Page up (n × 10 lines) |
 | `(`/`)` | View previous/next in queue |
-| `<`/`>` | Seek backward/forward |
-| `[`/`]` | Seek backward/forward larger |
+| `<`/`>` | Play previous/next song |
+| `[`/`]` | Seek back/forward 5s |
 | `}` | Next paragraph (double newline) |
 | `{` | Previous paragraph |
 

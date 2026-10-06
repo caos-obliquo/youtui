@@ -131,11 +131,17 @@ pub struct SongThumbnailDownloader {
     client: reqwest::Client,
     // For information about why this error is stringly typed, see DynamicApiError
     status: Arc<AsyncCell<Result<(), String>>>,
+    fetch_limiter: Arc<tokio::sync::Semaphore>,
 }
 
 impl SongThumbnailDownloader {
     pub fn new(client: reqwest::Client) -> Self {
         let status = AsyncCell::new().into_shared();
+        // Every song that becomes current fires an art fetch with no other
+        // bound, so skipping through a queue fires them all at once and the
+        // connection pool collapses (reqwest fails with "error sending request
+        // for url", no status ever returned). Same shape as the yt-dlp limiter.
+        let fetch_limiter = Arc::new(tokio::sync::Semaphore::new(8));
         let status_clone = status.clone();
         tokio::spawn(async move {
             info!("Setting up and cleaning album art directory");
@@ -160,7 +166,7 @@ impl SongThumbnailDownloader {
                 }
             }
         });
-        Self { client, status }
+        Self { client, status, fetch_limiter }
     }
     pub async fn download_song_thumbnail(
         &self,
@@ -183,6 +189,7 @@ impl SongThumbnailDownloader {
             }
             return Ok(cached_song_thumbnail);
         }
+        let _permit = self.fetch_limiter.acquire().await;
 
         // Upgrade YTM thumbnail URL to request larger resolution.
         let url = if let Some(eq_pos) = thumbnail_url.rfind('=') {
@@ -190,7 +197,17 @@ impl SongThumbnailDownloader {
         } else {
             reqwest::Url::parse(&thumbnail_url)?
         };
-        let image_bytes = self.client.get(url).send().await?.bytes().await?;
+        let image_bytes = self
+            .client
+            .get(url.clone())
+            .send()
+            .await
+            .with_context(|| format!("album art request failed for {url}"))?
+            .error_for_status()
+            .with_context(|| format!("album art request returned a bad status for {url}"))?
+            .bytes()
+            .await
+            .with_context(|| format!("album art response body unreadable for {url}"))?;
         // `Bytes` is cheap to clone.
         let image_reader = image::ImageReader::new(std::io::Cursor::new(image_bytes.clone()))
             .with_guessed_format()?;
@@ -313,10 +330,10 @@ async fn get_cached_album_art(thumbnail_id: SongThumbnailID<'_>) -> Option<SongT
                     .as_str()
             })
         {
-            warn!(
-                "Detected a file in youtui album art directory with invalid filename {:?}",
-                path.file_name()
-            );
+            // Not this song's art, and not a problem: the directory holds every
+            // cached album, so a non-matching name is the normal case. This
+            // used to warn, which fired once per cached file on every lookup
+            // and produced 23691 identical warnings in a single session.
             return None;
         }
         // Youtui will always write a file extension.
@@ -434,6 +451,44 @@ mod tests {
                 assert_eq!(v.get_raw(), "https://domnoise.bandcamp.com/track/one");
             }
             other => panic!("expected Video variant for empty album id, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bandcamp_song_with_thumbnails_keys_art_on_the_url() {
+        let cover = "https://f4.bcbits.com/img/a0123456789abcdef0123456789abcdef.jpg";
+        let song = ListSong {
+            video_id: VideoID::from_raw("https://domnoise.bandcamp.com/track/one"),
+            track_no: None,
+            plays: String::new(),
+            title: "One".into(),
+            explicit: None,
+            download_status: crate::app::structures::DownloadStatus::None,
+            id: crate::app::structures::ListSongID(0),
+            duration_string: "3:00".into(),
+            actual_duration: None,
+            start_offset: None,
+            year: None,
+            album_art: crate::app::structures::AlbumArtState::None,
+            genres: Vec::new(),
+            styles: Vec::new(),
+            artists: MaybeRc::Owned(vec![ListSongArtist { name: "Artist".into(), id: None }]),
+            thumbnails: MaybeRc::Owned(vec![
+                Thumbnail { height: 60, width: 60, url: format!("{cover}-small") },
+                Thumbnail { height: 1200, width: 1200, url: cover.into() },
+            ]),
+            album: Some(MaybeRc::Owned(ListSongAlbum {
+                name: "Some Album".into(),
+                id: AlbumOrUploadAlbumID::Album(AlbumID::from_raw("")),
+            })),
+            like_status: ytmapi_rs::common::LikeStatus::Indifferent,
+            is_album_upload: false,
+            release_mbid: None,
+            artists_string: std::sync::OnceLock::new(),
+        };
+        match SongThumbnailID::from(&song) {
+            SongThumbnailID::Url(u) => assert_eq!(u, cover),
+            other => panic!("expected Url variant when thumbnails are present, got {other:?}"),
         }
     }
 

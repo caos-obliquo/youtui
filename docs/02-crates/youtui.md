@@ -16,15 +16,16 @@ youtui/src/
 ├── tests.rs                - Integration tests
 ├── widgets.rs              - Widget re-exports
 │
+├── cli.rs                    - CLI query builder entry
 ├── cli/                    - CLI query builder
 │   └── querybuilder.rs
 │
+├── api.rs                    - YTM API wrapper (refresh token, search)
 ├── api/
-│   ├── mod.rs              - YTM API wrapper (refresh token, search)
 │   └── error.rs
 │
+├── config.rs               - Config, ConfigIR (line 149), Config::new()
 ├── config/
-│   ├── mod.rs              - Config, ConfigIR, Config::new()
 │   └── keymap.rs           - Keymap struct, default keybinds, parsing
 │
 ├── widgets/
@@ -55,7 +56,7 @@ youtui/src/
     │
     ├── server/
     │   ├── mod.rs          - Server struct
-    │   ├── messages.rs     - ALL BackendTask impls (~1598 lines)
+    │   ├── messages.rs     - ALL BackendTask impls (~3083 lines)
     │   ├── api.rs          - HTTP client + token refresh
     │   ├── api_error_handler.rs
     │   ├── player.rs       - Audio decode + ffmpeg extraction
@@ -83,14 +84,14 @@ youtui/src/
         │   ├── playlistsearch.rs  - Playlist search tab + songs
         │   ├── playlistsearch/
         │   │   ├── search_panel.rs
-        │   │   └── songs_panel.rs
-        │   └── library.rs - Library browser (4th tab)
+│   │   └── songs_panel.rs
+│   └── library.rs - Library browser (4th tab, ~2578 lines)
         │
         ├── components/
         │   └── mod.rs      - Component macros
         │
-        └── playlist/
-            ├── mod.rs      - Playlist struct (~3104 lines)
+    └── playlist/
+        ├── mod.rs      - Playlist struct (~3971 lines)
             ├── effect_handlers.rs - Effect handler re-exports
             ├── effect_handlers_playlist.rs - Playlist-specific effects
             ├── lyrics_popup.rs

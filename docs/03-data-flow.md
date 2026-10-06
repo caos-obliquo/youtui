@@ -26,7 +26,7 @@ loop {
 
 ## 2. Key Event Routing
 
-`handle_event` → `YoutuiWindow::handle_key_event(k)` (app/ui.rs:707)
+`handle_event` → `YoutuiWindow::handle_key_event(k)` (app/ui.rs:1162)
 
 Priority order:
 
@@ -68,14 +68,14 @@ Priority order:
 
 ## 3. Action Dispatch
 
-`global_handle_key_stack` (app/ui.rs:919) resolves the key stack against keymaps in priority order:
+`global_handle_key_stack` (app/ui.rs:1454; `with_count` variant at 1468) resolves the key stack against keymaps in priority order:
 
 ```
 Dominant keybinds > active context keybinds > global keybinds
 ```
 
 Each keymap context:
-- `Global` - F1/F2/F3/F7/F11, volume, seek, play/pause, quit
+- `Global` - F1/F2/F3/F11, volume, seek, play/pause, quit
 - `Playlist` - j/k/d/y/V, shuffle, repeat, delete, etc.
 - `Browser` - tab switching, navigation
 - `BrowserSongs` - song list actions
@@ -100,8 +100,8 @@ match action {
     PlaylistAction::ViewLyrics { artist, title } => {
         let task = AsyncTask::new_future_try(
             GetLyrics(artist, title, genius_token),
-            HandleLyricsOk,
-            HandleLyricsErr,
+            HandleGetLyricsOk,
+            HandleGetLyricsErr,
             None,
         ).map_frontend(|this: &mut Playlist| this);
         return (task, None);  // task + optional AppCallback
@@ -139,7 +139,7 @@ fn handle_effect(&mut self, outcome: TaskOutcome) {
 The handler mutates UI state:
 
 ```rust
-impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for HandleLyricsOk {
+impl FrontendEffect<Playlist, ArcServer, TaskMetadata> for HandleGetLyricsOk {
     fn handle(self, playlist: &mut Playlist, _backend: &ArcServer, _meta: TaskMetadata) {
         if let Some(popup) = &mut playlist.lyrics_popup {
             popup.set_lyrics(self.0);  // state mutation
@@ -266,3 +266,42 @@ get_album_art(song):
   3. → FetchAlbumArt (Last.fm, requires matching album name)
   4. → None (no art available)
 ```
+
+## 9. Bandcamp Search + Album Import
+
+Bandcamp runs beside YouTube Music, never through it. Every branch keys off `is_bandcamp_url()` (`youtui/src/bandcamp.rs`).
+
+**Search flow (Songs/Albums/Artists tabs):**
+```
+F1 query → SearchSongs + SearchBandcamp (concurrent)
+  SearchBandcamp → 3x POST bcsearch_public_api (filters t/a/b in parallel)
+    → one merged Vec<BandcampSearchResult>
+  Songs tab keeps type==Track, Albums tab type==Album, Artists tab type==Band
+    → appended after YouTube rows (pending_bandcamp ordering), BC badge in Src
+```
+
+**Album/discography import flow:**
+```
+Enter on Bandcamp album (or pasted URL via play_yt_url)
+  → FetchBandcampAlbumEntries(url)
+    → yt-dlp --flat-playlist --dump-json (track URL enumeration)
+    → GET album page → data-tralbum: durations, track_num, og:image art, year from `current`
+  → HandleFetchBandcampAlbumEntriesOk → queue rows via insert_bandcamp_track_entry
+    (no per-track probe; video_id holds the full track URL)
+```
+
+**Recommendation resolution (F4):**
+```
+ActOnRecommendation(artist, title)
+  → YouTube search, accept only if title_artist_matches passes
+  → else Bandcamp t-search, accept only verified track-kind matches
+  → else unverified YouTube hit (never an error unless both empty)
+```
+
+**Download binary selection:**
+```
+stream_song / FetchYtVideoMetadata / bandcamp-resolve CLI
+  → is_bandcamp_url? bandcamp_yt_dlp_command : yt_dlp_command
+```
+
+Full reference: `06-subsystems/bandcamp.md`.

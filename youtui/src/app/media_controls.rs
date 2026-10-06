@@ -132,7 +132,13 @@ impl MediaController {
 
         let config = PlatformConfig {
             display_name: "Youtui",
-            dbus_name: "youtui",
+            // Per-process so a second instance cannot collide with a running
+            // one. souvlaki spawns the bus registration on its own thread and
+            // unwraps the result, so a name collision panics off-thread, the
+            // run loop exits, and the app renders one frame then stops reading
+            // input. Widgets enumerate org.mpris.MediaPlayer2.* rather than
+            // pinning this exact suffix.
+            dbus_name: &format!("youtui{}", std::process::id()),
             #[cfg(not(target_os = "windows"))]
             hwnd: None,
             #[cfg(target_os = "windows")]

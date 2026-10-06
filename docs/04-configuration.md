@@ -6,26 +6,34 @@ File: `~/.config/youtui/config.toml`
 
 ## ConfigIR Fields
 
-All fields parsed from TOML into `ConfigIR` (youtui/src/config.rs:106), then converted to `Config`.
+All fields parsed from TOML into `ConfigIR` (youtui/src/config.rs:149), then converted to `Config`. `ConfigIR` uses `#[serde(default, deny_unknown_fields)]` so unknown keys are rejected.
 
 ### auth_type
 
 | Value | Auth Method | Requires |
 |-------|-------------|----------|
-| `browser` (default) | Browser cookie extraction | Chromium cookie file |
-| `oauth` | OAuth device code flow | Interactive setup |
-| `noauth` | No authentication | Limited/breaks |
+| `Browser` (default) | Browser cookie extraction | Chromium cookie file |
+| `OAuth` | OAuth device code flow | Interactive setup |
+| `Unauthenticated` | No authentication | Limited/breaks |
 
 ### downloader_type
 
 | Value | Downloader | Status |
 |-------|------------|--------|
-| `native` | rusty_ytdl (Rust native) | Partially broken - 403 errors |
-| `yt-dlp` (default) | yt-dlp external process | Working - recommended |
+| `Native` | rusty_ytdl (Rust native) | Partially broken - 403 errors |
+| `YtDlp` (default) | yt-dlp external process | Working - recommended |
 
 ### yt_dlp_command
 
 Default: `"yt-dlp"` - path to yt-dlp binary.
+
+### bandcamp_yt_dlp_command
+
+Optional dedicated yt-dlp binary for Bandcamp URLs (uv-tool build with curl_cffi). Falls back to `yt_dlp_command` when unset.
+
+### cookie_browser
+
+Default: `"chromium"` - browser to read cookies from for YTM auth and yt-dlp `--cookies-from-browser`.
 
 ### scrobbling
 
@@ -37,6 +45,10 @@ api_secret = ""
 session_key = ""
 genius_token = ""         # Required for reliable Genius annotations
 discogs_token = ""        # Better Discogs album metadata coverage
+listenbrainz_token = ""  # ListenBrainz metadata + recommendations
+musicbrainz_bearer_token = ""  # MusicBrainz authenticated requests
+musicbrainz_client_id = ""     # MusicBrainz OAuth client id
+musicbrainz_client_secret = "" # MusicBrainz OAuth client secret
 ```
 
 ### keybinds
@@ -66,8 +78,8 @@ Custom mode names for context menus. Rarely used.
 Minimal overrides (all keybinds use Rust defaults unless specified):
 
 ```toml
-auth_type = "browser"
-downloader_type = "yt-dlp"
+auth_type = "Browser"
+downloader_type = "YtDlp"
 yt_dlp_command = "yt-dlp"
 
 [scrobbling]
@@ -91,7 +103,7 @@ k = {action = "list.up", visibility = "hidden"}
 j = {action = "list.down", visibility = "hidden"}
 ```
 
-See `config/config.toml.vim-example` in the source tree for a vim-navigation-only override example.
+See `youtui/config/config.toml.vim-example` in the source tree for a vim-navigation-only override example.
 
 ## Config Loading Sequence
 
