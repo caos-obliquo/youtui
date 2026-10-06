@@ -108,25 +108,27 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
             self.yt_dlp_command.clone()
         };
         let cookie_file = effective_cookie_file(self.cookie_path.as_deref()).map(str::to_string);
+        let browser_fallback = if cookie_file.is_none() && self.cookie_path.is_some() {
+            Some(self.cookie_browser.clone())
+        } else {
+            None
+        };
         let video_id = song_video_id.as_ref().to_string();
+        // Try without cookies first: YouTube's web_creator client (used when
+        // cookies are present) serves zero audio-only formats, so the no-cookies
+        // path is both faster and the one that works for most tracks.
         let result = self
-            .stream_song_inner(command.clone(), video_id.clone(), quality, cookie_file.clone())
+            .stream_song_inner(command.clone(), video_id.clone(), quality, None, None)
             .await;
-        // Cookie fallback: YouTube's web_creator client (used when cookies are
-        // present) can serve zero audio-only formats, forcing yt-dlp into a
-        // progressive video rip. Retry once without cookies, which uses the
-        // default client and exposes the audio-only formats.
-        if cookie_file.is_some() {
-            if let Err(ref e) = result {
-                if is_progressive_fallback_error(e) {
-                    warn!(
-                        %video_id,
-                        "yt-dlp fell back to progressive format with cookies, retrying without cookies"
-                    );
-                    return self
-                        .stream_song_inner(command, video_id, quality, None)
-                        .await;
-                }
+        if let Err(ref e) = result {
+            if is_progressive_fallback_error(e) {
+                warn!(
+                    %video_id,
+                    "yt-dlp fell back to progressive format without cookies, retrying with cookies"
+                );
+                return self
+                    .stream_song_inner(command, video_id, quality, cookie_file, browser_fallback)
+                    .await;
             }
         }
         result
@@ -140,6 +142,7 @@ impl YtDlpDownloader {
         video_id: String,
         quality: AudioQuality,
         cookie_file: Option<String>,
+        browser_fallback: Option<String>,
     ) -> Result<
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, YtDlpDownloaderError>> + Send>,
         YtDlpDownloaderError,
@@ -164,18 +167,12 @@ impl YtDlpDownloader {
                     message: "empty video id".to_string(),
                 });
             }
-            let browser_fallback =
-                if cookie_file.is_none() && self.cookie_path.is_some() {
-                    Some(self.cookie_browser.as_str())
-                } else {
-                    None
-                };
             let stream_args = build_stream_args(
                 format_string.as_str(),
                 output_template.as_str(),
                 video_id.as_str(),
                 cookie_file.as_deref(),
-                browser_fallback,
+                browser_fallback.as_deref(),
             );
             
             debug!(%video_id, ?stream_args, "yt-dlp args");
@@ -631,7 +628,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cookie_fallback_retries_without_cookies() {
+    async fn test_cookie_fallback_retries_with_cookies() {
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("mock-yt-dlp");
         let cookie = dir.path().join("cookie.txt");
@@ -640,10 +637,10 @@ mod tests {
 has_cookies=0
 output=""
 for ((i=1; i<=$#; i++)); do
-  if [[ "${!i}" == "--cookies" ]]; then has_cookies=1; fi
+  if [[ "${!i}" == "--cookies" || "${!i}" == "--cookies-from-browser" ]]; then has_cookies=1; fi
   if [[ "${!i}" == "-o" ]]; then j=$((i+1)); output="${!j}"; fi
 done
-if [[ $has_cookies -eq 1 ]]; then
+if [[ $has_cookies -eq 0 ]]; then
   echo "YTDLP_META abr=96k ext=mp4 format=18"
   exit 0
 fi

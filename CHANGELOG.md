@@ -52,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bandcamp requests are rate limited and retried.** Search queries all three result types and still renders partial results when one type fails. Downloads are capped at a few concurrent with retries on failure. The album page is always fetched because it is the only source for year, track numbers, and durations on compilations
 - **Album art is cached by artwork URL for URL-added songs.** YouTube-URL and Bandcamp songs carry an empty album id, so the cache used to key on the per-track id and re-download one shared cover per track. The cover is now downloaded once per artwork URL
 ### Fixed
+- **Cookie fallback: try without cookies first, fall back to cookies (yt_dlp.rs).**
+  Why: YouTube's `web_creator` client (used whenever cookies are present) can
+  serve zero audio-only formats, forcing yt-dlp into a 96k progressive video
+  rip that the hard-fail rejects. Without cookies the default client exposes
+  the audio-only formats. Effect: downloads try without cookies first (faster,
+  works for most tracks), and only fall back to cookies if that fails.
 - **Cookie fallback: retry without cookies when yt-dlp falls back to progressive (yt_dlp.rs).**
   Why: YouTube's `web_creator` client (used whenever cookies are present) can
   serve zero audio-only formats, forcing yt-dlp into a 96k progressive video
