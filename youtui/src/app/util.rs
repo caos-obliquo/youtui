@@ -555,6 +555,24 @@ pub fn parse_description_timestamps(
             candidates.push((secs, title.to_string()));
         }
     }
+    // Title-first, timestamp-at-end tracklists ("1. Vencer/Regras 0:00"):
+    // leading extraction finds no title after the timestamp and yields
+    // nothing, so try the trailing form too. Only accept when the sequence
+    // opens at 0:00 — position lists always start there, duration lists
+    // ("1. Intro 3:00") virtually never carry a zero-length first track.
+    if candidates.len() < 2 {
+        let trailing: Vec<(u64, String)> = lines
+            .iter()
+            .filter_map(|l| try_extract_trailing_duration(l))
+            .collect();
+        // Position lists always contain 0 (track 1 start); duration lists
+        // never carry a zero-length track.
+        if trailing.len() >= 2
+            && trailing.iter().any(|(s, _)| *s == 0)
+        {
+            candidates = trailing;
+        }
+    }
     if candidates.len() < 2 {
         debug!("parse_description: only {} timestamp lines found, need >= 2", candidates.len());
         return None;
@@ -633,6 +651,26 @@ mod tests {
         assert_eq!(t.len(), 3);
         assert_eq!(t[0].duration_secs, 180.0);
         assert_eq!(t[1].duration_secs, 180.0);
+    }
+
+    // Olho Seco – Olho Por Olho (Y5SPwKNGyf8): "NN. Title MM:SS" where MM:SS
+    // is a POSITION, not a duration. Old code failed leading extraction (no
+    // title after timestamp), then the durations parser summed positions
+    // (5778s) against a 998s video → dur_match=false → no split.
+    #[test]
+    fn title_first_trailing_positions_split_correctly() {
+        let desc = "Olho Seco is a Brazilian band.\n\nTracklist:\n1. Vencer/Regras 0:00\n2. Condenado 0:45\n3. Sintomas Dementes 1:35\n4. Erupçao 2:41\n5. Canibais 3:38\n6. Johnny Black 3:53\n7. A Vingança (De Johnny) 5:10\n8. Olho Por Olho 5:26\n9. Pó Em Ruína 6:15\n10. Fome Nuclear 7:19\n11. Desintergração 8:18\n12. Olho Seco 9:34\n13. Vai Tomar 10:32\n14. Besta Humana 11:14\n15. Erupção 12:11\n16. Campos Da Morte 14:02\n\nFor more go to https://t.me/rubbishmusic";
+        let total = 998;
+        let t = parse_description_timestamps(desc, total).expect("should parse as positions");
+        assert_eq!(t.len(), 16);
+        assert_eq!(t[0].title, "Vencer/Regras");
+        assert_eq!(t[0].duration_secs, 45.0); // 0:00 -> 0:45
+        assert_eq!(t[1].title, "Condenado");
+        assert_eq!(t[1].duration_secs, 50.0); // 0:45 -> 1:35
+        assert_eq!(t[7].title, "Olho Por Olho");
+        // Durations sum to the video length (position list covers full span).
+        let sum: f64 = t.iter().map(|x| x.duration_secs).sum();
+        assert!((sum - total as f64).abs() < 1.0, "sum {sum} != {total}");
     }
 
     #[test]
