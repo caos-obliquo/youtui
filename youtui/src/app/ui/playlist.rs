@@ -1524,6 +1524,7 @@ impl Playlist {
             &entry.uploader,
             entry.album.as_deref(),
             entry.track.as_deref(),
+            entry.artist.as_deref(),
         );
         info!(
             "bandcamp track: artist={}, title={}, album={:?}, duration={}s",
@@ -1637,6 +1638,7 @@ impl Playlist {
                 &uploader,
                 meta.album.as_deref(),
                 meta.track.as_deref(),
+                None, // single-track path: no tralbum page fetched, prefix rules apply
             );
             info!(
                 "add_yt_video: bandcamp metadata -> artist={}, title={}, album={:?}",

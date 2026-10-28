@@ -204,14 +204,23 @@ impl BackendTask<ArcServer> for FetchYtVideoMetadata {
 /// Off-UI-thread resolution of a Bandcamp album or discography URL into its
 /// playable track URLs. Runs `yt-dlp --flat-playlist --dump-json` (the same
 /// probe the CLI debug tool uses) so the TUI never blocks on the network.
+/// 
+/// Fields: (url, use_cookies, cookie_browser, skip_tralbum_enrichment, timeout_secs)
 #[derive(Debug, PartialEq)]
-pub struct FetchBandcampAlbumEntries(pub String, pub bool, pub String);
+pub struct FetchBandcampAlbumEntries(pub String, pub bool, pub String, pub bool, pub u64);
+
+impl Default for FetchBandcampAlbumEntries {
+    fn default() -> Self {
+        Self(String::new(), false, String::new(), false, 120)
+    }
+}
 
 async fn fetch_tralbum_page(
     client: &reqwest::Client,
     url: &str,
 ) -> Result<(
     Vec<crate::bandcamp::TralbumTrack>,
+    Option<String>,
     Option<String>,
     Option<String>,
 )> {
@@ -232,6 +241,7 @@ async fn fetch_tralbum_page(
         tracks,
         crate::bandcamp::parse_tralbum_art_url(&html),
         crate::bandcamp::parse_tralbum_release_year(&html),
+        crate::bandcamp::parse_tralbum_artist(&html),
     ))
 }
 
@@ -244,6 +254,8 @@ impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
             .clone()
             .unwrap_or_else(|| backend.yt_dlp_command.clone());
         let http_client = backend.http_client.clone();
+        let skip_tralbum = self.3;
+        let timeout_secs = if self.4 > 0 { self.4 } else { 120 };
         async move {
             let url = self.0;
             let mut cmd = tokio::process::Command::new(&cmd_name);
@@ -252,9 +264,9 @@ impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
                 cmd.args(["--cookies-from-browser", &self.2]);
             }
             cmd.arg("--").arg(&url);
-            tracing::info!("FetchBandcampAlbumEntries: resolve entries for {}", url);
+            tracing::info!("FetchBandcampAlbumEntries: resolve entries for {} (timeout={}s, skip_tralbum={})", url, timeout_secs, skip_tralbum);
             let output = match tokio::time::timeout(
-                Duration::from_secs(60),
+                Duration::from_secs(timeout_secs),
                 cmd.kill_on_drop(true).output(),
             )
             .await
@@ -264,45 +276,50 @@ impl BackendTask<ArcServer> for FetchBandcampAlbumEntries {
                     "Failed to spawn yt-dlp for {} (is it on PATH?): {e}",
                     url
                 ),
-                Err(_) => anyhow::bail!("yt-dlp timed out after 60s resolving {}", url),
+                Err(_) => anyhow::bail!("yt-dlp timed out after {}s resolving {}", timeout_secs, url),
             };
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 anyhow::bail!("yt-dlp failed for {}: {}", url, stderr.trim());
             }
             let mut entries = parse_bandcamp_album_entries(&String::from_utf8_lossy(&output.stdout));
-            // Unconditional: Bandcamp's flat playlist never carries a year, a
-            // track number or a duration for compilations, so the album page is
-            // the only source for all three. It is one extra request per album.
-            match fetch_tralbum_page(&http_client, &url).await {
-                Ok((tracks, art_url, year)) => {
-                    let filled =
-                        crate::bandcamp::merge_tralbum_metadata(&mut entries, &tracks);
-                    for e in entries.iter_mut() {
-                        if let Some(art) = &art_url
-                            && e.cover_url.is_none()
-                        {
-                            e.cover_url = Some(art.clone());
+            // Optional tralbum enrichment: adds durations, track numbers, cover art, year.
+            // Skip for speed on large compilations (user gets playable tracks faster).
+            if !skip_tralbum {
+                match fetch_tralbum_page(&http_client, &url).await {
+                    Ok((tracks, art_url, year, album_artist)) => {
+                        let filled = crate::bandcamp::merge_tralbum_metadata(
+                            &mut entries,
+                            &tracks,
+                            album_artist.as_deref(),
+                        );
+                        for e in entries.iter_mut() {
+                            if let Some(art) = &art_url
+                                && e.cover_url.is_none()
+                            {
+                                e.cover_url = Some(art.clone());
+                            }
+                            if e.year.is_none() {
+                                e.year = year.clone();
+                            }
                         }
-                        if e.year.is_none() {
-                            e.year = year.clone();
-                        }
-                    }
                         tracing::info!(
-                            "FetchBandcampAlbumEntries: enriched {} of {} entries from data-tralbum for {}, art={}, year={}",
+                            "FetchBandcampAlbumEntries: enriched {} of {} entries from data-tralbum for {}, art={}, year={}, artist={}",
                             filled,
                             entries.len(),
                             url,
                             art_url.as_deref().unwrap_or("none"),
-                            year.as_deref().unwrap_or("none")
+                            year.as_deref().unwrap_or("none"),
+                            album_artist.as_deref().unwrap_or("none")
                         );
-                }
-                Err(e) => {
+                    }
+                    Err(e) => {
                         tracing::warn!(
                             "FetchBandcampAlbumEntries: tralbum enrichment unavailable for {} ({}); keeping flat-playlist metadata",
                             url,
                             e
                         );
+                    }
                 }
             }
             tracing::info!(
@@ -2865,10 +2882,14 @@ mod fetch_bandcamp_album_entries_tests {
             "https://domnoise.bandcamp.com/album/x".to_string(),
             true,
             "chromium".to_string(),
+            false,
+            120,
         );
         assert_eq!(task.0, "https://domnoise.bandcamp.com/album/x");
         assert!(task.1);
         assert_eq!(task.2, "chromium");
+        assert!(!task.3);
+        assert_eq!(task.4, 120);
     }
 
     #[test]

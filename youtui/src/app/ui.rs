@@ -1757,6 +1757,8 @@ impl YoutuiWindow {
                             normalized.clone(),
                             self.playlist.yt_dlp_cookie_path.is_some(),
                             self.playlist.cookie_browser.clone(),
+                            false, // skip_tralbum_enrichment
+                            120,   // timeout_secs
                         ),
                         HandleBandcampAlbumEntriesOk(normalized.clone()),
                         HandleBandcampAlbumEntriesError(normalized),

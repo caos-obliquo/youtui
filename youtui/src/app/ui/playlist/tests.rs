@@ -549,9 +549,10 @@ fn bandcamp_entry_keeps_track_number_and_real_song_title() {
         album: Some("NOISE AS A FORM OF EXPRESSION VOL.4".to_string()),
         track: None,
         track_no: Some("3".to_string()),
+        artist: None,
         cover_url: None,
-
-        year: None,    };
+        year: None,
+    };
     let id = p.insert_bandcamp_track_entry(&entry).expect("row inserted");
     let idx = p.get_index_from_id(id).expect("index resolves");
     let s = p.list.get_list_iter().nth(idx).unwrap();

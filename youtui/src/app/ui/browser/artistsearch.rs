@@ -729,6 +729,7 @@ impl_youtui_task_handler!(HandleFetchBandcampDiscographyOk, Vec<BandcampTrackEnt
                 &entry.uploader,
                 entry.album.as_deref(),
                 entry.track.as_deref(),
+                entry.artist.as_deref(),
             );
             let secs = entry.duration_secs as u64;
             let song = ytmapi_rs::parse::SearchResultSong {
