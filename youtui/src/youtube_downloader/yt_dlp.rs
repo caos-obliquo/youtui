@@ -11,6 +11,92 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::time::timeout;
 use tracing::{debug, error, info, warn};
 
+/// Extractor-specific yt-dlp arguments. Allows clean separation of
+/// per-site flags (e.g., YouTube's web_creator client) without hardcoding
+/// URL checks throughout the download logic.
+#[derive(Clone, Debug, Default)]
+pub struct ExtractorArgs {
+    /// Args added before the URL (extractor args, cookies, format, etc.)
+    pub pre_url_args: Vec<String>,
+    /// Args added after the URL (rare, but possible)
+    pub post_url_args: Vec<String>,
+}
+
+impl ExtractorArgs {
+    /// YouTube extractor args: web_creator player client for cookie auth.
+    pub fn youtube(cookie_file: Option<&str>, cookie_browser: Option<&str>) -> Self {
+        let mut args = Self::default();
+        if let Some(path) = cookie_file {
+            args.pre_url_args.extend([
+                "--extractor-args".into(),
+                "youtube:player_client=web_creator".into(),
+                "--cookies".into(),
+                path.into(),
+            ]);
+        } else if let Some(browser) = cookie_browser {
+            args.pre_url_args.extend([
+                "--extractor-args".into(),
+                "youtube:player_client=web_creator".into(),
+                "--cookies-from-browser".into(),
+                browser.into(),
+            ]);
+        }
+        args
+    }
+
+    /// Bandcamp extractor args: pass cookies WITHOUT YouTube extractor args.
+    pub fn bandcamp(cookie_file: Option<&str>, cookie_browser: Option<&str>) -> Self {
+        let mut args = Self::default();
+        if let Some(path) = cookie_file {
+            args.pre_url_args.extend(["--cookies".into(), path.into()]);
+        } else if let Some(browser) = cookie_browser {
+            args.pre_url_args.extend(["--cookies-from-browser".into(), browser.into()]);
+        }
+        args
+    }
+
+    /// Generic/fallback extractor args: no special handling.
+    pub fn generic(cookie_file: Option<&str>, cookie_browser: Option<&str>) -> Self {
+        let mut args = Self::default();
+        if let Some(path) = cookie_file {
+            args.pre_url_args.extend(["--cookies".into(), path.into()]);
+        } else if let Some(browser) = cookie_browser {
+            args.pre_url_args.extend(["--cookies-from-browser".into(), browser.into()]);
+        }
+        args
+    }
+}
+
+/// Supported extractor types for yt-dlp.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtractorType {
+    YouTube,
+    Bandcamp,
+    Generic,
+}
+
+impl ExtractorType {
+    /// Detect extractor type from URL.
+    pub fn from_url(url: &str) -> Self {
+        if crate::bandcamp::is_bandcamp_url(url) {
+            Self::Bandcamp
+        } else if url.contains("youtube.com") || url.contains("youtu.be") || url.contains("music.youtube.com") {
+            Self::YouTube
+        } else {
+            Self::Generic
+        }
+    }
+
+    /// Build extractor args for this type.
+    pub fn build_args(self, cookie_file: Option<&str>, cookie_browser: Option<&str>) -> ExtractorArgs {
+        match self {
+            Self::YouTube => ExtractorArgs::youtube(cookie_file, cookie_browser),
+            Self::Bandcamp => ExtractorArgs::bandcamp(cookie_file, cookie_browser),
+            Self::Generic => ExtractorArgs::generic(cookie_file, cookie_browser),
+        }
+    }
+}
+
 #[derive(Clone)]
 #[allow(dead_code)] // field po_token passed at construction, read by yt-dlp subprocess
 /// # Note
@@ -99,7 +185,9 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, Self::Error>> + Send>,
         Self::Error,
     > {
-        let command: Arc<OsString> = if crate::bandcamp::is_bandcamp_url(song_video_id.as_ref()) {
+        let video_id = song_video_id.as_ref().to_string();
+        let extractor = ExtractorType::from_url(&video_id);
+        let command: Arc<OsString> = if extractor == ExtractorType::Bandcamp {
             self.bandcamp_yt_dlp_command
                 .as_ref()
                 .unwrap_or(&self.yt_dlp_command)
@@ -113,12 +201,11 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
         } else {
             None
         };
-        let video_id = song_video_id.as_ref().to_string();
         // Try without cookies first: YouTube's web_creator client (used when
         // cookies are present) serves zero audio-only formats, so the no-cookies
         // path is both faster and the one that works for most tracks.
         let result = self
-            .stream_song_inner(command.clone(), video_id.clone(), quality, None, None)
+            .stream_song_inner(command.clone(), video_id.clone(), quality, None, None, extractor)
             .await;
         if let Err(ref e) = result {
             if is_progressive_fallback_error(e) {
@@ -127,7 +214,7 @@ impl YoutubeMusicDownloader for YtDlpDownloader {
                     "yt-dlp fell back to progressive format without cookies, retrying with cookies"
                 );
                 return self
-                    .stream_song_inner(command, video_id, quality, cookie_file, browser_fallback)
+                    .stream_song_inner(command, video_id, quality, cookie_file, browser_fallback, extractor)
                     .await;
             }
         }
@@ -143,13 +230,18 @@ impl YtDlpDownloader {
         quality: AudioQuality,
         cookie_file: Option<String>,
         browser_fallback: Option<String>,
+        extractor: ExtractorType,
     ) -> Result<
         YoutubeMusicDownload<impl Stream<Item = Result<Bytes, YtDlpDownloaderError>> + Send>,
         YtDlpDownloaderError,
     > {
         async move {
-            let format_string = quality.format_string().to_string();
-            info!(%video_id, quality = ?quality, format = %format_string, "Starting yt-dlp download");
+            let format_string = if extractor == ExtractorType::Bandcamp {
+                quality.bandcamp_format_string().to_string()
+            } else {
+                quality.format_string().to_string()
+            };
+            info!(%video_id, quality = ?quality, format = %format_string, extractor = ?extractor, "Starting yt-dlp download");
 
             // Temp dir with an %(ext)s template: Best can pick non-m4a audio
             // (opus in webm), so the output extension is decided by yt-dlp.
@@ -167,12 +259,12 @@ impl YtDlpDownloader {
                     message: "empty video id".to_string(),
                 });
             }
+            let extractor_args = extractor.build_args(cookie_file.as_deref(), browser_fallback.as_deref());
             let stream_args = build_stream_args(
                 format_string.as_str(),
                 output_template.as_str(),
                 video_id.as_str(),
-                cookie_file.as_deref(),
-                browser_fallback.as_deref(),
+                &extractor_args,
             );
             
             debug!(%video_id, ?stream_args, "yt-dlp args");
@@ -368,39 +460,31 @@ fn build_stream_args<'a>(
     format_string: &'a str,
     output_template: &'a str,
     video_id: &'a str,
-    cookie_file: Option<&'a str>,
-    cookie_browser: Option<&'a str>,
-) -> Vec<&'a str> {
+    extractor_args: &'a ExtractorArgs,
+) -> Vec<String> {
     let mut args = vec![
-        "--no-simulate",
-        "--force-overwrites",
-        "--no-warnings",
-        "--no-progress",
-        "--print",
-        "after_move:YTDLP_META abr=%(abr)s ext=%(ext)s format=%(format_id)s",
-        "-f",
-        format_string,
-        "-o",
-        output_template,
+        "--no-simulate".into(),
+        "--force-overwrites".into(),
+        "--no-warnings".into(),
+        "--no-progress".into(),
+        "--print".into(),
+        "after_move:YTDLP_META abr=%(abr)s ext=%(ext)s format=%(format_id)s".into(),
+        "-f".into(),
+        format_string.into(),
+        "-o".into(),
+        output_template.into(),
     ];
-    if let Some(path) = cookie_file {
-        // Single consistent session from the exported file. The live browser
-        // profile can merge cookies from multiple sessions which YouTube
-        // rejects, so it is dropped here.
-        args.push("--extractor-args");
-        args.push("youtube:player_client=web_creator");
-        args.push("--cookies");
-        args.push(path);
-    } else if let Some(browser) = cookie_browser {
-        args.push("--extractor-args");
-        args.push("youtube:player_client=web_creator");
-        args.push("--cookies-from-browser");
-        args.push(browser);
+    // Prepend extractor-specific args (cookies, extractor args, etc.)
+    for arg in &extractor_args.pre_url_args {
+        args.push(arg.clone());
     }
     // End-of-options separator: video ids can start with a dash
     // (e.g. -nIkN6le_wY) and yt-dlp would parse them as flags.
-    args.push("--");
-    args.push(video_id);
+    args.push("--".into());
+    args.push(video_id.into());
+    for arg in &extractor_args.post_url_args {
+        args.push(arg.clone());
+    }
     args
 }
 
@@ -465,7 +549,7 @@ fn parse_print_meta(output: &str) -> (String, String, String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::youtube_downloader::yt_dlp::{is_permanent_download_error, YtDlpDownloader};
+    use crate::youtube_downloader::yt_dlp::{is_permanent_download_error, YtDlpDownloader, ExtractorArgs};
     use crate::youtube_downloader::{YoutubeMusicDownload, YoutubeMusicDownloader};
     use bytes::Bytes;
     use futures::StreamExt;
@@ -536,57 +620,109 @@ mod tests {
 
     #[test]
     fn test_build_stream_args_with_cookie_file() {
+        let extractor_args = ExtractorArgs::youtube(Some("/home/user/.config/youtui/cookie.txt"), None);
         let args = super::build_stream_args(
             "bestaudio/best",
             "/tmp/audio.%(ext)s",
             "videoid123",
-            Some("/home/user/.config/youtui/cookie.txt"),
-            None,
+            &extractor_args,
         );
-        let cookies_pos = args.iter().position(|a| *a == "--cookies").unwrap();
+        let cookies_pos = args.iter().position(|a| a == "--cookies").unwrap();
         assert_eq!(args[cookies_pos + 1], "/home/user/.config/youtui/cookie.txt");
-        assert!(args.contains(&"youtube:player_client=web_creator"));
-        assert!(!args.iter().any(|a| *a == "--cookies-from-browser"));
-        assert_eq!(args.last().unwrap(), &"videoid123");
+        assert!(args.iter().any(|a| a == "youtube:player_client=web_creator"));
+        assert!(!args.iter().any(|a| a == "--cookies-from-browser"));
+        assert_eq!(args.last().unwrap(), "videoid123");
     }
 
     #[test]
     fn test_build_stream_args_browser_fallback() {
+        let extractor_args = ExtractorArgs::youtube(None, Some("chromium"));
         let args = super::build_stream_args(
             "bestaudio/best",
             "/tmp/audio.%(ext)s",
             "videoid123",
-            None,
-            Some("chromium"),
+            &extractor_args,
         );
-        let pos = args.iter().position(|a| *a == "--cookies-from-browser").unwrap();
+        let pos = args.iter().position(|a| a == "--cookies-from-browser").unwrap();
         assert_eq!(args[pos + 1], "chromium");
-        assert!(!args.iter().any(|a| *a == "--cookies"));
+        assert!(!args.iter().any(|a| a == "--cookies"));
     }
 
     #[test]
     fn test_build_stream_args_no_auth() {
-        let args =
-            super::build_stream_args("bestaudio/best", "/tmp/audio.%(ext)s", "videoid123", None, None);
-        assert!(!args.iter().any(|a| *a == "--cookies"));
-        assert!(!args.iter().any(|a| *a == "--cookies-from-browser"));
-        assert!(!args.iter().any(|a| *a == "--extractor-args"));
+        let extractor_args = ExtractorArgs::youtube(None, None);
+        let args = super::build_stream_args("bestaudio/best", "/tmp/audio.%(ext)s", "videoid123", &extractor_args);
+        assert!(!args.iter().any(|a| a == "--cookies"));
+        assert!(!args.iter().any(|a| a == "--cookies-from-browser"));
+        assert!(!args.iter().any(|a| a == "--extractor-args"));
+    }
+
+    #[test]
+    fn test_build_stream_args_bandcamp_with_cookie_file() {
+        let extractor_args = ExtractorArgs::bandcamp(Some("/home/user/.config/youtui/cookie.txt"), None);
+        let args = super::build_stream_args(
+            "bestaudio/best",
+            "/tmp/audio.%(ext)s",
+            "https://artist.bandcamp.com/track/song",
+            &extractor_args,
+        );
+        // Bandcamp should pass cookies but NOT YouTube extractor args
+        let cookies_pos = args.iter().position(|a| a == "--cookies").unwrap();
+        assert_eq!(args[cookies_pos + 1], "/home/user/.config/youtui/cookie.txt");
+        assert!(!args.iter().any(|a| a == "youtube:player_client=web_creator"));
+        assert!(!args.iter().any(|a| a == "--extractor-args"));
+    }
+
+    #[test]
+    fn test_build_stream_args_bandcamp_browser_fallback() {
+        let extractor_args = ExtractorArgs::bandcamp(None, Some("chromium"));
+        let args = super::build_stream_args(
+            "bestaudio/best",
+            "/tmp/audio.%(ext)s",
+            "https://artist.bandcamp.com/track/song",
+            &extractor_args,
+        );
+        let pos = args.iter().position(|a| a == "--cookies-from-browser").unwrap();
+        assert_eq!(args[pos + 1], "chromium");
+        assert!(!args.iter().any(|a| a == "--cookies"));
+        assert!(!args.iter().any(|a| a == "youtube:player_client=web_creator"));
+        assert!(!args.iter().any(|a| a == "--extractor-args"));
     }
 
     #[test]
     fn test_build_stream_args_end_of_options_before_id() {
         for id in ["videoid123", "-nIkN6le_wY"] {
+            let extractor_args = ExtractorArgs::youtube(None, None);
             let args = super::build_stream_args(
                 "bestaudio/best",
                 "/tmp/audio.%(ext)s",
                 id,
-                None,
-                None,
+                &extractor_args,
             );
-            let id_pos = args.iter().position(|a| *a == id).unwrap();
+            let id_pos = args.iter().position(|a| a == id).unwrap();
             assert_eq!(args[id_pos - 1], "--");
-            assert_eq!(args.last().unwrap(), &id);
+            assert_eq!(args.last().unwrap(), id);
         }
+    }
+
+    #[test]
+    fn bandcamp_quality_picks_lossy_tiers_not_lossless() {
+        // Best must NOT be bestaudio/best: Bandcamp's best is ALAC (122 MiB),
+        // which stalled playback for 4+ minutes on a 15-min track.
+        use crate::app::AudioQuality;
+        assert_eq!(AudioQuality::Best.bandcamp_format_string(), "mp3-v0/aac-hi/bestaudio");
+        for q in [
+            AudioQuality::Best,
+            AudioQuality::High,
+            AudioQuality::Medium,
+            AudioQuality::Low,
+        ] {
+            let s = q.bandcamp_format_string();
+            assert!(s.contains("mp3"), "must prefer mp3 tier: {s}");
+            assert!(!s.starts_with("bestaudio"), "must not fall straight to lossless: {s}");
+        }
+        // YouTube path unchanged.
+        assert_eq!(AudioQuality::Best.format_string(), "bestaudio/best");
     }
 
     #[test]
