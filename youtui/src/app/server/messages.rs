@@ -2271,6 +2271,26 @@ impl BackendTask<ArcServer> for FetchAlbumArt {
     }
 }
 
+/// Whether an album-search hit plausibly relates to what was searched.
+/// Guards the "take first YTM hit" enrichment against fuzzy mismatches:
+/// artist overlap (either direction, case-insensitive) OR album-title overlap
+/// with the expected album/video title. Empty fields never match.
+fn album_hit_matches(
+    hit_artist: &str,
+    hit_title: &str,
+    expected_artist: &str,
+    expected_album: &str,
+) -> bool {
+    fn norm(s: &str) -> String {
+        s.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+    fn overlap(a: &str, b: &str) -> bool {
+        !a.is_empty() && !b.is_empty() && (a.contains(b) || b.contains(a))
+    }
+    overlap(&norm(hit_artist), &norm(expected_artist))
+        || overlap(&norm(hit_title), &norm(expected_album))
+}
+
 impl BackendTask<ArcServer> for ValidateMetadata {
     type Output = Result<ValidatedMetadata>;
     type MetadataType = TaskMetadata;
@@ -2304,7 +2324,22 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                 };
                 match api.search_albums(search_query).await {
                     Ok(albums) => {
-                        if let Some(album_result) = albums.into_iter().next() {
+                        // Only take a hit that relates to what we searched for:
+                        // the first YTM result for a fuzzy query can be a
+                        // completely different album (false enrichment of
+                        // album + year + genres on archive uploads).
+                        let expected_artist =
+                            result.artist.clone().unwrap_or_else(|| artist.clone());
+                        let expected_album = album.clone().unwrap_or_else(|| title.clone());
+                        let album_result = albums.into_iter().find(|a| {
+                            album_hit_matches(
+                                &a.artist,
+                                &a.title,
+                                &expected_artist,
+                                &expected_album,
+                            )
+                        });
+                        if let Some(album_result) = album_result {
                             use ytmapi_rs::query::GetAlbumQuery;
                             use super::api::query_api_with_retry;
                             let query = GetAlbumQuery::new(&album_result.album_id);
@@ -2338,6 +2373,13 @@ impl BackendTask<ArcServer> for ValidateMetadata {
                                     }
                                 }
                             }
+                        } else {
+                            tracing::info!(
+                                "ValidateMetadata: album search hit rejected (no artist/album relation to '{}' / '{}'); skipping enrichment for video_id={}",
+                                expected_artist,
+                                expected_album,
+                                video_id
+                            );
                         }
                     }
                     Err(e) => {
@@ -2868,6 +2910,56 @@ mod yt_dlp_target_arg_tests {
     fn bandcamp_track_url_passes_through() {
         let url = "https://domnoise.bandcamp.com/track/x";
         assert_eq!(yt_dlp_target_arg(url), url);
+    }
+}
+
+#[cfg(test)]
+mod album_hit_match_tests {
+    use super::album_hit_matches;
+
+    #[test]
+    fn rejects_unrelated_first_hit() {
+        // The Y5SPwKNGyf8 regression: query "Olho Seco Olho Por Olho"
+        // fuzzy-matched a totally different album.
+        assert!(!album_hit_matches(
+            "Some Brazilian Band",
+            "Manifesto Musical 2 (Ao Vivo)",
+            "Olho Seco",
+            "Olho Por Olho",
+        ));
+    }
+
+    #[test]
+    fn accepts_artist_overlap() {
+        assert!(album_hit_matches(
+            "Olho Seco",
+            "Something Else",
+            "olho seco",
+            "Olho Por Olho",
+        ));
+        // Either direction, whitespace-normalized
+        assert!(album_hit_matches(
+            "The  Strokes",
+            "x",
+            "strokes",
+            "y",
+        ));
+    }
+
+    #[test]
+    fn accepts_album_title_overlap() {
+        assert!(album_hit_matches(
+            "Different Artist",
+            "Olho Por Olho (Remastered)",
+            "Olho Seco",
+            "olho por olho",
+        ));
+    }
+
+    #[test]
+    fn empty_fields_never_match() {
+        assert!(!album_hit_matches("", "", "Olho Seco", "Olho Por Olho"));
+        assert!(!album_hit_matches("Olho Seco", "", "", ""));
     }
 }
 
