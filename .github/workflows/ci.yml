@@ -65,6 +65,14 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit
       - name: Audit
-        run: cargo audit --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099 --ignore RUSTSEC-2026-0104 --ignore RUSTSEC-2026-0204 --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195 --ignore RUSTSEC-2026-0192 --ignore RUSTSEC-2026-0190 --ignore RUSTSEC-2026-0002 --ignore RUSTSEC-2026-0186 --ignore RUSTSEC-2026-0258 --ignore RUSTSEC-2026-0285
+        # zstd advisories (RUSTSEC-2026-0344 ruzstd, 0403 zstd-safe, plus unsound
+        # cluster 0395/0397/0399/0400/0401/0402/0404/0406 and warnings 0221/0253/0372/0386):
+        #   pulled in only via include-bytes-zstd(-macro), a compile-time proc-macro
+        #   used by ib-romaji to embed compressed dictionaries. Proc-macros run at
+        #   build time and are NOT linked into the release binary, so these bugs
+        #   cannot reach end users of youtui. The crate is unmaintained (last
+        #   release 2023) and pins zstd 0.12; no patched upstream path exists.
+        #   Ignoring until ib-romaji drops that dependency.
+        run: cargo audit --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099 --ignore RUSTSEC-2026-0104 --ignore RUSTSEC-2026-0204 --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195 --ignore RUSTSEC-2026-0192 --ignore RUSTSEC-2026-0190 --ignore RUSTSEC-2026-0002 --ignore RUSTSEC-2026-0186 --ignore RUSTSEC-2026-0258 --ignore RUSTSEC-2026-0285 --ignore RUSTSEC-2026-0221 --ignore RUSTSEC-2026-0253 --ignore RUSTSEC-2026-0344 --ignore RUSTSEC-2026-0372 --ignore RUSTSEC-2026-0386 --ignore RUSTSEC-2026-0395 --ignore RUSTSEC-2026-0397 --ignore RUSTSEC-2026-0399 --ignore RUSTSEC-2026-0400 --ignore RUSTSEC-2026-0401 --ignore RUSTSEC-2026-0402 --ignore RUSTSEC-2026-0403 --ignore RUSTSEC-2026-0404 --ignore RUSTSEC-2026-0406
 
 
