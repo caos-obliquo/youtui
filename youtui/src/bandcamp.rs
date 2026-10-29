@@ -809,6 +809,64 @@ mod tests {
     }
 
     #[test]
+    fn five_way_split_all_titles_split_at_first_separator_only() {
+        // Exact flat-playlist titles from the brutalizerecs 5-way split.
+        // Several titles contain INNER " - " segments ("(REEE - MIX 3)",
+        // "D.O.M. - - LIVE...", "Igualitarismo da tortura - Manifesto...");
+        // only the FIRST separator is the artist boundary.
+        let roster = "D.O.M. X ALMA SEBOSA X KKAAOOSS X SINUSRORIS X ROUBE SUA VIDA";
+        let album = format!("{} - \"Destroy Fascist Police\" - 5 Way Split", roster);
+        let cases: &[(&str, &str, &str)] = &[
+            (
+                "KKAAOOSS - A NICE DAY FOR DIE (REMIX I)",
+                "KKAAOOSS",
+                "A NICE DAY FOR DIE (REMIX I)",
+            ),
+            (
+                "KKAAOOSS - A NICE DAY FOR DIE (REE-MIX 2)",
+                "KKAAOOSS",
+                "A NICE DAY FOR DIE (REE-MIX 2)",
+            ),
+            (
+                "KKAAOOSS - A NICE DAY FOR DIE (REEE - MIX 3)",
+                "KKAAOOSS",
+                "A NICE DAY FOR DIE (REEE - MIX 3)",
+            ),
+            (
+                "4KKAAOOSS - A NICE DAY FOR DIE (REEEE - MIX 4)",
+                "4KKAAOOSS",
+                "A NICE DAY FOR DIE (REEEE - MIX 4)",
+            ),
+            ("SINUSRORIS - Eles que Morram", "SINUSRORIS", "Eles que Morram"),
+            (
+                "ROUBESUAVIDA - Gravação live in Birigui-sp House of Noise 16\\5\\26",
+                "ROUBESUAVIDA",
+                "Gravação live in Birigui-sp House of Noise 16\\5\\26",
+            ),
+            (
+                "D.O.M. - - LIVE CAFUNDÓ - ANEDONIA NOISE FEST - 20.09.2026",
+                "D.O.M.",
+                "- LIVE CAFUNDÓ - ANEDONIA NOISE FEST - 20.09.2026",
+            ),
+            (
+                "D.O.M. - Igualitarismo da tortura - Manifesto Anti-Facho",
+                "D.O.M.",
+                "Igualitarismo da tortura - Manifesto Anti-Facho",
+            ),
+            (
+                "ALMA SEBOSA feat. MÁGOA - LIVE CAFUNDÓ - ANEDONIA NOISE FEST - 20.09.2026",
+                "ALMA SEBOSA feat. MÁGOA",
+                "LIVE CAFUNDÓ - ANEDONIA NOISE FEST - 20.09.2026",
+            ),
+        ];
+        for (raw, want_artist, want_title) in cases {
+            let r = resolve_bandcamp_metadata(raw, "brutalizerecs", Some(&album), None, None);
+            assert_eq!(r.artist, *want_artist, "artist for {raw:?}");
+            assert_eq!(r.title, *want_title, "title for {raw:?}");
+        }
+    }
+
+    #[test]
     fn resolve_split_album_prefix_does_not_beat_title_artist() {
         // Even when the album name leads with the roster, the per-track title
         // prefix must win as the artist.
