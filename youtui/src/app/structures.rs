@@ -502,11 +502,14 @@ pub fn has_album_upload_tag(title: &str) -> bool {
         .filter(|c| c.is_alphanumeric())
         .map(|c| c.to_ascii_lowercase())
         .collect();
-    const TAGS: [&str; 14] = [
+    // "session": live-session uploads ("Brutal Noisegore Session") are
+    // album-like — short (<900s) so the duration gate misses them, but their
+    // numbered tracklist in the description must still drive an album split.
+    const TAGS: [&str; 15] = [
         "fullalbum", "fullep", "fulllp", "fulldemo", "fullsingle",
         "fulllength", "studioalbum", "livealbum", "officialalbum",
         "compilation", "bootleg", "anthology", "collection",
-        "selftitled",
+        "selftitled", "session",
     ];
     TAGS.iter().any(|tag| compact.contains(tag))
 }
