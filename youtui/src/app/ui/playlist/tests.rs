@@ -1579,6 +1579,41 @@ fn artist_from_raw_title_endash_keeps_uploader_for_singles() {
 }
 
 #[test]
+fn artist_from_raw_title_pipe_separator_always_wins() {
+    // Given: "Band | Track" archive-channel convention (mYf9-HNZ-6A:
+    // "Military Position | Made To Fight" on reupload channel "Harari")
+    // Then: left side becomes the artist, not the uploader
+    assert_eq!(
+        Playlist::artist_from_raw_title("Military Position | Made To Fight", "Harari", false),
+        "Military Position"
+    );
+    assert_eq!(
+        Playlist::artist_from_raw_title("Some Band | Live Track", "ReuploadChannel", true),
+        "Some Band"
+    );
+}
+
+#[test]
+fn strip_year_from_title_handles_bracketed_year() {
+    // Given: tag-strip glued a bracketed year to the title (pPydUFUn0dw:
+    // "Egoist - O Egoísmo Humano Alimenta Meu Sofrer (Single) [2016]")
+    // Then: the [2016] suffix is gone
+    assert_eq!(
+        Playlist::strip_year_from_title("O Egoísmo Humano Alimenta Meu Sofrer[2016]"),
+        "O Egoísmo Humano Alimenta Meu Sofrer"
+    );
+    assert_eq!(
+        Playlist::strip_year_from_title("Song Title [2005]"),
+        "Song Title"
+    );
+    // Non-year brackets untouched
+    assert_eq!(
+        Playlist::strip_year_from_title("Song [Remix]"),
+        "Song [Remix]"
+    );
+}
+
+#[test]
 fn clean_title_strips_concatenated_fullalbum_tag() {
     // Given: a title with the concatenated [FULLALBUM] tag
     // When: clean_title_for_metadata runs

@@ -1302,12 +1302,16 @@ impl Playlist {
     /// (`album_candidate`) because for singles "Song – From Album" would put
     /// the song name in the artist field.
     fn artist_from_raw_title(title: &str, uploader: &str, album_candidate: bool) -> String {
-        if let Some((left, _)) = title.split_once(" - ") {
-            let left = left.trim();
-            if !left.is_empty() && left.len() < 80 {
-                return left.to_string();
+        // " - " and " | " are always-on artist separators ("Band | Track" is a
+        // common archive-channel convention); en/em dashes stay gated.
+        for sep in [" - ", " | "] {
+            if let Some((left, _)) = title.split_once(sep) {
+                let left = left.trim();
+                if !left.is_empty() && left.len() < 80 {
+                    return left.to_string();
+                }
+                return uploader.to_string();
             }
-            return uploader.to_string();
         }
         if album_candidate {
             for sep in [" – ", " — "] {
@@ -1455,6 +1459,16 @@ impl Playlist {
             } else {
                 title.to_string()
             }
+        } else if let Some(idx) = title.rfind('[')
+            && let Ok(y) = title[idx + 1..]
+                .trim_end_matches(']')
+                .trim()
+                .parse::<u16>()
+            && (1900..2100).contains(&y)
+        {
+            // Bracketed year glued at the end, e.g. tag-strip left
+            // "O Egoísmo Humano Alimenta Meu Sofrer[2016]".
+            title[..idx].trim().to_string()
         } else {
             title.to_string()
         }
