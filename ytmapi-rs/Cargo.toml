@@ -18,7 +18,7 @@ tokio = "1.52.1"
 # As of 26/4/24 the following are reqwest default features:
 # http2, default-tls, charset
 # stream is not a default feature. It is used explicitly - allows post queries to be streamed from a file handle.
-reqwest = { version = "0.11", features = [
+reqwest = { version = "0.12", features = [
   "json",
   "stream",
   "gzip",
@@ -44,7 +44,8 @@ default = ["default-tls", "simplified-queries"]
 # https://docs.rs/reqwest/latest/reqwest/tls/index.html
 default-tls = ["reqwest/default-tls"]
 native-tls = ["reqwest/native-tls"]
-rustls = ["reqwest/rustls"]
+# reqwest 0.12 renamed the `rustls` feature to `rustls-tls`.
+rustls = ["reqwest/rustls-tls"]
 # Enable the use of simplified queries such as YtMusic::search("xx")
 simplified-queries = []
 # Enable functions that allow interoperability with the `serde_json` crate.

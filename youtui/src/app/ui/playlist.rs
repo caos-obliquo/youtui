@@ -1296,6 +1296,36 @@ impl Playlist {
     }
 
     /// Strip "{artist} - " prefix from title (case-insensitive) for clean metadata lookup
+    /// Extract the artist from a raw YouTube video title, falling back to the
+    /// uploader (channel) name. "Artist - X" (ASCII hyphen) always wins — the
+    /// legacy behavior. En/em dashes only win for album-upload candidates
+    /// (`album_candidate`) because for singles "Song – From Album" would put
+    /// the song name in the artist field.
+    fn artist_from_raw_title(title: &str, uploader: &str, album_candidate: bool) -> String {
+        // " - " and " | " are always-on artist separators ("Band | Track" is a
+        // common archive-channel convention); en/em dashes stay gated.
+        for sep in [" - ", " | "] {
+            if let Some((left, _)) = title.split_once(sep) {
+                let left = left.trim();
+                if !left.is_empty() && left.len() < 80 {
+                    return left.to_string();
+                }
+                return uploader.to_string();
+            }
+        }
+        if album_candidate {
+            for sep in [" – ", " — "] {
+                if let Some((left, _)) = title.split_once(sep) {
+                    let left = left.trim();
+                    if !left.is_empty() && left.len() < 80 {
+                        return left.to_string();
+                    }
+                }
+            }
+        }
+        uploader.to_string()
+    }
+
     fn strip_artist_prefix(artist: &str, title: &str) -> String {
         let lower = title.to_lowercase();
         let art_lower = artist.to_lowercase();
@@ -1429,6 +1459,16 @@ impl Playlist {
             } else {
                 title.to_string()
             }
+        } else if let Some(idx) = title.rfind('[')
+            && let Ok(y) = title[idx + 1..]
+                .trim_end_matches(']')
+                .trim()
+                .parse::<u16>()
+            && (1900..2100).contains(&y)
+        {
+            // Bracketed year glued at the end, e.g. tag-strip left
+            // "O Egoísmo Humano Alimenta Meu Sofrer[2016]".
+            title[..idx].trim().to_string()
         } else {
             title.to_string()
         }
@@ -1524,6 +1564,7 @@ impl Playlist {
             &entry.uploader,
             entry.album.as_deref(),
             entry.track.as_deref(),
+            entry.artist.as_deref(),
         );
         info!(
             "bandcamp track: artist={}, title={}, album={:?}, duration={}s",
@@ -1637,6 +1678,7 @@ impl Playlist {
                 &uploader,
                 meta.album.as_deref(),
                 meta.track.as_deref(),
+                None, // single-track path: no tralbum page fetched, prefix rules apply
             );
             info!(
                 "add_yt_video: bandcamp metadata -> artist={}, title={}, album={:?}",
@@ -1644,14 +1686,13 @@ impl Playlist {
             );
             (resolved.artist, resolved.title, resolved.album)
         } else {
-            // Try to extract real artist from title ("Artist - Song"), fallback to uploader
-            let artist = if title.contains(" - ") {
-                title.splitn(2, " - ").next().map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty() && s.len() < 80)
-                    .unwrap_or_else(|| uploader.clone())
-            } else {
-                uploader.clone()
-            };
+            // Try to extract real artist from title ("Artist - Song"), fallback to uploader.
+            // En/em dashes only count for album-length uploads: the convention
+            // there is "Artist – Album" (archive channels), while for singles
+            // "Song – From Album" would misassign the artist.
+            let album_candidate = crate::app::structures::has_album_upload_tag(&title.to_lowercase())
+                || meta.duration_secs.map(|d| d > 900.0).unwrap_or(false);
+            let artist = Self::artist_from_raw_title(&title, &uploader, album_candidate);
             (artist, title.clone(), None)
         };
         let mut duration = String::from("0");

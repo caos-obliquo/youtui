@@ -901,6 +901,7 @@ impl_youtui_task_handler!(
                             &entry.uploader,
                             entry.album.as_deref(),
                             entry.track.as_deref(),
+                            entry.artist.as_deref(),
                         );
                         probe = Some((id, resolved.artist, resolved.title, album));
                     }

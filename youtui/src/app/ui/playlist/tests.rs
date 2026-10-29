@@ -549,9 +549,10 @@ fn bandcamp_entry_keeps_track_number_and_real_song_title() {
         album: Some("NOISE AS A FORM OF EXPRESSION VOL.4".to_string()),
         track: None,
         track_no: Some("3".to_string()),
+        artist: None,
         cover_url: None,
-
-        year: None,    };
+        year: None,
+    };
     let id = p.insert_bandcamp_track_entry(&entry).expect("row inserted");
     let idx = p.get_index_from_id(id).expect("index resolves");
     let s = p.list.get_list_iter().nth(idx).unwrap();
@@ -1536,6 +1537,80 @@ fn strip_artist_prefix_trims_em_dash_separator() {
     let out = Playlist::strip_artist_prefix("Band", "Band \u{2014} Song Title");
     // Then: the em-dash is trimmed too
     assert_eq!(out, "Song Title");
+}
+
+#[test]
+fn artist_from_raw_title_hyphen_always_wins() {
+    // Given: ASCII hyphen separator (legacy behavior, any video)
+    // Then: left side becomes the artist, not the uploader
+    assert_eq!(
+        Playlist::artist_from_raw_title("Olho Seco - Olho Por Olho (1989)", "Rubbish Music", false),
+        "Olho Seco"
+    );
+}
+
+#[test]
+fn artist_from_raw_title_endash_wins_for_album_uploads() {
+    // Given: en-dash "Artist – Album" title on an album-length upload
+    // (the Y5SPwKNGyf8 case: archive channel uploader must not win)
+    assert_eq!(
+        Playlist::artist_from_raw_title("Olho Seco – Olho Por Olho (1989)", "Rubbish Music", true),
+        "Olho Seco"
+    );
+    assert_eq!(
+        Playlist::artist_from_raw_title("Band \u{2014} Album Name", "SomeChannel", true),
+        "Band"
+    );
+}
+
+#[test]
+fn artist_from_raw_title_endash_keeps_uploader_for_singles() {
+    // Given: en-dash "Song – From Album" on a normal single video
+    // Then: left side is the song, not the artist — uploader stays
+    assert_eq!(
+        Playlist::artist_from_raw_title("Last Nite – Is This It", "The Strokes", false),
+        "The Strokes"
+    );
+    // No separator at all → uploader
+    assert_eq!(
+        Playlist::artist_from_raw_title("Just A Video", "SomeChannel", true),
+        "SomeChannel"
+    );
+}
+
+#[test]
+fn artist_from_raw_title_pipe_separator_always_wins() {
+    // Given: "Band | Track" archive-channel convention (mYf9-HNZ-6A:
+    // "Military Position | Made To Fight" on reupload channel "Harari")
+    // Then: left side becomes the artist, not the uploader
+    assert_eq!(
+        Playlist::artist_from_raw_title("Military Position | Made To Fight", "Harari", false),
+        "Military Position"
+    );
+    assert_eq!(
+        Playlist::artist_from_raw_title("Some Band | Live Track", "ReuploadChannel", true),
+        "Some Band"
+    );
+}
+
+#[test]
+fn strip_year_from_title_handles_bracketed_year() {
+    // Given: tag-strip glued a bracketed year to the title (pPydUFUn0dw:
+    // "Egoist - O Egoísmo Humano Alimenta Meu Sofrer (Single) [2016]")
+    // Then: the [2016] suffix is gone
+    assert_eq!(
+        Playlist::strip_year_from_title("O Egoísmo Humano Alimenta Meu Sofrer[2016]"),
+        "O Egoísmo Humano Alimenta Meu Sofrer"
+    );
+    assert_eq!(
+        Playlist::strip_year_from_title("Song Title [2005]"),
+        "Song Title"
+    );
+    // Non-year brackets untouched
+    assert_eq!(
+        Playlist::strip_year_from_title("Song [Remix]"),
+        "Song [Remix]"
+    );
 }
 
 #[test]

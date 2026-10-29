@@ -80,6 +80,11 @@ pub struct BandcampTrackEntry {
     pub album: Option<String>,
     pub track: Option<String>,
     pub track_no: Option<String>,
+    /// Real artist from the tralbum page: per-track `artist` on compilations,
+    /// album-level `current.artist` on single-band releases. Flat-playlist JSON
+    /// often carries neither (`playlist_uploader: null`), so without this the
+    /// queue artist column stays empty for artist-owned album pages.
+    pub artist: Option<String>,
     /// Album art URL shared by every track on the page.
     pub cover_url: Option<String>,
     /// Year published by Bandcamp for the album, shared by every track.
@@ -290,6 +295,7 @@ pub fn parse_bandcamp_album_entries(stdout: &str) -> Vec<BandcampTrackEntry> {
             album,
             track,
             track_no: None,
+            artist: None,
             cover_url: None,
             year: None,
         });
@@ -417,6 +423,26 @@ pub fn parse_tralbum_art_url(html: &str) -> Option<String> {
     Some(rest[..end].to_string())
 }
 
+/// Album-level artist from the tralbum `current` blob (`current.artist`).
+///
+/// Per-track `artist` is null on single-band album pages (Bandcamp only fills
+/// it for compilations), so this is the only artist source for releases like
+/// `anavenus.bandcamp.com/album/anal-seppuku`. The flat-playlist probe also
+/// reports `playlist_uploader: null` for those pages, which previously left
+/// the queue artist column empty.
+pub fn parse_tralbum_artist(html: &str) -> Option<String> {
+    const CURRENT: &str = "&quot;current&quot;";
+    const TRACKINFO: &str = "&quot;trackinfo&quot;";
+    const KEY: &str = "&quot;artist&quot;:&quot;";
+    let blob_start = html.find(CURRENT)?;
+    let blob_end = html[blob_start..].find(TRACKINFO)? + blob_start;
+    let start = html[blob_start..blob_end].find(KEY)? + blob_start + KEY.len();
+    let rest = &html[start..blob_end];
+    let end = rest.find("&quot;")?;
+    let artist = decode_html_entities(&rest[..end]);
+    if artist.trim().is_empty() { None } else { Some(artist) }
+}
+
 /// Year Bandcamp itself publishes for the album, read from the tralbum
 /// `current.release_date` blob (e.g. `"28 Sep 2026 18:26:00 GMT"` -> `"2026"`).
 ///
@@ -441,8 +467,9 @@ pub fn parse_tralbum_release_year(html: &str) -> Option<String> {
     Some(year)
 }
 
-/// Fill missing durations and track numbers on `entries` from the album page's
-/// `trackinfo` payload.
+/// Fill missing durations, track numbers, and artists on `entries` from the
+/// album page's `trackinfo` payload, falling back to `album_artist` (the
+/// tralbum `current.artist` blob) when a track carries no per-track artist.
 ///
 /// Matches on the `/track/...` path so a re-ordered or partially-returned
 /// flat-playlist cannot shift metadata onto the wrong tracks; falls back to
@@ -451,6 +478,7 @@ pub fn parse_tralbum_release_year(html: &str) -> Option<String> {
 pub fn merge_tralbum_metadata(
     entries: &mut [BandcampTrackEntry],
     tracks: &[TralbumTrack],
+    album_artist: Option<&str>,
 ) -> usize {
     fn url_path(url: &str) -> &str {
         url.split("://")
@@ -467,16 +495,36 @@ pub fn merge_tralbum_metadata(
             tracks.iter().find(|t| t.url_path.as_deref() == Some(path))
         };
         let source = by_path.or_else(|| tracks.get(idx));
-        let Some(t) = source else { continue };
         let mut touched_entry = false;
-        if entry.duration_secs <= 0.0 && t.duration_secs > 0.0 {
-            entry.duration_secs = t.duration_secs;
-            touched_entry = true;
+        if let Some(t) = source {
+            if entry.duration_secs <= 0.0 && t.duration_secs > 0.0 {
+                entry.duration_secs = t.duration_secs;
+                touched_entry = true;
+            }
+            if entry.track_no.is_none()
+                && let Some(n) = t.track_num
+            {
+                entry.track_no = Some(n.to_string());
+                touched_entry = true;
+            }
+            if entry.artist.is_none()
+                && !t.artist.trim().is_empty()
+            {
+                entry.artist = Some(t.artist.clone());
+                touched_entry = true;
+            }
         }
-        if entry.track_no.is_none()
-            && let Some(n) = t.track_num
+        // Single-band album pages null out per-track artist; the album-level
+        // `current.artist` still names the band. Split albums, however, set
+        // album-level artist to the full roster joined by " X " or " / "
+        // ("D.O.M. X ALMA SEBOSA X KKAAOOSS"); using that as every track's
+        // artist erases the per-track artist that the title prefix carries.
+        if entry.artist.is_none()
+            && let Some(a) = album_artist
+            && !a.trim().is_empty()
+            && !is_multi_artist_roster(a)
         {
-            entry.track_no = Some(n.to_string());
+            entry.artist = Some(a.to_string());
             touched_entry = true;
         }
         if touched_entry {
@@ -484,6 +532,16 @@ pub fn merge_tralbum_metadata(
         }
     }
     touched
+}
+
+/// True when an album-level artist string is a multi-band split roster rather
+/// than a single artist. Bandcamp joins split artists with `X` or `/`
+/// ("D.O.M. X ALMA SEBOSA X KKAAOOSS", "Alma Sebosa / Obscuruus HarshNoise").
+/// Such rosters must not overwrite a per-track artist.
+pub fn is_multi_artist_roster(artist: &str) -> bool {
+    artist
+        .split_whitespace()
+        .any(|tok| tok == "X" || tok == "x" || tok == "/")
 }
 
 pub fn url_to_host(url: &str) -> Option<&str> {
@@ -515,11 +573,13 @@ pub struct ResolvedBandcampMetadata {
 /// Resolve real artist, clean title, and album for a bandcamp track.
 ///
 /// Priority for artist:
-/// 1. album-name prefix when it differs from the page owner (label-hosted
+/// 1. tralbum artist (per-track on compilations, album-level on single-band
+///    pages) — Bandcamp's own ground truth, passed in by the enrichment step
+/// 2. album-name prefix when it differs from the page owner (label-hosted
 ///    albums, e.g. "Putrefação Humana - Colhendo Desespero EP (SPHC)")
-/// 2. title prefix when it differs from the page owner
-/// 3. title prefix (artist pages self-prefix, e.g. "D.O.M. - Song")
-/// 4. uploader as last resort
+/// 3. title prefix when it differs from the page owner
+/// 4. title prefix (artist pages self-prefix, e.g. "D.O.M. - Song")
+/// 5. uploader as last resort
 ///
 /// Title prefers the `track` field (yt-dlp's definitive song name), else the
 /// raw title with the owner/artist prefix stripped. Album keeps its name
@@ -529,6 +589,7 @@ pub fn resolve_bandcamp_metadata(
     uploader: &str,
     album: Option<&str>,
     track: Option<&str>,
+    tralbum_artist: Option<&str>,
 ) -> ResolvedBandcampMetadata {
     fn split_prefix(s: &str) -> Option<(&str, &str)> {
         s.split_once(" - ")
@@ -537,12 +598,18 @@ pub fn resolve_bandcamp_metadata(
     }
     let title_prefix = split_prefix(raw_title);
     let album_prefix = album.and_then(split_prefix);
+    // A split album's leading segment is the full artist roster; it is not a
+    // per-track artist, so never let it beat the title prefix ("KKAAOOSS - ...").
+    let album_prefix = album_prefix.filter(|(ap, _)| !is_multi_artist_roster(ap));
 
-    let artist = match (album_prefix, title_prefix) {
-        (Some((ap, _)), _) if ap != uploader => ap.to_string(),
-        (_, Some((tp, _))) if tp != uploader => tp.to_string(),
-        (_, Some((tp, _))) => tp.to_string(),
-        _ => uploader.to_string(),
+    let artist = match tralbum_artist.map(str::trim).filter(|a| !a.is_empty()) {
+        Some(a) => a.to_string(),
+        None => match (album_prefix, title_prefix) {
+            (Some((ap, _)), _) if ap != uploader => ap.to_string(),
+            (_, Some((tp, _))) if tp != uploader => tp.to_string(),
+            (_, Some((tp, _))) => tp.to_string(),
+            _ => uploader.to_string(),
+        },
     };
 
     let album = match (album, album_prefix) {
@@ -617,6 +684,20 @@ mod tests {
     }
 
     #[test]
+    fn album_artist_read_from_tralbum_current_blob() {
+        // anavenus.bandcamp.com shape: current.artist present, per-track
+        // artist null. (The literal page also nests `artist` objects after
+        // current; the parser only scans the current..trackinfo slice.)
+        let page = r#"<div data-tralbum="{&quot;current&quot;:{&quot;title&quot;:&quot;Anal Seppuku&quot;,&quot;artist&quot;:&quot;Ana Venus&quot;,&quot;release_date&quot;:&quot;01 Jan 2014 00:00:00 GMT&quot;},&quot;trackinfo&quot;:[{&quot;artist&quot;:null,&quot;title&quot;:&quot;Death By Cumshots&quot;}]}"></div>"#;
+        assert_eq!(parse_tralbum_artist(page).as_deref(), Some("Ana Venus"));
+        assert!(parse_tralbum_artist("<html>challenge</html>").is_none());
+        let no_artist = r#"<div data-tralbum="{&quot;current&quot;:{&quot;title&quot;:&quot;X&quot;},&quot;trackinfo&quot;:[]}"></div>"#;
+        assert!(parse_tralbum_artist(no_artist).is_none());
+        let blank = r#"<div data-tralbum="{&quot;current&quot;:{&quot;artist&quot;:&quot;&quot;},&quot;trackinfo&quot;:[]}"></div>"#;
+        assert!(parse_tralbum_artist(blank).is_none());
+    }
+
+    #[test]
     fn merge_metadata_matches_by_path_not_position() {
         let mut entries = vec![
             BandcampTrackEntry {
@@ -627,6 +708,7 @@ mod tests {
                 album: None,
                 track: None,
                 track_no: None,
+                artist: None,
                 cover_url: None,
                 year: None,
             },
@@ -638,16 +720,178 @@ mod tests {
                 album: None,
                 track: None,
                 track_no: None,
+                artist: None,
                 cover_url: None,
                 year: None,
             },
         ];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
-        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 2);
+        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks, None), 2);
         assert!((entries[0].duration_secs - 364.308).abs() < f64::EPSILON);
         assert!((entries[1].duration_secs - 243.435).abs() < f64::EPSILON);
         assert_eq!(entries[0].track_no.as_deref(), Some("2"));
         assert_eq!(entries[1].track_no.as_deref(), Some("1"));
+        // Per-track tralbum artist is carried through.
+        assert_eq!(entries[0].artist.as_deref(), Some("Flesh-Control"));
+        assert_eq!(entries[1].artist.as_deref(), Some("Boredom Knife"));
+    }
+
+    #[test]
+    fn merge_metadata_fills_artist_from_album_level_when_track_artist_null() {
+        // anavenus.bandcamp.com/album/anal-seppuku: single-band page, every
+        // per-track artist is null, but `current.artist` names the band.
+        let mut entries = vec![BandcampTrackEntry {
+            url: "https://anavenus.bandcamp.com/track/death-by-cumshots".to_string(),
+            title: "Death By Cumshots".to_string(),
+            duration_secs: 0.0,
+            uploader: String::new(),
+            album: Some("Anal Seppuku".to_string()),
+            track: None,
+            track_no: None,
+            artist: None,
+            cover_url: None,
+            year: None,
+        }];
+        let tracks = vec![TralbumTrack {
+            title: "Death By Cumshots".to_string(),
+            artist: String::new(), // null in data-tralbum
+            duration_secs: 131.805,
+            url_path: Some("/track/death-by-cumshots".to_string()),
+            track_num: Some(1),
+        }];
+        assert_eq!(
+            merge_tralbum_metadata(&mut entries, &tracks, Some("Ana Venus")),
+            1
+        );
+        assert_eq!(entries[0].artist.as_deref(), Some("Ana Venus"));
+    }
+
+    #[test]
+    fn merge_metadata_skips_split_roster_artist() {
+        // brutalizerecs 5-way split: tralbum per-track artist is null for
+        // every track and `current.artist` is the full roster joined by " X ".
+        // That roster must NOT become each track's artist; the title prefix
+        // ("KKAAOOSS - ...") carries the real per-track artist.
+        let roster = "D.O.M. X ALMA SEBOSA X KKAAOOSS X SINUSRORIS X ROUBE SUA VIDA";
+        let mut entries = vec![BandcampTrackEntry {
+            url: "https://brutalizerecs.bandcamp.com/track/a-nice-day-for-die-remix-i".to_string(),
+            title: "KKAAOOSS - A NICE DAY FOR DIE (REMIX I)".to_string(),
+            duration_secs: 0.0,
+            uploader: String::new(),
+            album: Some(format!("{} - \"Destroy Fascist Police\" - 5 Way Split", roster)),
+            track: None,
+            track_no: None,
+            artist: None,
+            cover_url: None,
+            year: None,
+        }];
+        let tracks = vec![TralbumTrack {
+            title: "KKAAOOSS - A NICE DAY FOR DIE (REMIX I)".to_string(),
+            artist: String::new(), // null in data-tralbum
+            duration_secs: 100.0,
+            url_path: Some("/track/a-nice-day-for-die-remix-i".to_string()),
+            track_num: Some(1),
+        }];
+        merge_tralbum_metadata(&mut entries, &tracks, Some(roster));
+        // Roster rejected → artist stays None so title-prefix resolution wins.
+        assert_eq!(entries[0].artist, None);
+
+        // End-to-end: title prefix yields the per-track artist, not the roster.
+        let resolved = resolve_bandcamp_metadata(
+            &entries[0].title,
+            "",
+            entries[0].album.as_deref(),
+            None,
+            entries[0].artist.as_deref(),
+        );
+        assert_eq!(resolved.artist, "KKAAOOSS");
+        assert_eq!(resolved.title, "A NICE DAY FOR DIE (REMIX I)");
+    }
+
+    #[test]
+    fn five_way_split_all_titles_split_at_first_separator_only() {
+        // Exact flat-playlist titles from the brutalizerecs 5-way split.
+        // Several titles contain INNER " - " segments ("(REEE - MIX 3)",
+        // "D.O.M. - - LIVE...", "Igualitarismo da tortura - Manifesto...");
+        // only the FIRST separator is the artist boundary.
+        let roster = "D.O.M. X ALMA SEBOSA X KKAAOOSS X SINUSRORIS X ROUBE SUA VIDA";
+        let album = format!("{} - \"Destroy Fascist Police\" - 5 Way Split", roster);
+        let cases: &[(&str, &str, &str)] = &[
+            (
+                "KKAAOOSS - A NICE DAY FOR DIE (REMIX I)",
+                "KKAAOOSS",
+                "A NICE DAY FOR DIE (REMIX I)",
+            ),
+            (
+                "KKAAOOSS - A NICE DAY FOR DIE (REE-MIX 2)",
+                "KKAAOOSS",
+                "A NICE DAY FOR DIE (REE-MIX 2)",
+            ),
+            (
+                "KKAAOOSS - A NICE DAY FOR DIE (REEE - MIX 3)",
+                "KKAAOOSS",
+                "A NICE DAY FOR DIE (REEE - MIX 3)",
+            ),
+            (
+                "4KKAAOOSS - A NICE DAY FOR DIE (REEEE - MIX 4)",
+                "4KKAAOOSS",
+                "A NICE DAY FOR DIE (REEEE - MIX 4)",
+            ),
+            ("SINUSRORIS - Eles que Morram", "SINUSRORIS", "Eles que Morram"),
+            (
+                "ROUBESUAVIDA - Gravação live in Birigui-sp House of Noise 16\\5\\26",
+                "ROUBESUAVIDA",
+                "Gravação live in Birigui-sp House of Noise 16\\5\\26",
+            ),
+            (
+                "D.O.M. - - LIVE CAFUNDÓ - ANEDONIA NOISE FEST - 20.09.2026",
+                "D.O.M.",
+                "- LIVE CAFUNDÓ - ANEDONIA NOISE FEST - 20.09.2026",
+            ),
+            (
+                "D.O.M. - Igualitarismo da tortura - Manifesto Anti-Facho",
+                "D.O.M.",
+                "Igualitarismo da tortura - Manifesto Anti-Facho",
+            ),
+            (
+                "ALMA SEBOSA feat. MÁGOA - LIVE CAFUNDÓ - ANEDONIA NOISE FEST - 20.09.2026",
+                "ALMA SEBOSA feat. MÁGOA",
+                "LIVE CAFUNDÓ - ANEDONIA NOISE FEST - 20.09.2026",
+            ),
+        ];
+        for (raw, want_artist, want_title) in cases {
+            let r = resolve_bandcamp_metadata(raw, "brutalizerecs", Some(&album), None, None);
+            assert_eq!(r.artist, *want_artist, "artist for {raw:?}");
+            assert_eq!(r.title, *want_title, "title for {raw:?}");
+        }
+    }
+
+    #[test]
+    fn resolve_split_album_prefix_does_not_beat_title_artist() {
+        // Even when the album name leads with the roster, the per-track title
+        // prefix must win as the artist.
+        let roster = "D.O.M. X ALMA SEBOSA X KKAAOOSS X SINUSRORIS X ROUBE SUA VIDA";
+        let album = format!("{} - \"Destroy Fascist Police\" - 5 Way Split", roster);
+        let resolved = resolve_bandcamp_metadata(
+            "SINUSRORIS - Eles que Morram",
+            "",
+            Some(&album),
+            None,
+            None,
+        );
+        assert_eq!(resolved.artist, "SINUSRORIS");
+        assert_eq!(resolved.title, "Eles que Morram");
+        // The roster album name is kept intact (no " - " prefix strip of artist).
+        assert!(resolved.album.unwrap().contains("5 Way Split"));
+    }
+
+    #[test]
+    fn single_slash_roster_also_rejected_but_plain_slash_band_kept() {
+        assert!(is_multi_artist_roster("Alma Sebosa / Obscuruus HarshNoise / D.O.M. / Interzona"));
+        assert!(is_multi_artist_roster("D.O.M. X ALMA SEBOSA X KKAAOOSS"));
+        // A band whose name contains "/" but no spaced separator stays valid.
+        assert!(!is_multi_artist_roster("Ana Venus"));
+        assert!(!is_multi_artist_roster("AC/DC"));
     }
 
     #[test]
@@ -660,11 +904,12 @@ mod tests {
             album: None,
             track: None,
             track_no: None,
+            artist: None,
             cover_url: None,
             year: None,
         }];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
-        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 1);
+        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks, None), 1);
         assert!((entries[0].duration_secs - 243.0).abs() < f64::EPSILON);
         assert_eq!(entries[0].track_no.as_deref(), Some("1"));
     }
@@ -679,11 +924,12 @@ mod tests {
             album: None,
             track: None,
             track_no: None,
+            artist: None,
             cover_url: None,
             year: None,
         }];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
-        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 1);
+        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks, None), 1);
         assert!((entries[0].duration_secs - 10.0).abs() < f64::EPSILON);
         assert_eq!(entries[0].track_no.as_deref(), Some("1"));
     }
@@ -698,11 +944,12 @@ mod tests {
             album: None,
             track: Some("1".to_string()),
             track_no: Some("1".to_string()),
+            artist: Some("Boredom Knife".to_string()),
             cover_url: None,
             year: None,
         }];
         let tracks = parse_tralbum_tracks(TRALBUM_PAGE).expect("trackinfo present");
-        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks), 0);
+        assert_eq!(merge_tralbum_metadata(&mut entries, &tracks, None), 0);
     }
 
     #[test]
@@ -832,6 +1079,7 @@ mod tests {
             "D.O.M.",
             Some("Diariamente Obrigação Maltrata"),
             Some("Do Suor Do Teu Rosto Comerás O Pão (Versão Modificada)"),
+            None,
         );
         assert_eq!(m.artist, "D.O.M.");
         assert_eq!(m.title, "Do Suor Do Teu Rosto Comerás O Pão (Versão Modificada)");
@@ -846,6 +1094,7 @@ mod tests {
             "SPHC Records",
             Some("Putrefação Humana - Colhendo Desespero EP (SPHC)"),
             Some("side A (50 songs)"),
+            None,
         );
         assert_eq!(m.artist, "Putrefação Humana");
         assert_eq!(m.title, "side A (50 songs)");
@@ -860,6 +1109,7 @@ mod tests {
             "SPHC Records",
             Some("Putrefação Humana - Colhendo Desespero EP (SPHC)"),
             None,
+            None,
         );
         assert_eq!(m.artist, "Putrefação Humana");
         assert_eq!(m.title, "side A (50 songs)");
@@ -871,6 +1121,7 @@ mod tests {
         let m = resolve_bandcamp_metadata(
             "Just A Song",
             "Some Artist",
+            None,
             None,
             None,
         );
@@ -886,10 +1137,52 @@ mod tests {
             "Artist",
             Some("Album Name"),
             Some("   "),
+            None,
         );
         assert_eq!(m.artist, "Artist");
         assert_eq!(m.title, "Song");
         assert_eq!(m.album.as_deref(), Some("Album Name"));
+    }
+
+    // anavenus.bandcamp.com/album/anal-seppuku: null uploader, null per-track
+    // artist, no title prefix — tralbum album-level artist is the only source.
+    #[test]
+    fn resolve_tralbum_artist_wins_over_empty_uploader() {
+        let m = resolve_bandcamp_metadata(
+            "Death By Cumshots",
+            "",
+            Some("Anal Seppuku"),
+            None,
+            Some("Ana Venus"),
+        );
+        assert_eq!(m.artist, "Ana Venus");
+        assert_eq!(m.title, "Death By Cumshots");
+        assert_eq!(m.album.as_deref(), Some("Anal Seppuku"));
+    }
+
+    #[test]
+    fn resolve_tralbum_artist_beats_prefix_heuristics() {
+        // Bandcamp ground truth wins when prefix guessing would differ.
+        let m = resolve_bandcamp_metadata(
+            "Some Label - Song",
+            "Some Label",
+            Some("Real Artist - Album (Label)"),
+            None,
+            Some("Real Artist"),
+        );
+        assert_eq!(m.artist, "Real Artist");
+    }
+
+    #[test]
+    fn resolve_blank_tralbum_artist_falls_through_to_prefix_rules() {
+        let m = resolve_bandcamp_metadata(
+            "D.O.M. - Song",
+            "D.O.M.",
+            Some("Album"),
+            None,
+            Some("   "),
+        );
+        assert_eq!(m.artist, "D.O.M.");
     }
 
     fn bcsearch_response() -> serde_json::Value {

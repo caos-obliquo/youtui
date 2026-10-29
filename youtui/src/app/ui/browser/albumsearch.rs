@@ -144,7 +144,7 @@ impl AlbumSearchBrowser {
         if album_item.is_bandcamp {
             let bc_url = album_item.bandcamp_url.clone().unwrap_or_default();
             let task = AsyncTask::new_future_try(
-                FetchBandcampAlbumEntries(bc_url, false, String::new()),
+                FetchBandcampAlbumEntries(bc_url, false, String::new(), false, 120),
                 HandleFetchBandcampAlbumEntriesOk,
                 HandleFetchBandcampAlbumEntriesError,
                 None,
@@ -851,6 +851,7 @@ impl_youtui_task_handler!(HandleFetchBandcampAlbumEntriesOk, Vec<BandcampTrackEn
                 &first.uploader,
                 first.album.as_deref(),
                 first.track.as_deref(),
+                first.artist.as_deref(),
             );
             target.album_artist = resolved.artist.clone();
             target.album_year.clear();
@@ -861,6 +862,7 @@ impl_youtui_task_handler!(HandleFetchBandcampAlbumEntriesOk, Vec<BandcampTrackEn
                 &entry.uploader,
                 entry.album.as_deref(),
                 entry.track.as_deref(),
+                entry.artist.as_deref(),
             );
             let secs = entry.duration_secs as u64;
             let song = ytmapi_rs::parse::SearchResultSong {

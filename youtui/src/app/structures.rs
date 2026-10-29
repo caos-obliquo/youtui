@@ -341,6 +341,20 @@ impl AudioQuality {
             AudioQuality::Low => "bestaudio[abr<=70]/bestaudio/best",
         }
     }
+
+    /// yt-dlp `-f` selector for Bandcamp, where `bestaudio/best` resolves to
+    /// ALAC/FLAC/wav (118-236 MiB for a 15-min track) and the player only
+    /// starts after the whole file lands — a 4+ minute wait per track. These
+    /// selectors pin the lossy tiers instead: mp3-v0 (~24 MiB) is transparent
+    /// quality and downloads 5x faster. mp3/aac decode natively in Symphonia.
+    pub fn bandcamp_format_string(&self) -> &'static str {
+        match self {
+            AudioQuality::Best => "mp3-v0/aac-hi/bestaudio",
+            AudioQuality::High => "mp3-320/mp3-v0/aac-hi/bestaudio",
+            AudioQuality::Medium => "mp3-v0/mp3-128/aac-hi/bestaudio",
+            AudioQuality::Low => "mp3-128/mp3-v0/bestaudio",
+        }
+    }
 }
 
 impl PlayState {
@@ -488,11 +502,14 @@ pub fn has_album_upload_tag(title: &str) -> bool {
         .filter(|c| c.is_alphanumeric())
         .map(|c| c.to_ascii_lowercase())
         .collect();
-    const TAGS: [&str; 14] = [
+    // "session": live-session uploads ("Brutal Noisegore Session") are
+    // album-like — short (<900s) so the duration gate misses them, but their
+    // numbered tracklist in the description must still drive an album split.
+    const TAGS: [&str; 15] = [
         "fullalbum", "fullep", "fulllp", "fulldemo", "fullsingle",
         "fulllength", "studioalbum", "livealbum", "officialalbum",
         "compilation", "bootleg", "anthology", "collection",
-        "selftitled",
+        "selftitled", "session",
     ];
     TAGS.iter().any(|tag| compact.contains(tag))
 }

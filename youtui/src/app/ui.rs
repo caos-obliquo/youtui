@@ -1757,6 +1757,8 @@ impl YoutuiWindow {
                             normalized.clone(),
                             self.playlist.yt_dlp_cookie_path.is_some(),
                             self.playlist.cookie_browser.clone(),
+                            false, // skip_tralbum_enrichment
+                            120,   // timeout_secs
                         ),
                         HandleBandcampAlbumEntriesOk(normalized.clone()),
                         HandleBandcampAlbumEntriesError(normalized),
@@ -2056,19 +2058,26 @@ pub fn extract_playlist_id(url: &str) -> Option<String> {
 }
 
 fn extract_video_id(url: &str) -> String {
-    if url.contains("watch?v=") {
-        url.split("watch?v=").nth(1).unwrap_or(url)
-            .split('&').next().unwrap_or("")
-            .to_string()
-    } else if url.contains("youtu.be/") {
-        url.split("youtu.be/").nth(1).unwrap_or(url)
-            .split('?').next().unwrap_or("")
-            .to_string()
-    } else {
-        url.rsplit('/').next().unwrap_or(url)
-            .split('?').next().unwrap_or(url)
-            .to_string()
+    // Query-string form: take the `v=` param wherever it sits, not only when
+    // it is the first param after `watch?` ("watch?is=x&v=ID" is valid).
+    if let Some((_, query)) = url.split_once('?') {
+        if let Some(id) = query
+            .split('&')
+            .find_map(|p| p.strip_prefix("v="))
+            .map(|v| v.split('#').next().unwrap_or(v))
+            .filter(|v| !v.is_empty())
+        {
+            return id.to_string();
+        }
     }
+    if url.contains("youtu.be/") {
+        return url.split("youtu.be/").nth(1).unwrap_or(url)
+            .split(['?', '#']).next().unwrap_or("")
+            .to_string();
+    }
+    url.rsplit('/').next().unwrap_or(url)
+        .split('?').next().unwrap_or(url)
+        .to_string()
 }
 
 #[cfg(test)]
@@ -2210,6 +2219,15 @@ mod tests {
     fn extract_video_id_invalid() {
         let id = extract_video_id("not-a-url");
         assert_eq!(id, "not-a-url");
+    }
+
+    #[test]
+    fn extract_video_id_v_param_not_first() {
+        // Shared-links can put other params before `v=` (e.g. `is=`).
+        let id = extract_video_id(
+            "https://www.youtube.com/watch?is=D_hKVCuWcUYvoOEZ&v=Y5SPwKNGyf8&feature=youtu.be",
+        );
+        assert_eq!(id, "Y5SPwKNGyf8");
     }
 }
 

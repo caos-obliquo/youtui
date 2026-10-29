@@ -38,7 +38,7 @@ metadata-cache-sqlite = { path = "../libs/metadata-cache-sqlite" }
 rym-genre-data = { path = "../libs/rym-genre-data" }
 genre-db-sqlite = { path = "../libs/genre-db-sqlite" }
 audio-player = { path = "../libs/audio-player" }
-reqwest = { version = "0.11", default-features = false, features = ["json", "gzip", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "blocking"] }
 lru = "0.12"
 md5 = "0.7"
 ib-romaji = "0.2"
