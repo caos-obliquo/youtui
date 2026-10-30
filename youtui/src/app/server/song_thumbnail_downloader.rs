@@ -3,8 +3,6 @@ use crate::core::{create_or_clean_directory, get_dir_file_paths, touch_file_with
 use crate::get_data_dir;
 use anyhow::{Context, anyhow};
 use async_cell::sync::AsyncCell;
-use futures::FutureExt;
-use futures::future::try_join;
 use rusty_ytdl::reqwest;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -108,22 +106,67 @@ impl<'a> SongThumbnailID<'a> {
     }
 }
 
+/// Holds the ON-DISK location of decoded album art, not the pixels.
+/// Retaining decoded pixels per song is what blew a 1700-song playlist up to
+/// ~3GB (fetch upgrades art to w1920-h1200 ≈ 7-9MB decoded RGBA each, kept in
+/// `AlbumArtState::Downloaded` for every unique album forever). Decode now
+/// happens on demand through [`SongThumbnail::image`], which LRU-caps how many
+/// images exist in RAM at once.
 #[derive(PartialEq)]
 pub struct SongThumbnail {
-    pub in_mem_image: image::DynamicImage,
     pub on_disk_path: std::path::PathBuf,
     pub song_thumbnail_id: SongThumbnailID<'static>,
 }
 
-// Custom debug format - otherwise in_mem_image will be displaying array of
-// bytes...
 impl std::fmt::Debug for SongThumbnail {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AlbumArt")
-            .field("in_mem_image", &"image::DynamicImage")
             .field("on_disk_path", &self.on_disk_path)
             .field("song_thumbnail_id", &self.song_thumbnail_id)
             .finish()
+    }
+}
+
+/// Max decoded images kept in RAM simultaneously. Display only ever shows one
+/// image at a time (footer current song / one popup selection), so a handful
+/// of slots covers real use: recent art survives a frame flicker, scrolling a
+/// playlist art popup does not re-decode the previous entry every step.
+const IMAGE_CACHE_CAPACITY: usize = 8;
+
+fn image_cache() -> &'static std::sync::Mutex<Vec<(std::path::PathBuf, image::DynamicImage)>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<Vec<(std::path::PathBuf, image::DynamicImage)>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+impl SongThumbnail {
+    /// Decode the art from disk (sync, UI thread). The decoded image lives in
+    /// a small process-wide LRU so repeated renders of the same art are free
+    /// and total RAM stays bounded at `IMAGE_CACHE_CAPACITY` images.
+    pub fn image(&self) -> Option<image::DynamicImage> {
+        let mut cache = image_cache().lock().expect("image cache poisoned");
+        if let Some(pos) = cache.iter().position(|(p, _)| *p == self.on_disk_path) {
+            let entry = cache.remove(pos);
+            cache.push(entry);
+            return Some(cache.last().expect("just pushed").1.clone());
+        }
+        drop(cache);
+        let img = match image::open(&self.on_disk_path) {
+            Ok(img) => img,
+            Err(e) => {
+                warn!(
+                    "Decoding album art {} failed: {e}",
+                    self.on_disk_path.display()
+                );
+                return None;
+            }
+        };
+        let mut cache = image_cache().lock().expect("image cache poisoned");
+        if cache.len() >= IMAGE_CACHE_CAPACITY {
+            cache.remove(0);
+        }
+        cache.push((self.on_disk_path.clone(), img.clone()));
+        Some(img)
     }
 }
 
@@ -221,15 +264,9 @@ impl SongThumbnailDownloader {
                 thumbnail_cache_key(&thumbnail_id)
             ))
             .with_extension(image_format.extensions_str()[0]);
-        let image_decoding_task = tokio::task::spawn_blocking(|| image_reader.decode());
-        let (in_mem_image, _) = try_join(
-            image_decoding_task.map(|res| res.map_err(anyhow::Error::from)),
-            tokio::fs::write(&on_disk_path, image_bytes)
-                .map(|res| res.map_err(anyhow::Error::from)),
-        )
-        .await?;
+        // Header sniff only: no full decode, no pixel retention (see SongThumbnail).
+        tokio::fs::write(&on_disk_path, image_bytes).await?;
         Ok(SongThumbnail {
-            in_mem_image: in_mem_image?,
             on_disk_path,
             song_thumbnail_id: thumbnail_id,
         })
@@ -269,15 +306,9 @@ impl SongThumbnailDownloader {
                 thumbnail_cache_key(&thumbnail_id)
             ))
             .with_extension(image_format.extensions_str()[0]);
-        let image_decoding_task = tokio::task::spawn_blocking(|| image_reader.decode());
-        let (in_mem_image, _) = try_join(
-            image_decoding_task.map(|res| res.map_err(anyhow::Error::from)),
-            tokio::fs::write(&on_disk_path, image_bytes)
-                .map(|res| res.map_err(anyhow::Error::from)),
-        )
-        .await?;
+        // Header sniff only: no full decode, no pixel retention (see SongThumbnail).
+        tokio::fs::write(&on_disk_path, image_bytes).await?;
         Ok(SongThumbnail {
-            in_mem_image: in_mem_image?,
             on_disk_path,
             song_thumbnail_id: thumbnail_id,
         })
@@ -345,49 +376,26 @@ async fn get_cached_album_art(thumbnail_id: SongThumbnailID<'_>) -> Option<SongT
             return None;
         };
         // ...and it will be a valid image format extension.
-        let Some(image_format) = image::ImageFormat::from_extension(file_ext) else {
+        let Some(_image_format) = image::ImageFormat::from_extension(file_ext) else {
             warn!(
                 "Detected a file in youtui album art directory with invalid extension {:?}",
                 path.file_name()
             );
             return None;
         };
-        let image_bytes = match tokio::fs::read(&path).await {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                info!("Unable to read image {path:?}, with error <{e}> ignoring");
-                return None;
-            }
-        };
-        let image_reader =
-            image::ImageReader::with_format(std::io::Cursor::new(image_bytes), image_format);
-        let image_decoded = match tokio::task::spawn_blocking(|| image_reader.decode()).await {
-            Ok(Ok(img)) => img,
-            Ok(Err(e)) => {
-                warn!(
-                    "Decoding image {:?} errored with error <{e}>, ignoring",
-                    path.file_name()
-                );
-                return None;
-            }
-            Err(e) => {
-                error!(
-                    "Decoding image {:?} panicked with error <{e}>, ignoring",
-                    path.file_name()
-                );
-                return None;
-            }
-        };
-        Some((image_decoded, path.as_path().to_owned()))
+        // Existence proven by the directory listing, format by the extension:
+        // no need to read the bytes here. Decode is deferred to
+        // SongThumbnail::image() at render time, so a playlist open no longer
+        // decodes every cached cover into RAM (the 3GB blow-up).
+        Some(path.as_path().to_owned())
     });
     let mut matching_album_art = std::pin::pin!(matching_album_art);
-    if let Some((in_mem_image, on_disk_path)) = matching_album_art.next().await {
+    if let Some(on_disk_path) = matching_album_art.next().await {
         debug!(
             "Loaded thumbnail id {thumbnail_id:?} from disk path {}",
             on_disk_path.display()
         );
         return Some(SongThumbnail {
-            in_mem_image,
             on_disk_path,
             song_thumbnail_id: thumbnail_id.into_owned(),
         });

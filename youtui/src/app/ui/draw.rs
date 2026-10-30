@@ -35,15 +35,17 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
         return;
     }
     if let Some(thumb) = popup.current_thumbnail() {
-        // Guard: skip render if image has no pixel data
-        if thumb.in_mem_image.width() == 0 || thumb.in_mem_image.height() == 0 {
+        // Decode on demand (LRU-capped); skip render if decode fails or image
+        // has no pixel data.
+        let decoded = thumb.image();
+        if decoded.as_ref().is_none_or(|img| img.width() == 0 || img.height() == 0) {
             w.sixel_data = None;
             w.sixel_rect = None;
             f.render_widget(Paragraph::new("No image data").centered(), area);
             return;
         }
         match terminal_image_capabilities.new_protocol(
-            thumb.in_mem_image.clone(),
+            decoded.expect("guarded above"),
             centered,
             Resize::Fit(None),
         ) {

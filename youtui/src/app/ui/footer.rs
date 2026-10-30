@@ -198,9 +198,9 @@ pub fn draw_footer(
                 .map_or(true, |last| !std::rc::Rc::ptr_eq(last, album_art));
             w.last_album_art = Some(album_art.clone());
             if art_changed || chunk_changed || w.cached_album_protocol.is_none() {
-                if let Some(protocol) = encode_album_protocol(
-                    album_art_chunk, album_art.in_mem_image.clone(), terminal_image_capabilities,
-                ) {
+                if let Some(protocol) = album_art.image().and_then(|img| encode_album_protocol(
+                    album_art_chunk, img, terminal_image_capabilities,
+                )) {
                     w.cached_album_protocol = Some(protocol.clone());
                     render_album_protocol(f, w, album_art_chunk, &protocol);
                 } else {
@@ -228,9 +228,9 @@ pub fn draw_footer(
                 render_album_protocol(f, w, album_art_chunk, &cached);
                 w.cached_album_protocol = Some(cached);
             } else if let Some(ref last) = w.last_album_art {
-                if let Some(protocol) = encode_album_protocol(
-                    album_art_chunk, last.in_mem_image.clone(), terminal_image_capabilities,
-                ) {
+                if let Some(protocol) = last.image().and_then(|img| encode_album_protocol(
+                    album_art_chunk, img, terminal_image_capabilities,
+                )) {
                     w.cached_album_protocol = Some(protocol.clone());
                     render_album_protocol(f, w, album_art_chunk, &protocol);
                 } else {
@@ -255,9 +255,9 @@ pub fn draw_footer(
                 render_album_protocol(f, w, album_art_chunk, &cached);
                 w.cached_album_protocol = Some(cached);
             } else if let Some(ref last) = w.last_album_art {
-                if let Some(protocol) = encode_album_protocol(
-                    album_art_chunk, last.in_mem_image.clone(), terminal_image_capabilities,
-                ) {
+                if let Some(protocol) = last.image().and_then(|img| encode_album_protocol(
+                    album_art_chunk, img, terminal_image_capabilities,
+                )) {
                     w.cached_album_protocol = Some(protocol.clone());
                     render_album_protocol(f, w, album_art_chunk, &protocol);
                 } else {
