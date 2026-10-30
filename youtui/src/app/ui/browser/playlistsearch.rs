@@ -24,8 +24,9 @@ use tracing::{error, warn};
 use ytmapi_rs::common::PlaylistID;
 use ytmapi_rs::parse::{PlaylistItem, SearchResultPlaylist};
 
-/// Maximum number of playlist songs to download / stream in a single viewing.
-const MAX_PLAYLIST_SONGS: usize = 1000;
+/// No cap when viewing/queueing a playlist: fetch every entry. (Creation-side
+/// batching lives in CreatePlaylistWithVideos, not here.)
+const MAX_PLAYLIST_SONGS: usize = usize::MAX;
 
 pub mod search_panel;
 pub mod songs_panel;
