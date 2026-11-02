@@ -159,11 +159,26 @@ pub fn draw_footer(
         album_art_chunk: Rect,
         protocol: &ratatui_image::protocol::Protocol,
     ) {
-        f.render_widget(Image::new(protocol), album_art_chunk);
         w.sixel_rect = Some(album_art_chunk);
         if let ratatui_image::protocol::Protocol::Sixel(sixel) = protocol {
+            // Sixel pixels go straight to stdout via flush_sixel. Never render
+            // the Image widget for sixel: ratatui-image stuffs the whole multi-KB
+            // DCS payload into one cell's symbol, and its unicode width makes
+            // BufferDiff jump `pos` past the rest of the frame — everything after
+            // the album cell (footer bar, line text, later rows) stops diffing
+            // and the screen freezes. Mark the area Skip so the diff steps over
+            // these cells one by one and never emits text over the image.
             w.sixel_data = Some(sixel.data.clone());
+            let buf = f.buffer_mut();
+            for y in album_art_chunk.y..album_art_chunk.y.saturating_add(album_art_chunk.height) {
+                for x in album_art_chunk.x..album_art_chunk.x.saturating_add(album_art_chunk.width) {
+                    if let Some(cell) = buf.cell_mut((x, y)) {
+                        cell.set_diff_option(ratatui::buffer::CellDiffOption::Skip);
+                    }
+                }
+            }
         } else {
+            f.render_widget(Image::new(protocol), album_art_chunk);
             w.sixel_data = None;
         }
     }
@@ -485,30 +500,29 @@ mod tests {
         );
     }
 
-    /// Regression: when the album art popup is open, flush_sixel must reset
-    /// last_sixel_data and last_sixel_rect to None so that closing the popup
-    /// triggers a DCS clear (rect change) that wipes the stale popup sixel
-    /// before the footer art is re-emitted. Without this, the rect-tracking
-    /// guard in Fix 3 would skip the clear (same data/rect as before popup).
+    /// Regression: the album art popup must use the unified sixel flush path.
+    /// The Image widget no longer writes sixel into the buffer (its giant cell
+    /// symbol made BufferDiff jump past the rest of the frame and froze the
+    /// footer), so flush_sixel is the sole sixel writer for footer AND popup.
+    /// It must not special-case the popup: the rect change when the popup
+    /// closes DCS-clears the stale popup pixels before the footer art rewrite.
     #[test]
-    fn flush_sixel_resets_state_when_popup_open() {
+    fn flush_sixel_uses_unified_path_for_popup() {
         let src = std::fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("src/app.rs")
         ).expect("app.rs exists");
-        // Flush_sixel is the second occurrence of the popup guard.
-        let popup_branch = src
-            .match_indices("if self.window_state.album_art_popup.is_some()")
+        let flush = src
+            .split("fn flush_sixel_inner")
             .nth(1)
-            .map(|(idx, _)| &src[idx..])
-            .expect("popup guard in flush_sixel");
+            .expect("flush_sixel_inner present");
         assert!(
-            popup_branch.contains("self.window_state.last_sixel_data = None;"),
-            "flush_sixel must reset last_sixel_data when popup open"
+            !flush.contains("album_art_popup"),
+            "flush_sixel must not special-case the popup — popup sixel goes through the normal data/rect-change path"
         );
         assert!(
-            popup_branch.contains("self.window_state.last_sixel_rect = None;"),
-            "flush_sixel must reset last_sixel_rect when popup open"
+            flush.contains("if !force && sd == self.window_state.last_sixel_data"),
+            "unified skip guard must remain"
         );
     }
 
