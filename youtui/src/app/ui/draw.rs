@@ -57,12 +57,26 @@ pub fn draw_app(f: &mut Frame, w: &mut YoutuiWindow, terminal_image_capabilities
                             width: fitted.width.max(1),
                             height: fitted.height.max(1),
                         };
-                        // Store sixel data for proper cleanup on close
-                        if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
-                            w.sixel_data = Some(sixel.data.clone());
-                        }
                         w.sixel_rect = Some(img_rect);
-                        f.render_widget(Image::new(&protocol), img_rect);
+                        if let ratatui_image::protocol::Protocol::Sixel(ref sixel) = protocol {
+                            // Sixel pixels are written by flush_sixel, never the
+                            // Image widget: the widget's giant cell symbol makes
+                            // BufferDiff jump past the rest of the frame and
+                            // freezes the UI. Skip these cells so the diff steps
+                            // over the image area cleanly.
+                            w.sixel_data = Some(sixel.data.clone());
+                            let buf = f.buffer_mut();
+                            for y in img_rect.y..img_rect.y.saturating_add(img_rect.height) {
+                                for x in img_rect.x..img_rect.x.saturating_add(img_rect.width) {
+                                    if let Some(cell) = buf.cell_mut((x, y)) {
+                                        cell.set_diff_option(ratatui::buffer::CellDiffOption::Skip);
+                                    }
+                                }
+                            }
+                        } else {
+                            w.sixel_data = None;
+                            f.render_widget(Image::new(&protocol), img_rect);
+                        }
                         // Page indicator when multiple album arts available
                         if popup.total() > 1 {
                             let indicator = format!(" {} / {} ", popup.index + 1, popup.total());
